@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   FileText, Download, AlertTriangle, Layers, UserCog, Info,
-  Gauge, Factory, Users, Clock, Wallet, BadgeCheck, ShieldAlert, ListChecks,
+  Gauge, Factory, Users, Clock, Wallet, BadgeCheck, ShieldAlert, ListChecks, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
@@ -99,12 +99,28 @@ export default function Reports() {
   }), [ym, shift, brig]);
   const params = useFactoryParams(base);
 
+  // The server keeps each month's figures and answers at once with the last
+  // build; `state` «refreshing» says a newer one is being made behind it, so
+  // the page asks again — every 3 s for the first minute, then every 20 s.
+  const pollSince = useRef(null);
   const q = useQuery({
     queryKey: ["reports", params],
     queryFn: () => api.get("/api/reports", { params }).then((r) => r.data),
     placeholderData: keepPreviousData,
+    refetchInterval: (query) => {
+      if (query.state.data?.state !== "refreshing") { pollSince.current = null; return false; }
+      pollSince.current ??= Date.now();
+      return Date.now() - pollSince.current < 60_000 ? 3000 : 20_000;
+    },
   });
   const data = q.data;
+  const updating = !!data && (q.isFetching || data.state === "refreshing");
+  const builtAt = (() => {
+    const [d, tm] = String(data?.built_at || "").split("T");
+    if (!tm) return "";
+    const hm = tm.slice(0, 5);
+    return d === data?.today ? hm : `${d.slice(8, 10)}.${d.slice(5, 7)} ${hm}`;
+  })();
 
   const brigOpts = useMemo(() => (data?.options?.brigadirs || [])
     .filter((b) => (shift == null || b.shift === shift)
@@ -303,13 +319,22 @@ export default function Reports() {
             <SegmentedToggle asTabs value={current?.key} onChange={setOpen}
               options={secs.map((s) => ({ value: s.key, label: T.sec[s.key] || s.key }))} />
           </div>
-          <div className="mb-3">
-            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-1)" }}>
-              {T.sec[current?.key] || ""}
-            </h2>
-            <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {T.secSub[current?.key] || ""}
-            </p>
+          <div className="mb-3 flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[15px] font-semibold" style={{ color: "var(--text-1)" }}>
+                {T.sec[current?.key] || ""}
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
+                {T.secSub[current?.key] || ""}
+              </p>
+            </div>
+            {/* When the figures on screen were built — the server answers at
+                once with its last build and makes a newer one behind it. */}
+            <span className="flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] mt-1 whitespace-nowrap"
+              role="status" aria-live="polite" style={{ color: "var(--text-3)" }}>
+              {updating && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+              {updating ? T.updating : builtAt ? fill(T.builtAt, { at: builtAt }) : ""}
+            </span>
           </div>
           {LOCK_SECS.has(current?.key) && <CatLockNotice cats={catLocked} />}
           {current && <ReportSection section={current} months={data.months || []}

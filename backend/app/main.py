@@ -917,6 +917,10 @@ async def lifespan(app: FastAPI):
     # «Hisobotlar» all read — so a deploy's empty store is not paid by viewers.
     from app.services import labor_kept as _labor_kept
     _labor_kept.warm()
+    # …and «Hisobotlar»'s default report (this month and the one before, the
+    # whole plant), two minutes in — after that store — for the same reason.
+    from app.routers import reports as _reports_router
+    _reports_router.warm()
 
     # One port, no root (app/supervisor.py): this worker is READY — the
     # supervisor stops answering for it and retires the worker it replaces.

@@ -10178,11 +10178,26 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   never name or state something the page does not. Delivered by
   `xlsx_delivery.deliver_file` — a browser downloads it, inside Telegram it
   lands in the caller's chat. Logged as `export.reports`.
-- **One kept build serves the screen and the file.** `KeptAnswers("reports")`
-  — as built for 2 min, then up to 10 while a new build runs behind it, never
-  to a viewer who wrote since — and the export reads the SAME build (a deep
-  copy of the sections it wants, because it writes the page's formatting onto
-  the rows). A build is every figure of three months over every unit.
+- **Each MONTH is built and kept on its own; the screen and the file read the
+  same kept months** (2026-11-05 — the operator: «it takes 5–6 s to open»;
+  measured on production: November's report 7.6 s, October's 10.8 s, spread
+  over zagruzka · attendance · idle share · plan, 1.3–2.5 s each).
+  `_month_part` is one month's figures (each reader buckets by day, so a month
+  alone gives the figures it gives beside its neighbour), `_merge` puts the
+  months together for `compose` (a unit a month lacks reads None there, which
+  every fold skips like the zero it replaced). A FINISHED month is kept 30 min
+  as built, then served up to 12 h while a new build runs behind the reader
+  (`_FINISHED`); the month still running 2 min, then up to 1 h (`_RUNNING`).
+  A viewer who wrote since is served the kept month too, with a build that
+  started after their write running behind it (`KeptAnswers(…,
+  writers_refresh=True)`); the payload says `state` «refreshing» and the page
+  asks again (3 s for a minute, then 20 s) and prints «Yangilanmoqda…», else
+  «Tayyorlandi: HH:MM» — `built_at` is the OLDEST month's build. Every build
+  logs and carries `timings` per section (`_Clock`). The default report (this
+  month and the one before, the whole plant) is built two minutes after a
+  process starts (`reports.warm`, from the lifespan). The export reads the same
+  parts (a deep copy of the sections it wants, because it writes the page's
+  formatting onto the rows).
 - **Every block title is DISTINCT across the whole report** (`caps` in
   `reportsText.js`: «Kutish — toifalar», not a second «Toifalar»). A
   workbook names each sheet after the last heading, so identical titles become

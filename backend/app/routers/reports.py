@@ -18,8 +18,8 @@ folding. The split is `ojidaniya_deck`'s: nothing in `services/` imports a
 router.
 
 Two VIEWER facts narrow a build beside the plant lock, and both ride the kept
-answer's key (`_key`): the «Kutish mas'uli» CATEGORY lock (`services/idle_scope`,
-applied to the «Kutish» section exactly as /downtime applies it) and whether
+months' key (`_report`'s `scope_key`): the «Kutish mas'uli» CATEGORY lock
+(`services/idle_scope`, applied to the «Kutish» section exactly as /downtime applies it) and whether
 the «Xarajat» section is this viewer's at all (`downtime.COST_ROLES`). One
 viewer's build is never served to another — the `leaders_kpi._board_key` rule.
 """
@@ -53,13 +53,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 PAGE = "reports"
-
-# A build is every figure of three months over every unit — the загрузка
-# engine, the plan lines, the attendance rows, the ojidaniya union and its
-# pricing. Served as built for 2 min, then up to 10 while one new build runs
-# behind it; a viewer who wrote since never gets an older answer. The
-# /leaders-kpi keep, with its own numbers.
-_KEPT = KeptAnswers("reports", ttl=120, stale=600, max_keys=24, writer_waits=True)
 
 FORMATS = ("pdf", "docx", "xlsx")
 
@@ -294,8 +287,10 @@ class _Clock:
                           sorted(self.parts.items(), key=lambda kv: -kv[1])}}
 
 
-def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int]) -> dict:
-    """The whole report for one month, within one scope.
+def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list[int]) -> dict:
+    """Every figure of ONE month of the report, within one scope — the inputs
+    `services/reports.compose` folds, each keyed by that month alone (a
+    per-unit list of one, or {ym: …}).
 
     Every figure comes from the page that owns it, through that page's own
     code — `build_metrics_list` (the загрузка engine) read by
@@ -306,21 +301,25 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     `turnover.month_payload`. Nothing is measured in this file or in
     `services/reports.py`, which only folds what is handed to it.
 
-    The unit scope is resolved ONCE, here: the viewer's plant lock
-    (`scoped_manager_ids` — `?factory=` cannot widen a locked viewer), the
-    shift, the brigadir pick, and `board_units`' own rule (non-archived units
-    that take part in the загрузка). Everything downstream is given that set,
-    the turnover half included, so no half can read wider than the page.
+    A month is built ON ITS OWN (2026-11-05), so a finished one is computed
+    once and shared by every report that shows it: each of these readers
+    buckets by day, so one month read alone gives the very figures it gives
+    read beside its neighbour.
+
+    The unit scope is the viewer's plant lock (`scoped_manager_ids` —
+    `?factory=` cannot widen a locked viewer), the shift, the brigadir pick,
+    and `board_units`' own rule (non-archived units that take part in the
+    загрузка). Everything downstream is given that set, the turnover half
+    included, so no half can read wider than the page.
     """
     clock = _Clock()
     today = turnover.local(turnover.now_aware()).date()
+    months = [mo]
     with clock("scope"):
-        months = reports.months_for(m, today, bb.data_floor(db))
         scoped = scoped_manager_ids(db, payload, factory, mids)
         units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
     ids = {u.id for u in units}
-    d_from, d_to = months[0]["from"], months[-1]["to"]
-    n = len(months)
+    d_from, d_to = mo["from"], mo["to"]
 
     eff: dict = {}
     sload: dict = {}
@@ -400,49 +399,67 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     except Exception:  # noqa: BLE001 — four «—» rows, never a failed report
         log.exception("reports: the Verifix scope counts failed")
 
-    with clock("compose"):
-        out = reports.compose({
-            "months": months,
-            "unit_ids": ids,
-            "plan": plan_tot,
-            "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
-            "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
-            "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
-            "scope": {"factory": factory, "shift": shift, "managers": mids,
-                      "units": len(units)},
-        })
-    out["today"] = today.isoformat()
-    out["built_at"] = turnover.local(turnover.now_aware()).isoformat(timespec="seconds")
-    # The LOCK, never a pick — what the page prints as «you are seeing only …»
-    # (`CatLockNotice`) and the document names in its subtitle; null for every
-    # viewer who can widen. `idle_scope.narrow_downtime`'s own rule.
-    out["cat_locked"] = idle_scope.viewer_categories(db, payload)
-    out["options"] = {
-        "shifts": sorted({u.shift for u in units if u.shift in (1, 2)}) or [1, 2],
-        "brigadirs": [{"id": u.id, "name": u.name, "shift": u.shift,
-                       "factory_id": u.factory_id} for u in units],
+    built_at = turnover.local(turnover.now_aware()).isoformat(timespec="seconds")
+    timings = clock.out()
+    log.info("reports: built %s (%d units) in %.1f s — %s", mo["ym"], len(ids),
+             timings["total_ms"] / 1000,
+             ", ".join(f"{k} {v / 1000:.1f}" for k, v in timings["parts"].items()))
+    return {
+        "ym": mo["ym"], "built_at": built_at, "timings": timings,
+        "plan": plan_tot, "eff": eff, "sload": sload, "att": att, "vkinds": vkinds,
+        "ontime": ontime_pct, "turnover": turn, "idle": idle, "idle_share": idle_pct,
+        "cost": cost, "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
     }
-    out["timings"] = clock.out()
-    log.info("reports: built %s (%d units) in %.1f s — %s", reports.ym(m), len(ids),
-             out["timings"]["total_ms"] / 1000,
-             ", ".join(f"{k} {v / 1000:.1f}" for k, v in out["timings"]["parts"].items()))
+
+
+# What `compose` reads per UNIT (unit → {field: [one figure per month]}) and
+# per MONTH ({ym: …}) — how two months built apart become one input.
+_BY_UNIT = ("eff", "sload", "att", "xav", "qual", "qual_n")
+_BY_MONTH = ("plan", "idle", "idle_share", "vkinds", "ontime", "turnover", "vfx_scope")
+
+
+def _merge(parts: list[dict]) -> dict:
+    """The months' parts as the one input `compose` reads. A unit a month has
+    no row for reads None in that month's place, which every fold skips exactly
+    as it skips the zero the unit would have carried read beside it — so the
+    sums, means and pooled shares are the ones a single build gave. Nothing in
+    a part is changed: they are kept and shared between readers."""
+    n = len(parts)
+    out: dict = {}
+    for f in _BY_UNIT:
+        acc: dict = {}
+        for i, p in enumerate(parts):
+            for uid, row in (p.get(f) or {}).items():
+                slot = acc.setdefault(uid, {})
+                for k, vals in row.items():
+                    slot.setdefault(k, [None] * n)[i] = vals[0] if vals else None
+        out[f] = acc
+    for f in _BY_MONTH:
+        acc = {}
+        for p in parts:
+            acc.update(p.get(f) or {})
+        out[f] = acc
+    # None = not this viewer's section (`_sees_cost`) — the same in every part,
+    # since it is on the key.
+    out["cost"] = None if any(p.get("cost") is None for p in parts) else {
+        k: v for p in parts for k, v in p["cost"].items()}
     return out
 
 
-def _key(db: Session, payload: dict, m: date, factory, shift, mids) -> tuple:
-    """Everything a build reads off the VIEWER, beside the scope it asked for:
-    the plant lock (the scoped units), the category lock and whether the cost
-    section is theirs. A fact the build depends on and the key does not carry
-    is a build served to a viewer it was never narrowed for — the
-    `leaders_kpi._board_key` rule. Any narrowing added to `_build` later goes
-    in here too."""
-    units = scoped_manager_ids(db, payload, factory, mids)
-    lock = idle_scope.viewer_categories(db, payload)
-    return (reports.ym(m), turnover.local(turnover.now_aware()).date().isoformat(),
-            factory, shift, tuple(mids),
-            None if units is None else tuple(sorted(units)),
-            None if lock is None else tuple(sorted(lock)),
-            _sees_cost(payload))
+# Each MONTH is kept on its own, so the October report and the November one
+# share October. A FINISHED month moves only with a late edit (a day reopened,
+# a complaint closed, the turnover month closing on the 5th): kept 30 min as
+# built, then served up to 12 h while a new build runs behind the reader. The
+# month still running: 2 min, then up to 1 h the same way. A viewer who
+# changed something since is served the kept month too, with a build that
+# started after their write running behind it (`writers_refresh`) — the page
+# reads `state` «refreshing» and asks again until it lands. Before 2026-11-05
+# the whole report was one kept build (2 min / 10 min, and a writer waited):
+# 5–11 s on every open a deploy, a pause or any write had emptied.
+_FINISHED = KeptAnswers("reports-month", ttl=1800, stale=43200, max_keys=48,
+                        writer_waits=True, writers_refresh=True)
+_RUNNING = KeptAnswers("reports-running", ttl=120, stale=3600, max_keys=24,
+                       writer_waits=True, writers_refresh=True)
 
 
 @router.get("")
@@ -462,15 +479,93 @@ def get_report(
 
 
 def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]) -> dict:
-    """The build, kept. The GET and the export both come through here, so the
-    file a reader downloads is the very build their screen is showing."""
-    key = _key(db, payload, m, factory, shift, mids)
+    """The report, assembled from its months' kept parts. The GET and the
+    export both come through here, so the file a reader downloads is built
+    from the very parts their screen is showing.
 
-    def run(s: Session) -> dict:
-        with gc_paused():          # a build's objects die by refcount; a full GC is pure GIL
-            return _build(s, payload, m, factory, shift, mids)
+    A part's key is everything it reads off the VIEWER beside the scope it was
+    asked for: the plant lock (the scoped units), the category lock and whether
+    the cost section is theirs. A fact a build depends on and the key does not
+    carry is a build served to a viewer it was never narrowed for — the
+    `leaders_kpi._board_key` rule. Any narrowing added to `_month_part` later
+    goes in here too."""
+    today = turnover.local(turnover.now_aware()).date()
+    months = reports.months_for(m, today, bb.data_floor(db))
+    scoped = scoped_manager_ids(db, payload, factory, mids)
+    units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
+    lock = idle_scope.viewer_categories(db, payload)
+    scope_key = (factory, shift, tuple(mids),
+                 None if scoped is None else tuple(sorted(scoped)),
+                 None if lock is None else tuple(sorted(lock)),
+                 _sees_cost(payload))
 
-    return _KEPT.get(db, payload, key, run)
+    parts: list[dict] = []
+    states: list[str] = []
+    for mo in months:
+        def run(s: Session, mo=mo) -> dict:
+            with gc_paused():      # a build's objects die by refcount; a full GC is pure GIL
+                return _month_part(s, payload, mo, factory, shift, mids)
+
+        kept = _RUNNING if mo["partial"] else _FINISHED
+        part, state = kept.lookup(db, payload, (mo["ym"], mo["to"].isoformat()) + scope_key, run)
+        parts.append(part)
+        states.append(state)
+
+    ids = {u.id for u in units}
+    out = reports.compose({
+        "months": months,
+        "unit_ids": ids,
+        **_merge(parts),
+        "scope": {"factory": factory, "shift": shift, "managers": mids,
+                  "units": len(units)},
+    })
+    out["today"] = today.isoformat()
+    # The OLDEST month's build time — what the figures on screen are as of.
+    out["built_at"] = min(p["built_at"] for p in parts)
+    # «refreshing»: some month was served as kept while a newer build runs —
+    # the page asks again shortly and the new figures replace these.
+    out["state"] = ("refreshing" if "refreshing" in states
+                    else "built" if "built" in states else "kept")
+    out["timings"] = {p["ym"]: p["timings"] for p in parts}
+    # The LOCK, never a pick — what the page prints as «you are seeing only …»
+    # (`CatLockNotice`) and the document names in its subtitle; null for every
+    # viewer who can widen. `idle_scope.narrow_downtime`'s own rule.
+    out["cat_locked"] = lock
+    out["options"] = {
+        "shifts": sorted({u.shift for u in units if u.shift in (1, 2)}) or [1, 2],
+        "brigadirs": [{"id": u.id, "name": u.name, "shift": u.shift,
+                       "factory_id": u.factory_id} for u in units],
+    }
+    return out
+
+
+WARM_DELAY_S = 120
+
+
+def warm() -> None:
+    """Build the report an admin opens first — this month and the one before,
+    the whole plant — on a thread of its own, two minutes after a process
+    starts (after the trudoyomkost store has warmed, `labor_kept.warm`), so the
+    first open after a deploy is not the one that waits. Read-only; a failure
+    costs the warm-up, never the page."""
+    import threading
+
+    def go():
+        time.sleep(WARM_DELAY_S)
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            t0 = time.monotonic()
+            _report(db, {"role": "admin"}, _month(None), None, None, [])
+            db.rollback()
+            print(f"[reports] warmed the default report in {time.monotonic() - t0:.1f} s",
+                  flush=True)
+        except Exception:  # noqa: BLE001
+            log.exception("reports: warm-up failed")
+        finally:
+            db.close()
+
+    threading.Thread(target=go, name="reports-warm", daemon=True).start()
 
 
 class ExportIn(BaseModel):
