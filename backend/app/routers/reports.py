@@ -478,6 +478,53 @@ def get_report(
     return _report(db, payload, m, factory, shift, _ids(managers))
 
 
+@router.get("/profile")
+def profile_month(
+    month: Optional[str] = Query(None),
+    part: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """TEMPORARY (2026-11-05): one month of the report built FRESH, the whole
+    plant, under cProfile — so the admin measuring why a month's first build
+    takes seconds sees which functions the time goes to. Never kept, never
+    cached; ADMINS only. Delete once the build has been made faster."""
+    import cProfile
+    import pstats
+
+    if payload.get("role") != "admin" or payload.get("imp"):
+        raise HTTPException(status_code=403, detail="admin only")
+    m = _month(month)
+    today = turnover.local(turnover.now_aware()).date()
+    months = reports.months_for(m, today, bb.data_floor(db))
+    mo = next((x for x in months if x["ym"] == part), months[-1])
+    prof = cProfile.Profile()
+    t0 = time.perf_counter()
+    prof.enable()
+    try:
+        with gc_paused():
+            built = _month_part(db, payload, mo, None, None, [])
+    finally:
+        prof.disable()
+    wall = round((time.perf_counter() - t0) * 1000)
+
+    def where(f: str) -> str:
+        for cut in ("/app/", "site-packages/"):
+            if cut in f:
+                return f.split(cut, 1)[1]
+        return f.rsplit("/", 1)[-1]
+
+    rows = []
+    for (f, line, fn), (_cc, nc, tt, ct, _callers) in pstats.Stats(prof).stats.items():
+        rows.append({"fn": f"{where(f)}:{line} {fn}", "calls": nc,
+                     "own_ms": round(tt * 1000), "cum_ms": round(ct * 1000),
+                     "app": "/app/" in f})
+    app_cum = sorted((r for r in rows if r["app"]), key=lambda r: -r["cum_ms"])[:90]
+    own = sorted(rows, key=lambda r: -r["own_ms"])[:60]
+    return {"month": mo["ym"], "wall_ms": wall, "timings": built["timings"],
+            "app_cum": app_cum, "own": own}
+
+
 def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]) -> dict:
     """The report, assembled from its months' kept parts. The GET and the
     export both come through here, so the file a reader downloads is built
