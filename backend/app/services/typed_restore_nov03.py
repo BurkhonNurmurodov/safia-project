@@ -237,6 +237,10 @@ def run(db: Session) -> Optional[dict]:
             for w in plans[mid]["writes"]:
                 production._set_line_override(db, mid, DAY, w["qty_key"], w["wc"], w["line"],
                                               COL[w["field"]], w["value"])
+                # The session does not autoflush: a line's ПЛАН and ФАКТ are two
+                # writes, and the second must find the row the first added, or
+                # it adds another (uq_pp_line_daily_key — v1 died on exactly that).
+                db.flush()
         db.flush()
         after = {}
         for mid in UNITS:
