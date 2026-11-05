@@ -26,6 +26,8 @@ viewer's build is never served to another — the `leaders_kpi._board_key` rule.
 from __future__ import annotations
 
 import logging
+import time
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import date, timedelta
 from typing import Optional
@@ -268,6 +270,30 @@ def _turnover_by_month(db: Session, months: list[dict], scope: dict) -> dict:
     return out
 
 
+class _Clock:
+    """How long each part of ONE build took — carried on the payload as
+    `timings` and logged once, so «why does the report take so long to open»
+    is answered by the report itself rather than guessed at. A part met twice
+    (two months) adds up."""
+
+    def __init__(self):
+        self.t0 = time.perf_counter()
+        self.parts: dict[str, float] = {}
+
+    @contextmanager
+    def __call__(self, name: str):
+        t = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.parts[name] = self.parts.get(name, 0.0) + (time.perf_counter() - t)
+
+    def out(self) -> dict:
+        return {"total_ms": round((time.perf_counter() - self.t0) * 1000),
+                "parts": {k: round(v * 1000) for k, v in
+                          sorted(self.parts.items(), key=lambda kv: -kv[1])}}
+
+
 def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int]) -> dict:
     """The whole report for one month, within one scope.
 
@@ -286,10 +312,12 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     that take part in the загрузка). Everything downstream is given that set,
     the turnover half included, so no half can read wider than the page.
     """
+    clock = _Clock()
     today = turnover.local(turnover.now_aware()).date()
-    months = reports.months_for(m, today, bb.data_floor(db))
-    scoped = scoped_manager_ids(db, payload, factory, mids)
-    units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
+    with clock("scope"):
+        months = reports.months_for(m, today, bb.data_floor(db))
+        scoped = scoped_manager_ids(db, payload, factory, mids)
+        units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
     ids = {u.id for u in units}
     d_from, d_to = months[0]["from"], months[-1]["to"]
     n = len(months)
@@ -313,38 +341,50 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         from app.routers.brigadirs import build_metrics_list
         from app.routers.workers import get_headcount
 
-        metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
-        eff = bb.efficiency(metrics, ids, months)
-        sload = bb.shift_load(metrics, ids, months)
-        head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
-                             manager_id=sorted(ids), factory=None, db=db, payload=payload)
-        att = bb.attendance(head, ids, months)
+        with clock("zagruzka"):
+            metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
+            eff = bb.efficiency(metrics, ids, months)
+            sload = bb.shift_load(metrics, ids, months)
+        with clock("attendance"):
+            head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
+                                 manager_id=sorted(ids), factory=None, db=db, payload=payload)
+            att = bb.attendance(head, ids, months)
         # Verifix's overtime («Сверхурочные», direct / indirect), STORED by a
         # background read (`services/verifix_month_kinds.py`); a month never
         # read is asked for in the background and prints «—» until it lands.
-        vkinds = verifix_month_kinds.totals(db, [m0["ym"] for m0 in months], ids)
+        with clock("overtime"):
+            vkinds = verifix_month_kinds.totals(db, [m0["ym"] for m0 in months], ids)
         # On-time delivery (the operator, 2026-11-02) — the logistics sheet
         # names no brigade, so it is printed only while the report reads the
         # whole plant (no plant, shift or brigadir narrowing), «—» otherwise.
         if factory is None and shift is None and not mids:
-            ontime_pct = _ontime_by_month(db, months)
+            with clock("ontime"):
+                ontime_pct = _ontime_by_month(db, months)
         verifix_month_kinds.want([m0["ym"] for m0 in months])
-        xav = bb.concerns(db, ids, months)
-        qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
+        with clock("concerns"):
+            xav = bb.concerns(db, ids, months)
+        with clock("quality"):
+            qual = bb.quality(_quality_rows(db, d_from, d_to), ids, months)
         # The complaint COUNT includes hair (the operator, 2026-11-02: «the
         # number should be the with hair complaints»); the closure rate beside
         # it stays hair aside, as on the Quality page.
-        qual_n = bb.quality_filed(_quality_rows(db, d_from, d_to, skip=None), ids, months)
-        plan_tot = _plan_by_month(db, units, months)
-        idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
-        idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))
+        with clock("quality"):
+            qual_n = bb.quality_filed(_quality_rows(db, d_from, d_to, skip=None), ids, months)
+        with clock("plan"):
+            plan_tot = _plan_by_month(db, units, months)
+        with clock("idle"):
+            idle = _idle_by_month(db, payload, months, shift, sorted(ids), factory, ids)
+        with clock("idle_share"):
+            idle_pct = _idle_share_by_month(db, payload, months, sorted(ids))
         if cost is not None:
-            cost = _cost_by_month(db, payload, months, sorted(ids))
+            with clock("cost"):
+                cost = _cost_by_month(db, payload, months, sorted(ids))
         # The SCOPED units, never the raw pick: turnover applies the scope it
         # is handed and knows nothing of the viewer's lock, so handing it
         # `mids` would let a locked viewer read the whole plant's turnover.
-        turn = _turnover_by_month(db, months, {"factory": factory, "shift": shift,
-                                               "managers": set(ids)})
+        with clock("turnover"):
+            turn = _turnover_by_month(db, months, {"factory": factory, "shift": shift,
+                                                   "managers": set(ids)})
 
     # Verifix's own count of cells, shift-managers, brigadirs and leaders
     # (`services/verifix_scope.py`): the cells — and the brigadirs over them,
@@ -353,23 +393,24 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
     # brigadir pick leaves that row «—».
     vfx_scope = None
     try:
-        with db.begin_nested():
+        with db.begin_nested(), clock("verifix_scope"):
             vfx_scope = verifix_scope.counts(
                 db, months, today, ids, resolve_factory(db, payload, factory),
                 shift_managers=shift is None and not mids)
     except Exception:  # noqa: BLE001 — four «—» rows, never a failed report
         log.exception("reports: the Verifix scope counts failed")
 
-    out = reports.compose({
-        "months": months,
-        "unit_ids": ids,
-        "plan": plan_tot,
-        "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
-        "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
-        "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
-        "scope": {"factory": factory, "shift": shift, "managers": mids,
-                  "units": len(units)},
-    })
+    with clock("compose"):
+        out = reports.compose({
+            "months": months,
+            "unit_ids": ids,
+            "plan": plan_tot,
+            "eff": eff, "sload": sload, "att": att, "vkinds": vkinds, "ontime": ontime_pct,
+            "turnover": turn, "idle": idle, "idle_share": idle_pct, "cost": cost,
+            "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
+            "scope": {"factory": factory, "shift": shift, "managers": mids,
+                      "units": len(units)},
+        })
     out["today"] = today.isoformat()
     out["built_at"] = turnover.local(turnover.now_aware()).isoformat(timespec="seconds")
     # The LOCK, never a pick — what the page prints as «you are seeing only …»
@@ -381,6 +422,10 @@ def _build(db: Session, payload: dict, m: date, factory, shift, mids: list[int])
         "brigadirs": [{"id": u.id, "name": u.name, "shift": u.shift,
                        "factory_id": u.factory_id} for u in units],
     }
+    out["timings"] = clock.out()
+    log.info("reports: built %s (%d units) in %.1f s — %s", reports.ym(m), len(ids),
+             out["timings"]["total_ms"] / 1000,
+             ", ".join(f"{k} {v / 1000:.1f}" for k, v in out["timings"]["parts"].items()))
     return out
 
 
