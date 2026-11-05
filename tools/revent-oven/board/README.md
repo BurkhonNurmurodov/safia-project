@@ -76,6 +76,15 @@ new one is sent whole. Uploads wait in a queue capped to the free PSRAM; when it
 is full, newer day files push older ones out, and whatever waits goes in the next
 round. Every uploaded file carries its whole SHA-256, which IMS checks.
 
+The TLS connection to IMS keeps its buffers in PSRAM too (1.4.2+,
+`tlsCalloc` in `src/main.cpp`). The prebuilt libraries give mbedTLS internal
+RAM only — two ~16 KB blocks per connection out of ~70 KB that Wi-Fi and the
+oven reads keep fragmenting — and on 2026-11-05 no status reached IMS for 50
+minutes («SSL - Memory allocation failed») while the board read both ovens every
+minute. If IMS answers the plan but takes no reading for 10 minutes, the board
+restarts itself; `show` prints when a reading last reached IMS and why the last
+one failed.
+
 ## Tools (once, on the Mac)
 
 ```bash

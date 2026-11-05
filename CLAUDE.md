@@ -10681,6 +10681,24 @@ register is `/panel/ovens` (tools group, no capKey).
   one connection every 5 minutes, not sixteen in four. The USB console answers
   during a round (`consoleTick` in `background()`), not during a firmware
   download.
+- **TLS buffers live in PSRAM** (1.4.2, 2026-11-05). The prebuilt ESP32-S2
+  libraries set `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC`: two ~16 KB blocks per IMS
+  connection from internal RAM, which Wi-Fi reconnects and oven reads
+  fragment (74 → 59 KB free in 30 min). That day every status post failed on
+  the BOARD for 50 minutes («SSL - Memory allocation failed», X509 errors)
+  while it read both ovens every minute and its plan GETs and pings still got
+  through — so IMS showed the device «online» with 12-minute-old data, and
+  nothing on IMS could say why (the failure never left the board). `setup()`
+  now calls `mbedtls_platform_set_calloc_free(tlsCalloc, tlsFree)` (PSRAM,
+  internal RAM as the fallback); the oven status body reserves one PSRAM
+  block. Safety net: IMS answering the plan but taking no reading (status or
+  file) for 10 minutes restarts the board (never on a firmware on trial, never
+  with no ovens in the plan). `show` gains the largest free block and
+  «delivered … ago; last failure: …»; `X-Collector-Info` gains `blk`, `sent`
+  (seconds since IMS took a reading) and `err` (the last failure) — the
+  server's `INFO_KEYS` does not keep them yet. Wi-Fi at the board's spot that
+  day roamed over five access points at −59…−86 dBm and dropped every few
+  minutes.
 - **A loaded bake whose timer has not started is READY, not baking**
   (`live()`: `baking` needs elapsed > 0, `ready` = total > 0 and elapsed 0 —
   the oven's «Темп. готова.»); the live card says «Boshlashga tayyor».
