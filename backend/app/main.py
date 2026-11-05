@@ -143,6 +143,7 @@ async def lifespan(app: FastAPI):
         schedule_catalog_follow_retro,
         report_pin_mismatch,
         merge_leader_elnora_xasan,
+        restore_typed_nov03,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -492,6 +493,12 @@ async def lifespan(app: FastAPI):
     # DMed to Burkhon). Only SCHEDULES a job. Remove this line and
     # `startup.merge_leader_elnora_xasan` once its apply flag reads «done».
     run(merge_leader_elnora_xasan)
+
+    # ⚠ TEMPORARY one-shot (2026-11-05) — 3 Nov's typed ПЛАН/ФАКТ back for
+    # Suvonov Elshod and Aripova Manzura after a SAP upload filed under 03.11
+    # wiped them (services/typed_restore_nov03.py). Only SCHEDULES a job.
+    # Remove this line and `startup.restore_typed_nov03` once its flag reads «done».
+    run(restore_typed_nov03)
 
     # The day-reconciliation watch: DMs admins when the platform stops showing
     # someone the uploaded file says worked (services/attendance_reconcile).

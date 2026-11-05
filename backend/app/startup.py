@@ -7841,6 +7841,43 @@ def _verifix_roles_job() -> None:
                       verifix_roles_report_oct25.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: 3 Nov's typed ПЛАН/ФАКТ back after a SAP upload wiped them ─────
+# The SAP upload of 4 Nov 23:24 (Jurnal #788771) was filed under 03.11 — before
+# pp_calc.TYPED_ONLY_FROM — so it replaced what Suvonov Elshod's and Aripova
+# Manzura's teams had typed. `services/typed_restore_nov03.py` replays the
+# Jurnal and writes it back, checked against figures read off production.
+# TEMPORARY: delete this block, the module and both entrypoint calls once its
+# flag reads «done» (or «blocked»).
+
+
+def restore_typed_nov03() -> None:
+    """Schedules the restore while its flag is pending. Never raises."""
+    try:
+        from app.services import typed_restore_nov03 as fx
+        db = SessionLocal()
+        try:
+            if not fx.pending(db):
+                return
+        finally:
+            db.close()
+        from app.scheduler import schedule_at
+        schedule_at("typed-restore-nov03", fx.run_at(), _typed_restore_job)
+    except Exception as exc:
+        print(f"[startup] typed restore 03.11 could not be scheduled: {exc}")
+
+
+def _typed_restore_job() -> None:
+    from app.services import typed_restore_nov03 as fx
+    db = SessionLocal()
+    try:
+        rec = fx.run(db)
+        if rec is not None:
+            print(f"[startup] typed restore 03.11: {rec.get('result')} "
+                  f"{rec.get('problems') or rec.get('after')}")
+    finally:
+        db.close()
+
+
 # ── one-shot: Elnora's profile takes her deputy Xasan Malikov's history ──────
 # The operator (2026-11-02/04): Maksumov Sanjar's leader Elnora (#254) is back;
 # her profile carries the history of her deputy Xasan (#430). The whole of it

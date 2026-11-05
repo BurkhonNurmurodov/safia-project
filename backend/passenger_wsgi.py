@@ -126,6 +126,7 @@ try:
         schedule_catalog_follow_retro,
         report_pin_mismatch,
         merge_leader_elnora_xasan,
+        restore_typed_nov03,
         apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
@@ -571,6 +572,9 @@ try:
     # ⚠ TEMPORARY one-shot (2026-11-04) — Elnora's profile takes Xasan
     # Malikov's history. Remove once its apply flag reads «done».
     merge_leader_elnora_xasan()
+    # ⚠ TEMPORARY one-shot (2026-11-05) — 3 Nov's typed ПЛАН/ФАКТ restored after
+    # a SAP upload wiped them. Remove once its flag reads «done».
+    restore_typed_nov03()
     # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
     # ruled. Remove with its flags read «done».
     apply_brigadir_change_oct24()
