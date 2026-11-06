@@ -31,6 +31,7 @@ from app.models import (
     UserCapability,
     RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
+    VerifixSyncItem,
 )
 from app.services import action_log, leader_ai
 from app.services.verifix_parser import parse_verifix_file
@@ -503,6 +504,18 @@ def list_users(
         }
         for u in users
     ]
+
+
+@router.get("/nav-badges")
+def nav_badges(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """The admin sidebar's counts, keyed by admin page id — registrations
+    waiting on «Foydalanuvchilar» and Verifix suggestions waiting on «Verifix
+    sinxron». Two COUNTs: /admin/users and /api/admin/verifix-sync return whole
+    registers and are far too heavy to poll."""
+    return {
+        "users": db.query(TelegramUserRole).filter(TelegramUserRole.status == "pending").count(),
+        "verifixsync": db.query(VerifixSyncItem).filter(VerifixSyncItem.status == "open").count(),
+    }
 
 
 class RoleUpdatePayload(BaseModel):

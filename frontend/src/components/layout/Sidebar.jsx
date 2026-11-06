@@ -65,6 +65,15 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   });
   const pendingCount = pendingData?.count ?? 0;
 
+  // The admin app's own queues (registrations, Verifix suggestions) — admins
+  // only; a capability grantee's sidebar shows no count.
+  const { data: adminBadges } = useQuery({
+    queryKey: ["admin-nav-badges"],
+    queryFn: () => api.get("/admin/nav-badges").then(r => r.data),
+    enabled: isAdmin,
+    refetchInterval: 60_000,
+  });
+
   // One map, so a link carries a badge by BEING in it — the old code tested
   // `to === "/staff"` in three places, which is why a second badge could not
   // exist without a fourth: a new badge is one line here and nothing anywhere
@@ -75,6 +84,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // save, so there is no queue left to count.)
   const BADGES = {
     "/staff": showBadge ? pendingCount : 0,
+    "/panel/users": adminBadges?.users ?? 0,
+    "/panel/verifixsync": adminBadges?.verifixsync ?? 0,
   };
   const badgeFor = (to) => BADGES[to] || 0;
 

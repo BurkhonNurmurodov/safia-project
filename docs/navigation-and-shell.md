@@ -262,3 +262,14 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   `admin_tab`), the server's DMs. A destination added by splitting an
   existing one carries `capKey` pointing at the original id, so the split
   cannot narrow any grantee's access.
+- **Sidebar counts on two admin pages (2026-11-06)** — a red number beside
+  «Foydalanuvchilar» (registrations waiting: `TelegramUserRole.status =
+  'pending'`) and «Verifix sinxron» (suggestions waiting:
+  `VerifixSyncItem.status = 'open'`), bubbling onto the collapsed folder and
+  showing as a dot on the icon rail, like `/staff`'s. ONE endpoint feeds both,
+  `GET /admin/nav-badges` (`verify_admin`, two COUNTs), polled every 60 s from
+  `Sidebar.jsx` into its `BADGES` map, keyed by the page's path. **Admins
+  only**: a capability grantee who opens the page through `users.manage` sees
+  no count. `/admin/users` and `/api/admin/verifix-sync` return whole registers
+  — never poll them for a number. A third count is one more key in the
+  endpoint and one more line in `BADGES`.
