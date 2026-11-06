@@ -57,7 +57,7 @@ export default function AdminPage({ id }) {
         {denied && (
           <div
             className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs mb-4"
-            style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "#a16207" }}
+            style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "var(--status-warn)" }}
           >
             <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
             <span>{t("admin.tabDenied")}</span>
@@ -66,8 +66,8 @@ export default function AdminPage({ id }) {
         <div className="flex items-start gap-2 mb-4">
           {n.danger && (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider flex-shrink-0"
-              style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}
+              className="text-[11px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider flex-shrink-0"
+              style={{ background: "rgba(239,68,68,0.12)", color: "var(--status-bad)" }}
             >
               {t("admin.group.danger")}
             </span>

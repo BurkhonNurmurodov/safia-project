@@ -32,10 +32,6 @@ export const ADMIN_GROUPS = [
 export const ADMIN_NAV = [
   // Daily — the upload rhythm, in the order the day runs.
   { id: "attendance",   group: "daily",  Icon: ClipboardCheck, labelKey: "admin.tabAttendance",   descKey: "admin.desc.attendance" },
-  // «Davomat (Verifix)» — the same day read from Verifix instead of a file,
-  // the загрузка's cells only, saved apart (a TEST: nothing reads it). No
-  // capKey: it reads attendance with the platform's Verifix login, so like the
-  // «Verifix» card it is admin-only and never grantable.
   { id: "data",         group: "daily",  Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   { id: "production",   group: "daily",  Icon: Factory,        labelKey: "admin.tabProduction",   descKey: "admin.desc.production" },
 
