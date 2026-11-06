@@ -503,6 +503,24 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   «Ish grafigi» roster. **Consequence to know: nothing writes attendance for a
   live day until its brigadir closes it** — `build_metrics_list` already gated
   on the close, so the загрузка of an unclosed day was blank before too.
+- **A copy is built from a read taken AFTER the unit-day's lock** (2026-11-06,
+  the audit). `live_projection.write` used to build its rows from a `ctx` loaded
+  before it waited for the lock; a second approval committed meanwhile was in the
+  copy the lock holder wrote, and the older rows then went back over it — on a
+  day the job no longer reads nothing repaired that. `_reread` (flush, expire,
+  `live_staff.load` with the caller's own Verifix read) now runs right after
+  `lock()`. `refresh` re-copies a day somebody else closed with
+  `require_closed=True`, and the rare heal of a missing `DayApproval` takes the
+  lock first and asks whether the close still exists — a reopen (`unproject`,
+  same lock) that commits in between used to be undone for every page that
+  reads the day as closed. `close_day` ends with a one-unit `_recopy`: an
+  approval decided while the close was being built re-copied only the closed
+  units it could see.
+- **An edited draft gets a fresh one-tap card** (`update_document`): the old
+  card is retired («cancelled») and a new one sent, both on `tg_later` in that
+  order — `edit_admin_notices` retires every notice of (kind, ref), so a card
+  sent first would be retired on arrival. The old card's ✅ approved the
+  document as it stood after the edit, not as the card read.
 - **The copy follows Verifix until the unit's next shift-day opens**
   (ruling 13): the minute job (`verifix_live._notices`) re-copies every closed
   unit whose CURRENT shift-day it read, writing only when the digest moved; a

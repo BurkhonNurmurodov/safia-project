@@ -363,6 +363,28 @@ def _retire_now(kind: str, ref: str, status: str, who: Optional[str]) -> None:
         log.exception("staff-live: could not retire the %s card %s", kind, ref)
 
 
+def _resend_card(doc_id: int) -> None:
+    """A draft was EDITED: send it a fresh one-tap card (its old one is retired
+    by the `_retire` queued just before). On `tg_later`'s thread, in order behind
+    that retire — `edit_admin_notices` works on every notice of (kind, ref), so
+    a card sent first would be retired the moment it arrived."""
+    from app.services import tg_later
+    tg_later.run(_resend_card_now, int(doc_id))
+
+
+def _resend_card_now(doc_id: int) -> None:
+    try:
+        from app.approvals import send_live_document_to_admins
+        from app.database import SessionLocal
+        with SessionLocal() as db:
+            doc = db.query(LiveDocument).filter_by(id=doc_id).first()
+            # decided meanwhile → its decision retires cards; nothing to put up
+            if doc is not None and doc.status == "draft":
+                send_live_document_to_admins(db, doc)
+    except Exception:  # noqa: BLE001
+        log.exception("staff-live: could not send the edited document %s a fresh card", doc_id)
+
+
 def _forget(kind: str, ref) -> None:
     """Drop the tracked cards for (kind, ref) without editing them — the record
     itself is gone (a deleted document), so there is no outcome to print. On
@@ -1268,6 +1290,13 @@ def update_document(doc_id: int, body: DocUpdateBody, db: Session = Depends(get_
     flag_modified(doc, "payload")
     _history(db, doc, "edited", caller, {"employee_count": len(doc.payload["employees"])})
     db.commit()
+    # The one-tap card sent when this draft was filed still shows the OLD
+    # payload — «3 workers → B at 10:00» — and its ✅ approves the document as it
+    # stands NOW, the 8-worker whole-day version nobody read there. Retire it and
+    # put the edited draft in front of its approvers again; both go through
+    # `tg_later`, in this order, so the retire cannot catch the new card.
+    _retire("live_document", doc.id, "cancelled", None)
+    _resend_card(doc.id)
     action_log.enrich(**_log_doc(doc))
     return {"ok": True}
 

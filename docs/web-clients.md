@@ -42,6 +42,34 @@ re-verifies it on every request. The second is a username + password at
 - **`token_version` is the revocation handle.** Bump it to end every browser
   session for a profile (password change, reset, disable, rename, admin
   "sign out everywhere"). Telegram sessions never carry it.
+- **A browser token is a session of ONE profile, never of its Telegram account**
+  (2026-11-06, the audit). Its `sub` is merely the account that holds the
+  profile, so anything that acts on the ACCOUNT is Telegram's door:
+  `routers/auth._telegram_session_only` answers 403 to a `web` token on
+  `POST /api/auth/switch-role`, `DELETE /api/auth/roles/{id}` and
+  `DELETE /api/auth/me`. Before it, whoever knew a leader's browser password
+  could post `{"role_ref": 0}` and receive an admin JWT when the account that
+  holds that leader profile was also an admin. `POST /api/auth/language` is
+  deliberately NOT refused — a browser user's language reaching their DMs is
+  the feature.
+- **A revoked browser token is refused even beside valid initData**
+  (`security._web_token_live`, `_check_init_data`). Valid initData proves only
+  that SOME Telegram user opened the mini app — the endpoints behind the guard
+  check a token's signature and expiry alone — so a disabled login, a reset
+  password or «sign out everywhere» used to be undone by pairing the old token
+  with anybody's initData. A `web` token must be live whatever else rides with
+  it. Still NOT closed: removing an admin or a profile holder does not bump
+  `token_version`, so that browser token stays honoured (it is the next
+  finding of the audit, not this one).
+- **«Forgot password» answers once per account per 15 minutes**
+  (`web_login.FORGOT_COOLDOWN`): every call signs the person out of every
+  browser and app session, and the door is unauthenticated with guessable
+  usernames. A call inside the window changes nothing and is recorded
+  (`status: cooldown`). The per-IP throttles (login, forgot, impersonate) count
+  by `cf-connecting-ip` → `x-real-ip` → the peer, like the action register —
+  not the first `X-Forwarded-For` hop, which the caller types. Known limit: the
+  origin is reachable directly, where `CF-Connecting-IP` can be typed too;
+  firewalling the origin to Cloudflare's ranges is the fix and is not in this repo.
 - **A token whose identity went stale is RE-ISSUED on the next page load**
   (2026-10-02). Every API call is answered from the claims INSIDE the token
   (`role_id`, `role_ref`, `full_name`, `sub`), and renaming a leader or moving

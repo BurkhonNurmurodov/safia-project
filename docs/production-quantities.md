@@ -749,6 +749,14 @@ both date rules, the switch.
   opened), so the next one they staff opens at 20:00 **today** — today's date,
   ~14 hours of notice. Sending them tomorrow's would mean a brigadir never gets
   a forecast for the shift they are about to begin.
+- **Each unit's notice is committed as its DM goes out, and a retiring copy
+  finishes its running jobs before it lets go of the jobs lock** (2026-11-06,
+  the audit). The notice row is the guard against a second send, and it was
+  committed once after the loop — so a deploy during the send let the next
+  copy's catch-up find nothing recorded and DM every brigadir again.
+  `scheduler.shutdown_scheduler` now waits up to `JOBS_DRAIN_S` (20 s) for jobs
+  already running, then drops the lock; the supervisor's SIGKILL at 60 s is the
+  backstop, and process death releases the lock anyway.
 - **A unit already notified for that date is SKIPPED.** `last_notice` is the
   modal's own resend guard, read here as a hard skip rather than a confirm: a
   person who sent that unit's call by hand has already answered the question,
