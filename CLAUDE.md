@@ -3192,15 +3192,14 @@ tasks 40/41 name it.
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
   category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file),
   plus a sixth, plan fulfilment, at weight 0 from 2026-10-23 (see «Plan
-  bajarish» below). **A KPI the platform has no source for counts 0** — the technologists'
-  audit alone since the evening of 2026-10-19 (category compliance went live
-  the same day — see its own section and the tab bullet below), so a perfect
-  cell today reads 4.7 / 5 (94%). The board's meta line COMPUTES that
-  figure from the `kpis[]` the server sends (5 minus the `max_points` of every
-  KPI not `live`, «Texnologlar auditi hali hisoblanmaydi — bugun eng ko'pi
-  4.7»), never a typed number, and drops it once every KPI is live; the audit
-  tab is an EMPTY STATE printing HR's rule on one line (weight and bands,
-  `AUDIT_RULE` in `leaders_kpi.py`), nothing to enter. A KPI with no score —
+  bajarish» below). **A KPI the platform has no source for counts 0** — from
+  2026-11-06 every one of HR's five is live (the technologists' audit last —
+  see «Texnologlar auditi» below), so HR's own best total, 4.8 (the audit is
+  scored 0–3), is the most a cell can reach. The board's meta line COMPUTES
+  any shortfall from the `kpis[]` the server sends (5 minus the `max_points`
+  of every KPI not `live`), never a typed number, and prints nothing while
+  every KPI is live — it returns by itself if the audit table becomes
+  unreadable (the audit is then not `live`). A KPI with no score —
   no concern in the month or every one escalated, no people working, a month
   not computed — reads «—» and counts 0 in that row's total (ruling 6).
 - **The concerns KPI gained a RULE** (it had bands on the page and no score):
@@ -3353,11 +3352,12 @@ tasks 40/41 name it.
     first row, above the toolbar. `KpiRulesModal` prints the five rules off
     the payload.
 - **The frontend**: `pages/LeadersKpi.jsx` (+ `pages/leadersKpiText.js`, four
-  languages, the board's / concerns tab's / placeholders' / rules' words),
+  languages, the board's / concerns tab's / audit tab's / rules' words),
   `components/kpi/` (`kpiUtil`, `KpiBits`, `LeaderboardTab` + `BoardHero` +
   `BoardPanel` + `KpiRadar`, `ConcernsTab` +
   `ConcernsPieces`, `TurnoverTab`, `ForeignTab`, `ComplianceTab` +
-  `ComplianceExplain` + `ComplianceRules`, `PlaceholderTab`, `CellKpiModal`,
+  `ComplianceExplain` + `ComplianceRules`, `AuditTab` + `AuditExplain`,
+  `PlanTab` + `PlanExplain`, `CellKpiModal`,
   `KpiRulesModal`). The turnover and foreign-objects tabs keep
   reading their OWN bundles (`turnoverText.js`, `foreignObjectsText.js`) and
   components (`components/turnover/`, `components/foreign/`) — their notices,
@@ -3718,8 +3718,8 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
   of the month with its `counted` reason); a cell row opens the working
   (count → band → score → KPI → the complaints behind it). Excel: four tabs,
   the page's own words. Logged as `sync.foreign_refresh` / `export.foreign_objects`.
-- Not built: the two KPIs with no source on the platform (category compliance,
-  the technologists' audit) — HR's file holds only a final % per cell for each.
+- The two KPIs that had no source when this shipped are live since: category
+  compliance (2026-10-19) and the technologists' audit (2026-11-06).
 
 ## «Toifaga muvofiqlik» — the leaders' category-compliance KPI (2026-10-19)
 
@@ -3847,6 +3847,55 @@ total can pass 5.0 (`MAX_POINTS` stays 5).
 - **Consequence to know**: while the weight is 0 the zones still count it —
   «Diqqat zonasi» is «a KPI scored 1–2», and plan fulfilment is a KPI.
 
+## «Texnologlar auditi» — the technologists' audit KPI (`/leaders-kpi` → «Audit», 2026-11-06)
+
+The fifth of HR's five (weight 0.1, scored 0–3), with no source until the
+operator found `public.audit`: a table this codebase neither creates nor
+writes (owner `safia_prod_rw`, appended by something outside — 16,719 rows
+18.04.2024 → 04.11.2026 on the first read). Columns: `date`, `type_name`,
+`factory_id` (THEIR workshop id, not our plant), `division_name` («7213
+Медовые коржи»), `division_group_name`, `foreman`, `avg_rating` (0–100).
+`services/tech_audit.py` is THE rule; the «Audit jadvali» screen (`/audit`)
+shows the raw table.
+
+- **Only `type_name` «Технический аудит»** (`AUDIT_TYPE`, ~5,700 rows). The
+  other type, «КРУ Производство» (~11,000), is the KRU audit the brigadirs'
+  KPI waits for — not read here.
+- **A cell's month is the AVERAGE of that month's audits** (the operator's
+  ruling): every audit row of the cell dated in the month, each counted once,
+  mean of `avg_rating`, ONE decimal half up, judged as printed by HR's bands —
+  above 90 % → 3, above 80 % → 2, above 70 % → 1, else 0 (`audit_rule` in
+  app_settings overrides weight, bands and worst; a malformed one never blanks
+  a score). **A 0.00 rating is a real 0** (432 of them on the first read).
+  **No audit in the month → no figure** («—», 0 in the total).
+- **Which cell**: the code `division_name` starts with (`turnover.unit_code`,
+  3–5 digits), else the four digits it ends with, else the whole name —
+  through `turnover.code_key` against the month's cell map. On the first read
+  112 of 132 divisions named a cell of ours; a division that names none counts
+  toward nobody and is NAMED in the notes (`unregistered`, unscoped views only).
+- **Credited like every leaders' KPI**: one row per cell with an owner on the
+  month's last day (`turnover.cell_map` + `owned`).
+- **Live only while the table can be read.** `read_month` runs in a savepoint
+  and asks the catalog first: a missing table (`missing`), a revoked GRANT
+  (`no_read`) or a failed read (`error`) leaves `source.ok` False — the board
+  then marks the KPI not `live` (its meta line names the shortfall again) and
+  the tab says which of the three it is, never «0».
+- **The board** (`leaders_kpi.board`): the half is `data.audit` (source,
+  totals, the month's audits, unregistered divisions, rule) and each row's
+  `audit` {audits, pct, min, max, score, points}; its points join the total.
+- **The tab** (`components/kpi/AuditTab.jsx`): one summary (the month's mean
+  over the ranking's cells · audits · cells; the source's newest audit), the
+  ranking (cell · owner · brigadir · audits · average · lowest · score ·
+  points, lowest average first) or every audit of the month behind the card's
+  view switch («Reyting» / «Auditlar»), notes folded under the ranking. A row
+  opens `AuditExplain.jsx`: the average, its audits listed and tinted, the band
+  framed, score × weight. `ScoreChip` takes `max` (a 3 of 3 is green, not
+  amber); `kpiUtil.auditScoreOf` is the client twin of `tech_audit.score_of`.
+- **The workbook**: a «Texnologlar auditi» sheet (the ranking, then every audit
+  of the month), the audit column on the board sheet, its rule on the summary.
+- Nothing is stored; a month is re-read as the table stands (the board's 60 s
+  keep applies). Not built: the KRU half for «Brigadirlar KPI».
+
 ## Who answers for a Quality record (`quality_attribution`, 2026-11-02)
 
 The operator: «each row has the cell code, that cell code has its owner on our
@@ -3920,7 +3969,9 @@ for every tab, kept 60 s like /api/leaders-kpi; `POST …/export.xlsx` →
   hair excluded by default; passes ABOVE 90 (strict). No record → «—», not
   passed (HR's #DIV/0! → blank).
 - **Three are places**: «Murabbiylik» (no attestation result anywhere),
-  «KRU» (the KRU department's audit score is not on the platform), «To'lov»
+  «KRU» (the KRU department's audit score — on the platform since 2026-11-06
+  as `public.audit`'s «КРУ Производство» rows, not wired yet: HR's pass mark
+  and whom it is credited to are still to be ruled), «To'lov»
   (rates and allowances — Verifix payroll lists closed since 2026-10-03). Each
   is null on every row, a «—» column on the board and a tab with the reason.
 - **Brigadirs not on the platform come from Verifix.** Rows = every

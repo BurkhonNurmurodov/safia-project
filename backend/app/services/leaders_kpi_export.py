@@ -16,6 +16,8 @@ file. The house report style is `quality_export`'s.
     Yot jismlar     the foreign-objects KPI per cell · Shikoyatlar (the complaints)
     Muvofiqlik      the category-compliance KPI per cell
     Plan bajarish   the plan-fulfilment KPI per cell (2026-10-23)
+    Texnologlar auditi  the technologists' audit per cell — the month's
+                    average rating, its audits beneath (2026-11-06)
 """
 from __future__ import annotations
 
@@ -42,6 +44,10 @@ LABELS_UZ = {
     "sheetPlan": "Plan bajarish",
     "colPlanMin": "Reja, daq", "colFactMin": "Fakt, daq", "colShortMin": "Kamomad, daq",
     "colPlanPct": "Bajarish, %", "colPlanDays": "Hisoblangan kunlar",
+    "sheetAudit": "Texnologlar auditi", "colAudits": "Auditlar", "colAuditPct": "O'rtacha baho, %",
+    "colAuditMin": "Eng past, %", "colAuditMax": "Eng yuqori, %",
+    "colDivision": "Bo'linma (audit jadvalida)", "colForeman": "Brigadir (audit jadvalida)", "colRating": "Baho, %",
+    "countedNoCellAudit": "Yacheyka topilmadi",
     "cardOwners": "Egalari", "cardCells": "Yacheykalar", "cardAvg": "O'rtacha jami", "cardBest": "Eng yuqori jami",
     "rules": "KPI qoidalari", "formula": "Jami = Σ ball × vazn · eng ko'pi 5,0 · platformada yo'q KPI 0 ball",
     "colKpi": "KPI", "colWeight": "Vazn", "colMax": "Eng ko'p ball", "colLive": "Platformada", "colBands": "Shkala",
@@ -68,8 +74,8 @@ LABELS_UZ = {
 KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit", "plan")
 KPI_LABEL = {"concerns": "kConcerns", "turnover": "kTurnover", "foreign": "kForeign",
              "compliance": "kCompliance", "audit": "kAudit", "plan": "kPlan"}
-# The KPIs a board row carries a score for (the audit has no source yet).
-SCORED = ("concerns", "turnover", "foreign", "compliance", "plan")
+# The KPIs a board row carries a score for (the audit, while its table is read).
+SCORED = ("concerns", "turnover", "foreign", "compliance", "audit", "plan")
 
 
 def _l(p: dict, key: str) -> Any:
@@ -101,10 +107,17 @@ def _d(v: Optional[str]):
         return v
 
 
-def _score_color(score: Optional[int]) -> Optional[str]:
+def _score_color(score: Optional[int], top: int = 5) -> Optional[str]:
+    """A score's tone on its own scale (`top` — the audit's ends at 3): the
+    page's `fracTone`, ≥ 0.8 of the scale green, above 0.4 amber, else red."""
     if score is None:
         return None
-    return GREEN if score >= 4 else AMBER if score == 3 else RED
+    f = score / (top or 5)
+    return GREEN if f >= 0.8 else AMBER if f > 0.4 else RED
+
+
+def _top(pay: dict, key: str) -> int:
+    return int(((pay.get("rules") or {}).get(key) or {}).get("max_score") or 5)
 
 
 def _row(ws, r: int, c1: int, values: list, *, zebra: int, fmts: Optional[dict] = None,
@@ -163,6 +176,11 @@ def _bands_text(key: str, rule: dict) -> str:
         bands = sorted(rule.get("bands") or [], key=lambda b: -float(b["min"]))
         parts = [f"≥ {float(b['min']):g}% → {b['score']}" for b in bands]
         parts.append(f"< {float(bands[-1]['min']):g}% → {rule.get('worst', 1)}" if bands else f"→ {rule.get('worst', 1)}")
+        return " · ".join(parts)
+    if key == "audit":
+        bands = sorted(rule.get("bands") or [], key=lambda b: -float(b["above"]))
+        parts = [f"> {float(b['above']):g}% → {b['score']}" for b in bands]
+        parts.append(f"≤ {float(bands[-1]['above']):g}% → {rule.get('worst', 0)}" if bands else f"→ {rule.get('worst', 0)}")
         return " · ".join(parts)
     if key == "compliance":
         parts = [f"= 100% → {rule.get('full', 5)}"]
@@ -233,7 +251,7 @@ def _board(wb: Workbook, p: dict) -> None:
     out = []
     for x in rows:
         scores = [(x.get(k) or {}).get("score") if k in SCORED else None for k in KPI_KEYS]
-        tints = {4 + i: _score_color(s) for i, s in enumerate(scores) if s is not None}
+        tints = {4 + i: _score_color(s, _top(pay, KPI_KEYS[i])) for i, s in enumerate(scores) if s is not None}
         out.append(([x.get("rank"), x.get("code"), _name(p, x.get("owner")),
                      _name(p, x.get("brigadir")) if x.get("brigadir") else None, *scores,
                      x.get("total"), x.get("pct")],
@@ -354,6 +372,49 @@ def _plan(wb: Workbook, p: dict) -> None:
     _table(ws, row, C1, labels, out)
 
 
+def _audit(wb: Workbook, p: dict) -> None:
+    """The technologists' audit: one row per owned cell (lowest average first),
+    then every audit of the month in the scope — the tab's two views."""
+    pay = p["payload"]
+    au = pay.get("audit") or {}
+    if not (au.get("source") or {}).get("ok"):
+        return
+    rule = (pay.get("rules") or {}).get("audit") or {}
+    top = _top(pay, "audit")
+    rows = [r for r in pay.get("rows") or [] if r.get("audit")]
+    rows.sort(key=lambda r: (r["audit"].get("pct") is None, r["audit"].get("pct") or 0, r.get("code") or ""))
+    ws = _sheet(wb, _l(p, "sheetAudit"), {2: 6, 3: 12, 4: 34, 5: 28, 6: 10, 7: 14, 8: 12, 9: 12, 10: 9, 11: 11},
+                landscape=True)
+    C1 = 2
+    labels = [_l(p, k) for k in ("colN", "colCell", "colOwner", "colBrigadir", "colAudits", "colAuditPct",
+                                 "colAuditMin", "colAuditMax", "colScore", "colPoints")]
+    row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
+    row = _section(ws, row, C1, C1 + len(labels) - 1, _l(p, "kAudit"), _bands_text("audit", rule))
+    out = []
+    for n, x in enumerate(rows, 1):
+        a = x["audit"]
+        tone = _score_color(a.get("score"), top)
+        out.append(([n, x.get("code"), _name(p, x.get("owner")), _name(p, x.get("brigadir")) if x.get("brigadir") else None,
+                     a.get("audits", 0), a.get("pct"), a.get("min"), a.get("max"), a.get("score"), a.get("points")],
+                    {"fmts": {5: "0.0", 6: "0.0", 7: "0.0", 9: "0.00"},
+                     "tints": {5: tone, 8: tone} if tone else {}, "centers": (0, 1)}))
+    row = _table(ws, row, C1, labels, out) + 1
+    words = {"owner": _l(p, "countedOwner"), "no_owner": _l(p, "countedNoOwner"),
+             "no_cell": _l(p, "countedNoCellAudit")}
+    labels2 = [_l(p, k) for k in ("colN", "colDate", "colCell", "colDivision", "colOwner", "colForeman",
+                                  "colRating", "colCounted")]
+    _head_row(ws, row, C1, labels2, height=28)
+    r = row + 1
+    for i, a in enumerate(au.get("audits") or [], 1):
+        _row(ws, r, C1, [i, _d(a.get("date")), a.get("code"), a.get("division") or None,
+                         _name(p, a.get("owner")) if a.get("owner") else None,
+                         _text(p, a.get("foreman")) if a.get("foreman") else None,
+                         a.get("rating"), words.get(a.get("counted"), a.get("counted"))],
+             zebra=i, fmts={1: "DD.MM.YYYY", 6: "0.00"}, centers=(0, 1, 2),
+             tints={7: AMBER} if a.get("counted") != "owner" else {})
+        r += 1
+
+
 def _leavers(wb: Workbook, p: dict) -> None:
     pay = (p["payload"].get("turnover") or {})
     ws = _sheet(wb, _l(p, "sheetLeavers"), {2: 34, 3: 10, 4: 28, 5: 24, 6: 22, 7: 12, 8: 12, 9: 10, 10: 30, 11: 22},
@@ -421,6 +482,7 @@ def build_leaders_kpi_workbook(p: dict) -> BytesIO:
     _turnover(wb, p)
     _foreign(wb, p)
     _compliance(wb, p)
+    _audit(wb, p)
     _plan(wb, p)
     _leavers(wb, p)
     _complaints(wb, p)

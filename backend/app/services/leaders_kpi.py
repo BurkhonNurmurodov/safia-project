@@ -13,7 +13,7 @@ model: five KPIs per cell, each scored 1–5 and weighted, the total = Σ score
     Tekuchest (turnover)               0.20    live — Verifix
     Inorodnye predmety (foreign obj.)  0.25    live — the Quality register
     Sootvetstvie kategorii             0.20    live — Verifix's HR journals + HR's ladder (2026-10-19)
-    Audit tekhnologov                  0.10    NOT on the platform (HR holds one % per cell)
+    Audit tekhnologov                  0.10    live — `public.audit`, «Технический аудит» (2026-11-06)
 
 and a SIXTH, not one of HR's (2026-10-23, the operator: «can you also add Plan
 Fulfillment»):
@@ -34,9 +34,12 @@ The operator's rulings (2026-10-19, asked one by one):
 * **One MONTH for every tab.** The concerns KPI is re-read by calendar month
   (its free date range went with the page); the current month reads «so far».
 * **The total is out of 5.0 and a missing KPI counts 0** — honest about what
-  is missing, so a perfect leader today reads 4.5 / 5 (90%) with the audit
-  still to come. When a KPI arrives its points simply join the sum — the
-  category-compliance KPI did on the day the page shipped.
+  is missing. When a KPI arrives its points simply join the sum — the
+  category-compliance KPI did on the day the page shipped, the technologists'
+  audit on 2026-11-06 (`services/tech_audit.py`; scored 0–3, so HR's own best
+  total is 4.8). The audit is live only while `public.audit` can be read: a
+  missing table or a revoked GRANT puts it back to «not computed», never a
+  failed board.
 * **Admin-only until the operator opens it on the Access tab** (page key
   `leaders-kpi`; the roles /worker-concerns had are NOT carried — the
   operator's call).
@@ -51,7 +54,6 @@ The operator's rulings (2026-10-19, asked one by one):
 * **Each category tab has ONE shape**: a ranking table (cell · owner · the
   figure · score · points, worst first) and the register behind a toggle
   (leavers · complaints · the concerns list); a row opens its working.
-* **The two missing KPIs are an empty state with HR's rule printed.**
 
 Nothing is re-measured here: the turnover, foreign-object and compliance
 figures are the three modules' own month payloads (`turnover.month_payload`,
@@ -72,7 +74,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting, Manager
-from app.services import category_compliance as cc, foreign_objects, turnover
+from app.services import category_compliance as cc, foreign_objects, tech_audit, turnover
 from app.services.turnover import (
     PAST_FROM, cell_map, last_day, local, month_start, now_aware, options, owned, ym,
 )
@@ -84,9 +86,10 @@ MAX_POINTS = 5.0
 # plan fulfilment last: it is not one of HR's five, so it keeps their numbers.
 KPI_KEYS = ("concerns", "turnover", "foreign", "compliance", "audit", "plan")
 LIVE = {"concerns", "turnover", "foreign", "compliance", "plan"}
+# The technologists' audit is live while its source can be read — `board` asks
+# `tech_audit.month_payload` and adds it to the live set then.
 
-# HR's July 2026 rules for the two KPIs the platform cannot compute yet — printed
-# on their tabs so the reader knows what will come; nothing scores by them.
+
 def _slim_cc_rule(r: dict) -> dict:
     """The compliance rule's SCORING part for the board: weight, mode, how a
     person with no category counts, the score at 100 %, the bands (rate
@@ -96,8 +99,6 @@ def _slim_cc_rule(r: dict) -> dict:
             "no_category": r.get("no_category", "fail"), "full": int(r.get("full", 5)),
             "bands": [{"above": float(b["above"]), "score": int(b["score"])} for b in (r.get("bands") or [])],
             "worst": int(r.get("worst", 1)), "max_score": 5}
-AUDIT_RULE = {"weight": 0.1, "max_score": 3,
-              "bands": [["> 90%", 3], ["> 80%", 2], ["> 70%", 1], ["≤ 70%", 0]]}
 
 CONCERNS_RULE_KEY = "concerns_rule"
 DEFAULT_CONCERNS_RULE = {
@@ -337,6 +338,10 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     tv = turnover.month_payload(db, m, scope, at)
     fo = foreign_objects.month_payload(db, m, scope, at)
     cp = cc.month_payload(db, m, scope, at)
+    state = fo.get("state")      # before · future · open · ended (the calendar month)
+    cmap = cell_map(db, d) if state not in ("before", "future") else None
+    au = tech_audit.month_payload(db, m, scope, at, cmap=cmap)
+    au_live = bool((au.get("source") or {}).get("ok"))
     rules = {
         "concerns": concerns_rule(db),
         "turnover": tv.get("rule") or turnover.rule(db),
@@ -344,33 +349,32 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
         # The scoring part alone: the ladders and the job map ride the tab's
         # own half (`compliance.rule`), the board's rule dialog needs the bands.
         "compliance": _slim_cc_rule(cp.get("rule") or cc.rule(db)),
-        "audit": json.loads(json.dumps(AUDIT_RULE)),
+        "audit": au.get("rule") or tech_audit.rule(db),
         "plan": plan_rule(db),
     }
-    kpis = [{"key": k, "live": k in LIVE,
+    kpis = [{"key": k, "live": k in LIVE or (k == "audit" and au_live),
              "weight": float(rules[k]["weight"]),
              "max_points": round(float(rules[k]["weight"]) * (rules[k].get("max_score") or 5), 2)}
             for k in KPI_KEYS]
-    state = fo.get("state")      # before · future · open · ended (the calendar month)
     # The tabs read their own payloads; the old-bundle shapes nobody draws any
     # more are dropped here, not re-sent on every poll.
     for key in ("leaders", "cells"):
         tv.pop(key, None)
     fo.pop("cells", None)
     cp.pop("cells", None)
+    arank = {x["key"]: x for x in au.pop("ranking", None) or []}
     base = {
         "month": ym(m), "past_from": ym(PAST_FROM), "state": state,
         "period": {"from": m.isoformat(), "to": d.isoformat()},
         "as_of": fo.get("as_of") or (min(now.date(), d) if state == "open" else d).isoformat(),
         "now": now.isoformat(timespec="minutes"),
         "max_points": MAX_POINTS, "kpis": kpis, "rules": rules,
-        "turnover": tv, "foreign": fo, "compliance": cp,
+        "turnover": tv, "foreign": fo, "compliance": cp, "audit": au,
     }
     if state in ("before", "future"):
         return {**base, "rows": [], "totals": None, "concerns": None, "plan": None,
                 "options": {"shifts": [], "brigadirs": []}}
 
-    cmap = cell_map(db, d)
     per_cell = _concerns_by_cell(db, payload, m, d, scope)
     from app.services import leader_register
     plan_cells = _plan_by_cell(db, m, d, cmap, scope, now.date(),
@@ -381,6 +385,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
     w_t = float(rules["turnover"]["weight"])
     w_f = float(rules["foreign"]["weight"])
     w_c = float(rules["compliance"]["weight"])
+    w_a = float(rules["audit"]["weight"])
 
     rows: list[dict] = []
     for k, c in cmap.items():
@@ -403,9 +408,14 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
             compliance = {"all": cm.get("all", 0), "counted": cm.get("counted", 0),
                           "compliant": cm.get("compliant", 0), "rate": cm.get("rate"), "pct0": cm.get("pct0"),
                           "score": cm.get("score"), "points": points_of(cm.get("score"), w_c)}
+        am = arank.get(k)
+        audit = None
+        if au_live and am is not None:
+            audit = {"audits": am.get("audits", 0), "pct": am.get("pct"), "min": am.get("min"),
+                     "max": am.get("max"), "score": am.get("score"), "points": points_of(am.get("score"), w_a)}
         plan = _plan_row(plan_cells.get(c.get("id")), rules["plan"])
         parts = [concerns.get("points"), (turn or {}).get("points"), (foreign or {}).get("points"),
-                 (compliance or {}).get("points"), plan.get("points")]
+                 (compliance or {}).get("points"), (audit or {}).get("points"), plan.get("points")]
         total = round(sum(p for p in parts if p is not None), 2)
         rows.append({
             "key": k, "id": c.get("id"), "code": c.get("code"),
@@ -415,7 +425,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
             "manager_id": c.get("manager_id"), "brigadir": c.get("brigadir"),
             "shift": c.get("shift"), "factory_id": c.get("factory_id"),
             "concerns": concerns, "turnover": turn, "foreign": foreign,
-            "compliance": compliance, "audit": None, "plan": plan,
+            "compliance": compliance, "audit": audit, "plan": plan,
             "_plan_daily": (plan_cells.get(c.get("id")) or {}).get("daily") or [],
             "total": total, "pct": int(round(total / MAX_POINTS * 100)),
         })
@@ -442,6 +452,8 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
                         "avg_score": avg([(r["foreign"] or {}).get("score") for r in rows])},
             "compliance": {"scored": sum(1 for r in rows if (r["compliance"] or {}).get("score") is not None),
                            "avg_score": avg([(r["compliance"] or {}).get("score") for r in rows])},
+            "audit": {"scored": sum(1 for r in rows if (r["audit"] or {}).get("score") is not None),
+                      "avg_score": avg([(r["audit"] or {}).get("score") for r in rows])},
             "plan": {"scored": sum(1 for r in rows if r["plan"]["score"] is not None),
                      "avg_score": avg([r["plan"]["score"] for r in rows])},
         },

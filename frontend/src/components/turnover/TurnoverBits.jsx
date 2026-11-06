@@ -4,8 +4,11 @@ import { TONE_HEX, toneTint } from "../../utils/statusBands";
 import { fill } from "../../pages/turnoverText";
 import { bandOf, bandRows, scoreTone, toneInk } from "./turnoverUtil";
 
-export function ScoreChip({ score, size = "md" }) {
-  const tone = scoreTone(score);
+// `max` — the scale the score is out of (the technologists' audit's ends at 3);
+// a share of it wears the same tones a 1–5 score does (≥ 0.8 green, > 0.4 amber).
+export function ScoreChip({ score, size = "md", max = 5 }) {
+  const tone = max === 5 || score == null ? scoreTone(score)
+    : score / max >= 0.8 ? "ok" : score / max > 0.4 ? "warn" : "bad";
   const box = size === "sm" ? "w-6 h-6 text-xs" : "w-7 h-7 text-sm";
   if (score == null) {
     return <span className={`inline-grid place-items-center ${box} rounded-lg`} style={{ color: "var(--text-3)" }}>—</span>;

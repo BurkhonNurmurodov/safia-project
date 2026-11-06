@@ -6,15 +6,17 @@ import { BookOpen } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { fill } from "../../pages/leadersKpiText";
-import { KPI_KEYS, LIVE, bandLines, maxPts, scoreTone, toneInk, w100 } from "./kpiUtil";
+import { KPI_KEYS, bandLines, fracTone, isLive, maxPts, maxScore, toneInk, w100 } from "./kpiUtil";
 
 export default function KpiRulesModal({ open, onClose, data, T, zIndex, only }) {
   const rules = data?.rules || {};
   const keys = only ? [only] : KPI_KEYS;
   const planW = Math.round((Number(rules.plan?.weight) || 0) * 100);
   const planNote = fill(T.rPlanNote, { w: planW, w0: planW ? T.rPlanWn : T.rPlanW0 });
+  const missing = KPI_KEYS.some((k) => !isLive(data, k));
   const notes = only === "concerns" ? [T.cRule, T.rNoConcern] : only === "plan" ? [planNote]
-    : only ? [] : [T.rMissing, T.rNoConcern, T.rAuditNote, planNote];
+    : only === "audit" ? [T.rAuditNote, T.auRNoAudit, T.auRZero]
+    : only ? [] : [missing && T.rMissing, T.rNoConcern, T.rAuditNote, planNote].filter(Boolean);
   return (
     <Modal open={open} onClose={onClose} title={only ? fill(T.ruleOneTitle, { kpi: T.kpi[only] }) : T.rulesTitle}
       maxWidth="max-w-2xl" zIndex={zIndex}
@@ -33,7 +35,7 @@ export default function KpiRulesModal({ open, onClose, data, T, zIndex, only }) 
       <ol className="space-y-3">
         {keys.map((key) => {
           const rule = rules[key];
-          const live = LIVE.has(key);
+          const live = isLive(data, key);
           return (
             <li key={key} className="rounded-xl p-3 space-y-1.5" style={{ border: "1px solid var(--border)", opacity: live ? 1 : 0.85 }}>
               <div className="flex items-baseline justify-between gap-3 flex-wrap">
@@ -47,7 +49,7 @@ export default function KpiRulesModal({ open, onClose, data, T, zIndex, only }) 
                 <span className="font-semibold" style={{ color: "var(--text-2)" }}>{T.rBands}:</span>
                 {bandLines(key, rule).map(([label, score], j) => (
                   <span key={j} className="tabular-nums whitespace-nowrap">
-                    {label ? `${label} → ` : "→ "}<span className="font-semibold" style={{ color: toneInk(scoreTone(score)) }}>{score}</span>
+                    {label ? `${label} → ` : "→ "}<span className="font-semibold" style={{ color: toneInk(fracTone(score, maxScore(rules, key))) }}>{score}</span>
                   </span>
                 ))}
               </div>

@@ -8,10 +8,10 @@
 // this month, and why». Six tabs over ONE request (`GET /api/leaders-kpi`):
 // the board (one row per OWNED cell, the Σ of five KPI scores × weights out
 // of 5), then one tab per KPI — the four the platform computes (worker
-// concerns · turnover · foreign objects · category compliance: one summary
-// line, then a ranking whose card header switches to its register) and the
-// one it has no source for yet (the technologists' audit: an empty state with
-// HR's rule), then plan fulfilment. The month, the plant / shift / brigadir scope and the search are
+// concerns · turnover · foreign objects · category compliance · the
+// technologists' audit, live from 2026-11-06 off `public.audit`: one summary
+// line, then a ranking whose card header switches to its register), then plan
+// fulfilment. The month, the plant / shift / brigadir scope and the search are
 // shared by every tab. `services/leaders_kpi.py` computes; this page never
 // re-derives a figure, only filters what it shows.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -48,7 +48,8 @@ import ForeignTab from "../components/kpi/ForeignTab";
 import ComplianceTab from "../components/kpi/ComplianceTab";
 import PlanTab from "../components/kpi/PlanTab";
 import PlanExplain from "../components/kpi/PlanExplain";
-import PlaceholderTab from "../components/kpi/PlaceholderTab";
+import AuditTab from "../components/kpi/AuditTab";
+import AuditExplain from "../components/kpi/AuditExplain";
 import CellKpiModal from "../components/kpi/CellKpiModal";
 import KpiRulesModal from "../components/kpi/KpiRulesModal";
 import { ConcernsCellModal, ConcernDetailModal } from "../components/kpi/ConcernsPieces";
@@ -351,7 +352,9 @@ export default function LeadersKpi() {
         );
         break;
       case "audit":
-        body = <PlaceholderTab T={T} kind={tabKey} rule={data.rules?.[tabKey]} />;
+        body = noMonth ? monthEmpty : (
+          <AuditTab T={T} tl={tl} tx={tx} data={data} rows={allRows} needle={needle} onExplain={openExplain} />
+        );
         break;
       case "plan":
         body = noMonth ? monthEmpty : (
@@ -391,6 +394,10 @@ export default function LeadersKpi() {
       {ex?.kind === "compliance" && exItem && data?.compliance && (
         <ComplianceExplain open onClose={() => setEx(null)} item={exItem} data={data.compliance} ym={ym}
           T={T} tl={tl} tx={tx} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
+      )}
+      {ex?.kind === "audit" && exItem && data && (
+        <AuditExplain open onClose={() => setEx(null)} item={exItem} data={data}
+          T={T} tx={tx} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
       )}
       {ex?.kind === "plan" && exItem && data && (
         <PlanExplain open onClose={() => setEx(null)} item={exItem} data={data}

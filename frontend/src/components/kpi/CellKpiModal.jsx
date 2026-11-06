@@ -7,7 +7,7 @@ import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { fill } from "../../pages/leadersKpiText";
 import { ScoreChip, TotalCell } from "./KpiBits";
-import { KPI_KEYS, LIVE, MAX_POINTS, figureOf, pointsOf, pts, scoreOf, w100 } from "./kpiUtil";
+import { KPI_KEYS, MAX_POINTS, figureOf, isLive, maxScore, pointsOf, pts, scoreOf, w100 } from "./kpiUtil";
 
 export default function CellKpiModal({ T, tl, row, data, count, onClose, onExplain }) {
   const rules = data?.rules || {};
@@ -20,13 +20,13 @@ export default function CellKpiModal({ T, tl, row, data, count, onClose, onExpla
       footer={<Button variant="secondary" onClick={onClose}>{T.done}</Button>}>
       <ul className="divide-y rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", borderColor: "var(--border)" }}>
         {KPI_KEYS.map((key, i) => {
-          const live = LIVE.has(key);
+          const live = isLive(data, key);
           const score = scoreOf(row, key);
           const points = pointsOf(row, key);
           const w = w100(rules[key]);
           return (
             <li key={key} className="px-3 py-2.5 flex items-center gap-3" style={{ borderColor: "var(--border)" }}>
-              <ScoreChip score={score} size="sm" />
+              <ScoreChip score={score} size="sm" max={maxScore(rules, key)} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium" style={{ color: live ? "var(--text-1)" : "var(--text-3)" }}>
                   {i + 1}. {T.kpi[key]}

@@ -6,12 +6,14 @@
 import { usePersistentState } from "../../hooks/usePersistentState";
 import api from "../../utils/api";
 import { fill } from "../../pages/leadersKpiText";
-import { n0 } from "../turnover/turnoverUtil";
+import { n0, pct1 } from "../turnover/turnoverUtil";
 
 export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM, START_MONTH } from "../turnover/turnoverUtil";
 
 export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit", "plan"];
-export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance", "plan"]);
+// The fallback when a payload carries no `kpis` — the server's `kpis[].live`
+// decides (the audit is live only while its source table can be read).
+export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance", "audit", "plan"]);
 export const MAX_POINTS = 5;
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -35,7 +37,7 @@ export const errText = async (e) => {
 
 const NUM_KEYS = new Set(["rank", "total", "pct", "score", "points", "working", "left", "rate", "days", "hired", "leftOn",
   "count", "all", "filed", "done", "uplifted", "open", "pct0", "concerns", "turnover", "foreign", "compliance", "audit", "date",
-  "counted", "compliant", "tenure", "since", "verdict", "plan", "actual", "short"]);
+  "counted", "compliant", "tenure", "since", "verdict", "plan", "actual", "short", "audits", "min", "rating"]);
 
 export function sortRows(rows, sort, get) {
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -83,6 +85,12 @@ export function bandLines(key, rule) {
     const low = bands.length ? `< ${bands[bands.length - 1].min}%` : "";
     return [...bands.map((b) => [`≥ ${b.min}%`, b.score]), [low, rule.worst ?? 1]];
   }
+  if (key === "audit") {
+    // HR's IFS on the month's average, one decimal as printed: strictly above → score.
+    const bands = [...(rule.bands || [])].sort((a, b) => b.above - a.above);
+    const low = bands.length ? `≤ ${bands[bands.length - 1].above}%` : "";
+    return [...bands.map((b) => [`> ${b.above}%`, b.score]), [low, rule.worst ?? 0]];
+  }
   if (key === "compliance") {
     // HR's IFS: exactly 100 % → full; strictly above a band's edge → its score; else the worst.
     const bands = [...(rule.bands || [])].sort((a, b) => b.above - a.above);
@@ -129,6 +137,12 @@ export function figureOf(row, key, T) {
     if (!c.counted) return T.figComplianceNone;
     return fill(T.figCompliance, { ok: c.compliant, n: c.counted, pct: c.rate == null ? "—" : `${Number(c.rate).toFixed(1)}%` });
   }
+  if (key === "audit") {
+    const a = row.audit;
+    if (!a) return T.notLive;
+    if (a.pct == null) return T.figAuditNone;
+    return fill(T.figAudit, { n: a.audits, pct: pct1(a.pct) });
+  }
   if (key === "plan") {
     const p = row.plan;
     if (!p || p.pct0 == null) return T.figPlanNone;
@@ -161,6 +175,17 @@ export const planScoreOf = (pct, rule) => {
   return rule?.worst ?? 1;
 };
 
+// A percent on the technologists'-audit scale — the client twin of
+// `tech_audit.score_of` (strictly above a band's edge → its score, else the
+// worst), used only to colour one audit's rating the way a month at that
+// average would be coloured; keep the two in step.
+export const auditScoreOf = (pct, rule) => {
+  if (pct == null) return null;
+  const bands = [...(rule?.bands || [])].sort((a, b) => b.above - a.above);
+  for (const b of bands) if (pct > b.above) return b.score;
+  return rule?.worst ?? 0;
+};
+
 export const scoreOf = (row, key) => (row?.[key]?.score ?? null);
 export const pointsOf = (row, key) => (row?.[key]?.points ?? null);
 
@@ -180,6 +205,11 @@ export const hexA = (hex, a) => {
   const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
+
+// Is one KPI live on this payload — the server's answer, else the fallback.
+export const isLive = (data, key) => (data?.kpis?.length
+  ? data.kpis.some((x) => x.key === key && x.live)
+  : LIVE.has(key));
 
 // The KPIs the board scores — the server's `kpis[].live`, in the page's order.
 export const liveKeys = (data) => (data?.kpis?.length
