@@ -343,6 +343,20 @@ def _decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+def _telegram_session_only(payload: dict) -> None:
+    """Refuse a browser login (username + password, `web` claim).
+
+    Such a token is the session of ONE profile; its `sub` is merely the Telegram
+    account that holds that profile. Everything below acts on the ACCOUNT — it
+    moves to another of its roles (the admin one included), drops roles or
+    deletes the registration — and that is Telegram's door. Whoever merely knew a
+    leader's browser password must not be able to step into an admin session of
+    the account that holds the leader profile, or wipe that account's roles.
+    (A browser session has no role switcher: `roles: []`.)"""
+    if payload.get("web"):
+        raise HTTPException(status_code=403, detail="Not available in a browser session")
+
+
 class SwitchRoleBody(BaseModel):
     role_ref: int
 
@@ -352,6 +366,7 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
     """Re-issue the JWT for another approved role the caller holds, and
     remember it as the last-used role for the next login."""
     payload = _decode_token(token)
+    _telegram_session_only(payload)
     telegram_id = int(payload["sub"])
 
     # Switch into the admin's own "admin" profile (not a telegram_user_roles row).
@@ -460,6 +475,7 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
     """Drop one of the caller's own roles. Removing the last role deletes the
     whole account (same as full sign-out)."""
     payload = _decode_token(token)
+    _telegram_session_only(payload)
     telegram_id = int(payload["sub"])
 
     target = db.query(TelegramUserRole).filter_by(id=role_ref, telegram_id=telegram_id).first()
@@ -563,6 +579,7 @@ def send_start_hint(body: SendStartHintBody):
 def delete_me(token: str = Depends(_oauth2), db: Session = Depends(get_db)):
     """Delete the calling user's account with all roles (sign-out + unregister)."""
     payload = _decode_token(token)
+    _telegram_session_only(payload)
 
     telegram_id = int(payload["sub"])
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
