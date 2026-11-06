@@ -214,8 +214,12 @@ const defaultHidden = (isAdmin) => (isAdmin ? ["op"] : ["op", "autofill", "wc_gr
 const GROUP_COL = "wc_group";
 // «Manba» — absent on a day ПЛАН/ФАКТ are typed only (`typedOnly` below).
 const AUTOFILL_COL = "autofill";
-// «SAP reja» / «SAP fakt» — an admin's columns for now (`absentCols` below).
+// «SAP reja» / «SAP fakt», and the two KPI cards worked out from them, are for
+// these roles only (the operator: admins 2026-11-04, shift managers 2026-11-06).
+// The server serves their figures to the same roles and nobody else
+// (production.SAP_ROLES), so `absentCols` and the cards read this one list.
 const SAP_COLS = ["sap_plan", "sap_fact"];
+const SAP_ROLES = ["admin", "shift-manager"];
 // «O'lchov birligi» — the stored key («dona») to the word the reader sees. The
 // four keys are served on the payload (services/pp_uom is their one definition,
 // `catalog.uoms`), so this page holds no copy of the LIST — only of how each one
@@ -1908,6 +1912,8 @@ export default function Production() {
   // spelling as `canSeeRaw` / `canEditCatalog` above, so one word means one
   // thing on this page.
   const isAdmin = auth?.role === "admin";
+  // May this viewer see the «SAP» columns and the two cards (`SAP_ROLES`)?
+  const sapRole = SAP_ROLES.includes(auth?.role);
   // Does the unit on screen carry any group at all — a centre that lists groups,
   // or a line with a letter? Read off the dashboard, so the «Guruh» column and
   // the group controls appear the day a letter lands and not a moment before.
@@ -1962,14 +1968,13 @@ export default function Production() {
   });
   // The columns this view does not draw at all: «Guruh» on a unit with no
   // groups, «Manba» on a day ПЛАН/ФАКТ are typed only, and the two «SAP»
-  // columns for anybody but an admin (the operator, 2026-11-04: «only visible
-  // to admin for now» — the dashboard drops their figures for everybody else
-  // too). None is offered to the picker either, since a picker row that
-  // toggles nothing is a control that says nothing.
+  // columns for anybody outside `SAP_ROLES` (the dashboard drops their figures
+  // for everybody else too). None is offered to the picker either, since a
+  // picker row that toggles nothing is a control that says nothing.
   const absentCols = useMemo(
     () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : []),
-           ...(isAdmin ? [] : SAP_COLS)],
-    [hasGroups, typedOnly, isAdmin],
+           ...(sapRole ? [] : SAP_COLS)],
+    [hasGroups, typedOnly, sapRole],
   );
   const onColsChange = (value) => {
     // The picker is never shown an absent column, and its hide-all / show-all /
@@ -2438,11 +2443,10 @@ export default function Production() {
   };
   const totals = data?.totals ?? {};
   // «Вып % · SAP» and «Ср. загруженность · SAP» (2026-11-06): the same two
-  // figures worked out from the «SAP» columns, for admins and shift managers.
-  // The server serves those totals to the same two roles only
-  // (production.SAP_TOTALS_ROLES), so the cards wait for its keys too.
-  const sapKpiRole = ["admin", "shift-manager"].includes(auth?.role);
-  const showSapKpi = sapKpiRole && (loading || "sap_completion" in totals);
+  // figures worked out from the «SAP» columns, for `SAP_ROLES`. The server
+  // serves those totals to the same roles only (production.SAP_ROLES), so the
+  // cards wait for its keys too.
+  const showSapKpi = sapRole && (loading || "sap_completion" in totals);
   // Teams whose «Кол-во» nobody typed for this date. `people_overridden` is the
   // ONE thing that tells a typed figure from an absent one — `w.people` is null
   // for the second, but a typed 0 is a real answer and must not read as

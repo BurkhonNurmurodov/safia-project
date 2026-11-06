@@ -9099,11 +9099,16 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   Shown on every day, sortable, in the ColumnsPicker, in the workbook (inserted
   after ПЛАН). Filled by whoever the upload reaches — unchanged: the unit's
   «SAP avto-to'ldirish» switch and an upload's own target picker.
-  **ADMINS ONLY for now** (the operator, same day: «only visible to admin for
-  now»): `GET /api/production/dashboard` drops `sap_plan_qty` /
-  `sap_actual_qty` from every row for any other role, and the page lists both
-  in `absentCols` for a non-admin (not drawn, not in the picker, not in the
-  workbook). Opening them to more roles is those two places.
+  **ADMINS and SHIFT-MANAGERS only** (the operator: «only visible to admin for
+  now» on 2026-11-04, shift managers added 2026-11-06): `GET
+  /api/production/dashboard` drops `sap_plan_qty` / `sap_actual_qty` from every
+  row for any other role, and the page lists both in `absentCols` for anybody
+  else (not drawn, not in the picker, not in the workbook). ONE list on each
+  side — `production.SAP_ROLES` and the page's `SAP_ROLES` — gates the columns
+  and the two SAP cards below; opening them to another role is those two lists.
+  Known gap: the three write doors that answer with the dashboard
+  (`/api/production/override`, `/wc-override`, `/staffing`) return it
+  unstripped; the page never reads those answers (it re-fetches).
   **A SAP number that differs is RED and names the gap** (the operator, same
   day): `sapGap` in Production.jsx = SAP − the ПЛАН/ФАКТ the row shows, printed
   «120 (+20)» on the cell's one line in `--status-bad`, both numbers in the
@@ -9114,9 +9119,9 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   at all (`sapReached` — a manual unit, or a day not uploaded yet).
 - **Two KPI cards read the SAP columns** (2026-11-06, the operator): «Вып % ·
   SAP» beside «Вып %» and «Ср. загруженность · SAP» beside «Ср.
-  загруженность», for ADMINS and SHIFT-MANAGERS (`production.SAP_TOTALS_ROLES`
-  — the totals are stripped from the dashboard for every other role, and the
-  page draws the cards for the same two). `pp_calc.compute_dashboard` adds
+  загруженность», for ADMINS and SHIFT-MANAGERS (`production.SAP_ROLES`, the
+  columns' own list — the totals are stripped from the dashboard for every
+  other role, and the page draws the cards for the same two). `pp_calc.compute_dashboard` adds
   `sap_plan_labor` / `sap_actual_labor` (Σ over lines with a Трудоемкость of
   its own × the row's «SAP» number ÷ 60 — the numbers on screen, so a shared
   SKU · Команда counts once per line, auto-fill switch not consulted),

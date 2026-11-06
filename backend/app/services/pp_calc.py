@@ -1195,7 +1195,7 @@ def compute_dashboard(
             "avg_load": avg_load,                        # I1 / (ΣN * 480)
             # off the «SAP» columns — see above; None = the file never reached
             # this unit-day. `production.get_dashboard` serves these four to
-            # admins and shift managers only (SAP_TOTALS_ROLES).
+            # admins and shift managers only (SAP_ROLES).
             "sap_plan_labor": sap_plan_labor,
             "sap_actual_labor": sap_actual_labor,
             "sap_completion": sap_completion,            # SAP fakt min ÷ SAP plan min
