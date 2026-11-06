@@ -4436,6 +4436,15 @@ are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
   (NULL = a general solution for the whole cause, shown under «Umumiy
   yechimlar»; `startup.add_idle_solution_manager`). The KPI «Yechimsiz
   muammolar» counts problems without a solution, not causes.
+- **Every filed stop is its own problem** (2026-11-05, the operator: «responsible
+  person should write a reason … to every problem» — a block showed 3 stops and
+  hid a fourth behind «yana 1 ta izoh»). `idle_category_solutions.event_id`
+  (`startup.add_idle_solution_event`) = the `cell_ojidaniya_intervals.id` a
+  solution answers; each (category, brigadir) block lists ALL its stops
+  (`events`, comment or not, newest first, ≤ 100) with their own solutions and
+  composer; «Yechimsiz muammolar» counts stops without one. Older
+  brigadir-level rows (`event_id` NULL) stay, read under «Brigadir bo'yicha
+  umumiy yechimlar», and count toward no stop.
 
 
 ## WHO answers for a waiting category (`idle-owner`)

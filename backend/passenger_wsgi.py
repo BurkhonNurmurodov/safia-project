@@ -78,6 +78,7 @@ try:
         add_idle_interval_client_key,
         add_idle_interval_cleaners,
         add_idle_solution_manager,
+        add_idle_solution_event,
         add_turnover_month_people_approx,
         add_leader_task_cell,
         add_late_proof_provenance,
@@ -268,6 +269,7 @@ try:
     add_idle_interval_client_key()
     add_idle_interval_cleaners()
     add_idle_solution_manager()
+    add_idle_solution_event()
     add_turnover_month_people_approx()
     add_leader_task_cell()
     add_late_proof_provenance()

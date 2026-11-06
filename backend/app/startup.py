@@ -2390,6 +2390,26 @@ def add_idle_solution_manager() -> None:
         db.close()
 
 
+def add_idle_solution_event() -> None:
+    """2026-11-05: ``idle_category_solutions`` gains ``event_id`` — a solution
+    now answers ONE filed stop (``cell_ojidaniya_intervals.id``). NULL = the
+    older brigadir / cause level. Pure DDL, idempotent."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE idle_category_solutions "
+            "ADD COLUMN IF NOT EXISTS event_id INTEGER"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_idle_category_solutions_event_id "
+            "ON idle_category_solutions (event_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] idle solution event migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_cleaners() -> None:
     """2026-09-29: ``cell_ojidaniya_intervals`` gains ``cleaners`` — the
     «Tozalovchilar» count a Tozalash (Cat H) entry must now carry: how many

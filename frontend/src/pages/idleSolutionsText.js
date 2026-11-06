@@ -31,7 +31,8 @@ const uz = {
   errLoad: "Ma'lumotni o'qib bo'lmadi", retry: "Qayta urinish",
   comments: "Brigadir izohlari", noComments: "Brigadir izoh yozmagan", moreNotes: "yana {n} ta izoh",
   problemSol: "Bu muammo uchun yechim", solvedOf: "{a}/{b} muammoga yechim", generalSol: "Umumiy yechimlar",
-  writeProblemPh: "Bu brigadirdagi kutishni kamaytirish uchun nima qilinadi? Kim, qachongacha?",
+  writeProblemPh: "Shu to'xtash qayta takrorlanmasligi uchun nima qilinadi? Kim, qachongacha?",
+  stops: "Kiritilgan to'xtashlar — har biriga yechim", noStops: "Bu davrda kiritilgan to'xtash yo'q", noNote: "Izoh yozilmagan", addAnother: "+ Yana yechim qo'shish", unitSol: "Brigadir bo'yicha umumiy yechimlar",
   show: "Ko'rsatish", hide: "Yopish", yours: "Sizniki",
 };
 
@@ -60,7 +61,8 @@ const uz_cyrl = {
   errLoad: "Маълумотни ўқиб бўлмади", retry: "Қайта уриниш",
   comments: "Бригадир изоҳлари", noComments: "Бригадир изоҳ ёзмаган", moreNotes: "яна {n} та изоҳ",
   problemSol: "Бу муаммо учун ечим", solvedOf: "{a}/{b} муаммога ечим", generalSol: "Умумий ечимлар",
-  writeProblemPh: "Бу бригадирдаги кутишни камайтириш учун нима қилинади? Ким, қачонгача?",
+  writeProblemPh: "Шу тўхташ такрорланмаслиги учун нима қилинади? Ким, қачонгача?",
+  stops: "Киритилган тўхташлар — ҳар бирига ечим", noStops: "Бу даврда киритилган тўхташ йўқ", noNote: "Изоҳ ёзилмаган", addAnother: "+ Яна ечим қўшиш", unitSol: "Бригадир бўйича умумий ечимлар",
   show: "Кўрсатиш", hide: "Ёпиш", yours: "Сизники",
 };
 
@@ -89,7 +91,8 @@ const ru = {
   errLoad: "Не удалось прочитать данные", retry: "Повторить",
   comments: "Комментарии бригадира", noComments: "Бригадир не оставил комментариев", moreNotes: "ещё {n} комм.",
   problemSol: "Решение по этой проблеме", solvedOf: "решения: {a}/{b}", generalSol: "Общие решения",
-  writeProblemPh: "Что будет сделано, чтобы сократить ожидания у этого бригадира? Кто, к какому сроку?",
+  writeProblemPh: "Что будет сделано, чтобы эта остановка не повторялась? Кто, к какому сроку?",
+  stops: "Внесённые остановки — решение по каждой", noStops: "За период остановок не внесено", noNote: "Комментарий не указан", addAnother: "+ Добавить ещё решение", unitSol: "Общие решения по бригадиру",
   show: "Показать", hide: "Скрыть", yours: "Ваша",
 };
 
@@ -118,7 +121,8 @@ const en = {
   errLoad: "Could not read the data", retry: "Retry",
   comments: "Brigadir comments", noComments: "The brigadir left no comment", moreNotes: "{n} more comments",
   problemSol: "Solution for this problem", solvedOf: "{a}/{b} problems answered", generalSol: "General solutions",
-  writeProblemPh: "What will be done to cut this brigadir's waiting? Who, by when?",
+  writeProblemPh: "What will be done so this stop does not repeat? Who, by when?",
+  stops: "Filed stops — a solution for each", noStops: "No stops filed in this period", noNote: "No comment written", addAnother: "+ Add another solution", unitSol: "General solutions for this brigadir",
   show: "Show", hide: "Hide", yours: "Yours",
 };
 

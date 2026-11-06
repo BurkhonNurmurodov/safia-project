@@ -4418,6 +4418,9 @@ class IdleCategorySolution(Base):
     # The PROBLEM this answers: the brigadir's unit that lost minutes to the
     # category. NULL = a general solution for the whole cause.
     manager_id  = Column(Integer, nullable=True, index=True)
+    # 2026-11-05: a solution may answer ONE filed stop (cell_ojidaniya_intervals.id)
+    # — every stop is its own problem. NULL = answers the brigadir / the cause.
+    event_id    = Column(Integer, nullable=True, index=True)
     text        = Column(Text, nullable=False)
     # open | doing | done
     status      = Column(String, nullable=False, default="open")

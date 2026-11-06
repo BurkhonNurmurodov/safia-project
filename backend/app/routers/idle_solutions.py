@@ -35,6 +35,18 @@ MAX_TEXT = 2000
 SHOW_LAST = 30          # solutions served per category, newest first
 TOP_UNITS = 5
 MAX_NOTES = 8           # brigadir comments served per problem, newest first
+MAX_EVENTS = 100        # filed stops served per (category, brigadir), newest first
+
+
+def _state(rows) -> str:
+    """none → no solution yet; else the least finished one wins (open, doing, done)."""
+    if not rows:
+        return "none"
+    st = {r.status for r in rows}
+    for s in ("open", "doing"):
+        if s in st:
+            return s
+    return "done"
 
 
 def _admin_only(payload: dict) -> None:
@@ -48,7 +60,7 @@ def _fmt_dt(v):
 
 def _item(r: IdleCategorySolution) -> dict:
     return {
-        "id": r.id, "category": r.category, "manager_id": r.manager_id, "text": r.text, "status": r.status,
+        "id": r.id, "category": r.category, "manager_id": r.manager_id, "event_id": r.event_id, "text": r.text, "status": r.status,
         "author_key": r.author_key, "author_name": r.author_name,
         "created_at": _fmt_dt(r.created_at), "updated_at": _fmt_dt(r.updated_at),
     }
@@ -123,9 +135,8 @@ def analysis(
             for cell in cells_:
                 for iv in cell.get("intervals") or []:
                     note = (iv.get("note") or "").strip()
-                    if not note:
-                        continue
                     notes.setdefault((iv["category"], mid), []).append({
+                        "id": iv.get("id"),
                         "date": d, "cell": cell.get("code"), "leader": cell.get("leader"),
                         "start": iv.get("start"), "end": iv.get("end"),
                         "minutes": iv.get("minutes"), "note": note,
@@ -153,21 +164,33 @@ def analysis(
         top = ranked[:TOP_UNITS]
         general = [i for i in items if i.manager_id is None]
         per_unit: dict[int, list] = {}
+        per_event: dict[int, list] = {}
         for i in items:
-            if i.manager_id is not None:
+            if i.event_id is not None:
+                per_event.setdefault(i.event_id, []).append(i)
+            elif i.manager_id is not None:
                 per_unit.setdefault(i.manager_id, []).append(i)
         cat_total = cat_min.get(c, 0.0)
         problems = []
         for m, v in ranked:
             sl = per_unit.get(m, [])
             nt = notes.get((c, m), [])
+            events = []
+            for n in nt[:MAX_EVENTS]:
+                es = per_event.get(n["id"], [])
+                events.append({**n, "solutions": [_item(i) for i in es],
+                               "state": _state(es)})
+            solved = sum(1 for e in events if e["solutions"])
+            all_sl = [i for e in events for i in per_event.get(e["id"], [])] + sl
             problems.append({
                 **unit_name[m], "minutes": round(v, 1),
                 "share": round(100 * v / cat_total, 1) if cat_total else 0.0,
                 "days": len({n["date"] for n in nt}) if nt else None,
-                "notes": nt[:MAX_NOTES], "notes_n": len(nt),
+                "events": events, "events_n": len(nt), "solved_n": solved,
+                "notes": [e for e in events if e["note"]][:MAX_NOTES],
+                "notes_n": sum(1 for e in events if e["note"]),
                 "solutions": [_item(i) for i in sl],
-                "state": (sl[0].status if sl else "none"),
+                "state": _state(all_sl),
             })
         mins = round(cat_min.get(c, 0.0), 1)
         rows.append({
@@ -181,8 +204,8 @@ def analysis(
             "owner_key": owner_keys.get(c),
             "can_write": is_admin or bool(viewer and owner_keys.get(c) == viewer),
             "problems": problems,
-            "problems_n": len(problems),
-            "solved_n": sum(1 for p in problems if p["solutions"]),
+            "problems_n": sum(max(p["events_n"], 1) for p in problems),
+            "solved_n": sum(p["solved_n"] for p in problems),
             "solutions": [_item(i) for i in general[:SHOW_LAST]],
             "solutions_n": len(items),
             "state": (items[0].status if items else "none"),
@@ -219,6 +242,7 @@ class SolutionBody(BaseModel):
     text: str
     status: Optional[str] = "open"
     manager_id: Optional[int] = None
+    event_id: Optional[int] = None
 
 
 class SolutionEdit(BaseModel):
@@ -257,13 +281,13 @@ def add_solution(
     key = identity.viewer_profile_key(db, payload)
     name = (idle_scope._profile_names(db, [key]).get(key) or {}).get("name") if key else None
     row = IdleCategorySolution(
-        category=body.category, manager_id=body.manager_id, text=text, status=status,
+        category=body.category, manager_id=body.manager_id, event_id=body.event_id, text=text, status=status,
         author_key=key,
         author_name=name or payload.get("full_name") or payload.get("name"))
     db.add(row)
     db.commit()
     action_log.enrich(target_kind="idle_category", target_id=body.category,
-                      details=[("category", body.category), ("manager_id", body.manager_id),
+                      details=[("category", body.category), ("manager_id", body.manager_id), ("event_id", body.event_id),
                                ("status", status)])
     return _item(row)
 
