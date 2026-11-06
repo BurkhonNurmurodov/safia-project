@@ -2222,7 +2222,7 @@ def unsettled_since(db: Session, cell_ids: Iterable[int], day: date) -> Optional
 
 def _forget_caches() -> None:
     """Drop every answer kept in memory that a moved position changes: the
-    kept /zagruzka answers, the shift report, the «Liderlar KPI» plan half."""
+    kept /zagruzka answers, the shift report."""
     try:
         from app.services import kept_answer
         kept_answer.forget_all()
@@ -2233,8 +2233,3 @@ def _forget_caches() -> None:
         shift_report.forget()
     except Exception:  # noqa: BLE001
         log.exception("catalog follow: shift report cache not cleared")
-    try:
-        from app.services import leaders_kpi
-        leaders_kpi.forget_plan()
-    except Exception:  # noqa: BLE001
-        log.exception("catalog follow: leaders KPI plan keep not cleared")

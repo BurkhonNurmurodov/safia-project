@@ -10,9 +10,7 @@ all three re-gated on this page key. `services/leaders_kpi.py` is THE rule;
 this module only parses, scopes, keeps and delivers.
 
 The board is KEPT between requests (2026-10-24, `services/kept_answer.py`, the
-/api/heatmap keep): one build is every KPI of the month — the plan half alone
-is `plan_fulfillment.build` over every unit for every day so far — and the
-page used to ask for it every 4 s for as long as a Verifix read ran. Keyed by
+/api/heatmap keep): one build is every KPI of the month, and the page used to ask for it every 4 s for as long as a Verifix read ran. Keyed by
 everything the answer depends on: the month, the plant's date, the scope
 (plant · shift · brigadirs), the viewer's lock (the concerns half is counted
 inside it) and the state of the two Verifix reads, so a read that starts or
