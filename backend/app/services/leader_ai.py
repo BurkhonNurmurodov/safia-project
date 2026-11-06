@@ -4223,10 +4223,29 @@ def register_drain_job() -> None:
     schedule_interval("leader-ai-drain", lambda: run_async(discover_first=False),
                       minutes=DRAIN_EVERY_MIN)
     log.info("leader-ai: periodic drain scheduled every %s min", DRAIN_EVERY_MIN)
-    resume_after_boot()
+    _arm_resume(RESUME_FIRST_S, 0)
 
 
-def resume_after_boot() -> None:
+# The resume is NOT done during the boot. A deploy swaps workers: this one boots
+# while the old one is still alive, often in the middle of a drain pass that
+# holds the drain lock — so a resume here found the lock taken, cleared the
+# old pass's (true) heartbeat to «restarted», gave up on the kick («locked»),
+# and the old pass then died with its process: pending rows with nobody behind
+# them until the 20-minute timer. A scheduled job fires only in the copy that
+# holds the jobs lock, i.e. once the old one has let go.
+RESUME_FIRST_S = 60       # after the boot began; the old copy retires within ~60 s
+RESUME_RETRY_S = 120      # the drain lock is still taken: look again
+RESUME_TRIES = 4
+
+
+def _arm_resume(delay_s: int, tries: int) -> None:
+    from app.scheduler import schedule_at
+    schedule_at("leader-ai-resume",
+                datetime.now(timezone.utc) + timedelta(seconds=delay_s),
+                resume_after_boot, (tries,))
+
+
+def resume_after_boot(tries: int = 0) -> None:
     """Pick the queue back up NOW, instead of leaving it for the timer.
 
     **A restart is the normal case, not the rare one.** Every push to `main`
@@ -4247,6 +4266,16 @@ def resume_after_boot() -> None:
       is empty and saves up to twenty minutes when it is not. It only ever
       DRAINS — never discovers — so this can add no work of its own.
     """
+    # A drain pass that is RUNNING holds the lock, and its heartbeat is true: do
+    # not clear it, and do not kick (the kick would be refused). Look again soon.
+    probe = _claim_db_lock()
+    if probe is None:
+        if tries < RESUME_TRIES:
+            log.info("leader-ai: a drain pass still holds the lock — resume looked at again "
+                     "in %s s (%s/%s)", RESUME_RETRY_S, tries + 1, RESUME_TRIES)
+            _arm_resume(RESUME_RETRY_S, tries + 1)
+        return
+    _release_db_lock(probe)
     db = SessionLocal()
     try:
         beat = _read_beat(db)

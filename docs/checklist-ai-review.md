@@ -258,7 +258,16 @@ number.
   only happens while somebody has the page open, because an un-retired 13-row
   auto run stayed «live» and swallowed the next Refresh's 1,222 rows under a
   leader's name. Narrowed runs still release at the top of the next pass.
-- **Boot resumes the queue** (`leader_ai.resume_after_boot`, called from
+- **…and it runs ~60 s AFTER the boot, in the copy that holds the jobs lock**
+  (2026-11-06, the audit): `register_drain_job` arms it with `schedule_at`
+  (`_arm_resume`), no longer inline. A deploy swaps workers, so the boot ran
+  while the OLD copy was mid-pass and held the drain lock: the resume cleared that
+  pass's true `running` heartbeat to «restarted», its kick was refused («locked»),
+  and the old pass then died with its process — pending rows with nobody behind
+  them until the 20-minute timer. `resume_after_boot` now probes the lock first
+  and, while it is taken, leaves the heartbeat alone and looks again every 2 min
+  (`RESUME_TRIES` 4).
+- **Boot resumes the queue** (`leader_ai.resume_after_boot`, called from- **Boot resumes the queue** (`leader_ai.resume_after_boot`, called from
   `register_drain_job`, so both entrypoints get it). Every push to `main`
   deploys and restarts the unit, killing the running drain thread — and nothing
   at boot used to pick the rows back up, so the queue sat still until the

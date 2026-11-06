@@ -689,6 +689,13 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         # From `pp_calc.TYPED_ONLY_FROM` ПЛАН/ФАКТ are what a person typed; the
         # SAP snapshot rides beside them in its own columns and counts nowhere.
         typed_only=not pp_sap_counts(day),
+        # A leader's page is the unit's page cut to their work centres, but «does
+        # this day have a plan, and where» is still the UNIT's question — the
+        # загрузка's filter and the save door both ask the whole unit. Over the
+        # slice alone a work centre of theirs with no plan looked unlocked while
+        # its pin counted nowhere and a new number was refused (400 wc_no_plan).
+        planned_wcs=(None if wc_scope is None
+                     else (_planned_at(db, manager_id, day) or frozenset())),
     )
     if group_scope is not None:
         # The leader's slice is CUT from the code-scoped computation, never

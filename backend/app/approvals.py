@@ -1432,7 +1432,10 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
     from app.models import LiveDocument
     from app.routers import staff_live
     with SessionLocal() as db:
-        doc = db.query(LiveDocument).filter_by(id=doc_id).first()
+        # Locked until the commit — the page's doors lock the row too, so a card
+        # tap and a click on the same document queue up and the second one reads
+        # what the first wrote (and answers «already handled»).
+        doc = db.query(LiveDocument).filter_by(id=doc_id).with_for_update().first()
         if not doc:
             raise AlreadyHandled()
         caller = (_caller_for_doc(call, doc, db)
@@ -1444,6 +1447,7 @@ def _decide_live_document(doc_id: int, status: str, call) -> None:
             if status == "approved":
                 if doc.status == "approved":
                     raise AlreadyHandled()
+                staff_live._day_lock(db, doc.day)   # «still where it starts» is a question about the day
                 staff_live._approve(doc, caller, db)
                 db.commit()
                 staff_live._notify_doc(db, doc, "approved", int(caller["sub"]))

@@ -1268,6 +1268,9 @@ app.add_middleware(AppVersionMiddleware)
 # it, stamped with `X-Server-Ms` / `X-Server-Stall-Ms`, and recorded when slow
 # (services/perf_watch.py — THE account of the server being slow).
 from app.services.perf_watch import RequestTimingMiddleware  # noqa: E402
+# A JSON / form body is parsed whole before any login check: capped (body_limit).
+from app.body_limit import JsonBodyLimitMiddleware  # noqa: E402
+app.add_middleware(JsonBodyLimitMiddleware)
 app.add_middleware(RequestTimingMiddleware)
 
 # Routers exposing /admin/* API routes need the initData guard applied at the

@@ -587,7 +587,18 @@ once.
   `cell_lookup.norm_code`, so neither can read «has a plan» the other way. A SQL
   join cannot answer it: the minutes need each day's OWN catalog (`pp_catalog`)
   and the per-line overrides on top of the shared quantity.
-- **A unit-day that plans NOTHING locks nothing**, and that escape is
+- **A leader's page asks the UNIT's question** (2026-11-06, the audit).
+  `_build_dashboard` narrows the catalog to a leader's work centres before the
+  engine runs, so the engine's own «which work centres have a plan» answered over
+  the leader's slice alone: a work centre of theirs with no plan looked unlocked,
+  its pin entered the page's ΣN while `typed_pins` dropped it everywhere else,
+  and a new number there was refused (400 `wc_no_plan`). The narrowed run now
+  receives the unit's set (`compute_dashboard(planned_wcs=_planned_at(...))`).
+  A line with NO work centre is not a work centre with a plan either: counted, it
+  put `""` in the set, turned `day_has_plan` on and locked every real work
+  centre of a day whose only planned lines had no Команда (ΣN 0, a load of 0%
+  instead of «—»); both spellings of the rule skip it now.
+- **A unit-day that plans NOTHING locks nothing**, and that escape is- **A unit-day that plans NOTHING locks nothing**, and that escape is
   load-bearing twice over (`day_has_plan` in the engine, an ABSENT key in
   `planned_wcs`). A brigadir must never be shut out of typing their own day
   because the SAP file carrying it has not been uploaded yet — the plan usually

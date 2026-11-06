@@ -2677,6 +2677,8 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
         if db.query(Admin).count() <= 1:
             raise HTTPException(status_code=400, detail="Cannot remove the last admin")
         db.delete(holder)
+        # The removed admin's browser / app token carries `role: admin`: end it.
+        web_auth.revoke_browser_sessions(db, profile_key("admin", payload.pid))
         db.commit()
         action_log.enrich(
             target_kind="profile", target_id=profile_key("admin", payload.pid),
@@ -2692,6 +2694,9 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
                      ("account", row.telegram_id)]
     left_role, left_name, left_tid = row.role, row.full_name, row.telegram_id
     _remove_role_row(db, row)
+    # Whoever held the profile keeps a browser / app token for up to a year that
+    # names their account and the role: end it with the holder.
+    web_auth.revoke_browser_sessions(db, profile_key(payload.ptype, payload.pid))
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.unassigned",
                     details=alert_details)
@@ -2801,7 +2806,8 @@ def admin_set_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
         web_auth.clear_failures(db, cred)
         action = "weblogin.reset"
     else:
-        cred = WebCredential(profile_key=key, username=username)
+        cred = WebCredential(profile_key=key, username=username,
+                             token_version=web_auth.new_token_version())
         web_auth.set_password(cred, password)
         db.add(cred)
         action = "weblogin.created"
@@ -2941,7 +2947,8 @@ def admin_bulk_web_login(payload: WebLoginBulkPayload, db: Session = Depends(get
         username = web_auth.suggest_username(db, name, taken)
         taken.add(username)
         password = web_auth.generate_password()
-        cred = WebCredential(profile_key=key, username=username)
+        cred = WebCredential(profile_key=key, username=username,
+                             token_version=web_auth.new_token_version())
         web_auth.set_password(cred, password)
         db.add(cred)
         db.commit()

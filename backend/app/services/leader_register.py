@@ -320,56 +320,63 @@ def _clear_flight(key: Hashable, f: "_Flight") -> None:
 # `xmin::text::bigint` is the id of the transaction that last wrote the row;
 # Postgres keeps it through a freeze (the hint bit moves, the value stays), so
 # `max()` over it changes on every update and every insert, and `count()`
-# catches a delete. The day-level tables join to CLOSED days: an open day is
-# invisible to the register, and its entries change all shift long.
+# catches a delete. `max()` alone is not exact: an update made by a transaction
+# whose id is BELOW the table's current maximum — transaction ids are handed out
+# at a transaction's first write but commit in any order, and after the 32-bit
+# counter wraps new writes carry small ids beside old rows near 4.29e9 — moves
+# neither the count nor the max, and the kept register went on being served as
+# current. `sum()` moves on every one of them (the row's old id leaves it, a
+# different one enters), the stamp `labor_kept._STAMP_SQL` already takes.
+# The day-level tables join to CLOSED days: an open day is invisible to the
+# register, and its entries change all shift long.
 _ARMS = [
-    ("leader_checklists", "select count(*), max(xmin::text::bigint) from leader_checklists"),
-    ("managers", "select count(*), max(xmin::text::bigint) from managers"),
-    ("role_profiles", "select count(*), max(xmin::text::bigint) from role_profiles"),
-    ("cells", "select count(*), max(xmin::text::bigint) from cells"),
+    ("leader_checklists", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_checklists"),
+    ("managers", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from managers"),
+    ("role_profiles", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from role_profiles"),
+    ("cells", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from cells"),
     # A cell's links and archived days are DATED (2026-10-12): the build reads
     # them through `cell_links` / `cell_archive`.
-    ("cell_link_events", "select count(*), max(xmin::text::bigint) from cell_link_events"),
-    ("cell_archive_spans", "select count(*), max(xmin::text::bigint) from cell_archive_spans"),
-    ("leader_sync_meta", "select count(*), max(xmin::text::bigint) from leader_sync_meta"),
-    ("leader_late_requests", "select count(*), max(xmin::text::bigint) from leader_late_requests"),
-    ("leader_day_exclusions", "select count(*), max(xmin::text::bigint) from leader_day_exclusions"),
-    ("leader_cutoffs", "select count(*), max(xmin::text::bigint) from leader_cutoffs"),
+    ("cell_link_events", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from cell_link_events"),
+    ("cell_archive_spans", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from cell_archive_spans"),
+    ("leader_sync_meta", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_sync_meta"),
+    ("leader_late_requests", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_late_requests"),
+    ("leader_day_exclusions", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_day_exclusions"),
+    ("leader_cutoffs", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_cutoffs"),
     # A leader's units over time (`leader_follow`) — the roster's dated spans.
-    ("leader_unit_moves", "select count(*), max(xmin::text::bigint) from leader_unit_moves"),
-    ("leader_task_defs", "select count(*), max(xmin::text::bigint) from leader_task_defs"),
-    ("leader_task_settings", "select count(*), max(xmin::text::bigint) from leader_task_settings"),
-    ("leader_task_leader_settings", "select count(*), max(xmin::text::bigint) from leader_task_leader_settings"),
-    ("leader_unit_settings", "select count(*), max(xmin::text::bigint) from leader_unit_settings"),
-    ("leader_day_sources", "select count(*), max(xmin::text::bigint) from leader_day_sources"),
-    ("leader_task_overrides", "select count(*), max(xmin::text::bigint) from leader_task_overrides"),
-    ("leader_ai_disputes", "select count(*), max(xmin::text::bigint) from leader_ai_disputes"),
+    ("leader_unit_moves", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_unit_moves"),
+    ("leader_task_defs", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_task_defs"),
+    ("leader_task_settings", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_task_settings"),
+    ("leader_task_leader_settings", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_task_leader_settings"),
+    ("leader_unit_settings", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_unit_settings"),
+    ("leader_day_sources", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_day_sources"),
+    ("leader_task_overrides", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_task_overrides"),
+    ("leader_ai_disputes", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_ai_disputes"),
     # Verdicts on an OPEN day's entries are left out: a per-task unit's tasks
     # are reviewed as each one closes, all shift long, and the register shows
     # closed days only — so counted whole, this arm moved every few minutes and
     # no kept build survived a shift (17 Oct 2026). A `bot:<entry>` ref is the
     # only form that names a day; sheet refs always count. When the day closes
     # its verdicts enter the count (and the day's own arm moves).
-    ("leader_ai_reviews", "select count(*), max(xmin::text::bigint) from leader_ai_reviews"
+    ("leader_ai_reviews", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_ai_reviews"
                           " where ref not in (select 'bot:' || e.id from leader_task_entries e"
                           " join leader_task_days d on d.id = e.day_id and d.closed_at is null)"),
-    ("leader_task_days", "select count(*), max(xmin::text::bigint) from leader_task_days"
+    ("leader_task_days", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from leader_task_days"
                          " where closed_at is not null"),
-    ("leader_task_entries", "select count(*), max(e.xmin::text::bigint) from leader_task_entries e"
+    ("leader_task_entries", "select count(*), max(e.xmin::text::bigint), sum(e.xmin::text::bigint) from leader_task_entries e"
                             " join leader_task_days d on d.id = e.day_id and d.closed_at is not null"),
-    ("leader_task_media", "select count(*), max(m.xmin::text::bigint) from leader_task_media m"
+    ("leader_task_media", "select count(*), max(m.xmin::text::bigint), sum(m.xmin::text::bigint) from leader_task_media m"
                           " join leader_task_entries e on e.id = m.entry_id"
                           " join leader_task_days d on d.id = e.day_id and d.closed_at is not null"),
-    ("leader_task_photos", "select count(*), max(p.xmin::text::bigint) from leader_task_photos p"
+    ("leader_task_photos", "select count(*), max(p.xmin::text::bigint), sum(p.xmin::text::bigint) from leader_task_photos p"
                            " join leader_task_days d on d.id = p.day_id and d.closed_at is not null"),
-    ("leader_auto_checks", "select count(*), max(a.xmin::text::bigint) from leader_auto_checks a"
+    ("leader_auto_checks", "select count(*), max(a.xmin::text::bigint), sum(a.xmin::text::bigint) from leader_auto_checks a"
                            " join leader_task_entries e on e.id = a.entry_id"
                            " join leader_task_days d on d.id = e.day_id and d.closed_at is not null"),
     # which leader profiles a LEADER viewer holds (`identity`) — a scoped build
-    ("telegram_user_roles", "select count(*), max(xmin::text::bigint) from telegram_user_roles"),
+    ("telegram_user_roles", "select count(*), max(xmin::text::bigint), sum(xmin::text::bigint) from telegram_user_roles"),
 ]
 _FP_SQL = text(" union all ".join(
-    f"select '{name}' as t, n, x from ({sql}) as f{i}(n, x)" for i, (name, sql) in enumerate(_ARMS)))
+    f"select '{name}' as t, n, x, s from ({sql}) as f{i}(n, x, s)" for i, (name, sql) in enumerate(_ARMS)))
 
 
 def enabled() -> bool:
@@ -385,7 +392,8 @@ def fingerprint(db: Session) -> tuple:
     from zoneinfo import ZoneInfo
     rows = db.execute(_FP_SQL).all()
     day = datetime.now(ZoneInfo("Asia/Tashkent")).date().toordinal()
-    return tuple(sorted((str(t), int(n or 0), int(x or 0)) for t, n, x in rows)) + (("_day", day, 0),)
+    return (tuple(sorted((str(t), int(n or 0), int(x or 0), int(s or 0)) for t, n, x, s in rows))
+            + (("_day", day, 0, 0),))
 
 
 # ── who wrote, and when ──────────────────────────────────────────────────────
@@ -467,8 +475,8 @@ def get(db: Session, payload: dict, build_fn: Callable[[Session], Build],
 
 def _moved(a: tuple, b: tuple) -> list[str]:
     """The fingerprint arms that differ between two fingerprints."""
-    old = {t: (n, x) for t, n, x in a}
-    new = {t: (n, x) for t, n, x in b}
+    old = {t: (n, x, s) for t, n, x, s in a}
+    new = {t: (n, x, s) for t, n, x, s in b}
     return sorted(("the date" if t == "_day" else t)
                   for t in old.keys() | new.keys() if old.get(t) != new.get(t))
 

@@ -184,6 +184,8 @@ def planned_wcs(db: Session, manager_ids: Iterable[int],
     for (mid, day, wc), (plan, _actual) in wc_labor(db, manager_ids, date_from, date_to).items():
         if plan and plan > 0:
             key = wc_group.wc_key(mid, wc)
+            if not key[1]:      # a line with no work centre is not one with a plan
+                continue
             out[(key[0], day)].add(key[1])
     return {k: frozenset(v) for k, v in out.items() if v}
 

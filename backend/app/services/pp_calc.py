@@ -618,6 +618,7 @@ def compute_dashboard(
     group_overrides: Optional[dict[tuple[str, str], dict]] = None,
     norm_wc=None,
     typed_only: bool = False,
+    planned_wcs=None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
@@ -849,7 +850,20 @@ def compute_dashboard(
     # «has a plan» is how this page and the загрузка came to divide one unit-day
     # by two different headcounts in the first place.
     _nz = norm_wc or (lambda c: str(c or "").strip())
-    planned_norm = {_nz(c) for c, v in q_by_wc.items() if v and v > 0}
+    # A line with NO work centre is not a work centre with a plan: counted, it put
+    # `""` in the set, `day_has_plan` turned on, and every real work centre of a
+    # day whose only planned lines had no Команда was locked and struck through
+    # — ΣN 0, a load of 0% instead of «—». `zagruzka_source.planned_wcs` leaves
+    # it out the same way.
+    planned_norm = {_nz(c) for c, v in q_by_wc.items() if v and v > 0 and _nz(c)}
+    # The caller narrowed `products` to a leader's work centres, but «does this
+    # day have a plan» is still the UNIT's question — the загрузка's filter and
+    # the save door both ask the whole unit — so it hands that set in. Over the
+    # leader's slice alone, a work centre with no plan on their page looked
+    # unlocked while the загрузка ignored its pin and the save was refused.
+    # Empty is an answer (the unit plans nothing: locks nothing), None is «derive».
+    if planned_wcs is not None:
+        planned_norm = {_nz(c) for c in planned_wcs if _nz(c)}
     # **A unit-day with NO planned work centre at all locks NOTHING**, and that
     # escape is load-bearing twice over. A brigadir must never be shut out of
     # typing their own day because the SAP file carrying it has not been

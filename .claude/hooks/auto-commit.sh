@@ -141,6 +141,33 @@ USED_AI="no"
 # is what a laptop turn guarantees by building on every commit.
 {
 
+  # --- tests ---------------------------------------------------------------
+  # The push IS the deploy and nothing else stands between an edit and the
+  # plant, so the backend's unit tests that need no database run first, and a
+  # failing one stops the commit exactly as a failing build does. The ones that
+  # need a real Postgres skip themselves unless SAFIA_TEST_PG is set (it is not,
+  # here), so this is ~40 tests and about a second. `DATABASE_URL` is pointed at
+  # a dead port: whatever a test might reach for, it cannot be a real database.
+  # A missing interpreter skips the gate — a deploy is never blocked over tooling.
+  # Deleting a module a test imports (the temporary one-shots) fails it: delete
+  # the test with the module.
+  TEST_PY=""
+  for c in "$PROJECT/backend/venv/bin/python" "/opt/safia/venv/bin/python" "$HOME/.safia/venv/bin/python"; do
+    if [ -x "$c" ]; then TEST_PY="$c"; break; fi
+  done
+  if [ -n "$TEST_PY" ] && [ -d "$PROJECT/backend/tests" ]; then
+    if ! ( cd "$PROJECT/backend" \
+           && DATABASE_URL="postgresql://nobody@127.0.0.1:1/none" \
+              perl -e 'alarm shift; exec @ARGV' 240 \
+              "$TEST_PY" -m unittest discover -s tests -p 'test_*.py' ) >>"$LOG" 2>&1; then
+      echo "TESTS FAILED — nothing committed" >>"$LOG"
+      finish "Backend tests failed — nothing was committed or deployed. See .claude/auto-commit.log"
+    fi
+    echo "backend tests passed" >>"$LOG"
+  else
+    echo "no python environment found for the backend tests — skipped" >>"$LOG"
+  fi
+
   # --- build ---------------------------------------------------------------
   # Prod serves the SPA from the committed frontend/dist, so the build has to
   # land in the same commit as the source. A broken build must never be pushed.

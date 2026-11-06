@@ -516,7 +516,25 @@ afternoon and then retired (2026-10-06) — its route redirects to `/staff`.
   reads the day as closed. `close_day` ends with a one-unit `_recopy`: an
   approval decided while the close was being built re-copied only the closed
   units it could see.
-- **An edited draft gets a fresh one-tap card** (`update_document`): the old
+- **A decision on a live document or deletion request is serialised**
+  (2026-11-06, the audit). Every door that decides or changes a document —
+  approve, reject, un-post, delete, edit, the bulk door, the Telegram card —
+  loads it `FOR UPDATE` (`_doc_or_404(lock=True)`; the deletion rows through
+  `_one_request` / `process_batch` / `withdraw_batch`), so two decisions on one
+  row queue and the second reads what the first wrote. Before it an approve and a
+  reject both read `draft`, both committed, and the last write won — after the
+  approval had re-copied the move into a closed day. The checks that read OTHER
+  documents (`_still_here`, `_refuse_if_depended`) take a per-DAY advisory lock
+  (`_day_lock`, held to the commit): exchanges A→B and A→C of one worker are two
+  rows, approved by two people at once, and each saw the worker still in A. Order
+  everywhere: document rows (id order) first, then days (day order) — two doors
+  never wait on each other.
+- **A «no check-out» answer belongs to the unit that gave it**: `exit` and
+  `absent` refuse another unit's answer (403) as `clear` always did, unless the
+  caller is an admin. A dialog opened before another brigade answered for a lent
+  worker used to delete that answer, and the answer is per person, so the other
+  unit's CLOSED day lost the worker's hours at its next re-copy.
+- **An edited draft gets a fresh one-tap card** (`update_document`)- **An edited draft gets a fresh one-tap card** (`update_document`): the old
   card is retired («cancelled») and a new one sent, both on `tg_later` in that
   order — `edit_admin_notices` retires every notice of (kind, ref), so a card
   sent first would be retired on arrival. The old card's ✅ approved the

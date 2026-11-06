@@ -8,8 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import telebot
 from fastapi import APIRouter, Request, Response
+from sqlalchemy import text
 
 from app.config import settings
+from app.database import SessionLocal
 from app.services import perf_watch
 from app.telegram_bot import bot, handle_incoming_rich_message
 
@@ -67,7 +69,37 @@ def _already_seen(update_id: int) -> bool:
     if len(_seen_ids) > _SEEN_MAX:
         evicted = _seen_ids.popleft()
         _seen_set.discard(evicted)
-    return False
+    return _recorded_before(update_id)
+
+
+# The ring above is per PROCESS. A deploy swaps workers, and Telegram's repeat of
+# a slow update (it comes ~60 s after the first) can land in the new one — whose
+# ring is empty — so the update ran twice: a second reply, a second change. The
+# table is the memory both workers share.
+_PRUNE_EVERY_S = 3600
+_KEEP_DAYS = 2
+_last_prune = 0.0
+
+
+def _recorded_before(update_id: int) -> bool:
+    """Record the update; True when some process had recorded it already. Fails
+    OPEN — a database that cannot answer must not stop the bot from answering."""
+    global _last_prune
+    try:
+        with SessionLocal() as db:
+            res = db.execute(
+                text("INSERT INTO bot_updates_seen (update_id) VALUES (:u) "
+                     "ON CONFLICT (update_id) DO NOTHING"), {"u": int(update_id)})
+            fresh = res.rowcount == 1
+            if time.monotonic() - _last_prune > _PRUNE_EVERY_S:
+                _last_prune = time.monotonic()
+                db.execute(text("DELETE FROM bot_updates_seen "
+                                f"WHERE seen_at < now() - interval '{_KEEP_DAYS} days'"))
+            db.commit()
+        return not fresh
+    except Exception:  # noqa: BLE001
+        logger.exception("could not record update %s as seen", update_id)
+        return False
 
 
 # ── Where an update is handled ────────────────────────────────────────────────

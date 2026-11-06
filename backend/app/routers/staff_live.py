@@ -36,7 +36,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -777,11 +777,37 @@ def documents_pending_count(since: Optional[str] = None, db: Session = Depends(g
     return {"count": n + len(batches)}
 
 
-def _doc_or_404(db: Session, caller: dict, doc_id: int) -> LiveDocument:
-    doc = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.id == doc_id).first()
+def _doc_or_404(db: Session, caller: dict, doc_id: int, lock: bool = False) -> LiveDocument:
+    """`lock=True` for every door that DECIDES or CHANGES the document: the row
+    is locked until the commit, so a second decision on it waits and then reads
+    what the first one wrote. Without it an approve and a reject (the web page
+    and a Telegram card, say) both read `draft`, both committed, and the last
+    write won — after the approval's re-copy had already put the move into a
+    closed past day."""
+    q = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.id == doc_id)
+    if lock:
+        q = q.with_for_update(of=LiveDocument)
+    doc = q.first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+
+# Decisions that read OTHER documents of the day — «is the worker still where
+# this move starts» (`_still_here`), «does a later move depend on this one»
+# (`_refuse_if_depended`) — are serialised per day. The row lock cannot do it:
+# exchanges A→B and A→C of one worker are two rows, approved by two people at
+# the same moment, and each saw the worker still in A. Always taken AFTER the
+# document rows, and in day order by the bulk door, so two doors never wait on
+# each other. Held to the commit.
+_DAY_LOCK_NS = 61_006_203
+
+
+def _day_lock(db: Session, day: Optional[date]) -> None:
+    if day is None or db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:ns, :k)"),
+               {"ns": _DAY_LOCK_NS, "k": day.toordinal()})
 
 
 @router.get("/documents/{doc_id}")
@@ -1264,7 +1290,7 @@ class DocUpdateBody(BaseModel):
 @router.put("/documents/{doc_id}")
 def update_document(doc_id: int, body: DocUpdateBody, db: Session = Depends(get_db),
                     caller: dict = Depends(_page)):
-    doc = _doc_or_404(db, caller, doc_id)
+    doc = _doc_or_404(db, caller, doc_id, lock=True)
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft (Нет) documents can be edited")
     if caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
@@ -1303,11 +1329,12 @@ def update_document(doc_id: int, body: DocUpdateBody, db: Session = Depends(get_
 
 @router.post("/documents/{doc_id}/approve")
 def approve_document(doc_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    doc = _doc_or_404(db, caller, doc_id)
+    doc = _doc_or_404(db, caller, doc_id, lock=True)
     if not _can_approve(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to post this document")
     if doc.status == "approved":
         return {"ok": True, "status": doc.status}
+    _day_lock(db, doc.day)
     _approve(doc, caller, db)
     db.commit()
     action_log.enrich(**_log_doc(doc, [("status", "draft", "approved")]))
@@ -1319,7 +1346,7 @@ def approve_document(doc_id: int, db: Session = Depends(get_db), caller: dict = 
 
 @router.post("/documents/{doc_id}/reject")
 def reject_document(doc_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    doc = _doc_or_404(db, caller, doc_id)
+    doc = _doc_or_404(db, caller, doc_id, lock=True)
     if not _may_reject(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to reject this document")
     _reject(doc, caller, db)
@@ -1332,11 +1359,12 @@ def reject_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
 
 @router.post("/documents/{doc_id}/cancel")
 def cancel_document(doc_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    doc = _doc_or_404(db, caller, doc_id)
+    doc = _doc_or_404(db, caller, doc_id, lock=True)
     if not _can_approve(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to un-post this document")
     if doc.status != "approved":
         return {"ok": True, "status": doc.status}
+    _day_lock(db, doc.day)
     _refuse_if_depended(db, doc)
     _cancel(doc, caller, db)
     db.commit()
@@ -1348,10 +1376,11 @@ def cancel_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
 
 @router.post("/documents/{doc_id}/delete")
 def delete_document(doc_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    doc = _doc_or_404(db, caller, doc_id)
+    doc = _doc_or_404(db, caller, doc_id, lock=True)
     if doc.status == "approved":
         if not _can_approve(doc, caller, db):
             raise HTTPException(status_code=403, detail="Approved documents can only be deleted by an approver")
+        _day_lock(db, doc.day)
         _refuse_if_depended(db, doc)
     elif doc.status == "draft":
         # Deleting a pending draft IS its rejection — the record stays (/staff).
@@ -1391,7 +1420,13 @@ class DocBulkBody(BaseModel):
 
 @router.post("/documents/bulk")
 def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    docs = _scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.id.in_(body.ids)).all()
+    # Row locks in id order, then (below) the days' locks in day order: two bulk
+    # calls over overlapping documents queue up instead of deadlocking.
+    docs = (_scope_docs(db.query(LiveDocument), caller, db).filter(LiveDocument.id.in_(body.ids))
+            .order_by(LiveDocument.id).with_for_update(of=LiveDocument).all())
+    if body.action in ("approve", "cancel", "delete"):
+        for _day in sorted({x.day for x in docs if x.day}):
+            _day_lock(db, _day)
     done, refused, notify, rejected = 0, [], [], []
     forgotten: list[int] = []        # deleted outright — their cards are dropped
     reads: dict = {}
@@ -1667,7 +1702,10 @@ def process_batch(token: str, status: str, caller: dict, db: Session,
     q = db.query(LiveDeletion).filter(_batch_filter(token), LiveDeletion.status == "pending")
     if ids:
         q = q.filter(LiveDeletion.id.in_(ids))
-    reqs = q.all()
+    # Locked until the commit: a withdraw (or a second decision) on the same rows
+    # waits, and Postgres re-reads `status = 'pending'` once it has the lock — the
+    # rows another decision just settled drop out instead of being decided twice.
+    reqs = q.order_by(LiveDeletion.id).with_for_update().all()
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
     days = {r.day for r in reqs}
@@ -1707,7 +1745,7 @@ def withdraw_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = 
     if role == "supervisor":
         q = q.filter(LiveDeletion.manager_id == rid) if rid else \
             q.filter(LiveDeletion.supervisor_telegram_id == _tg(caller))
-    reqs = q.all()
+    reqs = q.order_by(LiveDeletion.id).with_for_update().all()
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
     for r in reqs:
@@ -1720,7 +1758,8 @@ def withdraw_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = 
 
 
 def _one_request(db: Session, req_id: int) -> LiveDeletion:
-    r = db.query(LiveDeletion).filter(LiveDeletion.id == req_id).first()
+    """Locked until the commit: every caller reads `status` next and writes it."""
+    r = db.query(LiveDeletion).filter(LiveDeletion.id == req_id).with_for_update().first()
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
     return r
@@ -2040,6 +2079,13 @@ def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = 
     if body.action not in ("exit", "absent"):
         raise HTTPException(status_code=400, detail="Unknown action")
     if row is not None:
+        # The answer belongs to the unit that gave it, replaced or cleared. A
+        # dialog opened before another brigade answered for a worker lent
+        # between the two would delete that answer on «exit» / «absent» — and the
+        # answer is per person, so the other unit's CLOSED day lost the worker's
+        # hours at its next re-copy. `clear` always refused this; so does replace.
+        if row.manager_id != mid and caller.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Boshqa brigada kiritgan javob")
         db.delete(row)
         db.flush()
     chk = _close_check(db, mid, d, force=False, stored_only=True)

@@ -70,7 +70,24 @@ re-verifies it on every request. The second is a username + password at
   not the first `X-Forwarded-For` hop, which the caller types. Known limit: the
   origin is reachable directly, where `CF-Connecting-IP` can be typed too;
   firewalling the origin to Cloudflare's ranges is the fix and is not in this repo.
-- **A token whose identity went stale is RE-ISSUED on the next page load**
+- **An admin browser token ends with the admin row; removing a holder ends the
+  holder's tokens** (2026-11-06, the audit). `web_auth.web_session_is_live`
+  also asks, for a token whose `role` is `admin`, whether an `Admin` row for its
+  `sub` still exists — every `/admin/*` route trusts that claim, and a removed
+  admin kept a 30-day browser or 365-day app token. `admin/unassign` (both the
+  admin and the role-row branch) bumps the profile's `token_version`
+  (`web_auth.revoke_browser_sessions`): the token names the removed holder's
+  account, and nothing about it changes when the holder row goes. A NEW
+  credential starts at a random `token_version` (`new_token_version`), not 1 —
+  a deleted profile's username can be derived again for a new profile, and its
+  old `wv=1` tokens came back to life with the old claims.
+- **JSON and form bodies are capped at 64 MB** (`app/body_limit`, the outermost
+  middleware but one). FastAPI parses a body before any dependency, so the login
+  and origin checks came after it, nginx lets 512 MB through for the uploads, and
+  the origin is reachable directly: one 400 MB `POST /api/auth/web/login` was read
+  into memory on the one worker. Counted on the declared length and on the bytes
+  that arrive (chunked); multipart uploads keep nginx's limit; 413 JSON.
+- **A token whose identity went stale is RE-ISSUED on the next page load**- **A token whose identity went stale is RE-ISSUED on the next page load**
   (2026-10-02). Every API call is answered from the claims INSIDE the token
   (`role_id`, `role_ref`, `full_name`, `sub`), and renaming a leader or moving
   them to another unit rewrites the profile and its registration rows — never

@@ -312,6 +312,19 @@ class RegistrationNotice(Base):
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class BotUpdateSeen(Base):
+    """The Telegram updates this bot has already handled — the webhook's memory
+    that survives a restart. Telegram sends an update again when it got no 200 in
+    time (the 8 Oct report: a repeat 60 s after an update still running), and a
+    process remembers only its own: the repeat that lands in the NEXT worker of a
+    deploy swap ran the command or the button a second time. Pruned after two
+    days (`routers/webhook._recorded_before`)."""
+    __tablename__ = "bot_updates_seen"
+
+    update_id = Column(BigInteger, primary_key=True, autoincrement=False)
+    seen_at   = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class ApprovalNotice(Base):
     """One row per admin notification message sent for a pending staff/HR request
     (edit/delete request, bulk-delete batch, or HR document). Mirrors

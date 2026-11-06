@@ -10,6 +10,14 @@ why — the index.html boot watchdog stops the moment React paints, and that
 loader IS React. Production runs ONE uvicorn process (`--workers 1`), so any
 blocking work on the event loop freezes every request on the server at once.
 
+- **A Telegram update is handled once across a deploy** (2026-11-06, the audit).
+  The webhook's duplicate guard was a ring of the last 200 ids in ONE process;
+  Telegram sends a slow update again after ~60 s, and when a worker swap
+  retired the old process meanwhile the repeat landed in the new one, whose ring
+  was empty — the command or button ran twice. `bot_updates_seen` (`BotUpdateSeen`,
+  `create_all`) is the memory both workers share: `webhook._recorded_before`
+  inserts the id `ON CONFLICT DO NOTHING` and a conflict is a repeat; pruned after
+  two days; a database that cannot answer fails OPEN (the bot still answers).
 - **The cause found and fixed: sync work inside `async def` handlers.**
   `/bot/webhook` ran every bot update (its queries, its Telegram round-trips,
   the checklist sweeps a /tasks runs) ON the loop — fine under Passenger (a

@@ -140,7 +140,14 @@ what a build IS (`_build_shared`) and how a viewer's answer is cut from it
   named /api/leaders ×10 at a 5.8 s median, every one a scoped build. The
   fingerprint gained `telegram_user_roles`: which leader profiles a leader
   viewer holds (`identity`).
-- **Served while nothing it read has changed — EXACT.** `fingerprint()` is
+- **Each arm is `count`, `max(xmin)` AND `sum(xmin)`** (2026-11-06, the audit).
+  `max` alone misses an update made by a transaction whose id is BELOW the
+  table's current maximum: ids are handed out at a transaction's first write but
+  commit in any order, and after the 32-bit counter wraps new writes carry small
+  ids beside old rows near 4.29e9 — neither the count nor the max moves and the
+  kept register is served as current. The sum moves on every one of them (the
+  old id leaves it). `labor_kept._STAMP_SQL` already took it.
+- **Served while nothing it read has changed — EXACT.** `fingerprint()` is- **Served while nothing it read has changed — EXACT.** `fingerprint()` is
   one query (~60 ms on a production-sized copy): per input table the row
   count and `max(xmin)`, the id of the last transaction that touched a row,
   which moves on every committed insert, update and delete (a freeze moves

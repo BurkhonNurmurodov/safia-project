@@ -496,6 +496,28 @@ def reissue_web_jwt(identity: dict, cred: WebCredential, payload: dict) -> str:
     return jwt.encode(fresh, settings.secret_key, algorithm=settings.algorithm)
 
 
+def new_token_version() -> int:
+    """The version a NEW credential starts at. Not 1: a credential deleted with
+    its profile takes its username with it, a new profile's login can derive the
+    very same username, and tokens carry `wv` — so a fresh credential starting at
+    1 brought every old `wv=1` token of the deleted one back to life, with the
+    old claims. Random, and well below the column's 2^31 so a bump cannot wrap."""
+    return secrets.randbelow(1_000_000_000) + 1_000
+
+
+def revoke_browser_sessions(db: Session, key: str) -> bool:
+    """End every browser and app session of this profile's login: the token
+    version moves, so each token carrying the old one stops working at once. For
+    when somebody who held the profile no longer does — their token carries the
+    old holder's account as `sub` and the old role, and nothing else about it
+    changes when the holder row goes. The caller commits."""
+    cred = db.query(WebCredential).filter(WebCredential.profile_key == key).first()
+    if cred is None:
+        return False
+    cred.token_version = (cred.token_version or 1) + 1
+    return True
+
+
 def web_session_is_live(db: Session, payload: dict) -> bool:
     """Is this browser token still honoured? Signature and expiry are already
     checked by the caller; what remains is revocation — a disabled login or a
@@ -506,7 +528,20 @@ def web_session_is_live(db: Session, payload: dict) -> bool:
     cred = db.query(WebCredential).filter(WebCredential.username == username).first()
     if not cred or not cred.enabled:
         return False
-    return int(payload.get("wv") or 0) == int(cred.token_version or 0)
+    if int(payload.get("wv") or 0) != int(cred.token_version or 0):
+        return False
+    # An ADMIN token is the one that must not outlive the admin row it was minted
+    # from: every `/admin/*` route trusts the `role` claim. Removing an admin
+    # (however it is done) ends the token here, without a version bump to
+    # remember at each place that can remove one. One cheap read, admin tokens only.
+    if payload.get("role") == "admin":
+        try:
+            tid = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            return False
+        if db.query(Admin.id).filter(Admin.telegram_id == tid).first() is None:
+            return False
+    return True
 
 
 # ── impersonation: opening the app AS somebody else ───────────────────────────
