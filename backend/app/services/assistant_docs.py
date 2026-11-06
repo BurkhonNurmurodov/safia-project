@@ -1,19 +1,25 @@
 """The assistant's knowledge of HOW the platform works — the rule book.
 
 The operator's call (2026-10-05): the assistant reads the platform's full
-internal documentation — ``CLAUDE.md`` at the repo root, every formula, rule
-and decision with its date — plus ``docs/zagruzka-and-ojidaniya.md``. Live
+internal documentation — every formula, rule and decision with its date. Live
 numbers come through the user's own endpoints; this answers the "why".
 
-It is ~740 KB, far too much to send with every question, so it is split into
+From 2026-11-06 that documentation is ``CLAUDE.md`` at the repo root (the rules
+every developer session needs, plus an index) and the topic files under
+``docs/`` its feature records were moved to word for word, read together with
+``docs/zagruzka-and-ojidaniya.md``. Every ``docs/*.md`` is read except the
+design plans (``plan-*.md``), and the list is taken afresh at every check, so
+a new topic file is picked up without a restart.
+
+It is ~1.2 MB, far too much to send with every question, so it is split into
 its ``##`` sections and offered as a table of contents plus two tools: a
 keyword search and a section reader. Sections that only concern the people
 BUILDING the platform (deploys, versioning, the cloud sandbox, the UI-template
 contract) are left out — nobody using the platform asks about them, and their
 words would only crowd real answers out of the search.
 
-Re-read when the file changes (mtime), so a deploy that edits the rule book is
-picked up without a restart.
+Re-read when a file changes (mtime) or a file is added or removed, so a deploy
+that edits the rule book is picked up without a restart.
 """
 from __future__ import annotations
 
@@ -24,12 +30,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[3]
-_SOURCES = [_ROOT / "CLAUDE.md", _ROOT / "docs" / "zagruzka-and-ojidaniya.md"]
+
+
+def _sources() -> list[Path]:
+    """CLAUDE.md first, then every ``docs/*.md`` but the design plans."""
+    docs = _ROOT / "docs"
+    try:
+        topics = sorted(p for p in docs.glob("*.md") if not p.name.startswith("plan-"))
+    except OSError:
+        topics = []
+    return [_ROOT / "CLAUDE.md", *topics]
+
 
 # Developer-only sections, matched on the start of the heading.
 _SKIP_PREFIXES = (
     "UI element templates", "Workflow", "Cloud sessions", "Deployment",
     "Zero-downtime deploys", "Versioning", "Context discipline",
+    "Where everything else is written",
 )
 
 PART_CHARS = 24000
@@ -83,7 +100,7 @@ class _Index:
 
     def _mtimes(self) -> tuple:
         out = []
-        for p in _SOURCES:
+        for p in _sources():
             try:
                 out.append((str(p), p.stat().st_mtime))
             except OSError:
@@ -98,7 +115,7 @@ class _Index:
             if stamp == self.stamp and self.sections:
                 return
             sections: list[Section] = []
-            for path in _SOURCES:
+            for path in (Path(name) for name, _ in stamp):
                 try:
                     raw = path.read_text(encoding="utf-8")
                 except OSError:
