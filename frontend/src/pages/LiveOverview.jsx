@@ -19,16 +19,18 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { BookOpenText, RefreshCw } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
+import Modal from "../components/ui/Modal";
 import EmptyState from "../components/ui/EmptyState";
 import { FilterPanel } from "../components/ui/ColumnFilter";
-import { SkeletonCard, SkeletonTable } from "../components/ui/Skeleton";
+import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import LiveHeader from "../components/live/LiveHeader";
+import ShiftRace from "../components/live/ShiftRace";
 import KpiTiles from "../components/live/KpiTiles";
 import UnitBoard from "../components/live/UnitBoard";
 import AlertFeed from "../components/live/AlertFeed";
 import CellGrid from "../components/live/CellGrid";
-import { useFullscreen, useNewKeys, useSamples, useTick } from "../components/live/liveHooks";
+import { useFullscreen, useNewKeys, useTick } from "../components/live/liveHooks";
 import { tp } from "../components/live/liveUtils";
 import { useFactory, useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
@@ -71,7 +73,6 @@ export default function LiveOverview() {
   const data = q.data;
   const offline = q.isError && !!data;
   const now = useTick(1000);
-  const samples = useSamples(data);
   const newKeys = useNewKeys((data?.alerts || []).map((a) => a.key));
 
   const rootRef = useRef(null);
@@ -101,23 +102,24 @@ export default function LiveOverview() {
     <Layout title={t("nav.live")}>
       <div ref={rootRef} className="live-root flex flex-col gap-4">
         <LiveHeader
-          data={data} t={t} tl={tl} now={now}
-          refreshedAt={q.dataUpdatedAt || null} interval={INTERVAL}
-          fetching={q.isFetching} offline={offline}
+          data={data} t={t} offline={offline}
           isFs={fs.on} fsSupported={fs.supported} onToggleFs={fs.toggle}
           shiftValue={shiftValue} onShift={(v) => setShiftPick(Number(v))}
           canPickShift={!!data && !data.scope?.shift_locked}
           replay={replay} onReplay={onReplay} canReplay={!!data?.scope?.can_replay}
           factoryPanel={factoryPanel}
+          onRules={data ? () => setShowRules(true) : null}
         />
 
         {!data && q.isLoading && (
           <>
-            <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+            <SkeletonBlock className="h-[196px] rounded-2xl" />
+            <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-[132px] rounded-2xl" />)}
             </div>
-            <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-              <SkeletonTable rows={6} cols={6} />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+              <SkeletonBlock className="h-[420px] rounded-2xl" />
+              <SkeletonBlock className="h-[420px] rounded-2xl" />
             </div>
           </>
         )}
@@ -135,37 +137,49 @@ export default function LiveOverview() {
 
         {data && (
           <>
-            <KpiTiles kpi={data.kpi} frame={data.frame} thresholds={th} samples={samples} t={t} />
+            <ShiftRace frame={data.frame} kpi={data.kpi} thresholds={th} t={t} now={now}
+              refreshedAt={q.dataUpdatedAt || null} interval={INTERVAL} fetching={q.isFetching}
+              offline={offline} mobile={mobile} />
 
-            <div className="grid gap-4 xl:grid-cols-3 items-start">
-              <div className="xl:col-span-2 min-w-0">
+            <KpiTiles kpi={data.kpi} cells={data.cells} thresholds={th} t={t} />
+
+            {/* The board and the floor plan on the left, the attention column
+                on the right, sticky while the map scrolls. Below xl it is one
+                column — and the attention list comes FIRST: exceptions before
+                the full roll-call. */}
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
+              <div className="min-w-0 flex flex-col gap-4">
                 <UnitBoard units={data.units} thresholds={th} frame={data.frame} t={t} tl={tl} mobile={mobile} />
+                <CellGrid cells={data.cells} units={data.units} frame={data.frame} now={now} mobile={mobile}
+                  onlyProblems={!!onlyProblems} onToggleOnly={setOnlyProblems} t={t} tl={tl} />
               </div>
-              <div className="min-w-0 xl:sticky xl:top-0">
-                <AlertFeed alerts={data.alerts} newKeys={newKeys} t={t} tl={tl} />
+              <div className="min-w-0 order-first xl:order-none xl:sticky xl:top-4">
+                <AlertFeed alerts={data.alerts} cells={data.cells} frame={data.frame} now={now} newKeys={newKeys} t={t} tl={tl} />
               </div>
-            </div>
-
-            <CellGrid cells={data.cells} units={data.units} onlyProblems={!!onlyProblems} onToggleOnly={setOnlyProblems} t={t} tl={tl} />
-
-            <div className="flex flex-col gap-2 items-start">
-              <Button variant="ghost" size="sm" icon={BookOpenText} onClick={() => setShowRules((v) => !v)}>
-                {t("live.legend")}
-              </Button>
-              {showRules && (
-                <ul className="text-[12px] leading-relaxed list-disc pl-5 rounded-xl px-6 py-3"
-                  style={{ color: "var(--text-3)", background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                  <li>{tp(t, "live.legend.unit", { u: th.unit_idle_flag, uw: th.unit_idle_warn })}</li>
-                  <li>{tp(t, "live.legend.cell", { s: th.stopped_now_crit, c: th.cell_idle_crit, cw: th.cell_idle_warn })}</li>
-                  <li>{tp(t, "live.legend.pace", { pc: Math.round((th.pace_crit || 0) * 100), pw: Math.round((th.pace_warn || 0) * 100), g: Math.round((th.pace_grace || 0) * 100) })}</li>
-                  <li>{tp(t, "live.legend.fresh", { m: th.plan_stale_min })}</li>
-                  <li>{t("live.windowNote")}</li>
-                </ul>
-              )}
             </div>
           </>
         )}
       </div>
+
+      {showRules && (
+        <Modal title={t("live.legend")} icon={BookOpenText} onClose={() => setShowRules(false)}
+          footer={<Button variant="secondary" onClick={() => setShowRules(false)}>{t("live.close")}</Button>}>
+          <ul className="space-y-3 text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>
+            {[
+              tp(t, "live.legend.unit", { u: th.unit_idle_flag, uw: th.unit_idle_warn }),
+              tp(t, "live.legend.cell", { s: th.stopped_now_crit, c: th.cell_idle_crit, cw: th.cell_idle_warn }),
+              tp(t, "live.legend.pace", { pc: Math.round((th.pace_crit || 0) * 100), pw: Math.round((th.pace_warn || 0) * 100), g: Math.round((th.pace_grace || 0) * 100) }),
+              tp(t, "live.legend.fresh", { m: th.plan_stale_min }),
+              t("live.windowNote"),
+            ].map((line, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="mt-[9px] w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "var(--text-4)" }} aria-hidden="true" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
     </Layout>
   );
 }

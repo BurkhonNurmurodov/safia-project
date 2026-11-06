@@ -96,31 +96,6 @@ export function useFullscreen(ref) {
   return { on, toggle, supported };
 }
 
-// The page's own memory of the shift: one sample per successful poll, so the
-// KPI tiles can draw a sparkline of how the figure moved since the screen
-// was opened. Reset when the frame changes (a new shift-day, another shift).
-export function useSamples(data, max = 240) {
-  const ref = useRef({ key: null, rows: [] });
-  const frameKey = data?.frame ? `${data.frame.shift}:${data.frame.day}` : null;
-  const at = data?.generated_at;
-  if (frameKey && frameKey !== ref.current.key) ref.current = { key: frameKey, rows: [] };
-  if (at && data?.kpi) {
-    const rows = ref.current.rows;
-    if (!rows.length || rows[rows.length - 1].at !== at) {
-      rows.push({
-        at,
-        plan: data.kpi.plan_pct,
-        pace: data.kpi.pace,
-        idle: data.kpi.idle_mean,
-        stopped: data.kpi.cells_stopped,
-        alerts: (data.kpi.alerts?.crit || 0) + (data.kpi.alerts?.warn || 0),
-      });
-      if (rows.length > max) rows.splice(0, rows.length - max);
-    }
-  }
-  return ref.current.rows;
-}
-
 // Which alert keys are NEW since the last poll — those slide in. The first
 // payload seeds the set silently, so a screen opened mid-shift does not play
 // forty entrances at once.

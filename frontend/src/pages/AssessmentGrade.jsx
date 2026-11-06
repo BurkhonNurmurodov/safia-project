@@ -1,33 +1,38 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Gavel, Lock, LockOpen, Shuffle, Trash2, CalendarDays, Info, FlaskConical, ChevronDown } from "lucide-react";
+import { ArrowLeft, Lock, LockOpen, Shuffle, Trash2, Info, FlaskConical, ChevronDown } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
+import ActionMenu from "../components/ui/ActionMenu";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import EmptyState from "../components/ui/EmptyState";
+import ProfileAvatar from "../components/ui/ProfileAvatar";
 import { SkeletonBlock } from "../components/ui/Skeleton";
-import { SectionHead } from "../components/ui/DataTable";
 import { useToast } from "../components/ui/Toast";
 import { useTranslit } from "../utils/transliterate";
 import { nameCase } from "../utils/personName";
 import api from "../utils/api";
-import SeatStrip from "../components/assessment/SeatStrip";
-import { SeatDot } from "../components/assessment/AssessmentList";
+import SeatStrip, { SeatRing } from "../components/assessment/SeatStrip";
 import useIsMobile from "../hooks/useIsMobile";
 import ScoreCard from "../components/assessment/ScoreCard";
 import ResultsView from "../components/assessment/ResultsView";
 import { useAT, fill, errText, fmtDate } from "../components/assessment/assessmentUtil";
+import { useCanOpen } from "../components/people/peopleUtil";
 
 /**
  * The Judge Grading Dashboard (/assessment/:id). Every judge opens the same
  * page: the candidate, the panel live (who sits on which department seat, how
- * far they are), their own scorecard — 20 questions, Pass / No pass and a note
- * each, the mandatory overall feedback — and the results once their own
- * scorecard is in. Polls every 5 s while the sitting is open, so judges
- * grading simultaneously see each other's progress (never each other's
+ * far they are), their own scorecard — the questions of their department, Pass
+ * / No pass and a note each, the mandatory overall feedback — and the results
+ * once their own scorecard is in. Polls every 5 s while the sitting is open, so
+ * judges grading simultaneously see each other's progress (never each other's
  * verdicts before they submit).
+ *
+ * The candidate is the subject and the panel is the periphery: once a judge
+ * holds a seat the panel folds into one row of progress rings in the
+ * candidate's card, and the sheet below is the page.
  */
 export default function AssessmentGrade() {
   const T = useAT();
@@ -36,6 +41,7 @@ export default function AssessmentGrade() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
+  const canPeople = useCanOpen("people");
   const key = ["assessment", id];
   // The seat on screen. One person holds one seat — except in TEST MODE (a
   // sitting drawn from the sample questions), where an admin holds several and
@@ -66,9 +72,6 @@ export default function AssessmentGrade() {
   }, [mineId, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = mine ? tab || "card" : "results";
 
-  // On a phone, once the judge sits on a seat the panel folds to one line
-  // (the five seats as badges): their questions are what they came for, and
-  // five stacked tiles stood between them and the first one.
   const phone = useIsMobile();
   const [panelOpen, setPanelOpen] = useState(false);
   useEffect(() => { setPanelOpen(false); }, [mineId]);   // a seat taken / switched → back to the questions
@@ -104,10 +107,11 @@ export default function AssessmentGrade() {
   if (det.isLoading) {
     return (
       <Layout title={T.title}>
-        <div className="space-y-4">
-          <SkeletonBlock className="h-24 rounded-2xl" />
-          <SkeletonBlock className="h-28 rounded-2xl" />
-          <SkeletonBlock className="h-64 rounded-2xl" />
+        <div className="space-y-3">
+          <SkeletonBlock className="h-5 w-28 rounded-md" />
+          <SkeletonBlock className="h-[156px] rounded-2xl" />
+          <SkeletonBlock className="h-[92px] rounded-2xl" />
+          <SkeletonBlock className="h-[300px] rounded-2xl" />
         </div>
       </Layout>
     );
@@ -130,6 +134,9 @@ export default function AssessmentGrade() {
   const myEntered = mine ? Object.values(mine.grades || {}).filter((g) => g.verdict || g.note).length : 0;
   // A test sitting may be deleted after grading; its confirm then says the grades go too.
   const anyGraded = d.seats.some((s) => s.graded > 0 || s.submitted);
+  // No seat yet and one can be taken: picking it IS this judge's job right now.
+  const mustPick = !mine && r.claim;
+  const panelShown = mustPick || panelOpen || (!mine && !phone);
 
   const dialogs = {
     move: ask?.seat && mine && {
@@ -170,25 +177,35 @@ export default function AssessmentGrade() {
     },
   };
   const dlg = ask ? dialogs[ask.kind] : null;
+  const openAsk = (kind, s) => { setAskErr(null); setAsk({ kind, seat: s }); };
   // Verifix spells the candidate in capitals; the page reads it in title case.
-  const candName = d.candidate ? nameCase(tl(d.candidate.full_name)) : null;
+  const cand = d.candidate;
+  const candName = cand ? nameCase(tl(cand.full_name)) : null;
+  const eid = cand?.employee_id;
+  const place = [cand?.job, cand?.code && `${T.cell} ${cand.code}`, cand?.unit ? tl(cand.unit) : null].filter(Boolean).join(" · ");
+  const menuItems = [
+    r.redraw && { key: "redraw", label: T.redrawA, icon: Shuffle, onSelect: () => openAsk("redraw") },
+    r.delete && { key: "delete", label: T.deleteA, icon: Trash2, tone: "danger", onSelect: () => openAsk("delete") },
+  ].filter(Boolean);
 
   return (
     <Layout title={T.title} subtitle={candName || undefined}>
-      <div className="space-y-4">
+      <div className="space-y-3">
         <Link to="/assessment" className="inline-flex items-center gap-1.5 text-xs font-medium min-h-[32px]" style={{ color: "var(--text-2)" }}>
           <ArrowLeft size={14} aria-hidden="true" />{T.back}
         </Link>
 
-        {/* The candidate */}
-        <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <div className="flex flex-col lg:flex-row lg:items-start gap-3">
+        {/* The candidate — and, folded into the foot of the card, the panel. */}
+        <section className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <div className="p-4 sm:p-5 flex items-start gap-4">
+            <ProfileAvatar muted name={candName || "—"} colorKey={cand?.full_name || ""} size={phone ? 48 : 60}
+              photoUrl={canPeople && eid ? `/api/people/${encodeURIComponent(eid)}/photo?size=192` : undefined} />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold break-words" style={{ color: "var(--text-1)" }}>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <h2 className="text-lg sm:text-[22px] font-semibold leading-tight tracking-[-0.01em] break-words" style={{ color: "var(--text-1)" }}>
                   {candName || "—"}
                 </h2>
-                {/* A STATE, so a neutral chip with a status dot — brand gold is
+                {/* A STATE: a neutral chip with a status dot — brand gold is
                     an accent, never a status. */}
                 <span className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
                   style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
@@ -197,91 +214,112 @@ export default function AssessmentGrade() {
                   {d.status === "open" ? T.chipOpen : T.chipClosed}
                 </span>
               </div>
-              {(d.candidate?.job || d.candidate?.code || d.candidate?.unit) && (
-                <p className="mt-0.5 text-sm break-words" style={{ color: "var(--text-2)" }}>
-                  {[d.candidate.job, d.candidate.code && `${T.cell} ${d.candidate.code}`, d.candidate.unit].filter(Boolean).join(" · ")}
-                </p>
-              )}
-              {d.candidate?.note && <p className="mt-0.5 text-sm break-words" style={{ color: "var(--text-3)" }}>{d.candidate.note}</p>}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
-                <span className="inline-flex items-center gap-1"><CalendarDays size={12} aria-hidden="true" />{fmtDate(d.held_on)}</span>
-                {d.created_by && <span>{fill(T.createdBy, { name: tl(d.created_by) })}</span>}
-              </div>
+              {place && <p className="mt-1 text-sm break-words" style={{ color: "var(--text-2)" }}>{place}</p>}
+              <p className="mt-1 text-xs break-words" style={{ color: "var(--text-3)" }}>
+                <span className="tabular-nums">{fmtDate(d.held_on)}</span>
+                {d.created_by && <> · {fill(T.createdBy, { name: tl(d.created_by) })}</>}
+                {cand?.note && <> · <span style={{ color: "var(--text-2)" }}>«{cand.note}»</span></>}
+              </p>
             </div>
-            {r.admin && (
-              <div className="flex flex-wrap gap-2">
-                {r.close && <Button variant="secondary" icon={Lock} onClick={() => { setAskErr(null); setAsk({ kind: "close" }); }}>{T.closeA}</Button>}
-                {r.reopen && <Button variant="secondary" icon={LockOpen} onClick={() => { setAskErr(null); setAsk({ kind: "reopen" }); }}>{T.reopenA}</Button>}
-                {r.redraw && <Button variant="secondary" icon={Shuffle} onClick={() => { setAskErr(null); setAsk({ kind: "redraw" }); }}>{T.redrawA}</Button>}
-                {r.delete && <Button variant="danger" tint icon={Trash2} onClick={() => { setAskErr(null); setAsk({ kind: "delete" }); }}>{T.deleteA}</Button>}
+            {r.admin && (r.close || r.reopen || menuItems.length > 0) && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {r.close && <Button variant="secondary" icon={Lock} onClick={() => openAsk("close")} className="max-sm:hidden">{T.closeA}</Button>}
+                {r.reopen && <Button variant="secondary" icon={LockOpen} onClick={() => openAsk("reopen")}>{T.reopenA}</Button>}
+                {(menuItems.length > 0 || (r.close && phone)) && (
+                  <ActionMenu label={T.menuLabel} items={[
+                    r.close && phone && { key: "close", label: T.closeA, icon: Lock, onSelect: () => openAsk("close") },
+                    ...menuItems,
+                  ]} />
+                )}
               </div>
             )}
           </div>
+
           {d.status !== "open" && (
-            <div className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
-              style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+            <div className="mx-4 sm:mx-5 mb-4 flex items-start gap-2 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
               <Lock size={14} className="mt-[1px] shrink-0" aria-hidden="true" />
-              <span>
-                {T.closedBanner}{" "}
-                {d.closed_by === "auto" ? T.closedAuto : d.closed_by ? fill(T.closedBy, { name: tl(d.closed_by) }) : ""}
-              </span>
+              <span>{T.closedBanner} {d.closed_by === "auto" ? T.closedAuto : d.closed_by ? fill(T.closedBy, { name: tl(d.closed_by) }) : ""}</span>
             </div>
           )}
-        </div>
+
+          {/* The panel row: five seats as progress rings. A judge who holds a
+              seat reads it at a glance; «Boshqarish» opens the seats. */}
+          <div style={{ borderTop: "1px solid var(--border)" }}>
+            {!mustPick && <div className="px-4 sm:px-5 py-3 flex items-center gap-x-5 gap-y-2.5 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{T.panel}</span>
+              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap min-w-0">
+                {d.seats.map((s) => (
+                  <span key={s.department} className="inline-flex items-center gap-2 min-w-0"
+                    title={s.judge_name ? `${T.dept[s.department]}: ${tl(s.judge_name)}` : fill(T.seatFreeTip, { dept: T.dept[s.department] })}>
+                    <SeatRing seat={s} current={mine?.department} size={phone ? 34 : 30} />
+                    {!phone && (
+                      <span className="leading-tight min-w-0">
+                        <span className="block text-xs font-medium truncate" style={{ color: "var(--text-1)" }}>
+                          {T.dept[s.department]}{s.mine ? <span style={{ color: "var(--brand-text)" }}> · {T.seatYou}</span> : null}
+                        </span>
+                        <span className="block text-[11px] tabular-nums truncate" style={{ color: s.submitted ? "var(--status-ok)" : "var(--text-3)" }}>
+                          {!s.judge_name ? T.seatFree : s.submitted ? T.seatSubmitted : fill(T.seatProgress, { g: s.graded, t: s.total ?? 0 })}
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+              {!mustPick && (mine || phone) && (
+                <button type="button" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelShown}
+                  className="ml-auto inline-flex items-center gap-1 text-xs font-medium min-h-[36px] px-2 -mr-2 rounded-lg"
+                  style={{ color: "var(--text-2)" }}>
+                  {panelShown ? T.hide : T.manage}
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${panelShown ? "rotate-180" : ""}`} aria-hidden="true" />
+                </button>
+              )}
+            </div>}
+            <div className={`aq-fold ${panelShown ? "is-open" : ""}`}>
+              <div className="aq-fold-inner">
+                <div className={`px-4 sm:px-5 pb-4 space-y-3 ${mustPick ? "pt-4" : ""}`}>
+                  {mustPick && (
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.pickSeatTitle}</div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{T.pickSeatMsg}</div>
+                    </div>
+                  )}
+                  {!mine && !r.claim && (
+                    <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+                      <Info size={13} aria-hidden="true" />{T.notJudge}
+                    </div>
+                  )}
+                  <SeatStrip seats={d.seats} rights={r} mine={mine} current={mine?.department}
+                    onSwitch={(s) => setSeat(s.department)}
+                    busyDept={act.isPending && act.variables?.body?.department && !ask ? act.variables.body.department : null}
+                    onClaim={claim}
+                    onLeave={(s) => openAsk("leave", s)}
+                    onRelease={(s) => openAsk("release", s)} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {d.test_mode && (
-          <div className="flex items-start gap-2 rounded-2xl px-4 py-2.5 sm:py-3 text-xs sm:text-sm leading-relaxed"
-            style={{ background: "rgba(var(--brand-rgb),0.08)", border: "1px dashed rgba(var(--brand-rgb),0.45)", color: "var(--text-1)" }}>
-            <FlaskConical size={16} className="mt-[2px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+          <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-xs leading-relaxed"
+            style={{ background: "rgba(var(--brand-rgb),0.07)", border: "1px dashed rgba(var(--brand-rgb),0.4)", color: "var(--text-2)" }}>
+            <FlaskConical size={14} className="mt-[1px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
             <span>{r.multi_seat ? T.testBanner : T.testBannerJudge}</span>
           </div>
         )}
-
-        {/* The panel, live */}
-        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          {phone && mine ? (
-            <button type="button" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}
-              className="w-full flex items-center gap-2 px-4 py-3 min-h-[52px] text-left">
-              <Gavel size={15} style={{ color: "var(--brand-text)" }} aria-hidden="true" />
-              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.panel}</span>
-              <span className="ml-auto inline-flex items-center gap-1">
-                {d.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
-              </span>
-              <ChevronDown size={16} className={`transition-transform ${panelOpen ? "rotate-180" : ""}`}
-                style={{ color: "var(--text-3)" }} aria-hidden="true" />
-            </button>
-          ) : <SectionHead icon={Gavel} title={T.panel} />}
-          {(!phone || !mine || panelOpen) && <div className={`p-4 ${phone && mine ? "pt-1" : "pt-3"} space-y-3`}>
-            {!mine && r.claim && (
-              <div>
-                <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.pickSeatTitle}</div>
-                <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.pickSeatMsg}</div>
-              </div>
-            )}
-            {!mine && !r.claim && (
-              <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
-                <Info size={13} aria-hidden="true" />{T.notJudge}
-              </div>
-            )}
-            <SeatStrip seats={d.seats} rights={r} mine={mine} current={mine?.department}
-              onSwitch={(s) => setSeat(s.department)}
-              busyDept={act.isPending && act.variables?.body?.department && !ask ? act.variables.body.department : null}
-              onClaim={claim}
-              onLeave={(seat) => { setAskErr(null); setAsk({ kind: "leave", seat }); }}
-              onRelease={(seat) => { setAskErr(null); setAsk({ kind: "release", seat }); }} />
-          </div>}
-        </div>
 
         {mine && (
           <SegmentedToggle asTabs value={view} onChange={setTab} ariaLabel={T.title}
             options={[["card", T.tabCard], ["results", T.tabResults]]} />
         )}
-        {view === "card" && mine ? (
-          <ScoreCard key={mine.id} aid={id} data={d} toast={toast} onChanged={refresh}
-            onSubmitted={() => { refresh(); qc.invalidateQueries({ queryKey: ["assessment-list"] }); setTab("results"); }} />
-        ) : (
-          <ResultsView data={d} />
-        )}
+        <div key={view} className="aq-reveal">
+          {view === "card" && mine ? (
+            <ScoreCard key={mine.id} aid={id} data={d} toast={toast} onChanged={refresh}
+              onSubmitted={() => { refresh(); qc.invalidateQueries({ queryKey: ["assessment-list"] }); setTab("results"); }} />
+          ) : (
+            <ResultsView data={d} />
+          )}
+        </div>
       </div>
 
       {dlg && (

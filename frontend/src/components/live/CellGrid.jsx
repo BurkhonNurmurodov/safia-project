@@ -1,92 +1,65 @@
-import { Grid3x3, Siren, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import EmptyState from "../ui/EmptyState";
 import { catColor } from "../idle/categories";
 import { shortPerson } from "../../utils/personName";
-import { STATUS_COLOR, hexA, tp, fmtInt, fmtPct, catCode } from "./liveUtils";
+import { STATUS_COLOR, STATUS_INK, hexA, tp, fmtInt, fmtPct, fmtTimer, stopStartedAt } from "./liveUtils";
 
-// One tile per cell, grouped under its brigadir in the board's order (worst
-// unit first, and inside a unit the stopped cells first). Tiles are INERT on
-// purpose: a dense grid on a touch TV must not navigate away from the monitor
-// — the feed and the board carry the links.
-function Tile({ c, t }) {
+// The floor plan: one tile per cell, grouped under its brigadir in the board's
+// order. A calm cell is a plain tile; only a cell with a problem takes colour,
+// and a cell stopped RIGHT NOW is solid red with its own ticking timer, so
+// from across the room the map reads as «grey, grey, grey, RED». Tiles are
+// INERT on purpose: a dense grid on a touch TV must not navigate away.
+function Tile({ c, frame, now, t, tl }) {
   const st = c.status;
-  const col = STATUS_COLOR[st] || STATUS_COLOR.quiet;
   const idle = c.idle || {};
   const stopped = idle.stopped_now;
+  const cleaning = !stopped && idle.cleaning_now;
+  const problem = st === "crit" || st === "warn";
+  const col = STATUS_COLOR[st] || STATUS_COLOR.quiet;
+  const at = stopped ? stopStartedAt(frame, idle.since) : null;
+  const style = stopped
+    ? { background: STATUS_COLOR.crit, color: "#fff", border: `1px solid ${STATUS_COLOR.crit}` }
+    : problem
+      ? { background: hexA(col, 0.08), border: `1px solid ${hexA(col, 0.45)}` }
+      : { background: "var(--bg-inner)", border: "1px solid var(--border)" };
+  const ink = stopped ? "#fff" : problem ? STATUS_INK[st] : "var(--text-3)";
+  const title = [
+    c.code, c.leader ? tl(c.leader) : "", tl(c.unit || ""),
+    idle.events ? tp(t, "live.events", { n: idle.events }) : "",
+    idle.last_end && !stopped ? tp(t, "live.lastStop", { t: idle.last_end }) : "",
+    c.plan ? `${t("live.cellPlan")} ${fmtPct(c.plan.pct)} / ${tp(t, "live.plan.expected", { e: fmtInt(c.plan.expected_pct) })}` : "",
+  ].filter(Boolean).join("\n");
   return (
-    <div
-      className={`relative rounded-xl px-2.5 py-2 flex flex-col gap-1 ${stopped ? "live-pulse" : ""}`}
-      style={{
-        width: 148,
-        background: stopped ? hexA(STATUS_COLOR.crit, 0.16) : st === "quiet" ? "var(--bg-inner)" : hexA(col, 0.08),
-        border: `1px solid ${st === "quiet" ? "var(--border)" : hexA(col, stopped ? 0.7 : 0.4)}`,
-      }}
-      title={[
-        c.code, c.leader || "", c.unit,
-        idle.events ? tp(t, "live.events", { n: idle.events }) : "",
-        idle.last_end && !stopped ? tp(t, "live.lastStop", { t: idle.last_end }) : "",
-        c.plan ? `${t("live.cellPlan")} ${fmtPct(c.plan.pct)} / ${tp(t, "live.plan.expected", { e: fmtInt(c.plan.expected_pct) })}` : "",
-      ].filter(Boolean).join("\n")}
-    >
+    <div className={`relative rounded-xl px-2.5 py-2 flex flex-col justify-between ${stopped ? "live-stopped" : ""}`}
+      style={{ ...style, height: 64 }} title={title}>
       <div className="flex items-center justify-between gap-1">
-        <span className="font-mono font-bold text-lg leading-none tabular-nums" style={{ color: stopped ? STATUS_COLOR.crit : "var(--text-1)" }}>{c.code}</span>
-        <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${stopped ? "live-glow" : ""}`} style={{ background: col }} />
-      </div>
-      <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-        {c.leader ? shortPerson(c.leader) : "—"}
-        {c.people > 0 ? <span style={{ color: "var(--text-4)" }}> · {fmtInt(c.people)}</span> : null}
-      </div>
-      <div className="flex items-center justify-between gap-1 text-[11px] font-semibold tabular-nums">
-        <span style={{ color: idle.idle_min > 0 ? col : "var(--text-4)" }}>
-          {idle.idle_min > 0 ? `${fmtInt(idle.idle_min)} ${t("live.min")}` : idle.idle_all > 0 ? `${fmtInt(idle.idle_all)} ${t("live.min")}·H` : "—"}
-        </span>
-        {c.plan && c.plan.pct != null && (
-          <span style={{ color: c.plan.status === "crit" ? STATUS_COLOR.crit : c.plan.status === "warn" ? STATUS_COLOR.warn : "var(--text-3)" }}>
+        <span className="font-semibold text-[15px] leading-none tabular-nums" style={{ color: stopped ? "#fff" : "var(--text-1)" }}>{c.code}</span>
+        {stopped ? (
+          <span className="text-[11px] font-semibold tabular-nums leading-none">{fmtTimer(at != null ? now - at : (idle.now_min || 0) * 60000)}</span>
+        ) : cleaning ? (
+          <Sparkles size={12} style={{ color: catColor("Cat H") }} aria-label={t("live.cleaningNow")} />
+        ) : idle.idle_min > 0 ? (
+          <span className="text-[11px] font-medium tabular-nums leading-none" style={{ color: ink }}>{fmtInt(idle.idle_min)} {t("live.min")}</span>
+        ) : c.plan?.pct != null && (c.plan.status === "warn" || c.plan.status === "crit") ? (
+          // No waiting, yet the cell is flagged: its PLAN is the reason — say it.
+          <span className="text-[11px] font-medium tabular-nums leading-none" style={{ color: STATUS_INK[c.plan.status] }}
+            title={`${t("live.cellPlan")} ${fmtPct(c.plan.pct)} / ${tp(t, "live.plan.expected", { e: fmtInt(c.plan.expected_pct) })}`}>
             {fmtPct(c.plan.pct)}
           </span>
-        )}
+        ) : null}
       </div>
-      {stopped && (
-        <div className="flex items-center gap-1 flex-wrap text-[10px] font-bold" style={{ color: STATUS_COLOR.crit }}>
-          <Siren size={11} />
-          <span>{tp(t, "live.stoppedSince", { since: idle.since })}</span>
-          <span>· {fmtInt(idle.now_min)} {t("live.min")}</span>
-          {(idle.now_cats || []).slice(0, 2).map((k) => (
-            <span key={k} className="px-1 rounded" style={{ background: hexA(catColor(k), 0.2), color: catColor(k) }}>{catCode(k)}</span>
-          ))}
-        </div>
-      )}
-      {/* A running Tozalash is NOT a stopped cell (2026-09-29): only its
-          «Tozalovchilar» are cleaning, so it says so in the category's own hue,
-          with no pulse and no alarm. */}
-      {!stopped && idle.cleaning_now && (
-        <div className="flex items-center gap-1 flex-wrap text-[10px] font-bold" style={{ color: catColor("Cat H") }}>
-          <Sparkles size={11} />
-          <span>
-            {idle.cleaners != null
-              ? tp(t, "live.cleaningNowN", { n: fmtInt(idle.cleaners) })
-              : t("live.cleaningNow")}
-          </span>
-          {idle.cleaning_min != null && <span>· {fmtInt(idle.cleaning_min)} {t("live.min")}</span>}
-        </div>
-      )}
-      {!stopped && !idle.cleaning_now && idle.by_cat && Object.keys(idle.by_cat).length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap">
-          {Object.keys(idle.by_cat).slice(0, 3).map((k) => (
-            <span key={k} className="text-[9px] font-bold px-1 rounded" style={{ background: hexA(catColor(k), 0.16), color: catColor(k) }}
-              title={`${t(`downtime.cat.${catCode(k)}.label`)} · ${fmtInt(idle.by_cat[k])} ${t("live.min")}`}>
-              {catCode(k)}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="text-[11px] truncate leading-tight" style={{ color: stopped ? "rgba(255,255,255,.85)" : cleaning ? catColor("Cat H") : "var(--text-3)" }}>
+        {cleaning
+          ? (idle.cleaners != null ? tp(t, "live.cleaningNowN", { n: fmtInt(idle.cleaners) }) : t("live.cleaningNow"))
+          : c.leader ? shortPerson(tl(c.leader)) : "—"}
+      </div>
     </div>
   );
 }
 
-export default function CellGrid({ cells, units, onlyProblems, onToggleOnly, t, tl }) {
+export default function CellGrid({ cells, units, frame, now, mobile, onlyProblems, onToggleOnly, t, tl }) {
   const list = (cells || []).filter((c) => !onlyProblems || c.status === "crit" || c.status === "warn");
   const byUnit = new Map();
   for (const c of list) {
@@ -94,27 +67,16 @@ export default function CellGrid({ cells, units, onlyProblems, onToggleOnly, t, 
     byUnit.get(c.unit_id).push(c);
   }
   const groups = (units || []).filter((u) => byUnit.has(u.id));
-  const stopped = (cells || []).filter((c) => c.idle?.stopped_now).length;
 
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <section className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <SectionHead
-        icon={Grid3x3}
         title={t("live.cells")}
         subtitle={t("live.cellsSub")}
         right={
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>
-              {stopped > 0 && <span style={{ color: STATUS_COLOR.crit }} className="font-bold">{stopped} ⏹ · </span>}
-              {(cells || []).length}
-            </span>
-            <SegmentedToggle
-              size="sm"
-              value={onlyProblems ? "problems" : "all"}
-              onChange={(v) => onToggleOnly(v === "problems")}
-              options={[["all", t("live.all")], ["problems", t("live.onlyProblems")]]}
-            />
-          </div>
+          <SegmentedToggle size="sm" value={onlyProblems ? "problems" : "all"}
+            onChange={(v) => onToggleOnly(v === "problems")}
+            options={[["all", t("live.all")], ["problems", t("live.onlyProblems")]]} />
         }
       />
       {!(cells || []).length ? (
@@ -122,27 +84,27 @@ export default function CellGrid({ cells, units, onlyProblems, onToggleOnly, t, 
       ) : !list.length ? (
         <EmptyState title={t("live.noProblemCells")} message="" showUploadLink={false} height="h-32" />
       ) : (
-        <div className="p-3 flex flex-col gap-3">
+        <div className="p-4 flex flex-col gap-4">
           {groups.map((u) => {
-            const uc = STATUS_COLOR[u.status] || STATUS_COLOR.quiet;
             const rows = byUnit.get(u.id) || [];
             return (
               <div key={u.id}>
-                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                  <span className="w-1.5 h-4 rounded-full" style={{ background: uc }} />
-                  <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{tl(u.name)}</span>
-                  <span className="text-[11px] font-mono" style={{ color: "var(--text-3)" }}>
-                    {rows.length}{u.cells_stopped > 0 ? ` · ${u.cells_stopped} ⏹` : ""}{u.idle?.basis !== "none" ? ` · ${fmtInt(u.idle?.min)} ${t("live.min")}` : ""}
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="w-2 h-2 rounded-full" style={{ background: STATUS_COLOR[u.status] || STATUS_COLOR.quiet }} aria-hidden="true" />
+                  <span className="text-[13px] font-medium" style={{ color: "var(--text-1)" }}>{tl(u.name)}</span>
+                  <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                    {tp(t, "live.cellsN", { n: rows.length })}
+                    {u.cells_stopped > 0 && <span style={{ color: STATUS_INK.crit }}> · {tp(t, "live.stoppedN", { n: u.cells_stopped })}</span>}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {rows.map((c) => <Tile key={c.id} c={c} t={t} />)}
+                <div className="grid gap-2" style={{ gridTemplateColumns: mobile ? "repeat(3, minmax(0, 1fr))" : "repeat(auto-fill, minmax(112px, 1fr))" }}>
+                  {rows.map((c) => <Tile key={c.id} c={c} frame={frame} now={now} t={t} tl={tl} />)}
                 </div>
               </div>
             );
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }

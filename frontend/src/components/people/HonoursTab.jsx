@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Award, ClipboardCheck, Lock, Plus, Trash2 } from "lucide-react";
 import TableCard, { SectionHead, Th } from "../ui/DataTable";
 import Button from "../ui/Button";
+import ActionMenu from "../ui/ActionMenu";
 import Modal from "../ui/Modal";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
@@ -95,56 +96,61 @@ export default function HonoursTab({ data, P, eid, ready }) {
   });
 
   const assess = h?.assessments;
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-      <TableCard icon={ClipboardCheck} title={P.assess}
-        right={assess ? <span className="text-xs" style={{ color: "var(--text-3)" }}>{assess.length}</span> : null}>
-        <thead>
-          <tr>
-            <Th label={P.colDate} />
-            <Th label={P.colPanel} />
-            <Th label={P.colResult} align="right" />
-            <Th label={P.colStatus} />
+  const assessCard = (
+    <TableCard icon={ClipboardCheck} title={P.assess}
+      right={assess ? <span className="text-xs" style={{ color: "var(--text-3)" }}>{assess.length}</span> : null}>
+      <thead>
+        <tr>
+          <Th label={P.colDate} />
+          <Th label={P.colPanel} />
+          <Th label={P.colResult} align="right" />
+          <Th label={P.colStatus} />
+        </tr>
+      </thead>
+      <tbody>
+        {!h ? (
+          [...Array(2)].map((_, i) => <tr key={i}><td colSpan={4} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td></tr>)
+        ) : assess === null ? (
+          <tr><td colSpan={4} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>
+            <span className="inline-flex items-center gap-1.5"><Lock size={13} aria-hidden="true" />{P.assessNoAccess}</span>
+          </td></tr>
+        ) : assess.length === 0 ? (
+          <tr><td colSpan={4} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{P.assessEmpty}</td></tr>
+        ) : assess.map((r) => (
+          <tr key={r.id} onClick={() => nav(`/assessment/${r.id}`)} className="cursor-pointer">
+            <td className="px-3 py-2 tabular-nums">{fmtDate(r.held_on)}</td>
+            <td className="px-3 py-2">
+              <span className="inline-flex items-center gap-1.5">
+                {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
+              </span>
+            </td>
+            <td className="px-3 py-2 text-right"><Result row={r} P={P} T={T} /></td>
+            <td className="px-3 py-2"><Chip>{r.status === "open" ? P.stOpen : P.stClosed}</Chip></td>
           </tr>
-        </thead>
-        <tbody>
-          {!h ? (
-            [...Array(2)].map((_, i) => <tr key={i}><td colSpan={4} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td></tr>)
-          ) : assess === null ? (
-            <tr><td colSpan={4} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>
-              <span className="inline-flex items-center gap-1.5"><Lock size={13} aria-hidden="true" />{P.assessNoAccess}</span>
-            </td></tr>
-          ) : assess.length === 0 ? (
-            <tr><td colSpan={4} className="px-3 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{P.assessEmpty}</td></tr>
-          ) : assess.map((r) => (
-            <tr key={r.id} onClick={() => nav(`/assessment/${r.id}`)} className="cursor-pointer">
-              <td className="px-3 py-2 tabular-nums">{fmtDate(r.held_on)}</td>
-              <td className="px-3 py-2">
-                <span className="inline-flex items-center gap-1.5">
-                  {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
-                </span>
-              </td>
-              <td className="px-3 py-2 text-right"><Result row={r} P={P} T={T} /></td>
-              <td className="px-3 py-2"><Chip>{r.status === "open" ? P.stOpen : P.stClosed}</Chip></td>
-            </tr>
-          ))}
-        </tbody>
-      </TableCard>
+        ))}
+      </tbody>
+    </TableCard>
+  );
 
+  return (
+    <div className="space-y-4">
       <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Award} title={P.honoursTitle}
           right={can ? <Button size="sm" icon={Plus} onClick={() => setAdding(true)}>{P.honourAdd}</Button> : null} />
         {!h ? (
-          <div className="px-4 pb-4 space-y-2">{[0, 1].map((i) => <SkeletonBlock key={i} className="h-12 w-full" />)}</div>
+          <div className="px-4 pb-4 space-y-2">{[0, 1].map((i) => <SkeletonBlock key={i} className="h-14 w-full" />)}</div>
         ) : h.list.length === 0 ? (
           <p className="px-4 pb-6 pt-2 text-sm" style={{ color: "var(--text-3)" }}>{P.honoursEmpty}</p>
         ) : (
-          <ul>
-            {h.list.map((x) => (
-              <li key={x.id} className="px-4 py-2.5 flex items-center gap-3 min-h-[52px]" style={{ borderTop: "1px solid var(--border)" }}>
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                  <Award size={15} aria-hidden="true" />
+          <ul className="px-2 sm:px-3 pb-2">
+            {h.list.map((x, i) => (
+              <li key={x.id} className="pc-row px-2.5 py-2.5 flex items-center gap-3 min-h-[60px] rounded-xl"
+                style={{ "--d": `${Math.min(i, 8) * 40}ms` }}>
+                {/* The award is the brand's accent — a property of the record,
+                    never a status; its kind is a neutral word under it. */}
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
+                  style={{ background: "rgba(var(--brand-rgb),.14)", color: "var(--brand-text)" }}>
+                  <Award size={18} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium truncate" style={{ color: "var(--text-1)" }} title={x.title}>{x.title}</span>
@@ -152,16 +158,18 @@ export default function HonoursTab({ data, P, eid, ready }) {
                     {[P.hk[x.kind] || x.kind, x.by ? fill(P.hBy, { n: tl(x.by) }) : null, x.note].filter(Boolean).join(" · ")}
                   </span>
                 </span>
-                <Chip className="tabular-nums">{fmtDate(x.date)}</Chip>
+                <span className="flex-shrink-0 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDate(x.date)}</span>
                 {can && (
-                  <Button variant="danger" tint size="sm" icon={Trash2} aria-label={P.remove} title={P.remove}
-                    onClick={() => { setRmErr(null); setRemoving(x); }} />
+                  <ActionMenu label={`${P.remove}: ${x.title}`} items={[
+                    { key: "remove", label: P.remove, icon: Trash2, tone: "danger", onSelect: () => { setRmErr(null); setRemoving(x); } },
+                  ]} />
                 )}
               </li>
             ))}
           </ul>
         )}
       </div>
+      {assessCard}
 
       {adding && (
         <HonourModal P={P} kinds={kinds} eid={eid} onClose={() => setAdding(false)}

@@ -1,8 +1,9 @@
-import { Lock, Inbox, Check, X, ListChecks, Users, MessageSquareText } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Lock, Inbox, Check, X, ListChecks, Quote } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
 import { useTranslit } from "../../utils/transliterate";
-import { useAT, fill, pct0, DeptChip, TypeChip, VERDICT, fmtDateTime } from "./assessmentUtil";
+import { useAT, fill, pct0, DeptChip, TypeChip, VERDICT, DEPT_ICON, fmtDateTime } from "./assessmentUtil";
 
 function Mark({ v }) {
   if (v === "pass") return <Check size={15} strokeWidth={3} style={{ color: VERDICT.pass.ink }} aria-label="pass" />;
@@ -10,59 +11,81 @@ function Mark({ v }) {
   return <span style={{ color: "var(--text-4)" }}>—</span>;
 }
 
-function Bar({ pct }) {
-  return (
-    <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-      <div className="h-full rounded-full" style={{ width: `${pct ?? 0}%`, background: "var(--brand)" }} />
-    </div>
-  );
-}
-
-/** The panel's verdicts at a glance — one square per question, grouped by the
- *  department that judged it (the seats' own order), each filled with the
- *  toggle's verdict colour; a question whose judge has not submitted is a
- *  dashed square. Nothing is computed: it is the rows below, drawn small. */
-function VerdictStrip({ rows, seats, T }) {
-  const label = (r) => `${r.position}. ${r.text} — ${r.submitted ? (r.verdict === "pass" ? T.pass : r.verdict === "fail" ? T.fail : "—") : T.notSubmitted}`;
-  return (
-    <div className="flex flex-wrap gap-x-5 gap-y-3">
-      {seats.map((s) => {
-        const mine = rows.filter((r) => r.department === s.department).sort((a, b) => a.position - b.position);
-        if (!mine.length) return null;
-        return (
-          <div key={s.department} className="min-w-0">
-            <div className="mb-1.5"><DeptChip dept={s.department} T={T} /></div>
-            <div className="flex flex-wrap gap-1">
-              {mine.map((r) => {
-                const v = r.submitted ? r.verdict : null;
-                const style = v ? { background: VERDICT[v].bg, color: VERDICT[v].fg }
-                  : { background: "transparent", color: "var(--text-3)", border: "1px dashed var(--border-md)" };
-                return (
-                  <span key={r.item_id} title={label(r)} aria-label={label(r)}
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-[11px] font-semibold tabular-nums"
-                    style={style}>{r.position}</span>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** A small «share» card — a label, the pass share, its base. No traffic
+/** The pass share as a ring that fills on arrival. Gold, never a traffic
  *  light: the platform has no pass mark for a candidate, so a colour here
  *  would be a verdict nobody has defined. */
-function Share({ label, node, s }) {
+function ScoreRing({ pct, passed, judged }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => { const id = requestAnimationFrame(() => setShown(pct ?? 0)); return () => cancelAnimationFrame(id); }, [pct]);
+  const size = 136, sw = 10, r = (size - sw) / 2, c = 2 * Math.PI * r;
   return (
-    <div className="rounded-xl px-3 py-2" style={{ background: "var(--bg-inner)" }}>
-      <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="truncate" style={{ color: "var(--text-2)" }}>{node || label}</span>
-        <span className="tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{pct0(s?.pct)}</span>
+    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-inner)" strokeWidth={sw} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--brand)" strokeWidth={sw} strokeLinecap="round"
+          strokeDasharray={`${((c * shown) / 100).toFixed(2)} ${c.toFixed(2)}`} transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ transition: "stroke-dasharray 1s var(--ease-out)" }} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[34px] font-semibold tabular-nums leading-none tracking-[-0.02em]" style={{ color: "var(--text-1)" }}>{pct0(pct)}</span>
+        <span className="mt-1 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{passed} / {judged}</span>
       </div>
-      <div className="mt-1.5"><Bar pct={s?.pct} /></div>
-      <div className="mt-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{s ? `${s.passed}/${s.judged}` : "—"}</div>
+    </div>
+  );
+}
+
+function ShareRow({ label, s }) {
+  return (
+    <div className="min-w-0 rounded-xl p-3" style={{ background: "var(--bg-inner)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0">{label}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-[17px] font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{pct0(s?.pct)}</span>
+          <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{s ? `${s.passed}/${s.judged}` : "—"}</span>
+        </span>
+      </div>
+      <div className="mt-2.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-card)" }}>
+        <div className="h-full rounded-full" style={{ width: `${s?.pct ?? 0}%`, background: "var(--brand)", transition: "width .8s var(--ease-out)" }} />
+      </div>
+    </div>
+  );
+}
+
+/** One department of the panel: its judge, the pass share of its questions,
+ *  and every question as a square in the verdict colour (dashed until that
+ *  judge submits). Nothing is computed: it is the rows, drawn small. */
+function DeptColumn({ seat, judge, rows, T, tl }) {
+  const Icon = DEPT_ICON[seat.department];
+  const mine = rows.filter((r) => r.department === seat.department).sort((a, b) => a.position - b.position);
+  const label = (r) => `${r.position}. ${r.text} — ${r.submitted ? (r.verdict === "pass" ? T.pass : r.verdict === "fail" ? T.fail : "—") : T.notSubmitted}`;
+  return (
+    <div className="min-w-0 rounded-xl p-3" style={{ background: "var(--bg-inner)", opacity: judge ? 1 : 0.75 }}
+      title={judge ? `${tl(judge.judge_name || "")} · ${fmtDateTime(judge.submitted_at)}` : undefined}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold min-w-0" style={{ color: "var(--text-1)" }}>
+          {Icon && <Icon size={14} style={{ color: "var(--text-3)" }} aria-hidden="true" />}
+          <span className="truncate">{T.dept[seat.department]}</span>
+        </span>
+        <span className="text-sm font-semibold tabular-nums" style={{ color: judge ? "var(--text-1)" : "var(--text-3)" }}>
+          {judge ? pct0(judge.pct) : "—"}
+        </span>
+      </div>
+      <div className="mt-0.5 text-[11px] truncate" style={{ color: "var(--text-3)" }}>
+        {seat.judge_name ? tl(seat.judge_name) : T.seatFree}{!judge && seat.judge_name ? ` · ${T.notSubmitted}` : ""}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-1">
+        {mine.map((r) => {
+          const v = r.submitted ? r.verdict : null;
+          return (
+            <span key={r.item_id} title={label(r)} aria-label={label(r)}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-[11px] font-semibold tabular-nums"
+              style={v ? { background: VERDICT[v].bg, color: VERDICT[v].fg }
+                : { background: "transparent", color: "var(--text-3)", boxShadow: "inset 0 0 0 1px var(--border-md)", borderRadius: 6 }}>
+              {r.position}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -80,88 +103,110 @@ export default function ResultsView({ data }) {
   }
   const seats = data.seats;
   const judged = new Map(res.judges.map((j) => [j.department, j]));
-  const notes = res.rows.filter((r) => r.note);
-  // A question's verdict is its own department's judge's; until that judge
-  // submits, the cell says so instead of a dash that reads as «ungraded».
+  const failedRows = res.rows.filter((r) => r.submitted && r.verdict === "fail").sort((a, b) => a.position - b.position);
   const verdictCell = (r) => (r.submitted ? <Mark v={r.verdict} /> : (
     <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.notSubmitted}</span>
   ));
 
   return (
-    <div className="space-y-4">
-      {/* Headline */}
-      <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{T.overallRes}</div>
-            <div className="mt-1 text-4xl font-medium tabular-nums" style={{ color: "var(--text-1)" }}>{pct0(res.overall.pct)}</div>
-            <div className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
-              {fill(T.overallResSub, { p: res.overall.passed, j: res.overall.judged })}
+    <div className="space-y-3">
+      {/* Headline: the pass share, by type, and the panel department by department. */}
+      <section className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-8">
+          <div className="flex items-center gap-5">
+            <ScoreRing pct={res.overall.pct} passed={res.overall.passed} judged={res.overall.judged} />
+            <div className="sm:hidden min-w-0">
+              <div className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>{T.overallRes}</div>
+              <div className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>{fill(T.overallResSub, { p: res.overall.passed, j: res.overall.judged })}</div>
             </div>
-            {res.judges.length < 5 && (
-              <div className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>{fill(T.partialNote, { n: res.judges.length })}</div>
-            )}
           </div>
-          <div className="space-y-3 min-w-0">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-3)" }}>{T.byType}</div>
-              <div className="grid grid-cols-2 gap-2">
-                {["theory", "practical"].map((t) => (
-                  <Share key={t} node={<TypeChip type={t} T={T} />} s={res.by_type[t]} />
-                ))}
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="hidden sm:block">
+              <div className="text-[15px] font-semibold" style={{ color: "var(--text-1)" }}>{T.overallRes}</div>
+              <div className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>
+                {fill(T.overallResSub, { p: res.overall.passed, j: res.overall.judged })}
+                {res.judges.length < 5 && <> · {fill(T.partialNote, { n: res.judges.length })}</>}
               </div>
             </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {["theory", "practical"].map((t) => (
+                <ShareRow key={t} label={<TypeChip type={t} T={T} />} s={res.by_type[t]} />
+              ))}
+            </div>
+            {res.judges.length < 5 && (
+              <div className="sm:hidden text-[11px]" style={{ color: "var(--text-3)" }}>{fill(T.partialNote, { n: res.judges.length })}</div>
+            )}
           </div>
         </div>
-        <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-3)" }}>{T.stripTitle}</div>
-          <VerdictStrip rows={res.rows} seats={seats} T={T} />
+        <div className="px-4 sm:px-5 pb-4 sm:pb-5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>{T.byQDept}</div>
+          <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+            {seats.map((s) => (
+              <DeptColumn key={s.department} seat={s} judge={judged.get(s.department)} rows={res.rows} T={T} tl={tl} />
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* By judge */}
-      <TableCard icon={Users} title={T.byJudge} maxHeight="none"
-        mobile={(
+      {/* What the candidate did not pass, with the judges' notes — the part a
+          decision is made on. */}
+      <section className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="px-4 sm:px-5 py-3 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
+          <span className="text-[15px] font-semibold" style={{ color: "var(--text-1)" }}>{T.failedTitle}</span>
+          <span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{failedRows.length}</span>
+        </div>
+        {failedRows.length === 0 ? (
+          <div className="px-4 sm:px-5 py-6 flex items-center gap-2 text-sm" style={{ color: "var(--text-2)" }}>
+            <Check size={16} strokeWidth={3} style={{ color: VERDICT.pass.ink }} aria-hidden="true" />{T.noFailed}
+          </div>
+        ) : (
           <ul>
-            {seats.map((s) => {
-              const j = judged.get(s.department);
-              return (
-                <li key={s.department} className="px-4 py-3 flex items-center gap-3" style={{ borderTop: "1px solid var(--border)", opacity: j ? 1 : 0.6 }}>
-                  <DeptChip dept={s.department} T={T} />
-                  <span className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--text-1)" }}>{s.judge_name ? tl(s.judge_name) : "—"}</span>
-                  <span className="text-xs tabular-nums" style={{ color: j ? "var(--text-1)" : "var(--text-3)" }}>
-                    {j ? `${pct0(j.pct)} · ${j.passed}/${j.total ?? j.graded}` : T.notSubmitted}
-                  </span>
-                </li>
-              );
-            })}
+            {failedRows.map((r, i) => (
+              <li key={r.item_id} className="px-4 sm:px-5 py-3 flex items-start gap-3" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+                <span className="inline-flex items-center justify-center gap-0.5 min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-semibold tabular-nums flex-shrink-0"
+                  style={{ background: VERDICT.fail.bg, color: VERDICT.fail.fg }}>
+                  <X size={11} strokeWidth={3} aria-hidden="true" />{r.position}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-relaxed break-words" style={{ color: "var(--text-1)" }}>{r.text}</p>
+                  {r.note && (
+                    <p className="mt-1 text-[13px] leading-relaxed break-words" style={{ color: "var(--text-2)" }}>
+                      <span style={{ color: "var(--text-3)" }}>{tl(r.judge_name || "")}: </span>{r.note}
+                    </p>
+                  )}
+                </div>
+                <span className="flex-shrink-0 max-sm:hidden"><DeptChip dept={r.department} T={T} /></span>
+              </li>
+            ))}
           </ul>
-        )}>
-        <thead>
-          <tr>
-            <Th label={T.colDept} /><Th label={T.colJudge} /><Th label={T.colPassed} align="right" />
-            <Th label={T.colPct} align="right" /><Th label={T.colSubmittedAt} />
-          </tr>
-        </thead>
-        <tbody>
-          {seats.map((s) => {
-            const j = judged.get(s.department);
+        )}
+      </section>
+
+      {/* Every submitted judge's overall feedback, as what it is: their words. */}
+      <section className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="text-[15px] font-semibold mb-3" style={{ color: "var(--text-1)" }}>{T.feedbackTitle}</div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {res.judges.map((j) => {
+            const Icon = DEPT_ICON[j.department];
             return (
-              <tr key={s.department} style={{ opacity: j ? 1 : 0.6 }}>
-                <td className="px-3 py-2"><DeptChip dept={s.department} T={T} /></td>
-                <td className="px-3 py-2">{s.judge_name ? tl(s.judge_name) : "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{j ? `${j.passed}/${j.total ?? j.graded}` : "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold">{j ? pct0(j.pct) : "—"}</td>
-                <td className="px-3 py-2 tabular-nums" style={{ color: j ? "var(--text-1)" : "var(--text-3)" }}>
-                  {j ? fmtDateTime(j.submitted_at) : T.notSubmitted}
-                </td>
-              </tr>
+              <figure key={j.department} className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ background: "var(--bg-inner)" }}>
+                <Quote size={16} style={{ color: "rgba(var(--brand-rgb), .7)" }} aria-hidden="true" />
+                <blockquote className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                  {j.overall_feedback || "—"}
+                </blockquote>
+                <figcaption className="mt-auto flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+                  {Icon && <Icon size={13} aria-hidden="true" />}
+                  <span className="font-medium" style={{ color: "var(--text-2)" }}>{T.dept[j.department]}</span>
+                  <span>· {j.judge_name ? tl(j.judge_name) : "—"}</span>
+                  <span className="ml-auto tabular-nums">{fmtDateTime(j.submitted_at)}</span>
+                </figcaption>
+              </figure>
             );
           })}
-        </tbody>
-      </TableCard>
+        </div>
+      </section>
 
-      {/* Every question with its own department's verdict */}
+      {/* The whole record: every question with its own department's verdict. */}
       <TableCard icon={ListChecks} title={T.matrix} maxHeight="none" fixed minWidth={720}
         mobile={(
           <ul>
@@ -208,41 +253,6 @@ export default function ResultsView({ data }) {
           ))}
         </tbody>
       </TableCard>
-
-      {/* Overall feedback of every submitted judge */}
-      <section className="rounded-2xl p-4 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
-          <MessageSquareText size={14} aria-hidden="true" />{T.feedbackTitle}
-        </h3>
-        {res.judges.map((j) => (
-          <div key={j.department} className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <DeptChip dept={j.department} T={T} />
-              <span className="font-medium" style={{ color: "var(--text-1)" }}>{j.judge_name ? tl(j.judge_name) : "—"}</span>
-              <span className="ml-auto tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDateTime(j.submitted_at)}</span>
-            </div>
-            <p className="mt-1.5 text-sm whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{j.overall_feedback || ""}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* Notes on questions */}
-      <section className="rounded-2xl p-4 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{T.notesTitle}</h3>
-        {notes.length === 0 ? (
-          <p className="text-xs" style={{ color: "var(--text-3)" }}>{T.noNotes}</p>
-        ) : notes.map((r) => (
-          <div key={r.item_id} className="text-sm">
-            <div className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
-              {r.position}. <span className="font-normal">{r.text}</span>
-            </div>
-            <p className="mt-0.5 ml-4 text-xs break-words" style={{ color: "var(--text-1)" }}>
-              <span className="font-medium" style={{ color: "var(--text-2)" }}>{T.dept[r.department]}</span>
-              {r.judge_name ? ` · ${tl(r.judge_name)}` : ""}: {r.note}
-            </p>
-          </div>
-        ))}
-      </section>
     </div>
   );
 }

@@ -289,7 +289,8 @@ def _sum(days: dict, docs: list, a: date, b: date) -> dict:
         elif x["leave"]:
             leave += 1
     moves = sum(1 for o in docs if o["kind"] == "people_exchange" and a.isoformat() <= o["date"] <= b.isoformat())
-    return {"listed": listed, "came": came, "leave": leave, "hours": round(hours, 1),
+    return {"listed": listed, "came": came, "leave": leave, "absent": listed - came - leave,
+            "hours": round(hours, 1),
             "att": round((came + leave) * 100.0 / listed, 1) if listed else None, "moves": moves}
 
 
@@ -469,6 +470,20 @@ def card(eid: str,
         if o["kind"] == "people_exchange":
             moves_by_day.setdefault(o["date"], []).append(o)
 
+    # The period's days, oldest first — the card's day grid beside the tiles.
+    # `p` marks a day the tiles do not count yet (not closed, not today's live
+    # day), so the grid can say so instead of painting it like a counted one.
+    strip = []
+    d = a
+    while d <= b:
+        x = f["days"].get(d)
+        one = {"s": _day_state(x, bool(moves_by_day.get(d.isoformat())))}
+        if x and not (x["closed"] or x.get("live")):
+            one["p"] = 1
+        strip.append(one)
+        d += timedelta(days=1)
+    out["tiles"]["days"] = strip
+
     if tab == "overview":
         out["feed"] = _feed(f, people.assessments_brief(db, eid), honours)
     elif tab == "attendance":
@@ -491,8 +506,19 @@ def card(eid: str,
             if x:
                 rows.append(x)
             d -= timedelta(days=1)
+        # The month's own figures for the calendar's side panel: the tiles'
+        # rule over the month so far, and how many days wear each state.
+        counts: dict = {}
+        for g in grid:
+            if g["date"] > today.isoformat():
+                continue
+            k = g["state"] or "none"
+            counts[k] = counts.get(k, 0) + 1
         out["attendance"] = {"month": tv.ym(m), "grid": grid, "rows": rows,
-                             "cells_from": people.CELLS_FROM.isoformat()}
+                             "cells_from": people.CELLS_FROM.isoformat(),
+                             "month_sum": _sum(f["days"], f["docs"], m, min(last, today)),
+                             "counts": counts,
+                             "moved_days": sum(1 for g in grid if g.get("moves"))}
     elif tab == "career":
         out["career"] = {"timeline": f["career"], "runs": f["runs"]}
     elif tab == "honours":

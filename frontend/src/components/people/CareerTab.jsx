@@ -13,8 +13,8 @@ export default function CareerTab({ data, P, ready }) {
   const c = ready ? data.career : null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-      <div className="lg:col-span-3 rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className="space-y-4">
+      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={GitCommitVertical} title={P.timeline} subtitle={P.timelineSub} />
         {!c ? (
           <div className="px-4 pb-4 space-y-3">{[0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-14 w-full" />)}</div>
@@ -28,17 +28,17 @@ export default function CareerTab({ data, P, ready }) {
               // The unit's own name usually starts with its code («4311 Оф.…»).
               const place = e.unit ? (e.code && !String(e.unit).startsWith(e.code) ? `${e.code} · ${tx(e.unit)}` : tx(e.unit)) : e.code;
               return (
-                <li key={`${e.kind}-${e.date}-${i}`} className="relative flex gap-3 pb-4">
-                  {!last && <span aria-hidden="true" className="absolute left-[15px] top-8 bottom-0 w-px" style={{ background: "var(--border-md)" }} />}
+                <li key={`${e.kind}-${e.date}-${i}`} className="pc-row relative flex gap-3 pb-5 last:pb-1" style={{ "--d": `${Math.min(i, 10) * 40}ms` }}>
+                  {!last && <span aria-hidden="true" className="absolute left-[15px] top-9 bottom-1 w-px" style={{ background: "var(--border-md)" }} />}
                   <span className="relative z-[1] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
+                    style={{ background: i === 0 ? "rgba(var(--brand-rgb),.14)" : "var(--bg-inner)", color: i === 0 ? "var(--brand-text)" : "var(--text-2)" }}>
                     <Icon size={15} aria-hidden="true" />
                   </span>
                   <div className="min-w-0 flex-1 pt-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <div className="flex items-baseline gap-x-2 gap-y-1">
                       <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{P.k[e.kind] || e.kind}</span>
-                      <Chip className="tabular-nums">{fmtDate(e.date)}</Chip>
                       {e.cancelled && <Chip>{P.evCancelled}</Chip>}
+                      <span className="ml-auto flex-shrink-0 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDate(e.date)}</span>
                     </div>
                     {e.kind === "rank" ? (
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--text-2)" }}>
@@ -76,7 +76,7 @@ export default function CareerTab({ data, P, ready }) {
         )}
       </div>
 
-      <TableCard className="lg:col-span-2" icon={LayoutGrid} title={P.runs} subtitle={P.runsSub}>
+      <TableCard icon={LayoutGrid} title={P.runs} subtitle={P.runsSub}>
         <thead>
           <tr>
             <Th label={P.cell} />

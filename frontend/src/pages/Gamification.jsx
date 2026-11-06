@@ -145,10 +145,12 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
           <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000" floodOpacity={locked ? 0.32 : 0.45} />
         </filter>
       </defs>
-      {progress != null && !locked && (
+      {progress != null && (
         <>
           <circle cx="60" cy="60" r="66" fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth="4.5" />
-          <circle cx="60" cy="60" r="66" fill="none" stroke={`url(#${id}r)`} strokeWidth="4.5" strokeLinecap="round"
+          {/* A locked coin's ring is the next tier's progress, in plain gold —
+              its own metal is the dark silhouette. The ring fills on arrival. */}
+          <circle className="gami-ring" cx="60" cy="60" r="66" fill="none" stroke={locked ? "#C8973F" : `url(#${id}r)`} strokeWidth="4.5" strokeLinecap="round"
             strokeDasharray={`${(circ * Math.min(1, progress)).toFixed(1)} ${circ.toFixed(1)}`} transform="rotate(-90 60 60)" />
         </>
       )}
@@ -255,8 +257,25 @@ const TIERS = [
 
 const ME = { xp: 6240, tier: 2, score: 78.25, rank: 2, delta: 2.1, unit: "3-uchastka" };
 
-/* Season standings freeze moment — drives the live countdown. */
-const FREEZE_TS = new Date(2026, 8, 1, 9, 0, 0).getTime();
+/* The demo season is the month on the calendar: it opens on the 1st at
+ * 09:00 and its standings freeze on the next 1st at 09:00 — so the preview's
+ * countdown always counts toward something. */
+const SEASON = (() => {
+  const now = new Date();
+  let start = new Date(now.getFullYear(), now.getMonth(), 1, 9, 0, 0);
+  if (now < start) start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 9, 0, 0);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 1, 9, 0, 0);
+  return { start, end, month: start.getMonth(), year: start.getFullYear() };
+})();
+const FREEZE_TS = SEASON.end.getTime();
+const FINAL_WEEK = Math.ceil((FREEZE_TS - Date.now()) / 86400000) <= 7;
+const ddmm = (d) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+const FREEZE_LABEL = `${ddmm(SEASON.end)} 09:00`;
+/* The last three seasons, newest first — «MM.YYYY». */
+const PAST_SEASONS = [1, 2, 3].map((k) => {
+  const d = new Date(SEASON.year, SEASON.month - k, 1);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+});
 
 /* Peer pool for the head-to-head compare view (same role — supervisors).
  * Shaped like the future compare API: per-category scores, XP/tier, streaks,
@@ -334,7 +353,7 @@ const CEREMONY = [
 /* ── shared atoms ── */
 function MicroLabel({ children, style }) {
   return (
-    <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)", ...style }}>
+    <div className="text-[11px] uppercase tracking-[0.06em] font-semibold" style={{ color: "var(--text-3)", ...style }}>
       {children}
     </div>
   );
@@ -377,9 +396,51 @@ function Card({ children, className = "", style }) {
   );
 }
 
-/* Live reverse counter to the standings freeze — isolated so the 1s tick
- * re-renders only these four blocks, not the whole page. */
-function Countdown({ target, labels }) {
+function Sparkle({ style, delay = 0, size = 13 }) {
+  return (
+    <svg aria-hidden className="gami-live absolute pointer-events-none" width={size} height={size} viewBox="0 0 24 24"
+      fill="#F2D48C" style={{ ...style, animationDelay: `${delay}s` }}>
+      <path d="M12 2 14 10 22 12 14 14 12 22 10 14 2 12 10 10Z" />
+    </svg>
+  );
+}
+
+/* A coin that leans toward the pointer — a real object under the hand.
+ * The transform is written straight onto the element (no re-render); reduced
+ * motion and touch leave it flat. */
+function Tilt({ children, max = 14 }) {
+  const move = (e) => {
+    if (e.pointerType !== "mouse") return;
+    const el = e.currentTarget;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.setProperty("--ry", `${(x * max).toFixed(1)}deg`);
+    el.style.setProperty("--rx", `${(-y * max).toFixed(1)}deg`);
+  };
+  const leave = (e) => { e.currentTarget.style.setProperty("--rx", "0deg"); e.currentTarget.style.setProperty("--ry", "0deg"); };
+  return <span className="gami-tilt inline-flex" onPointerMove={move} onPointerLeave={leave}>{children}</span>;
+}
+
+/* The family's four tiers as pips — the metal of each one held, an empty
+ * ring for each still ahead. */
+function Pips({ done }) {
+  return (
+    <span className="inline-flex items-center gap-1.5" aria-hidden>
+      {PIP_COLORS.map((c, i) => (
+        <span key={i} className="inline-flex rounded-full" style={{
+          width: 8, height: 8,
+          background: i < done ? c : "transparent",
+          boxShadow: i < done ? "none" : "inset 0 0 0 1.5px var(--border-md)",
+        }} />
+      ))}
+    </span>
+  );
+}
+
+/* The countdown as one line of figures — the page's hero carries it on every
+ * tab; the season view keeps the large digits. */
+function CountdownLine({ target, labels }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -389,31 +450,72 @@ function Countdown({ target, labels }) {
   const d = Math.floor(rest / 86400); rest -= d * 86400;
   const h = Math.floor(rest / 3600); rest -= h * 3600;
   const m = Math.floor(rest / 60); rest -= m * 60;
-  const cells = [[d, labels.d], [h, labels.h], [m, labels.m], [rest, labels.s]];
+  const p2 = (v) => String(v).padStart(2, "0");
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      {cells.map(([v, l], i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          <div className="flex flex-col items-center rounded-xl px-2.5 py-1.5 min-w-[56px]"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--brand-border)" }}>
-            <span className="tabular-nums" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15, color: "var(--brand-text)" }}>
-              {String(v).padStart(2, "0")}
-            </span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{l}</span>
-          </div>
-          {i < 3 && <span className="font-bold" style={{ color: "var(--text-4)" }}>:</span>}
-        </div>
-      ))}
-    </div>
+    <span className="tabular-nums whitespace-nowrap">
+      {d} <span className="text-[13px] font-medium" style={{ color: "var(--text-3)" }}>{labels.d}</span>{" "}
+      {p2(h)}:{p2(m)}<span style={{ color: "var(--text-3)" }}>:<span key={rest} className="gami-tick">{p2(rest)}</span></span>
+    </span>
   );
 }
 
-function Sparkle({ style, delay = 0, size = 13 }) {
+/* The player — who is playing, at which tier, how far to the next, and where
+ * the season stands — above every tab, so no tab has to say it again. */
+function PlayerHero({ t, tl, name, tierPct, curTier, nextTier, earnedTiers, totalTiers, gapToFirst }) {
+  const stat = (label, value, sub) => (
+    <div className="min-w-0 px-4 md:px-5 py-3.5">
+      <div className="text-xs truncate" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-1 text-xl sm:text-[22px] font-semibold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>{value}</div>
+      {sub && <div className="mt-1.5 text-xs truncate" style={{ color: "var(--text-3)" }}>{sub}</div>}
+    </div>
+  );
   return (
-    <svg aria-hidden className="gami-live absolute pointer-events-none" width={size} height={size} viewBox="0 0 24 24"
-      fill="#F2D48C" style={{ ...style, animationDelay: `${delay}s` }}>
-      <path d="M12 2 14 10 22 12 14 14 12 22 10 14 2 12 10 10Z" />
-    </svg>
+    <Card className="gami-deal relative overflow-hidden">
+      <span aria-hidden className="absolute inset-0 pointer-events-none"
+        style={{ background: `radial-gradient(70% 140% at 0% -20%, ${hexA("#C8973F", 0.16)} 0%, transparent 60%)` }} />
+      <div className="relative p-4 md:p-5 flex items-center gap-4">
+        <Avatar name={name} size={60} ringPct={tierPct} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-[19px] font-semibold leading-tight truncate" style={{ color: "var(--text-1)" }}>{tl(name)}</h2>
+            <GoldPill title={t("gami.demoNote")}>{t("gami.demoBadge")}</GoldPill>
+          </div>
+          <div className="text-[13px] mt-0.5" style={{ color: "var(--text-2)" }}>{t("role.supervisor")} · {ME.unit}</div>
+          <div className="mt-3 max-w-[560px]">
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span style={{ color: "var(--text-1)" }}>
+                <b className="font-semibold">{t(`gami.tier.${curTier.key}`)} {curTier.numeral}</b>
+                <span style={{ color: "var(--text-3)" }}> · {fmtXp(ME.xp)} XP</span>
+              </span>
+              {nextTier && (
+                <span className="max-sm:hidden tabular-nums text-right" style={{ color: "var(--text-3)" }}>
+                  {t("gami.xpToNext").replace("{n}", fmtXp(nextTier.from - ME.xp)).replace("{tier}", t(`gami.tier.${nextTier.key}`))}
+                </span>
+              )}
+            </div>
+            <div className="relative mt-1.5 h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+              <span className="gami-fill absolute inset-y-0 left-0 rounded-full"
+                style={{ width: `${Math.round(tierPct * 100)}%`, background: "linear-gradient(90deg, #8A6226, #C8973F 55%, #E9C476)" }} />
+            </div>
+            {nextTier && (
+              <div className="sm:hidden mt-1.5 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+                {t("gami.xpToNext").replace("{n}", fmtXp(nextTier.from - ME.xp)).replace("{tier}", t(`gami.tier.${nextTier.key}`))}
+              </div>
+            )}
+          </div>
+        </div>
+        <span className="hidden sm:inline-flex flex-shrink-0"><Tilt><Medallion size={88} numeral={curTier.numeral} metal={curTier.metal} /></Tilt></span>
+      </div>
+      <div className="relative grid grid-cols-2 sm:grid-cols-3" style={{ borderTop: "1px solid var(--border)" }}>
+        {stat(t("gami.seasonRank"), `#${ME.rank}`, `${fmt1(ME.score)} ${t("gami.points")} · ${t("gami.gapToFirst").replace("{n}", fmt1(gapToFirst))}`)}
+        <div style={{ borderLeft: "1px solid var(--border)" }}>
+          {stat(t("gami.compareBadges"), `${earnedTiers}/${totalTiers}`, t("gami.familiesN").replace("{n}", FAMILIES.length))}
+        </div>
+        <div className="col-span-2 sm:col-span-1 max-sm:border-t max-sm:border-[var(--border)] sm:border-l sm:border-[var(--border)]">
+          {stat(t("gami.endsIn"), <CountdownLine target={FREEZE_TS} labels={{ d: t("gami.cd.d") }} />, t("gami.freezeAt").replace("{d}", FREEZE_LABEL))}
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -444,11 +546,9 @@ export default function Gamification() {
   const curTier = TIERS[ME.tier];
   const tierPct = nextTier ? (ME.xp - curTier.from) / (nextTier.from - curTier.from) : 1;
   const gapToFirst = compOf(PEOPLE[0].cats) - ME.score;
-  const daysLeft = Math.max(0, Math.ceil((FREEZE_TS - Date.now()) / 86400000));
-  const finalWeek = daysLeft <= 7;
+  const finalWeek = FINAL_WEEK;
 
   const badgeName = (k) => t(`gami.badge.${k}`);
-  const badgeDesc = (k) => t(`gami.badge.${k}Desc`);
 
   /* podium in season view: #1 rival, #2 me, #3 rival */
   const podium = [
@@ -488,8 +588,23 @@ export default function Gamification() {
         .gami-flip.flipped .gami-flip-inner { transform: rotateY(180deg); }
         .gami-flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
         .gami-flip-back { position: absolute; inset: 0; transform: rotateY(180deg); display: flex; align-items: center; justify-content: center; }
+        @keyframes gamiDeal { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+        .gami-deal { animation: gamiDeal .5s cubic-bezier(.2,.8,.25,1) both; animation-delay: var(--d, 0ms); }
+        @keyframes gamiRing { from { stroke-dasharray: 0 999; } }
+        .gami-ring { animation: gamiRing 1.2s cubic-bezier(.3,.7,.2,1) .25s both; }
+        @keyframes gamiFill { from { transform: scaleX(0); } }
+        .gami-fill { transform-origin: left center; animation: gamiFill 1s cubic-bezier(.3,.7,.2,1) .2s both; }
+        .gami-tilt { transform: perspective(520px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .18s ease-out; will-change: transform; }
+        .gami-card { transition: border-color .2s ease, background-color .2s ease, transform .2s ease; }
+        .gami-card:hover { border-color: rgba(200,151,63,.45) !important; transform: translateY(-2px); }
+        .gami-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+        @keyframes gamiTick { from { transform: translateY(-40%); opacity: 0; } to { transform: none; opacity: 1; } }
+        .gami-tick { display: inline-block; animation: gamiTick .35s cubic-bezier(.2,.8,.25,1) both; }
         @media (prefers-reduced-motion: reduce) {
-          .gami-halo, .gami-flame, .gami-live, .gami-shimmer, .gami-plat-sheen, .gami-stamp, .gami-rise, .gami-rays { animation: none; }
+          .gami-halo, .gami-flame, .gami-live, .gami-shimmer, .gami-plat-sheen, .gami-stamp, .gami-rise, .gami-rays,
+          .gami-deal, .gami-ring, .gami-fill, .gami-tick { animation: none; }
+          .gami-tilt { transform: none; transition: none; }
+          .gami-card:hover { transform: none; }
           .gami-confetti { display: none; }
           .gami-badge:hover { transform: none; filter: none; }
           .gami-flip-inner { transition: none; }
@@ -498,32 +613,11 @@ export default function Gamification() {
 
       <div className="flex flex-col gap-4 max-w-[1200px] mx-auto">
 
-        {/* ── hero header ── */}
-        <Card className="relative overflow-hidden">
-          <span aria-hidden className="absolute inset-0 pointer-events-none"
-            style={{ background: `radial-gradient(120% 130% at 18% -30%, ${hexA("#C8973F", 0.28)} 0%, ${hexA("#C8973F", 0.08)} 45%, transparent 75%)` }} />
-          <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA("#C8973F", 0.9)}, transparent)` }} />
-          <div className="relative flex flex-wrap items-center gap-3 p-4 md:p-5">
-            <span className="relative inline-flex flex-shrink-0">
-              <span aria-hidden className="gami-halo absolute inset-[-10px] rounded-full pointer-events-none"
-                style={{ background: `radial-gradient(circle, ${hexA("#C8973F", 0.5)} 0%, transparent 65%)` }} />
-              <Medallion size={64} glyph="champion" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ letterSpacing: "0.02em" }}>{t("gami.title")}</h2>
-                <GoldPill>{t("gami.demoBadge")}</GoldPill>
-              </div>
-              <div className="text-[12px] mt-0.5" style={{ color: "var(--text-3)" }}>{t("gami.subtitle")}</div>
-              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t("gami.demoNote")}</div>
-            </div>
-          </div>
-        </Card>
+        <PlayerHero t={t} tl={tl} name={myName} tierPct={tierPct} curTier={curTier} nextTier={nextTier}
+          earnedTiers={earnedTiers} totalTiers={totalTiers} gapToFirst={gapToFirst} />
 
-        <div className="overflow-x-auto no-scrollbar">
-          <SegmentedToggle value={view} onChange={setView} className="min-w-[560px] sm:max-w-[760px]" fill
-            options={[["badges", t("gami.viewBadges")], ["progress", t("gami.viewProgress")], ["compare", t("gami.viewCompare")], ["season", t("gami.viewSeason")], ["rewards", t("gami.viewRewards")]]} />
-        </div>
+        <SegmentedToggle asTabs value={view} onChange={setView} ariaLabel={t("gami.title")}
+          options={[["badges", t("gami.viewBadges")], ["progress", t("gami.viewProgress")], ["compare", t("gami.viewCompare")], ["season", t("gami.viewSeason")], ["rewards", t("gami.viewRewards")]]} />
 
         {/* ════════ BADGES ════════ */}
         {view === "badges" && (() => {
@@ -534,153 +628,109 @@ export default function Gamification() {
             .sort((a, b) => b.pct - a.pct)
             .slice(0, 3);
           return (
-          <>
+          <div key="badges" className="flex flex-col gap-4">
           <Card>
             <SectionHead icon={TrendingUp} title={t("gami.nextUp")} />
-            <div className="grid gap-2.5 p-3.5 sm:grid-cols-3">
-              {nextUp.map(({ f, goal, pct }) => (
+            <div className="grid gap-3 px-4 pb-4 pt-1 md:grid-cols-3">
+              {nextUp.map(({ f, goal, pct }, i) => (
                 <button key={f.key} onClick={() => openDetail(f.key)}
-                  className="gami-badge flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--brand-border)" }}>
-                  <Medallion size={46} glyph={f.key} metal={TIER_METALS[f.done]} progress={Math.min(1, pct)} />
+                  className="gami-deal gami-card flex items-center gap-3.5 rounded-xl p-3.5 text-left"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", "--d": `${80 + i * 70}ms` }}>
+                  <Tilt><Medallion size={64} glyph={f.key} metal={TIER_METALS[f.done]} locked={f.done === 0} progress={Math.min(1, pct)} /></Tilt>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-bold leading-tight truncate">
-                      {badgeName(f.key)} {TIER_NUMERALS[f.done]}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text-1)" }}>
+                        {badgeName(f.key)} {TIER_NUMERALS[f.done]}
+                      </span>
+                      <span className="text-xs font-semibold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>
+                        +{fmtXp(f.baseXp * TIER_XP_MULT[f.done])} XP
+                      </span>
                     </div>
-                    <div className="text-[10.5px] tabular-nums mt-0.5" style={{ color: "var(--text-3)" }}>
-                      {f.cur} / {goal}
+                    <div className="text-xs mt-1 leading-snug line-clamp-2" style={{ color: "var(--text-3)" }}>
+                      {t(`gami.req.${f.key}`).replace("{n}", goal)}
                     </div>
-                    <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-card)" }}>
-                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: "var(--brand)" }} />
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-card)" }}>
+                        <div className="gami-fill h-full rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: "var(--brand)" }} />
+                      </div>
+                      <span className="text-xs tabular-nums flex-shrink-0" style={{ color: "var(--text-2)" }}>{f.cur}/{goal}</span>
                     </div>
                   </div>
-                  <span className="text-[10.5px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>
-                    +{fmtXp(f.baseXp * TIER_XP_MULT[f.done])} XP
-                  </span>
                 </button>
               ))}
             </div>
           </Card>
           <Card>
             <SectionHead icon={Award} title={t("gami.collection")}
-              right={
-                <span className="flex items-center gap-2">
-                  <GoldPill>{earnedTiers}/{totalTiers} {t("gami.earned")}</GoldPill>
-                  <span className="text-[11px] tabular-nums hidden sm:inline" style={{ color: "var(--text-4)" }}>{fmtXp(ME.xp)} XP</span>
-                </span>
-              } />
-            <div className="px-4 pt-3 pb-1 text-[12px]" style={{ color: "var(--text-3)" }}>{t("gami.collectionSub")}</div>
-            <div className="grid gap-3 p-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}>
-              {FAMILIES.map((fam) => (
-                <button key={fam.key} onClick={() => openDetail(fam.key)}
-                  className="gami-badge relative overflow-hidden flex flex-col gap-2.5 rounded-2xl p-3.5 text-left"
-                  style={fam.done === 4
-                    ? { background: "var(--bg-inner)", border: `1.5px solid ${hexA("#C8973F", 0.55)}`, boxShadow: `0 10px 30px -14px ${hexA("#C8973F", 0.55)}` }
-                    : { background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-                  {fam.done === 4 && (
-                    <span aria-hidden className="absolute inset-0 pointer-events-none"
-                      style={{ background: `radial-gradient(120% 90% at 50% -25%, ${hexA("#C8973F", 0.16)} 0%, transparent 60%)` }} />
-                  )}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-bold leading-tight">{badgeName(fam.key)}</div>
-                      <div className="text-[10.5px] mt-0.5 leading-snug" style={{ color: "var(--text-4)" }}>{badgeDesc(fam.key)}</div>
+              right={<GoldPill>{earnedTiers}/{totalTiers} {t("gami.earned")}</GoldPill>} />
+            <div className="px-4 text-[13px]" style={{ color: "var(--text-3)" }}>{t("gami.collectionSub")}</div>
+            {/* The cabinet: one coin per family, in the metal of the best tier
+                held (a silhouette until the first), its ring the way to the
+                next; the four pips under it say how far the ladder goes. */}
+            <div className="grid gap-3 p-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(156px, 1fr))" }}>
+              {FAMILIES.map((fam, i) => {
+                const top = fam.done - 1;
+                const full = fam.done === 4;
+                const next = full ? null : fam.tiers[fam.done];
+                return (
+                  <button key={fam.key} onClick={() => openDetail(fam.key)}
+                    className="gami-deal gami-card relative overflow-hidden flex flex-col items-center text-center gap-2.5 rounded-2xl px-3 pt-5 pb-3.5"
+                    style={{
+                      background: "var(--bg-inner)",
+                      border: full ? `1px solid ${hexA("#C8973F", 0.5)}` : "1px solid var(--border)",
+                      "--d": `${160 + i * 45}ms`,
+                    }}>
+                    {full && (
+                      <span aria-hidden className="absolute inset-0 pointer-events-none"
+                        style={{ background: `radial-gradient(110% 70% at 50% -10%, ${hexA("#C8973F", 0.16)} 0%, transparent 65%)` }} />
+                    )}
+                    <Tilt>
+                      <Medallion size={84} glyph={fam.key} metal={top >= 0 ? TIER_METALS[top] : "bronze"} locked={top < 0}
+                        progress={full ? null : Math.min(1, fam.cur / next)} />
+                    </Tilt>
+                    <Pips done={fam.done} />
+                    <div className="relative text-[13px] font-semibold leading-tight line-clamp-2" style={{ color: "var(--text-1)", minHeight: "2.5em" }}>
+                      {badgeName(fam.key)}
                     </div>
-                    <GoldPill>{fam.done}/4</GoldPill>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {fam.tiers.map((n, i) => {
-                      const st = tierState(fam, i);
-                      const unitSfx = fam.key === "qualityShield" ? ` ${t("gami.unit.months")}` : "";
-                      return (
-                        <div key={i} className="flex flex-col items-center gap-1">
-                          <Medallion size={56} glyph={fam.key} metal={TIER_METALS[i]}
-                            locked={st === "locked"} check={st === "earned"}
-                            progress={st === "progress" ? Math.min(1, fam.cur / n) : null} />
-                          <div className="text-[10px] font-semibold tabular-nums leading-none"
-                            style={{ color: st === "locked" ? "var(--text-4)" : st === "progress" ? "var(--brand-text)" : "var(--text-2)" }}>
-                            {st === "progress" ? `${fam.cur}/${n}` : `${n}${unitSfx}`}
-                          </div>
-                          {/* game-style reward preview under tiers still ahead */}
-                          {st !== "earned" && (
-                            <div className="text-[9px] font-semibold tabular-nums leading-none"
-                              style={{ color: st === "progress" ? "var(--brand-text)" : "var(--text-4)", opacity: st === "progress" ? 1 : 0.8 }}>
-                              +{fmtXp(fam.baseXp * TIER_XP_MULT[i])} XP
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </button>
-              ))}
+                    <div className="relative text-xs tabular-nums" style={{ color: full ? "var(--brand-text)" : "var(--text-3)" }}>
+                      {full ? t("gami.complete")
+                        : `${t("gami.nextTier").replace("{t}", TIER_NUMERALS[fam.done])} · ${fam.cur}/${next}${fam.key === "qualityShield" ? ` ${t("gami.unit.months")}` : ""}`}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </Card>
-          </>
+          </div>
           );
         })()}
 
         {/* ════════ MY PROGRESS ════════ */}
         {view === "progress" && (
           <>
-            <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-              {/* hero profile */}
-              <Card className="relative overflow-hidden">
-                <span aria-hidden className="absolute inset-0 pointer-events-none"
-                  style={{ background: `radial-gradient(130% 110% at 85% -25%, ${hexA("#C8973F", 0.22)} 0%, transparent 60%)` }} />
-                <div className="relative p-4 md:p-5 flex flex-col gap-4">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <Avatar name={myName} size={64} ringPct={tierPct} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[16px] font-bold truncate">{tl(myName)}</span>
-                        <span title={t("gami.reward.crown")} className="inline-flex"><Crown size={15} style={{ color: "var(--brand-text)" }} /></span>
-                      </div>
-                      <div className="text-[11.5px]" style={{ color: "var(--text-3)" }}>{t("role.supervisor")} · {ME.unit}</div>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <GoldPill>{t(`gami.tier.${curTier.key}`)} · {curTier.numeral}</GoldPill>
-                        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>{fmtXp(ME.xp)} XP</span>
-                      </div>
-                    </div>
-                    <Medallion size={72} numeral={curTier.numeral} metal={curTier.metal} />
-                  </div>
-                  <div>
-                    <div className="flex items-baseline justify-between mb-1.5">
-                      <MicroLabel>{t("gami.lifetimeXp")}</MicroLabel>
-                      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                        {nextTier ? t("gami.xpToNext").replace("{n}", fmtXp(nextTier.from - ME.xp)).replace("{tier}", t(`gami.tier.${nextTier.key}`)) : ""}
+            {/* tier ladder — the four profile tiers on one road; the page's
+                hero already says who and how far. */}
+            <Card className="p-4 md:p-5">
+              <MicroLabel style={{ marginBottom: 12 }}>{t("gami.profileTier")}</MicroLabel>
+              <div className="relative grid grid-cols-4 gap-2">
+                <span aria-hidden className="absolute top-[34px] left-[12.5%] right-[12.5%] h-[3px] rounded-full" style={{ background: "var(--bg-inner)" }} />
+                <span aria-hidden className="gami-fill absolute top-[34px] left-[12.5%] h-[3px] rounded-full"
+                  style={{ width: `${(75 * Math.min(3, ME.tier + tierPct)) / 3}%`, background: "var(--brand)" }} />
+                {TIERS.map((tier, i) => {
+                  const reached = ME.xp >= tier.from;
+                  const current = i === ME.tier;
+                  return (
+                    <div key={tier.key} className="gami-deal relative flex flex-col items-center gap-1.5" style={{ "--d": `${i * 70}ms` }}>
+                      <span className="rounded-full" style={current ? { boxShadow: `0 0 0 3px var(--bg-card), 0 0 0 5px ${hexA("#C8973F", 0.7)}` } : undefined}>
+                        <Tilt><Medallion size={68} numeral={tier.numeral} metal={tier.metal} locked={!reached} /></Tilt>
                       </span>
+                      <div className="text-[13px] font-semibold" style={{ color: reached ? "var(--text-1)" : "var(--text-3)" }}>{t(`gami.tier.${tier.key}`)}</div>
+                      <div className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{t("gami.fromXp").replace("{n}", fmtXp(tier.from))}</div>
                     </div>
-                    <div className="relative h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-                      <span className="absolute inset-y-0 left-0 rounded-full gami-shimmer"
-                        style={{ width: `${Math.round(tierPct * 100)}%`, background: `linear-gradient(90deg, #8A6226, #C8973F 40%, #F2D48C 50%, #C8973F 60%, #8A6226)` }} />
-                    </div>
-                    <div className="flex justify-between mt-1 text-[10.5px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                      <span>{fmtXp(curTier.from)}</span><span>{nextTier ? fmtXp(nextTier.from) : "∞"}</span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* tier ladder */}
-              <Card className="p-4">
-                <MicroLabel style={{ marginBottom: 10 }}>{t("gami.profileTier")}</MicroLabel>
-                <div className="grid grid-cols-4 gap-2">
-                  {TIERS.map((tier, i) => {
-                    const reached = ME.xp >= tier.from;
-                    const current = i === ME.tier;
-                    return (
-                      <div key={tier.key} className="flex flex-col items-center gap-1 rounded-xl py-2.5 px-1"
-                        style={current ? { background: "var(--brand-bg)", border: "1px solid var(--brand-border)" } : { border: "1px solid transparent" }}>
-                        <Medallion size={52} numeral={tier.numeral} metal={tier.metal} locked={!reached} />
-                        <div className="text-[10.5px] font-bold" style={{ color: reached ? "var(--text-1)" : "var(--text-4)" }}>{t(`gami.tier.${tier.key}`)}</div>
-                        <div className="text-[9.5px] tabular-nums" style={{ color: "var(--text-4)" }}>{t("gami.fromXp").replace("{n}", fmtXp(tier.from))}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
-            </div>
+                  );
+                })}
+              </div>
+            </Card>
 
             {/* streaks */}
             <div className="grid gap-3 sm:grid-cols-3">
@@ -701,13 +751,13 @@ export default function Gamification() {
                       <span className="gami-flame inline-flex"><Flame size={20} style={{ color: "#f97316" }} /></span>
                       <span className="tabular-nums" style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.days}</span>
                       <span className="text-[11px] mb-0.5" style={{ color: "var(--text-3)" }}>{t("gami.days")}</span>
-                      <span className="ml-auto text-[10.5px] tabular-nums" style={{ color: "var(--text-4)" }}>{t("gami.record")}: {s.best}</span>
+                      <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{t("gami.record")}: {s.best}</span>
                     </div>
                     <div>
                       <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
                         <div className="h-full rounded-full" style={{ width: `${pct * 100}%`, background: "#f97316" }} />
                       </div>
-                      <div className="flex justify-between mt-1 text-[10px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                      <div className="flex justify-between mt-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
                         <span>{t("gami.nextMilestone")}</span><span>{s.days}/{s.next} · +{s.next >= 30 ? 200 : s.next >= 14 ? 100 : 50} XP</span>
                       </div>
                     </div>
@@ -719,7 +769,7 @@ export default function Gamification() {
             {/* score explain */}
             <Card>
               <SectionHead icon={TrendingUp} title={t("gami.scoreExplain")}
-                right={<GoldPill>{t("gami.seasonName")}</GoldPill>} />
+                right={<GoldPill>{t("gami.seasonChip")} · {t(`cal.m${SEASON.month}`)} {SEASON.year}</GoldPill>} />
               <div className="p-4 grid gap-5 md:grid-cols-[auto_1fr] items-center">
                 <div className="flex flex-col items-center gap-2 justify-self-center">
                   <span className="relative inline-flex">
@@ -728,7 +778,7 @@ export default function Gamification() {
                       <circle cx="60" cy="60" r="50" fill="none" stroke="var(--brand)" strokeWidth="9" strokeLinecap="round"
                         strokeDasharray={`${(2 * Math.PI * 50 * ME.score) / 100} ${2 * Math.PI * 50}`} transform="rotate(-90 60 60)" />
                       <text x="60" y="56" textAnchor="middle" fontSize="27" fontWeight="800" fill="var(--text-1)" style={{ letterSpacing: "-0.02em" }}>{fmt1(ME.score)}</text>
-                      <text x="60" y="74" textAnchor="middle" fontSize="10" fontWeight="600" fill="var(--text-4)" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>{t("gami.points")}</text>
+                      <text x="60" y="74" textAnchor="middle" fontSize="10" fontWeight="600" fill="var(--text-3)" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>{t("gami.points")}</text>
                     </svg>
                   </span>
                   <div className="flex items-center gap-1.5">
@@ -756,20 +806,20 @@ export default function Gamification() {
                             <span className="inline-flex items-center justify-center rounded-md flex-shrink-0" style={{ width: 22, height: 22, background: hexA(hue, 0.14), color: hue }}>
                               <Icon size={12} />
                             </span>
-                            <span className="text-[11.5px] font-semibold truncate">{t(`leaderboard.cat.${c.key}`)}</span>
-                            <span className="text-[9.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{Math.round(c.weight * 100)}%</span>
+                            <span className="text-xs font-semibold truncate">{t(`leaderboard.cat.${c.key}`)}</span>
+                            <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>{Math.round(c.weight * 100)}%</span>
                           </div>
                           <div className="h-2 rounded-full overflow-hidden" style={{ background: open ? "var(--bg-card)" : "var(--bg-inner)" }}>
                             <div className="h-full rounded-full" style={{ width: `${c.val}%`, background: hue }} />
                           </div>
                           <div className="text-right tabular-nums">
-                            <span className="text-[12.5px] font-bold">{c.val}</span>
-                            <span className="text-[10px] ml-1" style={{ color: "var(--text-4)" }}>→ {fmt1(contrib)}</span>
+                            <span className="text-[13px] font-bold">{c.val}</span>
+                            <span className="text-[11px] ml-1" style={{ color: "var(--text-3)" }}>→ {fmt1(contrib)}</span>
                           </div>
                         </button>
                         {open && (
                           <div className="px-2.5 pb-2.5">
-                            <div className="text-[9.5px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-4)" }}>{t("gami.last30")}</div>
+                            <div className="text-[11px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-3)" }}>{t("gami.last30")}</div>
                             <div className="flex flex-wrap gap-[3px]">
                               {Array.from({ length: 30 }, (_, di) => {
                                 /* deterministic daily demo values around the category mean */
@@ -798,7 +848,7 @@ export default function Gamification() {
             {/* XP ledger */}
             <Card>
               <SectionHead icon={Sparkles} title={t("gami.xpLedger")}
-                right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("gami.ledgerSub")}</span>} />
+                right={<span className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("gami.ledgerSub")}</span>} />
               <div className="p-2">
                 {LEDGER.map((e, i) => {
                   const Icon = e.icon;
@@ -807,10 +857,10 @@ export default function Gamification() {
                       <span className="inline-flex items-center justify-center rounded-lg flex-shrink-0" style={{ width: 28, height: 28, background: "var(--brand-bg)", color: "var(--brand-text)" }}>
                         <Icon size={14} />
                       </span>
-                      <span className="text-[12.5px] flex-1 min-w-0 truncate">
+                      <span className="text-[13px] flex-1 min-w-0 truncate">
                         {t(e.reason).replace("{b}", e.badge ? `${badgeName(e.badge)} ${e.badgeTier || ""}`.trim() : "")}
                       </span>
-                      <span className="text-[10.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{e.when}</span>
+                      <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>{e.when}</span>
                       <span className="text-[12px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>+{e.xp} XP</span>
                     </div>
                   );
@@ -852,15 +902,15 @@ export default function Gamification() {
                       triggerClassName="px-2.5 py-1.5 text-xs" className="w-48 sm:w-56"
                       options={PEOPLE.map((p, i) => ({ value: String(i), label: `${tl(p.name)} · ${p.unit}` }))} />
                   } />
-                <div className="px-4 pt-2.5 text-[11px]" style={{ color: "var(--text-4)" }}>{t("gami.compareNote")}</div>
+                <div className="px-4 pt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>{t("gami.compareNote")}</div>
                 <div className="p-4 grid items-center gap-2" style={{ gridTemplateColumns: "1fr auto 1fr" }}>
                   <div className="flex flex-col items-center gap-1 text-center min-w-0">
                     <Avatar name={myName} size={56} ringPct={tierPct} />
                     <div className="flex items-center gap-1 max-w-full">
-                      <span className="text-[13.5px] font-bold truncate">{tl(myName)}</span>
+                      <span className="text-sm font-bold truncate">{tl(myName)}</span>
                       <Crown size={13} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
                     </div>
-                    <div className="text-[10.5px]" style={{ color: "var(--text-4)" }}>{ME.unit} · {t(`gami.tier.${TIERS[ME.tier].key}`)} {TIERS[ME.tier].numeral}</div>
+                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{ME.unit} · {t(`gami.tier.${TIERS[ME.tier].key}`)} {TIERS[ME.tier].numeral}</div>
                     <div className="tabular-nums" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1, color: iWin ? "var(--brand-text)" : "var(--text-2)" }}>
                       {fmt1(ME.score)}
                     </div>
@@ -874,11 +924,11 @@ export default function Gamification() {
                       const lead = CATS.filter((c) => MY_CATS[c.key] >= rival.cats[c.key]).length;
                       return (
                         <>
-                          <span className="text-[10px] font-semibold text-center tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap"
+                          <span className="text-[11px] font-semibold text-center tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap"
                             style={{ color: "var(--brand-text)", background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
                             {t("gami.leadCats").replace("{a}", lead).replace("{b}", CATS.length)}
                           </span>
-                          <span className="text-[9.5px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                             {t("gami.lastMonth").replace("{v}", `${Math.max(0, lead - 1)}/${CATS.length}`)}
                           </span>
                         </>
@@ -887,8 +937,8 @@ export default function Gamification() {
                   </div>
                   <div className="flex flex-col items-center gap-1 text-center min-w-0">
                     <Avatar name={rival.name} size={56} color={rival.color} />
-                    <span className="text-[13.5px] font-bold truncate max-w-full">{tl(rival.name)}</span>
-                    <div className="text-[10.5px]" style={{ color: "var(--text-4)" }}>{rival.unit} · {t(`gami.tier.${TIERS[rival.tier].key}`)} {TIERS[rival.tier].numeral}</div>
+                    <span className="text-sm font-bold truncate max-w-full">{tl(rival.name)}</span>
+                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{rival.unit} · {t(`gami.tier.${TIERS[rival.tier].key}`)} {TIERS[rival.tier].numeral}</div>
                     <div className="tabular-nums" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1, color: !iWin ? rival.color : "var(--text-2)" }}>
                       {fmt1(rScore)}
                     </div>
@@ -899,7 +949,7 @@ export default function Gamification() {
               <Card>
                 <SectionHead icon={TrendingUp} title={t("gami.compareCats")}
                   right={
-                    <span className="flex items-center gap-3 text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                    <span className="flex items-center gap-3 text-[11px]" style={{ color: "var(--text-3)" }}>
                       <span className="inline-flex items-center gap-1"><span className="inline-flex rounded-full" style={{ width: 8, height: 8, background: "var(--brand)" }} />{t("gami.me")}</span>
                       <span className="inline-flex items-center gap-1"><span className="inline-flex rounded-full" style={{ width: 8, height: 8, background: rival.color }} />{tl(rival.name.split(" ")[0])}</span>
                     </span>
@@ -911,12 +961,12 @@ export default function Gamification() {
                     const a = MY_CATS[c.key], b = rival.cats[c.key];
                     return (
                       <div key={c.key} className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between gap-2 text-[11.5px]">
+                        <div className="flex items-center justify-between gap-2 text-xs">
                           <span className="tabular-nums font-bold" style={{ minWidth: 26, color: a >= b ? "var(--brand-text)" : "var(--text-3)" }}>{a}</span>
                           <span className="inline-flex items-center gap-1.5 font-semibold min-w-0" style={{ color: "var(--text-2)" }}>
                             <Icon size={12} style={{ color: hue, flexShrink: 0 }} />
                             <span className="truncate">{t(`leaderboard.cat.${c.key}`)}</span>
-                            <span className="text-[9.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{Math.round(c.weight * 100)}%</span>
+                            <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>{Math.round(c.weight * 100)}%</span>
                           </span>
                           <span className="tabular-nums font-bold text-right" style={{ minWidth: 26, color: b > a ? rival.color : "var(--text-3)" }}>{b}</span>
                         </div>
@@ -940,7 +990,7 @@ export default function Gamification() {
                   {statRows.map((r, i) => (
                     <div key={i} className="grid items-center gap-2 px-3 py-2 rounded-xl" style={{ gridTemplateColumns: "1fr auto 1fr", background: i % 2 ? "transparent" : "var(--bg-inner)" }}>
                       <span className="text-right tabular-nums font-bold text-[13px]" style={{ color: r.a >= r.b ? "var(--brand-text)" : "var(--text-3)" }}>{r.fmt(r.a)}</span>
-                      <span className="text-[10px] uppercase tracking-wider font-semibold text-center" style={{ color: "var(--text-4)", minWidth: 120 }}>{r.label}</span>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-center" style={{ color: "var(--text-3)", minWidth: 120 }}>{r.label}</span>
                       <span className="tabular-nums font-bold text-[13px]" style={{ color: r.b > r.a ? rival.color : "var(--text-3)" }}>{r.fmt(r.b)}</span>
                     </div>
                   ))}
@@ -949,7 +999,7 @@ export default function Gamification() {
 
               <Card>
                 <SectionHead icon={Award} title={t("gami.compareBadges")}
-                  right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>{earnedTiers} · {Object.values(rival.badges).reduce((x, y) => x + y, 0)}</span>} />
+                  right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{earnedTiers} · {Object.values(rival.badges).reduce((x, y) => x + y, 0)}</span>} />
                 <div className="p-3 flex flex-col gap-1">
                   {FAMILIES.map((f, i) => {
                     const a = MY_BADGES[f.key], b = rival.badges[f.key] ?? 0;
@@ -957,11 +1007,11 @@ export default function Gamification() {
                       <div key={f.key} className="grid items-center gap-2 px-3 py-1.5 rounded-xl" style={{ gridTemplateColumns: "auto 1fr auto", background: i % 2 ? "var(--bg-inner)" : "transparent" }}>
                         <span className="inline-flex items-center gap-1.5">
                           {pips(a, true)}
-                          <span className="tabular-nums text-[11px] font-bold" style={{ color: a >= b ? "var(--brand-text)" : "var(--text-4)", minWidth: 12 }}>{a}</span>
+                          <span className="tabular-nums text-[11px] font-bold" style={{ color: a >= b ? "var(--brand-text)" : "var(--text-3)", minWidth: 12 }}>{a}</span>
                         </span>
-                        <span className="text-[11.5px] font-semibold text-center truncate">{badgeName(f.key)}</span>
+                        <span className="text-xs font-semibold text-center truncate">{badgeName(f.key)}</span>
                         <span className="inline-flex items-center gap-1.5 justify-end">
-                          <span className="tabular-nums text-[11px] font-bold text-right" style={{ color: b > a ? rival.color : "var(--text-4)", minWidth: 12 }}>{b}</span>
+                          <span className="tabular-nums text-[11px] font-bold text-right" style={{ color: b > a ? rival.color : "var(--text-3)", minWidth: 12 }}>{b}</span>
                           {pips(b, false)}
                         </span>
                       </div>
@@ -979,11 +1029,9 @@ export default function Gamification() {
             <Card className="relative overflow-hidden">
               <span aria-hidden className="absolute inset-0 pointer-events-none"
                 style={{ background: `radial-gradient(90% 130% at 12% -25%, ${hexA("#C8973F", 0.26)} 0%, ${hexA("#C8973F", 0.07)} 45%, transparent 72%)` }} />
-              <span aria-hidden className="absolute inset-0 pointer-events-none"
-                style={{ background: `radial-gradient(70% 120% at 88% 15%, ${hexA("#C8973F", 0.18)} 0%, transparent 60%)` }} />
               <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA("#C8973F", 0.9)}, transparent)` }} />
-              <div className="relative grid gap-5 p-5 md:p-6 md:grid-cols-[1fr_auto] items-center">
-                <div className="flex flex-col gap-3.5 min-w-0">
+              <div className="relative grid gap-5 p-5 md:px-6 md:py-5 md:grid-cols-[1fr_auto] items-center">
+                <div className="flex flex-col gap-3 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-extrabold text-[12px]"
                       style={{ background: "var(--brand)", color: "#fff", letterSpacing: "0.05em", boxShadow: `0 4px 14px -4px ${hexA("#C8973F", 0.8)}` }}>
@@ -1000,29 +1048,12 @@ export default function Gamification() {
                   </div>
                   <div>
                     <div className="font-extrabold" style={{ fontSize: "clamp(24px, 4vw, 32px)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                      {t("gami.seasonTitle")}
+                      {t(`cal.m${SEASON.month}`)} {SEASON.year}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[11.5px] mt-1.5 tabular-nums" style={{ color: "var(--text-3)" }}>
-                      <CalendarClock size={12} /> {t("gami.seasonRange")}
+                    <div className="flex items-center gap-1.5 text-xs mt-1.5 tabular-nums" style={{ color: "var(--text-3)" }}>
+                      <CalendarClock size={12} /> {ddmm(SEASON.start)}.{SEASON.start.getFullYear()} 09:00 — {ddmm(SEASON.end)}.{SEASON.end.getFullYear()} 09:00
                     </div>
-                    <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t("gami.freezeNote")}</div>
-                  </div>
-                  <div>
-                    <MicroLabel style={{ marginBottom: 6 }}>{t("gami.endsIn")}</MicroLabel>
-                    <Countdown target={FREEZE_TS}
-                      labels={{ d: t("gami.cd.d"), h: t("gami.cd.h"), m: t("gami.cd.m"), s: t("gami.cd.s") }} />
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {[
-                      [t("gami.statScore"), fmt1(ME.score)],
-                      [t("gami.statRank"), "#2"],
-                      ["XP", fmtXp(ME.xp)],
-                    ].map(([l, v], i) => (
-                      <div key={i} className="flex flex-col rounded-xl px-3.5 py-2" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-                        <span className="text-[9.5px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{l}</span>
-                        <span className="tabular-nums" style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.01em", color: "var(--brand-text)" }}>{v}</span>
-                      </div>
-                    ))}
+                    <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{t("gami.freezeNote").replace("{d}", FREEZE_LABEL)}</div>
                   </div>
                 </div>
                 <div className="relative justify-self-center hidden sm:block" style={{ padding: "10px 18px" }}>
@@ -1030,7 +1061,7 @@ export default function Gamification() {
                   <Sparkle style={{ top: -4, left: 2 }} delay={0} />
                   <Sparkle style={{ top: 26, right: -8 }} delay={0.7} size={10} />
                   <Sparkle style={{ bottom: 2, left: -10 }} delay={1.3} size={11} />
-                  <Medallion size={168} glyph="derbyCup" />
+                  <Tilt><Medallion size={124} glyph="derbyCup" /></Tilt>
                 </div>
               </div>
             </Card>
@@ -1046,18 +1077,15 @@ export default function Gamification() {
                   const first = p.place === 1;
                   const medal = MEDAL[p.place];
                   const lift = first ? 14 : p.place === 2 ? 4 : 0;
-                  const glow = first
-                    ? `0 24px 56px -16px ${hexA(medal, 0.6)}, 0 6px 16px -8px ${hexA(medal, 0.42)}`
-                    : `0 16px 40px -18px ${hexA(medal, 0.5)}`;
+                  const glow = first ? `0 18px 40px -24px ${hexA(medal, 0.55)}` : "none";
                   return (
                     <div key={p.place} className="relative flex flex-col rounded-2xl text-center overflow-hidden"
                       style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, first ? 0.6 : 0.45)}`, boxShadow: glow, transform: `translateY(-${lift}px)` }}>
                       <span aria-hidden className="absolute inset-0 pointer-events-none"
-                        style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.45 : 0.35)} 0%, ${hexA(medal, 0.12)} 40%, transparent 72%)` }} />
+                        style={{ background: `radial-gradient(120% 80% at 50% -20%, ${hexA(medal, first ? 0.24 : 0.16)} 0%, transparent 65%)` }} />
                       <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 20, right: 20, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
                       <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none"
                         style={{ right: 4, bottom: -18, fontSize: first ? 110 : 88, color: hexA(medal, 0.11) }}>{p.place}</span>
-                      {first && <span aria-hidden className="gami-halo absolute pointer-events-none rounded-full" style={{ inset: "-22% 14% auto 14%", height: "68%", background: `radial-gradient(circle at 50% 40%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
                       <div className="relative flex flex-col items-center gap-1.5" style={{ padding: first ? "24px 12px 18px" : "18px 12px 14px" }}>
                         <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 0, left: 0, width: 24, height: 24, fontSize: 11.5, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}` }}>{p.place}</span>
                         <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 0, right: 0, width: 26, height: 26, color: "#fff", background: medal, boxShadow: `0 3px 12px -2px ${hexA(medal, 0.75)}` }}>{first ? <Crown size={14} /> : <Medal size={14} />}</span>
@@ -1068,7 +1096,7 @@ export default function Gamification() {
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-3)" }}>{p.unit}</div>
                         <div className="tabular-nums" style={{ fontSize: first ? 26 : 22, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 }}>{fmt1(p.score)}</div>
-                        <span className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums"
+                        <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums"
                           style={{ color: theme === "light" ? "#15803d" : "#4ade80", background: hexA("#22c55e", 0.12) }}>
                           <ArrowUp size={10} /> +{fmt1(p.delta)}
                         </span>
@@ -1078,19 +1106,6 @@ export default function Gamification() {
                 })}
               </div>
             </div>
-
-            {/* my position strip */}
-            <Card className="p-3.5 flex flex-wrap items-center gap-3">
-              <span className="inline-flex items-center justify-center rounded-full tabular-nums flex-shrink-0" style={{ width: 30, height: 30, fontSize: 13, fontWeight: 800, background: MEDAL[2], color: "#fff" }}>2</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-bold truncate">{tl(myName)} — {t("gami.myRank")}</div>
-                <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("gami.gapToFirst").replace("{n}", fmt1(gapToFirst))} · {t("gami.standingsNote")}</div>
-              </div>
-              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold tabular-nums"
-                style={{ color: theme === "light" ? "#15803d" : "#4ade80", background: hexA("#22c55e", 0.12), border: `1px solid ${hexA("#22c55e", 0.25)}` }}>
-                <TrendingUp size={11} /> +{fmt1(ME.delta)} {t("gami.points")}
-              </span>
-            </Card>
 
             {/* shift derby — live tug-of-war on mean supervisor composite */}
             {(() => {
@@ -1106,7 +1121,7 @@ export default function Gamification() {
               return (
                 <Card>
                   <SectionHead icon={Swords} title={t("gami.derby")}
-                    right={<span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("gami.derbyNote")}</span>} />
+                    right={<span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-3)" }}>{t("gami.derbyNote")}</span>} />
                   <div className="p-4 flex flex-col gap-3">
                     <div className="flex items-end justify-between gap-3">
                       <div className="flex flex-col gap-1.5">
@@ -1149,7 +1164,7 @@ export default function Gamification() {
                       <span className="absolute inset-y-0 right-0" style={{ width: `${100 - w1}%`, background: `linear-gradient(90deg, ${S2C}, ${hexA(S2C, 0.85)})` }} />
                       <span className="absolute inset-y-[-3px] w-[3px] rounded-full" style={{ left: `${w1}%`, background: "var(--bg-card)", boxShadow: "0 0 0 1px var(--border-md)" }} />
                     </div>
-                    <div className="sm:hidden text-[10.5px]" style={{ color: "var(--text-4)" }}>{t("gami.derbyNote")}</div>
+                    <div className="sm:hidden text-[11px]" style={{ color: "var(--text-3)" }}>{t("gami.derbyNote")}</div>
                   </div>
                 </Card>
               );
@@ -1157,7 +1172,7 @@ export default function Gamification() {
 
             {/* ceremony timeline */}
             <Card>
-              <SectionHead icon={ListOrdered} title={t("gami.ceremony")} right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>01.09 · 09:00</span>} />
+              <SectionHead icon={ListOrdered} title={t("gami.ceremony")} right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{FREEZE_LABEL}</span>} />
               <div className="p-4 grid gap-3 sm:grid-cols-4">
                 {CEREMONY.map((s, i) => {
                   const Icon = s.icon;
@@ -1172,8 +1187,8 @@ export default function Gamification() {
                         <span className="absolute -top-1 -left-1 inline-flex items-center justify-center rounded-full tabular-nums" style={{ width: 16, height: 16, fontSize: 9.5, fontWeight: 800, background: "var(--brand)", color: "#fff" }}>{i + 1}</span>
                       </span>
                       <div className="min-w-0">
-                        <div className="text-[11.5px] font-bold leading-snug">{t(`gami.cer.${s.key}`)}</div>
-                        <div className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-4)" }}>{t(`gami.cer.${s.key}Desc`)}</div>
+                        <div className="text-xs font-bold leading-snug">{t(`gami.cer.${s.key}`)}</div>
+                        <div className="text-[11px] mt-0.5 leading-snug" style={{ color: "var(--text-3)" }}>{t(`gami.cer.${s.key}Desc`)}</div>
                       </div>
                     </div>
                   );
@@ -1186,14 +1201,14 @@ export default function Gamification() {
               <SectionHead icon={Crown} title={t("gami.hallOfFame")} />
               <div className="p-3 flex flex-col gap-1">
                 {[
-                  { m: "07.2026", name: myName, color: "#C8973F", score: 81.7, me: true },
-                  { m: "06.2026", name: myName, color: "#C8973F", score: 82.4, me: true },
-                  { m: "05.2026", name: PEOPLE[0].name, color: PEOPLE[0].color, score: 80.1, me: false },
+                  { m: PAST_SEASONS[0], name: myName, color: "#C8973F", score: 81.7, me: true },
+                  { m: PAST_SEASONS[1], name: myName, color: "#C8973F", score: 82.4, me: true },
+                  { m: PAST_SEASONS[2], name: PEOPLE[0].name, color: PEOPLE[0].color, score: 80.1, me: false },
                 ].map((w, i) => (
                   <div key={w.m} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={i % 2 ? {} : { background: "var(--bg-inner)" }}>
-                    <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)", width: 52 }}>{w.m}</span>
+                    <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)", width: 52 }}>{w.m}</span>
                     <Avatar name={w.name} size={26} color={w.color} />
-                    <span className="text-[12.5px] font-semibold flex-1 min-w-0 truncate">
+                    <span className="text-[13px] font-semibold flex-1 min-w-0 truncate">
                       {tl(w.name)}{w.me && <span className="ml-1.5"><GoldPill>{t("gami.me")}</GoldPill></span>}
                     </span>
                     <Crown size={13} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
@@ -1209,7 +1224,7 @@ export default function Gamification() {
         {view === "rewards" && (
           <>
             <Card>
-              <SectionHead icon={Gift} title={t("gami.catalog")} right={<span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("gami.catalogSub")}</span>} />
+              <SectionHead icon={Gift} title={t("gami.catalog")} right={<span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-3)" }}>{t("gami.catalogSub")}</span>} />
               <div className="grid gap-3 p-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
                 {REWARDS.map((r) => {
                   const Icon = r.icon;
@@ -1241,19 +1256,19 @@ export default function Gamification() {
                   <span aria-hidden className="absolute inset-2 rounded-lg pointer-events-none" style={{ border: `1px solid ${hexA("#C8973F", 0.3)}` }} />
                   <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(140% 90% at 50% -30%, ${hexA("#C8973F", 0.14)} 0%, transparent 60%)` }} />
                   <div className="relative flex flex-col items-center gap-3">
-                    <div className="text-[10px] font-bold" style={{ letterSpacing: "0.42em", color: "var(--text-3)" }}>SAFIA IMS</div>
+                    <div className="text-[11px] font-bold" style={{ letterSpacing: "0.42em", color: "var(--text-3)" }}>SAFIA IMS</div>
                     <Medallion size={84} glyph="champion" />
                     <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 24, fontWeight: 700, letterSpacing: "0.12em", color: "var(--brand-text)" }}>
                       {t("gami.certHeading")}
                     </div>
-                    <div className="text-[11.5px]" style={{ color: "var(--text-3)" }}>{t("gami.certLine")}</div>
+                    <div className="text-xs" style={{ color: "var(--text-3)" }}>{t("gami.certLine")}</div>
                     <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 30, fontStyle: "italic", lineHeight: 1.15 }}>{tl(myName)}</div>
                     <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                      06.2026 · {t("gami.certScore")}: 82,4 · {ME.unit}
+                      {PAST_SEASONS[1]} · {t("gami.certScore")}: 82,4 · {ME.unit}
                     </div>
                     <div className="flex flex-col items-center gap-1 mt-2">
                       <span aria-hidden className="block w-36 h-px" style={{ background: "var(--border-md)" }} />
-                      <span className="text-[10px] uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-4)" }}>{t("gami.certSigner")}</span>
+                      <span className="text-[11px] uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-3)" }}>{t("gami.certSigner")}</span>
                     </div>
                   </div>
                 </div>
@@ -1262,7 +1277,7 @@ export default function Gamification() {
 
             {/* grant log */}
             <TableCard icon={BadgeCheck} title={t("gami.grantLog")}
-              right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>4</span>}>
+              right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>4</span>}>
               <thead><tr>
                 <Th label={t("gami.colDate")} />
                 <Th label={t("gami.colPerson")} />
@@ -1278,12 +1293,12 @@ export default function Gamification() {
                   { person: "S1 · 1-smena", me: false, reward: "dinner", status: "stGranted", ok: true },
                 ].map((g, i) => (
                   <tr key={i}>
-                    <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>01.07.2026</td>
+                    <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{ddmm(SEASON.start)}.{SEASON.start.getFullYear()}</td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1.5">{g.me ? tl(g.person) : g.person}{g.me && <Crown size={12} style={{ color: "var(--brand-text)" }} />}</span>
                     </td>
                     <td className="px-3 py-2">{t(`gami.reward.${g.reward}`)}</td>
-                    <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>06.2026</td>
+                    <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{PAST_SEASONS[0]}</td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold"
                         style={g.ok
@@ -1351,7 +1366,7 @@ export default function Gamification() {
                   </div>
                 </div>
               </div>
-              <div className="text-[10px]" style={{ color: "var(--text-4)" }}>{t("gami.tapFlip")}</div>
+              <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("gami.tapFlip")}</div>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 {heroSt === "progress" && (
                   <span className="text-[12px] font-bold tabular-nums" style={{ color: "var(--brand-text)" }}>
@@ -1363,7 +1378,7 @@ export default function Gamification() {
             </div>
             <div>
               <MicroLabel style={{ marginBottom: 4 }}>{t("gami.howLabel")}</MicroLabel>
-              <div className="text-[12.5px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+              <div className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>
                 {t(`gami.badge.${detailFam.key}How`)}
               </div>
             </div>
@@ -1379,14 +1394,14 @@ export default function Gamification() {
                       <Medallion size={42} glyph={detailFam.key} metal={TIER_METALS[i]}
                         locked={st === "locked"} check={st === "earned"} />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-bold" style={{ color: st === "locked" ? "var(--text-4)" : "var(--text-1)" }}>
+                        <div className="text-[12px] font-bold" style={{ color: st === "locked" ? "var(--text-3)" : "var(--text-1)" }}>
                           {t(`gami.tier.${["bronze", "silver", "gold", "platinum"][i]}`)} {TIER_NUMERALS[i]}
                           <span className="font-semibold" style={{ color: "var(--brand-text)" }}> · +{fmtXp(xp)} XP</span>
                         </div>
                         <div className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
                           {t(`gami.req.${detailFam.key}`).replace("{n}", n)}
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5 text-[9.5px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                        <div className="flex items-center gap-1 mt-0.5 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
                           <Users size={9} />
                           {t("gami.heldBy").replace("{n}", detailFam.held?.[i] ?? 0).replace("{m}", 14)}
                         </div>
@@ -1398,12 +1413,12 @@ export default function Gamification() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         {st === "earned" && (
-                          <div className="text-[10.5px] tabular-nums" style={{ color: "var(--text-4)" }}>{t("gami.earnedOn")}<br />{detailFam.dates[i]}</div>
+                          <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{t("gami.earnedOn")}<br />{detailFam.dates[i]}</div>
                         )}
                         {st === "progress" && (
-                          <div className="text-[11.5px] font-bold tabular-nums" style={{ color: "var(--brand-text)" }}>{detailFam.cur}/{n}</div>
+                          <div className="text-xs font-bold tabular-nums" style={{ color: "var(--brand-text)" }}>{detailFam.cur}/{n}</div>
                         )}
-                        {st === "locked" && <Lock size={13} style={{ color: "var(--text-4)" }} />}
+                        {st === "locked" && <Lock size={13} style={{ color: "var(--text-3)" }} />}
                       </div>
                     </div>
                   );

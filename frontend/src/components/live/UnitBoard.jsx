@@ -1,43 +1,61 @@
 import { useRef } from "react";
 import { Link } from "react-router-dom";
-import { Crown, CheckCircle2, AlertTriangle, Siren } from "lucide-react";
+import { CheckCircle2, Clock3 } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
-import CellLink from "../ui/CellLink";
 import EmptyState from "../ui/EmptyState";
-import { STATUS_COLOR, STATUS_RANK, hexA, tp, fmtInt, fmtPct, clockOf, planColor } from "./liveUtils";
+import { STATUS_COLOR, STATUS_INK, STATUS_RANK, hexA, tp, fmtInt, fmtPct, clockOf, planColor, idleStatus } from "./liveUtils";
 import { useFlip } from "./liveHooks";
 
-const COLS = "minmax(180px,1.6fr) 1.4fr .8fr 1.4fr .9fr .55fr .9fr";
+const COLS = "minmax(170px,230px) minmax(0,1fr) 72px 92px 84px 56px";
+const NUM_W = 48;      // the plan figure in front of the lane
+const GAP = 10;
 const NONE = new Set();
 
-function Bar({ pct, marker, color, flag }) {
-  const p = Math.max(0, Math.min(100, pct ?? 0));
+// The lane: how much of the plan this brigade has made, on the shift's axis.
+// The NOW tick sits at the same x in every row, so down the whole board the
+// ticks join into one line — a departure board where «behind» is a fill that
+// stops short of the line.
+function Lane({ p, expected, t, continuous }) {
+  const pc = planColor(p.status);
+  const hasPlan = p.pct != null;
+  const tickLeft = `calc(${NUM_W + GAP}px + (100% - ${NUM_W + GAP}px) * ${Math.max(0, Math.min(100, expected)) / 100})`;
   return (
-    <div className="relative h-2 rounded-full" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-      <div className="absolute inset-y-0 left-0 rounded-full live-bar" style={{ width: `${p}%`, background: color }} />
-      {marker != null && (
-        <div className="absolute -top-1 -bottom-1 w-[2px] live-marker" style={{ left: `${Math.max(0, Math.min(100, marker))}%`, background: flag ? STATUS_COLOR.crit : "var(--text-2)", opacity: flag ? 0.8 : 1 }} />
-      )}
+    <div className="relative self-stretch flex items-center min-w-0" style={{ gap: GAP }}>
+      <span className="text-right font-semibold tabular-nums text-[15px] flex-shrink-0" style={{ width: NUM_W, color: hasPlan ? "var(--text-1)" : "var(--text-3)" }}>
+        {hasPlan ? fmtPct(p.pct) : "—"}
+      </span>
+      <div className="relative flex-1 h-2 rounded-full min-w-0" style={{ background: "var(--bg-inner)" }}>
+        {hasPlan && p.status !== "noactual" && (
+          <div className="absolute inset-y-0 left-0 rounded-full live-bar"
+            style={{ width: `${Math.max(0, Math.min(100, p.pct))}%`, background: p.status === "ok" || p.status === "warn" || p.status === "crit" ? pc : hexA(STATUS_COLOR.quiet, 0.7) }} />
+        )}
+        {(!hasPlan || p.status === "noactual") && (
+          <span className="absolute inset-0 flex items-center pl-2 text-[11px] font-medium whitespace-nowrap overflow-hidden"
+            style={{ color: p.status === "noactual" ? STATUS_INK.warn : "var(--text-3)" }}>
+            {p.status === "noactual" ? t("live.kpi.paceNoActual") : t("live.plan.none")}
+          </span>
+        )}
+      </div>
+      <span aria-hidden="true" className={`absolute w-px live-marker ${continuous ? "-top-3 -bottom-[13px]" : "-top-1 -bottom-1"}`}
+        style={{ left: tickLeft, background: "var(--text-2)", opacity: 0.55 }} />
     </div>
   );
 }
 
-function StatusChip({ status, t }) {
-  const c = STATUS_COLOR[status] || STATUS_COLOR.quiet;
+function StopPill({ n }) {
+  if (!n) return <span style={{ color: "var(--text-4)" }}>—</span>;
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded whitespace-nowrap"
-      style={{ background: hexA(c, 0.14), color: c, border: `1px solid ${hexA(c, 0.3)}` }}>
-      {t(`live.st.${status}`)}
+    <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold tabular-nums pl-1.5 pr-2 py-0.5 rounded-md"
+      style={{ background: STATUS_COLOR.crit, color: "#fff" }}>
+      <span className="w-2 h-2 rounded-[2px]" style={{ background: "#fff" }} aria-hidden="true" />{n}
     </span>
   );
 }
 
-// The ranked board: every brigadir of the shift, worst first, each row saying
-// where the plan stands against the clock and how much the unit has waited.
-// Rows reorder with a FLIP animation, and a row that got WORSE since the last
-// poll flashes — the eye is pulled to the change, not to the table.
 export default function UnitBoard({ units, thresholds, frame, t, tl, mobile }) {
   const th = thresholds || {};
+  const flag = th.unit_idle_flag || 50;
+  const warnMin = th.unit_idle_warn || 25;
   const orderKey = (units || []).map((u) => `${u.id}:${u.status}`).join(",");
   const listRef = useFlip([orderKey]);
   const prevStatus = useRef(new Map());
@@ -54,19 +72,17 @@ export default function UnitBoard({ units, thresholds, frame, t, tl, mobile }) {
     if (esc.size) flash.current = { ids: esc, until: Date.now() + 2500 };
   }
   const escalated = Date.now() < flash.current.until ? flash.current.ids : NONE;
-
+  const expected = frame?.state === "running" ? (frame.progress || 0) * 100 : 100;
   const noPlan = (units || []).filter((u) => !(u.plan?.plan_min > 0)).length;
 
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <section className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <SectionHead
-        icon={Crown}
         title={t("live.units")}
         subtitle={t("live.unitsSub")}
         right={
-          <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
+          <div className="flex items-center gap-2 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
             {noPlan > 0 && <span>{tp(t, "live.noPlanUnits", { n: noPlan })}</span>}
-            <span className="font-mono">{(units || []).length}</span>
           </div>
         }
       />
@@ -75,167 +91,91 @@ export default function UnitBoard({ units, thresholds, frame, t, tl, mobile }) {
       ) : (
         <div>
           {!mobile && (
-            <div className="grid gap-3 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider"
-              style={{ gridTemplateColumns: COLS, color: "var(--text-4)", borderBottom: "1px solid var(--border)" }}>
+            <div className="grid gap-4 items-end px-4 pt-2.5 pb-2 text-[11px] font-medium" role="presentation"
+              style={{ gridTemplateColumns: COLS, color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
               <div />
-              <div>{t("live.col.plan")}</div>
-              <div>{t("live.col.pace")}</div>
-              <div>{t("live.col.idle")}</div>
-              <div>{t("live.col.cells")}</div>
-              <div>{t("live.col.people")}</div>
-              <div>{t("live.col.fresh")}</div>
+              <div className="relative">
+                <span>{t("live.col.plan")}</span>
+                <span className="absolute bottom-0 tabular-nums font-semibold live-marker whitespace-nowrap"
+                  style={{ left: `calc(${NUM_W + GAP}px + (100% - ${NUM_W + GAP}px) * ${expected / 100})`, transform: expected > 80 ? "translateX(-100%)" : "translateX(-50%)", color: "var(--text-2)" }}>
+                  {tp(t, "live.board.nowAt", { e: fmtInt(expected) })}
+                </span>
+              </div>
+              <div className="text-right">{t("live.col.pace")}</div>
+              <div className="text-right">{t("live.col.idle")}</div>
+              <div className="text-center">{t("live.kpi.stopped")}</div>
+              <div className="text-right">{t("live.col.people")}</div>
             </div>
           )}
           <div ref={listRef}>
             {units.map((u) => {
-              const c = STATUS_COLOR[u.status] || STATUS_COLOR.quiet;
               const p = u.plan || {};
-              const pc = planColor(p.status);
               const idle = u.idle || {};
-              const idleColor = idle.basis === "none" ? STATUS_COLOR.quiet
-                : idle.min >= th.unit_idle_flag ? STATUS_COLOR.crit
-                : idle.min >= th.unit_idle_warn ? STATUS_COLOR.warn : STATUS_COLOR.ok;
-              const idleMax = Math.max((th.unit_idle_flag || 50) * 1.5, idle.min || 0);
-              const lag = p.lag_min;
-              const flash = escalated.has(u.id) ? "live-flash" : "";
-              const planCell = (
-                <div className="flex flex-col gap-1 min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono font-bold text-lg tabular-nums leading-none" style={{ color: p.pct == null ? "var(--text-3)" : pc }}>
-                      {p.pct == null ? t("live.plan.none") : fmtPct(p.pct)}
-                    </span>
-                    {p.pct != null && (
-                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{tp(t, "live.plan.expected", { e: fmtInt(p.expected_pct) })}</span>
-                    )}
-                    {p.status === "noactual" && <span className="text-[11px] font-semibold" style={{ color: STATUS_COLOR.warn }}>{t("live.plan.noactual")}</span>}
-                    {p.status === "early" && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("live.plan.early")}</span>}
-                  </div>
-                  {p.pct != null && <Bar pct={p.pct} marker={p.expected_pct} color={pc} />}
-                </div>
-              );
-              const paceCell = (
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="font-mono font-bold text-lg tabular-nums leading-none" style={{ color: p.pace == null ? "var(--text-3)" : pc }}>
-                    {p.pace == null ? "—" : fmtPct(p.pace)}
-                  </span>
-                  {lag != null && p.pace != null && (
-                    <span className="text-[11px]" style={{ color: lag > 0 ? STATUS_COLOR.warn : STATUS_COLOR.ok }}>
-                      {lag > 0 ? tp(t, "live.plan.lag", { m: fmtInt(lag) }) : tp(t, "live.plan.ahead", { m: fmtInt(-lag) })}
-                    </span>
-                  )}
-                  {p.projected_pct != null && frame?.state === "running" && (
-                    <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{tp(t, "live.plan.projected", { x: fmtInt(p.projected_pct) })}</span>
-                  )}
-                </div>
-              );
-              const idleCell = (
-                <div className="flex flex-col gap-1 min-w-0">
-                  <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="font-mono font-bold text-lg tabular-nums leading-none" style={{ color: idleColor }} title={idle.basis === "estimate" ? t("live.idle.estimate") : t("live.idle.weighted")}>
-                      {idle.basis === "none" ? "—" : fmtInt(idle.min)}
-                      {idle.basis !== "none" && <span className="text-[11px] font-semibold ml-1" style={{ color: "var(--text-3)" }}>{t("live.min")}{idle.basis === "estimate" ? " ~" : ""}</span>}
-                    </span>
-                    {idle.worst_cell && (
-                      <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-                        {t("live.idle.worst").split("{cell}")[0]}
-                        <CellLink id={idle.worst_cell_id} className="font-mono font-semibold" style={{ color: "var(--text-2)" }}>{idle.worst_cell}</CellLink>
-                        {` · ${fmtInt(idle.worst_cell_min)} ${t("live.min")}`}
-                      </span>
-                    )}
-                  </div>
-                  {idle.basis !== "none" && (
-                    <Bar pct={((idle.min || 0) / idleMax) * 100} marker={((th.unit_idle_flag || 50) / idleMax) * 100} color={idleColor} flag />
-                  )}
-                </div>
-              );
-              const cellsCell = (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>{u.cells}</span>
-                  {u.cells_stopped > 0 && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full live-pulse"
-                      style={{ background: hexA(STATUS_COLOR.crit, 0.16), color: STATUS_COLOR.crit, border: `1px solid ${hexA(STATUS_COLOR.crit, 0.4)}` }}>
-                      <Siren size={11} /> {u.cells_stopped}
-                    </span>
-                  )}
-                  {u.cells_with_idle > 0 && u.cells_stopped === 0 && (
-                    <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{u.cells_with_idle} ⏱</span>
-                  )}
-                </div>
-              );
-              const peopleCell = (
-                <span className="font-mono font-semibold tabular-nums" style={{ color: u.people > 0 ? "var(--text-2)" : "var(--text-4)" }}>
-                  {u.people > 0 ? fmtInt(u.people) : "—"}
-                </span>
-              );
-              const freshCell = (
-                <div className="flex items-center gap-1.5 flex-wrap text-[12px]">
-                  {p.updated_at ? (
-                    <span className="font-mono" style={{ color: p.stale ? STATUS_COLOR.warn : "var(--text-2)" }}>{clockOf(p.updated_at)}</span>
-                  ) : (
-                    <span style={{ color: "var(--text-4)" }}>—</span>
-                  )}
+              const ist = idle.basis === "none" ? "quiet" : idleStatus(idle.min, flag, warnMin);
+              const paceInk = p.pace == null ? "var(--text-3)" : p.status === "warn" || p.status === "crit" ? STATUS_INK[p.status] : "var(--text-2)";
+              const idleInk = ist === "warn" || ist === "crit" ? STATUS_INK[ist] : "var(--text-2)";
+              const fl = escalated.has(u.id) ? "live-flash" : "";
+              const idleTitle = [
+                idle.basis === "estimate" ? t("live.idle.estimate") : t("live.idle.weighted"),
+                idle.worst_cell ? tp(t, "live.idle.worst", { cell: idle.worst_cell, m: fmtInt(idle.worst_cell_min) }) : null,
+              ].filter(Boolean).join(" · ");
+              const name = (
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLOR[u.status] || STATUS_COLOR.quiet }}
+                    title={t(`live.st.${u.status}`)} aria-label={t(`live.st.${u.status}`)} />
+                  <Link to={`/brigadir/${u.id}`} className="font-medium text-sm truncate hover:underline underline-offset-2"
+                    style={{ color: "var(--text-1)" }} title={tl(u.name)}>
+                    {tl(u.name)}
+                  </Link>
                   {p.stale && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase" style={{ color: STATUS_COLOR.warn }}>
-                      <AlertTriangle size={11} /> {t("live.stale")}
-                    </span>
+                    <Clock3 size={13} className="flex-shrink-0" style={{ color: STATUS_INK.warn }}
+                      aria-label={tp(t, "live.a.plan_stale", { unit: "", m: fmtInt(p.stale_min) })}>
+                      <title>{tp(t, "live.a.plan_stale", { unit: tl(u.name), m: fmtInt(p.stale_min) })} · {clockOf(p.updated_at)}</title>
+                    </Clock3>
                   )}
                   {u.day_closed && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase" style={{ color: STATUS_COLOR.ok }} title={t("live.dayClosed")}>
-                      <CheckCircle2 size={11} /> {t("live.dayClosed")}
-                    </span>
+                    <CheckCircle2 size={13} className="flex-shrink-0" style={{ color: "var(--text-3)" }} aria-label={t("live.dayClosed")}>
+                      <title>{t("live.dayClosed")}</title>
+                    </CheckCircle2>
                   )}
                 </div>
               );
-              const nameCell = (
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-1.5 self-stretch rounded-full flex-shrink-0" style={{ background: c }} />
-                  <div className="min-w-0">
-                    <Link to={`/brigadir/${u.id}`} className="font-semibold text-sm truncate block hover:underline underline-offset-2" style={{ color: "var(--text-1)" }} title={tl(u.name)}>
-                      {tl(u.name)}
-                    </Link>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <StatusChip status={u.status} t={t} />
-                      {!u.attendance && frame?.state !== "replay" && (
-                        <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{t("live.a.no_attendance").split(": ")[1]}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              const pace = <span className="tabular-nums font-medium" style={{ color: paceInk }}>{p.pace == null ? "—" : fmtPct(p.pace)}</span>;
+              const wait = (
+                <span className="tabular-nums font-medium" style={{ color: idle.basis === "none" ? "var(--text-4)" : idleInk }} title={idleTitle}>
+                  {idle.basis === "none" ? "—" : `${fmtInt(idle.min)}${idle.basis === "estimate" ? "~" : ""}`}
+                  {idle.basis !== "none" && <span className="ml-1 text-[11px] font-normal" style={{ color: "var(--text-3)" }}>{t("live.min")}</span>}
+                </span>
               );
+              const people = <span className="tabular-nums" style={{ color: u.people > 0 ? "var(--text-2)" : "var(--text-4)" }}>{u.people > 0 ? fmtInt(u.people) : "—"}</span>;
               if (mobile) {
                 return (
-                  <div key={u.id} data-flip-key={String(u.id)} className={`px-4 py-3 flex flex-col gap-2 ${flash}`} style={{ borderBottom: "1px solid var(--border)" }}>
-                    {nameCell}
-                    <div className="grid grid-cols-2 gap-3">
-                      {planCell}
-                      {idleCell}
-                    </div>
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      {paceCell}
-                      {cellsCell}
-                      {peopleCell}
-                      {freshCell}
+                  <div key={u.id} data-flip-key={String(u.id)} className={`px-4 py-3 ${fl}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <div className="flex items-center justify-between gap-3">{name}<StopPill n={u.cells_stopped} /></div>
+                    <div className="mt-2.5"><Lane p={p} expected={expected} t={t} /></div>
+                    <div className="mt-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs" style={{ color: "var(--text-3)" }}>
+                      <span>{t("live.col.pace")} {pace}</span>
+                      <span>{t("live.col.idle")} {wait}</span>
+                      <span>{t("live.col.people")} {people}</span>
                     </div>
                   </div>
                 );
               }
               return (
-                <div key={u.id} data-flip-key={String(u.id)}
-                  className={`grid gap-3 items-center px-4 py-2.5 ${flash}`}
-                  style={{ gridTemplateColumns: COLS, borderBottom: "1px solid var(--border)", background: u.status === "crit" ? hexA(STATUS_COLOR.crit, 0.05) : undefined }}>
-                  {nameCell}
-                  {planCell}
-                  {paceCell}
-                  {idleCell}
-                  {cellsCell}
-                  {peopleCell}
-                  {freshCell}
+                <div key={u.id} data-flip-key={String(u.id)} className={`grid gap-4 items-center px-4 py-3 text-sm ${fl}`}
+                  style={{ gridTemplateColumns: COLS, borderBottom: "1px solid var(--border)" }}>
+                  {name}
+                  <Lane p={p} expected={expected} t={t} continuous />
+                  <div className="text-right">{pace}</div>
+                  <div className="text-right">{wait}</div>
+                  <div className="text-center"><StopPill n={u.cells_stopped} /></div>
+                  <div className="text-right">{people}</div>
                 </div>
               );
             })}
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }

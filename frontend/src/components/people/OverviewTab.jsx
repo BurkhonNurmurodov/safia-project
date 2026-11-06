@@ -1,19 +1,20 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowRightLeft, Award, BadgeCheck, CircleSlash, ClipboardCheck, Clock, History, LogIn, LogOut,
+  ArrowRightLeft, Award, BadgeCheck, ChevronRight, CircleSlash, ClipboardCheck, Clock, History, LogIn, LogOut,
   MessageSquareWarning, Repeat, UserCog,
 } from "lucide-react";
 import Button from "../ui/Button";
 import { SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
+import { useLang } from "../../context/LangContext";
 import { staffLink } from "../../utils/scopeLinks";
 import { useAuth } from "../../context/AuthContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { fill, fmtDate } from "./peopleUtil";
+import { fill, fmtShort } from "./peopleUtil";
 
 const PAGE = 20;
 
@@ -64,88 +65,105 @@ function target(e, can) {
   return null;
 }
 
-function FactRow({ label, children }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-2 min-w-0" style={{ borderTop: "1px solid var(--border)" }}>
-      <span className="text-xs flex-shrink-0" style={{ color: "var(--text-3)" }}>{label}</span>
-      <span className="text-sm text-right min-w-0 truncate" style={{ color: "var(--text-1)" }}>{children}</span>
-    </div>
-  );
-}
+// The kind's tone on the spine: an absence red and a missing check-out amber
+// (the statuses the calendar paints them in), an honour the brand's gold, the
+// rest neutral — a feed of colours would mean nothing.
+const TONE = {
+  absent: { fg: "var(--status-bad)", bg: "rgba(239,68,68,.12)" },
+  no_out: { fg: "var(--status-warn)", bg: "rgba(234,179,8,.14)" },
+  honour: { fg: "var(--brand-text)", bg: "rgba(var(--brand-rgb),.14)" },
+};
 
-/** «Umumiy» — compact facts and «Oxirgi voqealar», the merged dated feed. */
+const monthKey = (iso) => String(iso || "").slice(0, 7);
+
+/** «Umumiy» — «Oxirgi voqealar», the merged dated feed, as a timeline read by
+ *  month: a spine down the left, each event a node on it. */
 export default function OverviewTab({ data, P, ready }) {
+  const { t } = useLang();
   const { tl, tx } = useTranslit();
   const nav = useNavigate();
   const can = useCan();
   const [shown, setShown] = useState(PAGE);
-  const h = data.hero;
   const feed = ready ? data.feed || [] : null;
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={History} title={P.facts} />
-        <div className="px-4 pb-2">
-          {/* The brigada, the cell and the shift are the hero's own row just
-              above — not said twice. */}
-          <FactRow label={P.unitVerifix}>{h.unit_name ? tx(h.unit_name) : "—"}</FactRow>
-          <FactRow label={P.fSchedule}>{h.schedule ? tx(h.schedule) : "—"}</FactRow>
-          <FactRow label={P.hired}>{fmtDate(h.hired)}</FactRow>
-          <FactRow label={P.fFirstDay}>{fmtDate(h.first_day)}</FactRow>
-          <FactRow label={P.fVerifix}><span className="tabular-nums">{h.employee_id}</span></FactRow>
-        </div>
-      </div>
+  const groups = useMemo(() => {
+    if (!ready) return [];
+    const out = [];
+    (data.feed || []).slice(0, shown).forEach((e, i) => {
+      const k = monthKey(e.date);
+      if (!out.length || out[out.length - 1].key !== k) out.push({ key: k, items: [] });
+      out[out.length - 1].items.push({ e, i });
+    });
+    return out;
+  }, [ready, data.feed, shown]);
 
-      <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Clock} title={P.feed} right={<span className="text-xs" style={{ color: "var(--text-3)" }}>{P.feedSub}</span>} />
-        {feed === null ? (
-          <div className="px-4 pb-4 space-y-2">{[0, 1, 2, 3, 4].map((i) => <SkeletonBlock key={i} className="h-11 w-full" />)}</div>
-        ) : feed.length === 0 ? (
-          <p className="px-4 pb-6 pt-2 text-sm" style={{ color: "var(--text-3)" }}>{P.feedEmpty}</p>
-        ) : (
-          <ul>
-            {feed.slice(0, shown).map((e, i) => {
-              const Icon = ICON[e.kind] || History;
-              const d = describe(e, P, tl, tx);
-              const to = target(e, can);
-              const body = (
-                <>
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
-                    <Icon size={15} aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm truncate" style={{ color: "var(--text-1)" }}>{d.text}</span>
-                    {d.sub && <span className="block text-xs truncate" style={{ color: "var(--text-3)" }}>{d.sub}</span>}
-                  </span>
-                  {/* A date is meta: quiet figures in one right-hand column. */}
-                  <span className="flex-shrink-0 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDate(e.date)}</span>
-                </>
-              );
-              return (
-                <li key={`${e.kind}-${e.date}-${i}`} style={{ borderTop: "1px solid var(--border)" }}>
-                  {to ? (
-                    <button type="button" onClick={() => nav(to)}
-                      className="w-full text-left px-4 py-2.5 flex items-center gap-3 min-h-[52px] hover:bg-[var(--bg-inner)]">
-                      {body}
-                    </button>
-                  ) : (
-                    <div className="px-4 py-2.5 flex items-center gap-3 min-h-[52px]">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {feed && feed.length > shown && (
-          <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <Button variant="secondary" onClick={() => setShown((n) => n + PAGE)}>
-              {fill(P.feedMore, { n: Math.min(PAGE, feed.length - shown) })}
-            </Button>
-          </div>
-        )}
-      </div>
+  const monthLabel = (k) => {
+    const [y, m] = k.split("-");
+    return y && m ? `${t(`cal.m${Number(m) - 1}`)} ${y}` : k;
+  };
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SectionHead icon={Clock} title={P.feed} right={<span className="text-xs" style={{ color: "var(--text-3)" }}>{P.feedSub}</span>} />
+      {feed === null ? (
+        <div className="px-4 pb-4 space-y-2">{[0, 1, 2, 3, 4].map((i) => <SkeletonBlock key={i} className="h-11 w-full" />)}</div>
+      ) : feed.length === 0 ? (
+        <p className="px-4 pb-6 pt-2 text-sm" style={{ color: "var(--text-3)" }}>{P.feedEmpty}</p>
+      ) : (
+        <div className="px-2 sm:px-3 pb-3">
+          {groups.map((g) => (
+            <section key={g.key} className="mt-1 first:mt-0">
+              <h3 className="px-2 pt-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--text-3)" }}>
+                {monthLabel(g.key)}
+              </h3>
+              <ol className="relative">
+                {/* The spine: one line behind the month's nodes. */}
+                <span aria-hidden="true" className="absolute left-[25px] sm:left-[27px] top-3 bottom-3 w-px" style={{ background: "var(--border-md)" }} />
+                {g.items.map(({ e, i }) => {
+                  const Icon = ICON[e.kind] || History;
+                  const d = describe(e, P, tl, tx);
+                  const to = target(e, can);
+                  const tone = TONE[e.kind];
+                  const body = (
+                    <>
+                      <span className="relative z-[1] flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+                        style={{ background: tone ? tone.bg : "var(--bg-inner)", color: tone ? tone.fg : "var(--text-2)",
+                                 boxShadow: "0 0 0 4px var(--bg-card)" }}>
+                        <Icon size={15} aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm truncate" style={{ color: "var(--text-1)" }}>{d.text}</span>
+                        {d.sub && <span className="block text-xs truncate" style={{ color: "var(--text-3)" }}>{d.sub}</span>}
+                      </span>
+                      <span className="flex-shrink-0 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fmtShort(e.date)}</span>
+                      {to && <ChevronRight size={14} className="flex-shrink-0 -mr-0.5" style={{ color: "var(--text-4)" }} aria-hidden="true" />}
+                    </>
+                  );
+                  return (
+                    <li key={`${e.kind}-${e.date}-${i}`} className="pc-row" style={{ "--d": `${Math.min(i, 12) * 28}ms` }}>
+                      {to ? (
+                        <button type="button" onClick={() => nav(to)}
+                          className="w-full text-left px-2.5 py-2 flex items-center gap-3 min-h-[52px] rounded-xl transition-colors hover:bg-[var(--bg-inner)] focus-visible:bg-[var(--bg-inner)]">
+                          {body}
+                        </button>
+                      ) : (
+                        <div className="px-2.5 py-2 flex items-center gap-3 min-h-[52px]">{body}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          ))}
+        </div>
+      )}
+      {feed && feed.length > shown && (
+        <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <Button variant="secondary" onClick={() => setShown((n) => n + PAGE)}>
+            {fill(P.feedMore, { n: Math.min(PAGE, feed.length - shown) })}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

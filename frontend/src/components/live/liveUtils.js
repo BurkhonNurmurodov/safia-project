@@ -14,6 +14,54 @@ export const STATUS_COLOR = {
 };
 export const STATUS_RANK = { crit: 3, warn: 2, ok: 1, quiet: 0 };
 
+// The same statuses as TEXT: the theme's own legible shade (--status-*), never
+// the 500 hex, which a yellow figure on a white card cannot be read in.
+export const STATUS_INK = {
+  crit: "var(--status-bad)",
+  warn: "var(--status-warn)",
+  ok: "var(--status-ok)",
+  quiet: "var(--text-3)",
+  info: "var(--kpi-blue)",
+};
+
+// How a plan pace (actual ÷ expected, in %) is judged — the backend's own
+// PACE_WARN / PACE_CRIT, carried by the payload's thresholds.
+export function paceStatus(pace, th) {
+  if (pace == null) return null;
+  const warn = (th?.pace_warn ?? 0.95) * 100;
+  const crit = (th?.pace_crit ?? 0.8) * 100;
+  return pace >= warn ? "ok" : pace >= crit ? "warn" : "crit";
+}
+
+// The unit / cell waiting band (minutes against the flag).
+export function idleStatus(min, flag, warn) {
+  if (min == null) return "quiet";
+  return min >= flag ? "crit" : min >= warn ? "warn" : "ok";
+}
+
+// When a running stop began, as a real instant: `since` is the seated
+// «HH:MM» on the shift's own clock, so a night shift's 01:10 is the small
+// hours AFTER the shift opened, never the morning before it.
+export function stopStartedAt(frame, since) {
+  if (!frame?.started_at || !since) return null;
+  const [h, m] = String(since).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  let mins = h * 60 + m;
+  const lo = frame.win_lo ?? 0;
+  if (mins < lo) mins += 1440;
+  const t = new Date(frame.started_at).getTime();
+  return Number.isNaN(t) ? null : t + (mins - lo) * 60000;
+}
+
+// «23:41» · «1:05:12» — a running stop's age, ticking.
+export function fmtTimer(ms) {
+  if (ms == null || !Number.isFinite(ms)) return "—";
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(r)}` : `${p(m)}:${p(r)}`;
+}
+
 export const hexA = (hex, a) => {
   if (typeof hex !== "string" || hex[0] !== "#") return hex;
   const n = parseInt(hex.slice(1), 16);

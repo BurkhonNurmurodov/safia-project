@@ -6,33 +6,20 @@ import TableCard, { Th } from "../ui/DataTable";
 import Pagination from "../ui/Pagination";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { localISO } from "../ui/DateRangePicker";
-import { ATT_SEGMENTS, segmentFill, toneFill } from "../../utils/statusBands";
 import { staffLink } from "../../utils/scopeLinks";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { fill, fmtDate } from "./peopleUtil";
+import { fill, fmtDate, DAY_PAINT, daySwatch } from "./peopleUtil";
 
 const PAGE_SIZE = 50;
 
-// The /workers heatmap's own scale, read for ONE person: a day attended is
-// 100% (came, or on leave — the rate's numerator), a day absent 0%. Off days
-// and days with no row are not on the scale at all.
-const FULL = segmentFill(1, ATT_SEGMENTS);
-// Leave counts as attended in the rate, but it is not a day at work: the
-// scale's next green, so the two read apart and stay on the same side.
-const LEAVE = segmentFill(0.9, ATT_SEGMENTS);
-const ZERO = segmentFill(0, ATT_SEGMENTS);
-const PAINT = {
-  came: FULL, moved: FULL, live: FULL,
-  leave: LEAVE,
-  absent: ZERO,
-  no_out: toneFill("warn"),
-};
+const PAINT = DAY_PAINT;
 
-function Square({ day, P, tx }) {
+function Square({ day, P, tx, todayIso, i }) {
   const n = Number(day.date.slice(8, 10));
   const st = day.state;
   const paint = PAINT[st];
+  const future = day.date > todayIso;
   const plan = day.plan === "yes" ? P.planYes : day.plan === "no" ? P.planNo : null;
   const title = [
     fmtDate(day.date),
@@ -44,15 +31,20 @@ function Square({ day, P, tx }) {
     plan ? `${P.plan}: ${plan}` : null,
     day.closed === false && !day.live && st ? P.notClosed : null,
   ].filter(Boolean).join(" · ");
+  // A day still to come is only its number; a past day with no row is a
+  // dashed slot — two different blanks, never one.
   const style = paint
     ? { ...paint }
-    : st === "off" || st === "not_yet"
-      ? { background: "var(--bg-inner)", color: "var(--text-3)" }
-      : { background: "transparent", color: "var(--text-3)", border: "1px dashed var(--border)" };
+    : future
+      ? { background: "transparent", color: "var(--text-4)" }
+      : st === "off" || st === "not_yet"
+        ? { background: "var(--bg-inner)", color: "var(--text-3)" }
+        : { background: "transparent", color: "var(--text-3)", boxShadow: "inset 0 0 0 1px var(--border-md)" };
   return (
     <div title={title} aria-label={title}
-      className="relative aspect-square rounded-md flex items-start justify-start p-1 text-[11px] font-semibold tabular-nums leading-none"
-      style={{ ...style, ...(day.live ? { outline: "2px solid var(--brand)", outlineOffset: 1 } : {}),
+      className="pc-cal relative aspect-square rounded-lg flex items-start justify-start p-1.5 text-[11px] font-semibold tabular-nums leading-none"
+      style={{ ...style, "--d": `${Math.min(i, 30) * 12}ms`,
+               ...(day.live ? { outline: "2px solid var(--brand)", outlineOffset: 2 } : {}),
                ...(day.closed === false && !day.live && st ? { opacity: 0.55 } : {}) }}>
       {n}
       {(day.moves || []).length > 0 && (
@@ -69,27 +61,58 @@ function Square({ day, P, tx }) {
   );
 }
 
-function Legend({ P }) {
-  const item = (label, style) => (
-    <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-      <span className="w-3 h-3 rounded-sm flex-shrink-0" style={style} aria-hidden="true" />{label}
-    </span>
-  );
+/** The month in figures beside its calendar: the rate (the tiles' own rule
+ *  over the month so far) and how many days wear each colour — the legend and
+ *  the count in one list. Every number is the server's. */
+function MonthPanel({ att, P, t }) {
+  const sum = att.month_sum;
+  const counts = att.counts || {};
+  const [y, m] = (att.month || "").split("-");
+  const label = y && m ? `${t(`cal.m${Number(m) - 1}`)} ${y}` : "";
+  const rows = [
+    ["came", (counts.came || 0) + (counts.live || 0)],
+    ["moved", counts.moved || 0],
+    ["no_out", counts.no_out || 0],
+    ["leave", counts.leave || 0],
+    ["absent", counts.absent || 0],
+    ["off", (counts.off || 0) + (counts.not_yet || 0)],
+    ["none", counts.none || 0],
+  ];
   return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1.5">
-      {item(P.state.came, FULL)}
-      {item(P.state.leave, LEAVE)}
-      {item(P.state.absent, ZERO)}
-      {item(P.state.no_out, toneFill("warn"))}
-      {item(P.state.off, { background: "var(--bg-inner)" })}
-      {item(P.state.none, { border: "1px dashed var(--border)" })}
-      <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-        <ArrowRightLeft size={12} aria-hidden="true" />{P.state.moved}
-      </span>
-      <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-        <span className="w-2 h-2 rounded-full" style={{ background: "var(--text-3)" }} aria-hidden="true" />{P.plan}: {P.planYes}
-        <span className="w-2 h-2 rounded-full ml-1" style={{ border: "1px solid var(--text-3)" }} aria-hidden="true" />{P.planNo}
-      </span>
+    <div className="min-w-0">
+      <div className="text-[13px] font-medium" style={{ color: "var(--text-2)" }}>{label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-[32px] leading-none font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+          {sum?.att == null ? "—" : `${Math.round(sum.att)}%`}
+        </span>
+        <span className="text-xs" style={{ color: "var(--text-3)" }}>{P.tAtt.toLowerCase()}</span>
+      </div>
+      {sum && (
+        <div className="mt-1.5 text-xs tabular-nums" style={{ color: "var(--text-2)" }}>
+          {sum.listed ? fill(P.monthSub, { n: sum.listed, h: sum.hours.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) }) : P.attEmpty}
+        </div>
+      )}
+      <ul className="mt-4 space-y-0.5">
+        {rows.map(([k, n]) => (
+          <li key={k} className="flex items-center gap-2.5 py-1 text-[13px]" style={{ opacity: n ? 1 : 0.5 }}>
+            {k === "moved" ? (
+              <ArrowRightLeft size={12} className="flex-shrink-0 w-3" style={{ color: "var(--text-2)" }} aria-hidden="true" />
+            ) : (
+              <span className="w-3 h-3 rounded-[4px] flex-shrink-0" style={daySwatch(k)} aria-hidden="true" />
+            )}
+            <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text-2)" }}>{P.state[k]}</span>
+            <span className="tabular-nums font-medium" style={{ color: n ? "var(--text-1)" : "var(--text-3)" }}>{n}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 pt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full" style={{ background: "var(--text-3)" }} aria-hidden="true" />{P.plan}: {P.planYes}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full" style={{ border: "1px solid var(--text-3)" }} aria-hidden="true" />{P.planNo}
+        </span>
+      </div>
     </div>
   );
 }
@@ -121,6 +144,7 @@ export default function AttendanceTab({ data, P, ready, month, setMonth }) {
   const nav = useNavigate();
   const att = ready ? data.attendance : null;
   const h = data.hero;
+  const todayIso = localISO(new Date());
   const [pageRaw, setPage] = useState(1);
   const rows = att?.rows || [];
   // A shorter period never leaves the reader on a page past its end.
@@ -155,7 +179,7 @@ export default function AttendanceTab({ data, P, ready, month, setMonth }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="@container rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-2">
           <CalendarDays size={16} style={{ color: "var(--text-3)" }} aria-hidden="true" />
           <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{P.monthGrid}</span>
@@ -163,21 +187,21 @@ export default function AttendanceTab({ data, P, ready, month, setMonth }) {
             <DayStepper month value={month} onChange={setMonth} max={localISO(new Date())} />
           </span>
         </div>
-        <div className="px-4 pb-4">
-          <div className="max-w-[460px] grid grid-cols-7 gap-1">
+        <div className="px-4 pb-4 grid gap-x-8 gap-y-5 @3xl:grid-cols-[minmax(0,440px)_minmax(200px,1fr)] items-start">
+          <div className="grid grid-cols-7 gap-1.5 max-w-[440px]">
             {[0, 1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="text-center text-[11px] font-medium pb-0.5" style={{ color: "var(--text-3)" }}>{t(`cal.d${i}`)}</div>
             ))}
             {att ? (
               <>
                 {[...Array(lead)].map((_, i) => <div key={`b${i}`} />)}
-                {att.grid.map((d) => <Square key={d.date} day={d} P={P} tx={tx} />)}
+                {att.grid.map((d, i) => <Square key={d.date} day={d} P={P} tx={tx} todayIso={todayIso} i={i} />)}
               </>
             ) : (
-              [...Array(35)].map((_, i) => <SkeletonBlock key={i} className="aspect-square rounded-md" />)
+              [...Array(35)].map((_, i) => <SkeletonBlock key={i} className="aspect-square rounded-lg" />)
             )}
           </div>
-          <div className="mt-3"><Legend P={P} /></div>
+          {att ? <MonthPanel att={att} P={P} t={t} /> : <SkeletonBlock className="h-[260px] w-full rounded-xl" />}
         </div>
       </div>
 

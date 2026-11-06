@@ -9,8 +9,33 @@ import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import { TXT, fill } from "../../pages/peopleText";
+import { ATT_SEGMENTS, segmentFill, toneFill } from "../../utils/statusBands";
 
 export { fill };
+
+// A day's paint — the /workers heatmap's own scale read for ONE person, shared
+// by the card's day grid and the month calendar so a state wears one colour.
+// A day attended is 100% (came, or on leave — the rate's numerator), a day
+// absent 0%; leave takes the scale's next green so the two read apart on the
+// same side. A missing check-out is the warn tone the live day paints it.
+const FULL = segmentFill(1, ATT_SEGMENTS);
+const LEAVE = segmentFill(0.9, ATT_SEGMENTS);
+const ZERO = segmentFill(0, ATT_SEGMENTS);
+export const DAY_PAINT = {
+  came: FULL, moved: FULL, live: FULL,
+  leave: LEAVE,
+  absent: ZERO,
+  no_out: toneFill("warn"),
+};
+/** The legend's swatch for a state (paint, the off-day surface, or the dashed
+ *  «no data» outline). */
+export function daySwatch(state) {
+  if (DAY_PAINT[state]) return { background: DAY_PAINT[state].background };
+  if (state === "off" || state === "not_yet") return { background: "var(--bg-inner)", boxShadow: "inset 0 0 0 1px var(--border)" };
+  return { background: "transparent", boxShadow: "inset 0 0 0 1px var(--border-md)" };
+}
+/** The order the states are named in a legend (worked → not). */
+export const DAY_ORDER = ["came", "moved", "live", "no_out", "leave", "absent", "off", "not_yet", "none"];
 
 export function useP() {
   const { lang } = useLang();
