@@ -70,6 +70,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -93,6 +94,10 @@ DEFAULT_RULE = {
     "bands": [{"max": 50, "score": 5}, {"max": 60, "score": 4},
               {"max": 70, "score": 3}, {"max": 85, "score": 2}],
     "worst": 1,
+    # Dismissal reasons (Verifix's own words) whose leavers are NOT counted as
+    # «left» — an admin's call, saved on the «Ketganlar» view. Frozen into a
+    # month with the rest of the rule when it closes.
+    "exclude_reasons": [],
 }
 
 _PREFIX = re.compile(r"^\s*(\d{3,5})(?!\d)")
@@ -179,22 +184,89 @@ def event_key(staff_id: Optional[str], employee_id: str, dismissed: Optional[dat
 
 # ── the rule ──────────────────────────────────────────────────────────────────
 
-def rule(db: Session) -> dict:
-    """The rule in force: the admin override in app_settings when it is
-    well-formed, else HR's. A malformed override can never blank a score."""
+def norm_reason(raw: Optional[str]) -> str:
+    """A dismissal reason as a comparison key: trimmed, spaces squeezed,
+    case-folded — Verifix's journal spells the same reason a few ways."""
+    return re.sub(r"\s+", " ", str(raw or "")).strip().casefold()
+
+
+MAX_EXCLUDED = 100
+MAX_REASON_LEN = 200
+
+
+def clean_reasons(raw) -> list[str]:
+    """A list of reasons as stored: text only, trimmed, one entry per
+    spelling-insensitive reason (the first spelling kept), bounded."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in raw:
+        if not isinstance(x, str):
+            continue
+        text = re.sub(r"\s+", " ", x).strip()[:MAX_REASON_LEN]
+        k = norm_reason(text)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(text)
+        if len(out) >= MAX_EXCLUDED:
+            break
+    return out
+
+
+def _stored_rule(db: Session) -> dict:
     row = db.query(AppSetting).filter(AppSetting.key == RULE_KEY).first()
     if row and row.value:
         try:
             r = json.loads(row.value)
-            bands = sorted(({"max": float(b["max"]), "score": int(b["score"])} for b in r["bands"]),
-                           key=lambda b: b["max"])
-            if bands and all(1 <= b["score"] <= 5 for b in bands):
-                return {"multiplier": float(r.get("multiplier", 12)) or 12,
-                        "weight": float(r.get("weight", 0.2)),
-                        "bands": bands, "worst": int(r.get("worst", 1))}
-        except (ValueError, TypeError, KeyError):
+            if isinstance(r, dict):
+                return r
+        except ValueError:
             pass
-    return json.loads(json.dumps(DEFAULT_RULE))
+    return {}
+
+
+def rule(db: Session) -> dict:
+    """The rule in force: the admin override in app_settings when it is
+    well-formed, else HR's. A malformed scoring override can never blank a
+    score; the excluded reasons are their own half and are kept either way."""
+    out = json.loads(json.dumps(DEFAULT_RULE))
+    r = _stored_rule(db)
+    if not r:
+        return out
+    try:
+        bands = sorted(({"max": float(b["max"]), "score": int(b["score"])} for b in r["bands"]),
+                       key=lambda b: b["max"])
+        if bands and all(1 <= b["score"] <= 5 for b in bands):
+            out.update({"multiplier": float(r.get("multiplier", 12)) or 12,
+                        "weight": float(r.get("weight", 0.2)),
+                        "bands": bands, "worst": int(r.get("worst", 1))})
+    except (ValueError, TypeError, KeyError):
+        pass
+    out["exclude_reasons"] = clean_reasons(r.get("exclude_reasons"))
+    return out
+
+
+def save_exclusions(db: Session, reasons) -> list[str]:
+    """Store the excluded reasons beside whatever else the override holds (the
+    scoring half is never touched). The caller commits. Returns the list."""
+    clean = clean_reasons(reasons)
+    raw = _stored_rule(db)
+    if clean:
+        raw["exclude_reasons"] = clean
+    else:
+        raw.pop("exclude_reasons", None)
+    row = db.query(AppSetting).filter(AppSetting.key == RULE_KEY).first()
+    if raw:
+        text = json.dumps(raw, ensure_ascii=False)
+        if row is None:
+            db.add(AppSetting(key=RULE_KEY, value=text))
+        else:
+            row.value = text
+    elif row is not None:
+        db.delete(row)
+    return clean
 
 
 def round1(x: float) -> float:
@@ -674,23 +746,32 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
         else:
             miss(k, p)["working"] += 1
 
+    # Reasons an admin took out of the count (the rule's `exclude_reasons`; a
+    # month frozen before it carries none). Such a leaver stays on the list,
+    # marked «reason», and adds to no cell's «left».
+    off_reasons = {norm_reason(x) for x in (r.get("exclude_reasons") or [])} - {""}
+
     out_leavers: list[dict] = []
     for p in leavers:
         k = code_key(p.get("code"))
         if not k:
             other_left += 1
             continue
+        off = bool(off_reasons) and norm_reason(p.get("reason")) in off_reasons
         c = cmap.get(k)
         if c is None:
-            miss(k, p)["left"] += 1
-            counted = "no_cell"
+            if not off:
+                miss(k, p)["left"] += 1
+            counted = "reason" if off else "no_cell"
+            if any_scope:
+                continue
         else:
-            cell(k)["left"] += 1
-            counted = "owner" if owned(c) else "no_owner"
+            x = cell(k)
+            if not off:
+                x["left"] += 1
+            counted = "reason" if off else ("owner" if owned(c) else "no_owner")
             if any_scope and not _scope_ok(c, scope):
                 continue
-        if counted == "no_cell" and any_scope:
-            continue
         out_leavers.append({
             "key": event_key(p.get("staff_id"), p["employee_id"], p.get("dismissed")),
             "cell_key": k,
@@ -927,3 +1008,68 @@ def people_of(db: Session, m: date, keys: Iterable[str], at: Optional[datetime] 
     for k in out:
         out[k].sort(key=lambda x: x["name"])
     return {"working": dict(out)}
+
+
+# ── the excluded reasons: what the admin's dialog reads ───────────────────────
+
+def reasons_seen(db: Session, m: date, now: Optional[datetime] = None) -> dict:
+    """Every dismissal reason the platform has seen, most used this month first,
+    with how many left for it in month `m` (as that month reads them now) and
+    whether it is excluded. A reason already excluded stays listed even when
+    nobody carries it any more, so it can be put back. People with no reason
+    are counted apart: they can never be excluded."""
+    now = now or local(now_aware())
+    state, row = month_state(db, m, now)
+    this: dict[str, int] = defaultdict(int)
+    blank_month = 0
+    if state not in ("before", "future", "past"):
+        for p in _inputs(db, m, state, row, now)["leavers"]:
+            k = norm_reason(p.get("reason"))
+            if k:
+                this[k] += 1
+            else:
+                blank_month += 1
+    spell: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    total: dict[str, int] = defaultdict(int)
+    for model, extra in ((TurnoverLeaver, TurnoverLeaver.cancelled_at.is_(None)), (TurnoverMonthPerson, TurnoverMonthPerson.kind == "leaver")):
+        for text, n in (db.query(model.reason, func.count()).filter(extra, model.reason.isnot(None))
+                        .group_by(model.reason).all()):
+            k = norm_reason(text)
+            if k:
+                spell[k][re.sub(r"\s+", " ", text).strip()] += int(n)
+                total[k] += int(n)
+    off = clean_reasons(rule(db).get("exclude_reasons"))
+    off_keys = {norm_reason(x) for x in off}
+    for x in off:                       # keep an excluded reason that nothing carries now
+        spell[norm_reason(x)][x] += 0
+    out = []
+    for k, forms in spell.items():
+        shown = max(forms.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
+        out.append({"reason": shown, "total": total.get(k, 0), "month": this.get(k, 0), "excluded": k in off_keys})
+    out.sort(key=lambda x: (-x["month"], -x["total"], x["reason"].casefold()))
+    return {"month": ym(m), "state": state, "applies": state in ("open", "closing"),
+            "reasons": out, "blank": blank_month, "excluded": off}
+
+
+def exclusion_preview(db: Session, m: date, reasons, now: Optional[datetime] = None) -> dict:
+    """What month `m` would read if `reasons` were the excluded ones — the whole
+    plant, against what it reads now. A closed or saved month keeps the list it
+    was frozen with, so nothing is previewed for it."""
+    now = now or local(now_aware())
+    state, row = month_state(db, m, now)
+    if state not in ("open", "closing"):
+        return {"applies": False, "state": state}
+    inp = _inputs(db, m, state, row, now)
+    cur = {**inp["rule"], "exclude_reasons": clean_reasons(inp["rule"].get("exclude_reasons"))}
+    new = {**cur, "exclude_reasons": clean_reasons(reasons)}
+    a = aggregate(inp["roster"], inp["leavers"], inp["cmap"], cur)
+    b = aggregate(inp["roster"], inp["leavers"], inp["cmap"], new)
+    before = {x["key"]: x for x in a["ranking"]}
+    changed = sum(1 for x in b["ranking"] if (before.get(x["key"]) or {}).get("score") != x["score"])
+    return {
+        "applies": True, "state": state,
+        "rate_before": a["totals"]["rate"], "rate_after": b["totals"]["rate"],
+        "left_before": a["totals"]["left"], "left_after": b["totals"]["left"],
+        "people": sum(1 for x in b["leavers"] if x["counted"] == "reason"),
+        "cells_changed": changed,
+    }

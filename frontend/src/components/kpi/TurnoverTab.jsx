@@ -16,6 +16,7 @@ import TableCard, { Th } from "../ui/DataTable";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fill } from "../../pages/turnoverText";
+import TurnoverReasons from "../turnover/TurnoverReasons";
 import TurnoverRules from "../turnover/TurnoverRules";
 import { tenure } from "../turnover/turnoverUtil";
 import { Count, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead, Warn, EmptyRow } from "./KpiBits";
@@ -30,6 +31,7 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   const [sortL, onSortL] = useSort("lkpi.sortT", { key: "rate", dir: "desc" });
   const [sortP, onSortP] = useSort("lkpi.sortTL", { key: "leftOn", dir: "desc" });
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [reasonsOpen, setReasonsOpen] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [confirmErr, setConfirmErr] = useState(null);
 
@@ -102,7 +104,11 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   }
 
   const rule = tv.rule;
-  const counted = (p) => ({ owner: TT.countedOwner, no_owner: TT.countedNoOwner, no_cell: TT.countedNoCell })[p.counted] || p.counted;
+  const counted = (p) => ({ owner: TT.countedOwner, no_owner: TT.countedNoOwner, no_cell: TT.countedNoCell, reason: TT.countedReason })[p.counted] || p.counted;
+  // A leaver whose reason an admin took out of the count: listed, muted, adds to nobody's «left».
+  const isOff = (p) => p.counted === "reason";
+  const nOff = leavers.filter(isOff).length;
+  const nExcluded = (rule?.exclude_reasons || []).length;
 
   // The month's state in a few words — the turnover month has a life of its
   // own (open · closing · closed · saved), so it is said here, once.
@@ -200,21 +206,31 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   );
 
   const leaversTable = (
-    <TableCard head={head(<Count>{fill(TT.nPeople, { n: n0(leavers.length) })}</Count>)}
+    <TableCard head={head(
+      <div className="flex items-center gap-3">
+        <Count>{nOff ? fill(TT.nPeopleOff, { n: n0(leavers.length), m: n0(nOff) }) : fill(TT.nPeople, { n: n0(leavers.length) })}</Count>
+        {isAdmin && (
+          <Button size="sm" variant="secondary" onClick={() => setReasonsOpen(true)}>
+            {nExcluded ? fill(TT.reasonsBtnN, { n: nExcluded }) : TT.reasonsBtn}
+          </Button>
+        )}
+      </div>,
+    )}
       wrap
       mobile={leavers.length ? leavers.map((p) => (
         <div key={p.key} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex items-start justify-between gap-3">
-            <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{tl(p.name)}</span>
+            <span className="text-sm font-medium" style={{ color: isOff(p) ? "var(--text-3)" : "var(--text-1)" }}>{tl(p.name)}</span>
             <span className="text-xs tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{dmy(p.left)}</span>
           </div>
           <div className="text-xs mt-0.5 flex flex-wrap gap-x-2" style={{ color: "var(--text-3)" }}>
             <span className="tabular-nums">{p.code}{p.approx && <span title={TT.approxHint} style={{ color: "var(--status-warn)" }}> ≈</span>}</span>
             <span>{p.owner ? tl(p.owner) : counted(p)}</span>
+            {isOff(p) && <span>· {counted(p)}</span>}
             {p.job && <span>{tx(p.job)}</span>}
             <span>{tenure(p.days, TT)}</span>
           </div>
-          {p.reason && <div className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>{tx(p.reason)}</div>}
+          {p.reason && <div className="text-xs mt-0.5" style={{ color: isOff(p) ? "var(--text-3)" : "var(--text-2)" }}>{tx(p.reason)}</div>}
         </div>
       )) : <p className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{(tv.leavers || []).length ? TT.nothing : TT.noneLeft}</p>}>
       <thead>
@@ -232,7 +248,7 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
       <tbody>
         {leavers.length === 0 ? <EmptyRow cols={8} text={(tv.leavers || []).length ? TT.nothing : TT.noneLeft} /> : leavers.map((p) => (
           <tr key={p.key}>
-            <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(p.name)}</td>
+            <td className="px-3 py-2 font-medium" style={{ color: isOff(p) ? "var(--text-3)" : "var(--text-1)" }}>{tl(p.name)}</td>
             <td className="px-3 py-2 tabular-nums whitespace-nowrap">
               {p.cell_id ? <CellLink id={p.cell_id}>{p.code}</CellLink> : (p.code || "—")}
               {p.approx && <span className="ml-1" title={TT.approxHint} style={{ color: "var(--status-warn)" }}>≈</span>}
@@ -241,8 +257,9 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
             <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{p.job ? tx(p.job) : "—"}</td>
             <td className="px-3 py-2 text-center tabular-nums whitespace-nowrap">{dmy(p.left)}</td>
             <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{tenure(p.days, TT)}</td>
-            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{p.reason ? tx(p.reason) : "—"}</td>
-            <td className="px-3 py-2 whitespace-nowrap" style={{ color: p.counted === "owner" ? "var(--text-2)" : "var(--status-warn)" }}>{counted(p)}</td>
+            <td className="px-3 py-2" style={{ color: isOff(p) ? "var(--text-3)" : "var(--text-2)" }}>{p.reason ? tx(p.reason) : "—"}</td>
+            <td className="px-3 py-2 whitespace-nowrap"
+              style={{ color: p.counted === "owner" ? "var(--text-2)" : isOff(p) ? "var(--text-3)" : "var(--status-warn)" }}>{counted(p)}</td>
           </tr>
         ))}
       </tbody>
@@ -287,7 +304,10 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   return (
     <>
       {body}
-      {rulesOpen && rule && <TurnoverRules open onClose={() => setRulesOpen(false)} rule={rule} T={TT} />}
+      {rulesOpen && rule && <TurnoverRules open onClose={() => setRulesOpen(false)} rule={rule} T={TT} tx={tx} />}
+      {reasonsOpen && isAdmin && (
+        <TurnoverReasons open onClose={() => setReasonsOpen(false)} T={TT} tx={tx} ym={ym} mLabel={mLabel} toast={toast} onSaved={refetch} />
+      )}
       {confirm && (
         <ConfirmDialog open onCancel={() => { setConfirm(null); setConfirmErr(null); }} onConfirm={() => stateM.mutate(confirm)}
           title={fill(confirm === "close" ? TT.closeTitle : TT.reopenTitle, { month: mLabel })}
