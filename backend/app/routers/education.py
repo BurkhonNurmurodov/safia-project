@@ -151,6 +151,26 @@ class ResolveIn(BaseModel):
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+def _clean_description(raw: Optional[str]) -> str:
+    """A lesson description, through the Telegram-HTML whitelist
+    (`broadcast.sanitize_telegram_html`): `<b> <i> <u> <s> <code> <pre>
+    <blockquote> <a>` and the spoiler, a link only to http(s) / tg, everything
+    else dropped with its text kept and all text escaped.
+
+    The page draws this string with `dangerouslySetInnerHTML` under a policy that
+    allows inline scripts, and it used to be stored exactly as the client sent it.
+    Only admins write lessons, which is why it was low — but a description pasted
+    from a web page carries whatever that page had, and the endpoint takes any
+    string. The classic editor already emits this dialect, so clean text passes
+    through unchanged. Applied on SAVE and on READ: the rows stored before this
+    are cleaned as they are served."""
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    from app.routers.broadcast import sanitize_telegram_html
+    return sanitize_telegram_html(s)[0]
+
+
 def _is_admin(payload: dict) -> bool:
     return payload.get("role") == "admin"
 
@@ -199,7 +219,7 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
         "embed": media["embed"],
         "thumb": thumb,
         "watch": media["watch"],
-        "description_html": lesson.description_html or "",
+        "description_html": _clean_description(lesson.description_html),
         "description_text": lesson.description_text or "",
         "author": lesson.created_by_name,
         "created_at": lesson.created_at.isoformat() if lesson.created_at else None,
@@ -517,7 +537,7 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
         url=body.url.strip(),
         provider=media["provider"],
         video_id=media["video_id"],
-        description_html=(body.description_html or "").strip() or None,
+        description_html=_clean_description(body.description_html) or None,
         description_text=(body.description_text or "").strip() or None,
         created_by_profile=author_key,
         created_by_name=profile_display_name(db, author_key),
@@ -570,7 +590,7 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     lesson.url = body.url.strip()
     lesson.provider = media["provider"]
     lesson.video_id = media["video_id"]
-    lesson.description_html = (body.description_html or "").strip() or None
+    lesson.description_html = _clean_description(body.description_html) or None
     lesson.description_text = (body.description_text or "").strip() or None
     lesson.updated_at = datetime.now(timezone.utc)
 

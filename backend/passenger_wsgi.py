@@ -122,34 +122,19 @@ try:
         report_t11_proofs,
         report_dispute_queue,
         report_wc_plan_history,
-        report_brigadir_change_state,
-        report_verifix_roles,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
-        merge_leader_elnora_xasan,
-        restore_typed_nov03,
-        apply_brigadir_change_oct24,
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
-        repair_live_copy_dupes,
         check_leader_kinds, check_leader_kind_pins,
-        set_kenjayeva_photo_from_verifix,
-        write_leader_task_examples,
-        cleanup_rules_sep19,
         preview_leader_rules_sep19,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
-        register_leader_rules_oct07,
         register_leader_temp_hours,
         move_sanjarbek_checklist_shift,
-        fix_cell_9123_oct05,
-        repair_live_exchanges_oct08,
-        merge_nodirjon_unit_nov02,
         land_waiting_leader_links,
-        repair_leader_units,
-        seed_one_process_cells,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -160,8 +145,6 @@ try:
         add_pp_product_archive_columns,
         add_pp_product_uom,
         add_assessment_answer_columns,
-        seed_tb_food_safety_questions,
-        seed_sample_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -306,8 +289,6 @@ try:
     add_pp_product_archive_columns()
     add_pp_product_uom()
     add_assessment_answer_columns()
-    seed_tb_food_safety_questions()
-    seed_sample_questions()
     add_pp_product_containers()
     add_forecast_answer_columns()
     add_assistant_run_lease()
@@ -562,24 +543,9 @@ try:
     # `startup.report_dispute_queue` and `services/dispute_queue_report.py`
     # once it has been sent.
     report_dispute_queue()
-    # ⚠ TEMPORARY report (2026-10-24) — the state of units 9, 6, 5 and 10
-    # before their brigadirs change, DMed once. Remove with the change one-shot.
-    report_brigadir_change_state()
-    # ⚠ TEMPORARY report (2026-10-25) — shift-managers, brigadirs and leaders
-    # from Verifix, DMed once. Remove once it has been sent.
-    report_verifix_roles()
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
-    # ⚠ TEMPORARY one-shot (2026-11-04) — Elnora's profile takes Xasan
-    # Malikov's history. Remove once its apply flag reads «done».
-    merge_leader_elnora_xasan()
-    # ⚠ TEMPORARY one-shot (2026-11-05) — 3 Nov's typed ПЛАН/ФАКТ restored after
-    # a SAP upload wiped them. Remove once its flag reads «done».
-    restore_typed_nov03()
-    # ⚠ TEMPORARY one-shot (2026-10-24) — the four units change brigadir as
-    # ruled. Remove with its flags read «done».
-    apply_brigadir_change_oct24()
     # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
     # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
@@ -607,11 +573,6 @@ try:
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     report_closed_day_trace()
-    # ⚠ TEMPORARY one-shot (2026-10-20) — the doubled live copies' exact
-    # duplicates deleted and DMed once to the operator. WRITES attendance.
-    # Remove this line, `startup.repair_live_copy_dupes`,
-    # `services/live_copy_dedup_oct20.py` and its test once the DM has landed.
-    repair_live_copy_dupes()
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and
@@ -620,25 +581,6 @@ try:
     # …and the operator's name corrections to it (`leader_verifix_check.PINS`),
     # once per pin set. Goes with the line above.
     check_leader_kind_pins()
-    # ⚠ TEMPORARY one-shot (2026-10-12) — Kenjayeva Dinora Sobir Qizi's
-    # Verifix photo (and Verifix tie) on the leader profile renamed to her
-    # from Mukimova Marxabo; DMs the result with the photo. Remove this
-    # line, `startup.set_kenjayeva_photo_from_verifix` and
-    # `services/leader_photo_fix_oct12.py` once the DM has landed.
-    set_kenjayeva_photo_from_verifix()
-    # ⚠ TEMPORARY one-shot (2026-09-19) — the example photos the operator picked
-    # against the new criteria, written at the GLOBAL level of nine tasks and
-    # REPLACING what was there. Inline, not scheduled: it is config today's
-    # reviews are judged against. Flag-guarded — applies once. Remove this line,
-    # `startup.write_leader_task_examples`,
-    # `services/leader_task_examples_sep19.py` and `app/data/task_examples/`
-    # once it has landed.
-    write_leader_task_examples()
-    # ⚠ TEMPORARY one-shot (2026-09-19) — clear what the go-live left behind:
-    # the «YANGI TALAB» preview notice, which now contradicts itself, and the
-    # example photos of the three tasks that become automatic checks. Inline and
-    # flag-guarded. Remove with `leader_rules_sep19`.
-    cleanup_rules_sep19()
     # ⚠ TEMPORARY one-shot (2026-09-19) — the leader-checklist rules the
     # operator agreed on 18 Sep: unit-level AI criteria and Uzbek leader
     # descriptions, task 11 «+1 day», task 13 time-only, task 3 three photos.
@@ -656,13 +598,6 @@ try:
     # once all three flags are set — and BEFORE removing leader_rules_sep19,
     # whose texts the pass compares against.
     register_leader_rules_sep26()
-    # ⚠ TEMPORARY one-shot (2026-10-07) — task 4 (obxod): every Tasker
-    # inspection at 100%, date + time over the whole shift. Two flag-guarded
-    # passes, each in its own shift's gap, then the global baseline. Remove this
-    # line, `startup.register_leader_rules_oct07` (+ its job and DM) and
-    # `services/leader_rules_oct07.py` once all three flags are set — but KEEP
-    # `services/leader_rule_eras.py` and its frozen row: they date the change.
-    register_leader_rules_oct07()
     # Temporary task hours (2026-09-28): cells working later for a few nights
     # move their leaders' checklist hours on those nights only — see
     # `services/leader_temp_hours.py`. NOT a one-shot to delete: the frozen
@@ -692,37 +627,11 @@ try:
     preview_leader_rules_sep19()
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     move_sanjarbek_checklist_shift()
-    # ⚠ TEMPORARY one-shot (2026-10-06) — cell 9123's 5 Oct attendance counts
-    # for Raximova Kamola (it moved a day early); re-checks every 10 min until
-    # it lands. Remove this line, `startup.fix_cell_9123_oct05` and
-    # `services/cell_day_fix_oct05.py` once its flag reads «done».
-    fix_cell_9123_oct05()
-    # ⚠ TEMPORARY one-shot (2026-10-08) — the exit-minute exchanges of 6–7 Oct
-    # become whole-day moves and the closed live days of 6–7 Oct are re-copied
-    # under the fixed engine. Remove this line, `startup.repair_live_exchanges_oct08`
-    # and `services/live_exchange_repair_oct08.py` once its flag reads «done».
-    repair_live_exchanges_oct08()
-    # ⚠ TEMPORARY one-shot (2026-11-02) — unit «Turdimurodov Nodirjon» joins
-    # Aripova Manzura's (mirrored in the FastAPI lifespan). Remove with
-    # `startup.merge_nodirjon_unit_nov02` and `services/unit_merge_nov02.py`.
-    merge_nodirjon_unit_nov02()
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
     # still waiting for the next shift opening count from the day they were
     # made. Remove this line, `startup.land_waiting_leader_links` and its flag
     # constant once the flag reads «done».
     land_waiting_leader_links()
-    # ⚠ TEMPORARY one-shot (2026-10-29) — the leaders whose cells changed
-    # brigadir move with them from the move day (services/leader_follow), once
-    # over history, DMed to Burkhon. Remove this line,
-    # `startup.repair_leader_units` and `services/leader_follow_repair_oct29.py`
-    # once its DM flag reads «done».
-    repair_leader_units()
-    # ⚠ TEMPORARY one-shot (2026-10-10) — the five one-process leaders of
-    # 25 Sep: their cells get «Bitta jarayon», their leader-level task-3 text
-    # goes (the flag hands them the same text). Remove this line,
-    # `startup.seed_one_process_cells` and `services/one_process_seed_oct10.py`
-    # once its DM flag reads «done».
-    seed_one_process_cells()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

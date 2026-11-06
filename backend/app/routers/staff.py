@@ -5025,7 +5025,7 @@ def documents_pending_count(caller=Depends(_require_staff), db: Session = Depend
         from app.routers import staff_live
         live_n = staff_live.documents_pending_count(since=live_day.iso(), db=db, caller=caller)["count"]
     except Exception:  # noqa: BLE001 — a badge never fails over its second half
-        log.exception("staff: live pending count failed")
+        logger.exception("staff: live pending count failed")
     return {"count": doc_count + len(pending_batches) + live_n}
 
 

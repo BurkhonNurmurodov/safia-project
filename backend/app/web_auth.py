@@ -14,9 +14,10 @@ role_ref) tuple a Telegram login would produce, and the JWT is otherwise
 identical — so page grants, capabilities, factory locks and profile ownership
 all behave exactly as they do in Telegram, with nothing to keep in sync.
 
-Password storage is PBKDF2-HMAC-SHA256 from the standard library. passlib is in
-requirements, but a hash this simple has no business carrying a native
-dependency that can fail to build on a deploy that goes straight to production.
+Password storage is PBKDF2-HMAC-SHA256 from the standard library. passlib (and
+bcrypt with it) was in requirements and imported nowhere; a hash this simple has
+no business carrying a native dependency that can fail to build on a deploy that
+goes straight to production, so it is gone.
 Alongside the hash the password is kept a second time in a SEALED, reversible
 form, so an admin can read a login back on the profile page instead of resetting
 it — see ``seal_password`` for what that costs and why it is keyed off

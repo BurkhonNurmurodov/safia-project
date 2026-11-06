@@ -836,3 +836,30 @@ Until that step runs, deploys restart the single unit exactly as before.
   considered.
 - Not solved here: an old tab whose build's chunks the deploy's `git reset`
   deleted (Part A of the 23 Sep «update later» spec, still not built).
+
+## Seventeen finished one-shots deleted (2026-11-06)
+
+The code audit found 19 dated one-time modules still imported at every boot
+(~6,900 lines with their `startup.py` functions and entrypoint calls). The report
+door (`ops.asked`, Burkhon) read their flags in `app_settings`: all `done` /
+`sent`. Deleted, each with its `startup.py` functions and helpers, its calls in
+`main.py` and `passenger_wsgi.py` and (where it had them) its test and data:
+`assessment_seed_samples_oct31`, `assessment_seed_tb_oct31`,
+`brigadir_change_oct24`, `brigadir_change_report_oct24`, `cell_day_fix_oct05`,
+`leader_follow_repair_oct29`, `leader_merge_nov04`, `leader_photo_fix_oct12`,
+`leader_rules_oct07`, `leader_task_examples_sep19` (and
+`app/data/task_examples/`, its 12 photos), `live_copy_dedup_oct20` (and its
+test), `live_exchange_repair_oct08`, `one_process_seed_oct10`,
+`rules_cleanup_sep19`, `typed_restore_nov03`, `unit_merge_nov02`,
+`verifix_roles_report_oct25`.
+
+* **The flags and records stay in `app_settings`** — they are the history of
+  what each did (and the reason none can run again). The sections of these docs
+  that describe a deleted job are its record; where one says «delete the module
+  once the flag reads done», it has been done.
+* **Kept on purpose: `leader_rules_sep19` and `leader_rules_sep26`.** Both flag
+  sets read done, but live code imports them — `proof_archive` derives its
+  photo-requirement list from `leader_rules_sep19`, and the temporary
+  `t11_proof_report` imports both — so they go with that report, not alone.
+* **A module that a test imports cannot be deleted without its test** — the
+  commit gate (`.claude/hooks/auto-commit.sh`) runs `backend/tests`.
