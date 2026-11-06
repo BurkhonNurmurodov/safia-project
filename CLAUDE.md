@@ -9112,6 +9112,19 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   (+3 000)», and a typed ПЛАН where SAP has none is red «— (−500)»). Never on
   a line with no SAP code, or on a unit-day the file reached with no SAP number
   at all (`sapReached` — a manual unit, or a day not uploaded yet).
+- **Two KPI cards read the SAP columns** (2026-11-06, the operator): «Вып % ·
+  SAP» beside «Вып %» and «Ср. загруженность · SAP» beside «Ср.
+  загруженность», for ADMINS and SHIFT-MANAGERS (`production.SAP_TOTALS_ROLES`
+  — the totals are stripped from the dashboard for every other role, and the
+  page draws the cards for the same two). `pp_calc.compute_dashboard` adds
+  `sap_plan_labor` / `sap_actual_labor` (Σ over lines with a Трудоемкость of
+  its own × the row's «SAP» number ÷ 60 — the numbers on screen, so a shared
+  SKU · Команда counts once per line, auto-fill switch not consulted),
+  `sap_completion` (fact ÷ plan minutes, None without SAP plan minutes) and
+  `sap_avg_load` (SAP plan minutes ÷ (ΣN × shift minutes), the page's own
+  typed ΣN). A unit-day no row carries a SAP number for reads «—» on both
+  (the page's `sapReached`). Nothing else reads them. With them the KPI row
+  is seven tiles in a grid of equal tracks.
 - **On a typed-only day** (`dashboard.typed_only`): an untyped ПЛАН/ФАКТ prints
   «—» (it counts 0) with a hint naming the SAP columns; the «Manba» column and
   the per-line SAP switch (row editor, create form, bulk bar) are not drawn —

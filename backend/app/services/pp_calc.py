@@ -1154,6 +1154,31 @@ def compute_dashboard(
     else:
         avg_load = (total_plan_labor / (total_people * shift_min)) if total_people > 0 else 0.0
 
+    # The same two figures read off the «SAP» columns (2026-11-06, the operator:
+    # admins and shift managers see them beside the typed ones). Minutes are
+    # each line's own Трудоемкость × the column's number ÷ 60 — exactly the
+    # numbers on screen, so a line sharing its SKU and Команда with another
+    # counts the shared SAP quantity once per line, as ПЛАН did before
+    # TYPED_ONLY_FROM. The headcount is the page's ΣN (the typed pins), so only
+    # the plan minutes differ from `avg_load`. A unit-day the file never reached
+    # (no line carries a SAP number) has no SAP figure at all: None, never 0 —
+    # «nothing was uploaded» is not «SAP planned nothing». The frontend's
+    # `sapReached` is the same test.
+    sap_reached = any(r["sap_plan_qty"] is not None or r["sap_actual_qty"] is not None
+                      for r in rows)
+    if sap_reached:
+        sap_plan_labor = sum(r["labor_time"] * (r["sap_plan_qty"] or 0.0) / 60.0
+                             for r in rows if r["has_labor"])
+        sap_actual_labor = sum(r["labor_time"] * (r["sap_actual_qty"] or 0.0) / 60.0
+                               for r in rows if r["has_labor"])
+        sap_completion = (sap_actual_labor / sap_plan_labor) if sap_plan_labor > 0 else None
+        if total_people is None:
+            sap_avg_load = None
+        else:
+            sap_avg_load = (sap_plan_labor / (total_people * shift_min)) if total_people > 0 else 0.0
+    else:
+        sap_plan_labor = sap_actual_labor = sap_completion = sap_avg_load = None
+
     return {
         "rows": rows,
         "work_centers": wc_panel,
@@ -1168,6 +1193,13 @@ def compute_dashboard(
             "people_untyped": untyped,
             "total_shtatka": sum(w["shtatka"] for w in wc_panel),
             "avg_load": avg_load,                        # I1 / (ΣN * 480)
+            # off the «SAP» columns — see above; None = the file never reached
+            # this unit-day. `production.get_dashboard` serves these four to
+            # admins and shift managers only (SAP_TOTALS_ROLES).
+            "sap_plan_labor": sap_plan_labor,
+            "sap_actual_labor": sap_actual_labor,
+            "sap_completion": sap_completion,            # SAP fakt min ÷ SAP plan min
+            "sap_avg_load": sap_avg_load,                # SAP plan min ÷ (ΣN * 480)
         },
         "constants": {"shift_min": shift_min, "productive_min": productive_min},
     }

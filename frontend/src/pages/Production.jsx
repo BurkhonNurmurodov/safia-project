@@ -350,9 +350,10 @@ function Bar({ value, color, height = 6, track = "var(--bg-inner)" }) {
 }
 
 // ── KPI tile ────────────────────────────────────────────────────────────────
-function Kpi({ label, value, icon: Icon, accent, bar, barColor, primary }) {
+function Kpi({ label, value, icon: Icon, accent, bar, barColor, primary, title }) {
   return (
     <div
+      title={title}
       className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
       style={{
         background: primary ? "var(--brand-bg)" : "var(--bg-card)",
@@ -2436,6 +2437,12 @@ export default function Production() {
     return opts.sort((a, b) => byLetter(a.group, b.group));
   };
   const totals = data?.totals ?? {};
+  // «Вып % · SAP» and «Ср. загруженность · SAP» (2026-11-06): the same two
+  // figures worked out from the «SAP» columns, for admins and shift managers.
+  // The server serves those totals to the same two roles only
+  // (production.SAP_TOTALS_ROLES), so the cards wait for its keys too.
+  const sapKpiRole = ["admin", "shift-manager"].includes(auth?.role);
+  const showSapKpi = sapKpiRole && (loading || "sap_completion" in totals);
   // Teams whose «Кол-во» nobody typed for this date. `people_overridden` is the
   // ONE thing that tells a typed figure from an absent one — `w.people` is null
   // for the second, but a typed 0 is a real answer and must not read as
@@ -3545,9 +3552,13 @@ export default function Production() {
         </div>
       )}
 
-      {/* KPI row */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        {loading ? Array.from({ length: 5 }).map((_, i) => (
+      {/* KPI row. With the two SAP cards it is seven tiles, which wrap on a
+          laptop: a grid of equal tracks keeps a tile left alone on the second
+          line at its column's width instead of stretching it across the page.
+          Five tiles keep the flex row everybody else has always had. */}
+      <div className={showSapKpi ? "grid gap-3 mb-4" : "flex flex-wrap gap-3 mb-4"}
+        style={showSapKpi ? { gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" } : undefined}>
+        {loading ? Array.from({ length: showSapKpi ? 7 : 5 }).map((_, i) => (
           <div key={`kpi-sk-${i}`} className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SkeletonBlock className="h-3 w-20 mb-3" />
@@ -3556,6 +3567,11 @@ export default function Production() {
         )) : (<>
           <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
             bar={totals.completion} barColor={vypColor(totals.completion)} primary />
+          {showSapKpi && (
+            <Kpi label={t("production.kpiVypSap")} value={pct(totals.sap_completion)} icon={Target}
+              accent={vypColor(totals.sap_completion)} title={t("production.kpiVypSapHint")}
+              bar={totals.sap_completion ?? undefined} barColor={vypColor(totals.sap_completion)} />
+          )}
           <Kpi label={t("production.kpiPeople")} icon={Users}
             value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>} />
           <Kpi label={t("production.kpiTotalLabor")} value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
@@ -3563,6 +3579,13 @@ export default function Production() {
           <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} accent={loadColor(totals.avg_load)}
             value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
             bar={totals.avg_load ?? undefined} barColor={loadColor(totals.avg_load)} />
+          {showSapKpi && (
+            <Kpi label={t("production.kpiAvgLoadSap")} icon={Gauge} accent={loadColor(totals.sap_avg_load)}
+              title={t("production.kpiAvgLoadSapHint")}
+              value={<>{pct(totals.sap_avg_load)}{peopleUntyped > 0 && totals.sap_avg_load != null
+                && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
+              bar={totals.sap_avg_load ?? undefined} barColor={loadColor(totals.sap_avg_load)} />
+          )}
         </>)}
       </div>
 

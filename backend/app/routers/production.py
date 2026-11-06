@@ -1159,7 +1159,19 @@ def get_dashboard(
         for r in dash.get("rows") or ():
             r.pop("sap_plan_qty", None)
             r.pop("sap_actual_qty", None)
+    # …and the two KPI cards worked out from those columns («Вып % · SAP»,
+    # «Ср. загруженность · SAP», 2026-11-06) reach admins and shift managers.
+    if payload.get("role") not in SAP_TOTALS_ROLES:
+        totals = dash.get("totals") or {}
+        for k in SAP_TOTALS_KEYS:
+            totals.pop(k, None)
     return dash
+
+
+# Who is served the totals `pp_calc.compute_dashboard` works out from the «SAP»
+# columns. The page draws the two cards for the same roles (Production.jsx).
+SAP_TOTALS_ROLES = ("admin", "shift-manager")
+SAP_TOTALS_KEYS = ("sap_plan_labor", "sap_actual_labor", "sap_completion", "sap_avg_load")
 
 
 class PositionsExportBody(BaseModel):
