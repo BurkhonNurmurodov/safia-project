@@ -599,9 +599,14 @@ class RetroGuards(_Retro):
         rec = self.run_retro()
         self.assert_named("letter_ambiguous", "1621", before, rec)
 
-    def test_window_cells_moved(self):
-        """Two cells left X at one code on one day: followed one at a time
-        they would take each other's positions — neither is."""
+    def test_a_team_leaving_one_code_together_goes_whole(self):
+        """Two cells left X at one code on one day (A → Y, B → Z): since
+        2026-10-28 (docs/production-catalog.md «A TEAM is followed as ONE
+        group») they are a team, followed together with each position going
+        with its own letter — they no longer name each other
+        `window_cells_moved`, which left the cells in the new units and their
+        positions behind."""
+        from app.models import PPProduct
         self.units(X, Y, Z)
         c1 = self.cell("1701", X, letter="A")
         c2 = self.cell("1702", X, letter="B")
@@ -610,10 +615,14 @@ class RetroGuards(_Retro):
         self.applied(c1, Y, H)
         self.applied(c2, Z, H)
         self.db.commit()
-        before = self.catalog_fp()
         rec = self.run_retro()
-        self.assert_named("window_cells_moved", "1701", before, rec)
-        self.assert_named("window_cells_moved", "1702", before, rec)
+        self.assertEqual(rec["skipped"], [], rec["skipped"])
+        self.assertEqual(sorted((m["vcode"], m["to"]) for m in rec["moved"]),
+                         [("1701", Y), ("1702", Z)])
+        self.assertTrue(all(m["team"] == ["1701", "1702"] for m in rec["moved"]), rec["moved"])
+        where = {p.sap_code: p.manager_id
+                 for p in self.db.query(PPProduct).filter(PPProduct.active.is_(True))}
+        self.assertEqual(where, {"F001": Y, "F002": Z})
 
     def test_orphans_of_another_cell_are_not_handed_to_a_landed_change(self):
         """X held a (A) and b (B) at the code. b moved to Y on 3 Oct — before
