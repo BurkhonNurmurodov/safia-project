@@ -327,7 +327,7 @@ export default function ShiftDaily() {
           It fetches LAST: one of its requests can run the «Zagruzka fayli»
           engine twice per configured unit, and fired with the page's own
           queries it takes the seconds the cards and the charts need to paint. */}
-      <ShiftReportTable shift={shift} pageReady={!isLoading && !cardsLoading} />
+      <ShiftReportTable shift={shift} date={date} pageReady={!isLoading && !cardsLoading} />
 
       <ContainerTotalsCard day={date} params={dayParams} />
 

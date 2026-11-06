@@ -249,7 +249,7 @@ const SK_NAME = ["w-3/4", "w-1/2", "w-2/3", "w-3/5", "w-4/5", "w-7/12"];
 // while the slowest block on it worked. Held until the page's own data is in,
 // the board fills in UNDER a page that is already readable. The default is
 // true: a caller that does not say otherwise gets the old behaviour.
-export default function ShiftReportTable({ shift = null, pageReady = true }) {
+export default function ShiftReportTable({ shift = null, date = null, pageReady = true }) {
   const { t } = useLang();
   const { auth } = useAuth();
   // The bands in force. Calling this is also what tells `utils/statusBands`
@@ -262,8 +262,10 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
   const { capPages, deniedPages } = useCapabilities();
   const [sort, setSort] = usePersistentState("overview_sr_sort", DEFAULT_SORT);
 
-  // The page's scope only — never its dates.
-  const base = useMemo(() => (shift ? { shift } : {}), [shift]);
+  // The page's scope, plus the shift-day its stepper picked (2026-11-06): that
+  // day replaces «today» and the day before it «yesterday»; the quality month
+  // is the picked day's. No date = the shift's own current day, as before.
+  const base = useMemo(() => ({ ...(shift ? { shift } : {}), ...(date ? { date } : {}) }), [shift, date]);
   const params = useFactoryParams(base);
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
@@ -299,7 +301,7 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
         {single.today && (
           <span className="sm:hidden">
             {" · "}
-            {fill(t("overview.sr.capDated"), { when: t("overview.sr.today"), date: ddmm(single.today) })}
+            {fill(t("overview.sr.capDated"), { when: t(todayKey), date: ddmm(single.today) })}
           </span>
         )}
       </>
@@ -307,6 +309,9 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
     : multi ? t("overview.sr.subAll") : undefined;
   // One shift on screen: the header names the date. Two: each group row does,
   // because the two shifts' «today» can be different dates.
+  const picked = !!data?.picked;
+  const todayKey = picked ? "overview.sr.pickedDay" : "overview.sr.today";
+  const prevKey = picked ? "overview.sr.pickedPrev" : "overview.sr.yesterday";
   const dated = (whenKey, iso) => (single && iso
     ? fill(t("overview.sr.capDated"), { when: t(whenKey), date: ddmm(iso) })
     : t(whenKey));
@@ -594,15 +599,15 @@ export default function ShiftReportTable({ shift = null, pageReady = true }) {
             {[
               ["load", t("overview.sr.hintLoad"), {
                 full: t("overview.sr.colLoad"), short: t("overview.sr.colLoadShort"),
-                cap: dated("overview.sr.today", single?.today), capShort: t("overview.sr.today"),
+                cap: dated(todayKey, single?.today), capShort: t(todayKey),
               }],
               ["att", t("overview.sr.hintAtt"), {
                 full: t("overview.sr.colAtt"), short: t("overview.sr.colAttShort"),
-                cap: dated("overview.sr.today", single?.today), capShort: t("overview.sr.today"),
+                cap: dated(todayKey, single?.today), capShort: t(todayKey),
               }],
               ["compl", t("overview.sr.hintCompl"), {
                 full: t("overview.sr.colCompl"), short: t("overview.sr.colComplShort"),
-                cap: dated("overview.sr.yesterday", single?.yesterday), capShort: t("overview.sr.yesterday"),
+                cap: dated(prevKey, single?.yesterday), capShort: t(prevKey),
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
