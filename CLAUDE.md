@@ -4445,6 +4445,10 @@ are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
   composer; «Yechimsiz muammolar» counts stops without one. Older
   brigadir-level rows (`event_id` NULL) stay, read under «Brigadir bo'yicha
   umumiy yechimlar», and count toward no stop.
+- **Cleaning (Cat H, «Tozalash») is not on this page** (2026-11-05, the operator:
+  «cleaning is part of the work, we don't need a solution for that»):
+  `idle_solutions.EXCLUDED` drops it from the causes, the totals, the brigadir
+  table and the write door (400). Nothing else moves — /downtime keeps it.
 
 
 ## WHO answers for a waiting category (`idle-owner`)

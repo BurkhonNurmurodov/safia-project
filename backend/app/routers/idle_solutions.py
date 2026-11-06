@@ -35,6 +35,10 @@ MAX_TEXT = 2000
 SHOW_LAST = 30          # solutions served per category, newest first
 TOP_UNITS = 5
 MAX_NOTES = 8           # brigadir comments served per problem, newest first
+# Cleaning (Cat H, «Tozalash») is part of the work, not a waiting cause anybody
+# answers for with a solution — left off this page entirely (the operator,
+# 2026-11-05). It stays on /downtime and in every figure there.
+EXCLUDED = ("Cat H",)
 MAX_EVENTS = 100        # filed stops served per (category, brigadir), newest first
 
 
@@ -112,7 +116,7 @@ def analysis(
                           "shift": r.get("shift")}
         for c, v in (r.get("by_category") or {}).items():
             v = float(v or 0)
-            if v <= 0:
+            if v <= 0 or c in EXCLUDED:
                 continue
             cat_min[c] = cat_min.get(c, 0.0) + v
             cat_days.setdefault(c, set()).add(r.get("date"))
@@ -156,7 +160,8 @@ def analysis(
         sols.setdefault(r.category, []).append(r)
 
     total = sum(cat_min.values())
-    cats = [c for c in idle_scope.CATEGORIES if lock is None or c in set(lock)]
+    cats = [c for c in idle_scope.CATEGORIES
+            if c not in EXCLUDED and (lock is None or c in set(lock))]
     rows = []
     for c in cats:
         items = sols.get(c, [])
@@ -272,7 +277,7 @@ def add_solution(
     payload: dict = Depends(require_page("downtime")),
 ):
     _admin_only(payload)
-    if body.category not in idle_scope.CATEGORIES:
+    if body.category not in idle_scope.CATEGORIES or body.category in EXCLUDED:
         raise HTTPException(status_code=400, detail="unknown_category")
     if not _may_write(db, payload, body.category):
         raise HTTPException(status_code=403, detail="not_category_owner")
