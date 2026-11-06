@@ -9123,8 +9123,10 @@ only, and the SAP columns fill only for units on SAP auto-fill (today's reach).
   `sap_completion` (fact ÷ plan minutes, None without SAP plan minutes) and
   `sap_avg_load` (SAP plan minutes ÷ (ΣN × shift minutes), the page's own
   typed ΣN). A unit-day no row carries a SAP number for reads «—» on both
-  (the page's `sapReached`). Nothing else reads them. With them the KPI row
-  is seven tiles in a grid of equal tracks.
+  (the page's `sapReached`). Nothing else reads them. They sit on a line of
+  their own under the five tiles (the operator, same day: «could be below»),
+  each under its twin — a five-track grid from 50rem of column width, where
+  the row above stops wrapping; below that the pair wraps like that row.
 - **On a typed-only day** (`dashboard.typed_only`): an untyped ПЛАН/ФАКТ prints
   «—» (it counts 0) with a hint naming the SAP columns; the «Manba» column and
   the per-line SAP switch (row editor, create form, bulk bar) are not drawn —

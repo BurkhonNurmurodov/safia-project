@@ -350,11 +350,11 @@ function Bar({ value, color, height = 6, track = "var(--bg-inner)" }) {
 }
 
 // ── KPI tile ────────────────────────────────────────────────────────────────
-function Kpi({ label, value, icon: Icon, accent, bar, barColor, primary, title }) {
+function Kpi({ label, value, icon: Icon, accent, bar, barColor, primary, title, className = "" }) {
   return (
     <div
       title={title}
-      className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
+      className={`rounded-2xl px-4 py-3.5 flex-1 min-w-[150px] ${className}`}
       style={{
         background: primary ? "var(--brand-bg)" : "var(--bg-card)",
         border: `1px solid ${primary ? "var(--brand-border)" : "var(--border)"}`,
@@ -3552,13 +3552,9 @@ export default function Production() {
         </div>
       )}
 
-      {/* KPI row. With the two SAP cards it is seven tiles, which wrap on a
-          laptop: a grid of equal tracks keeps a tile left alone on the second
-          line at its column's width instead of stretching it across the page.
-          Five tiles keep the flex row everybody else has always had. */}
-      <div className={showSapKpi ? "grid gap-3 mb-4" : "flex flex-wrap gap-3 mb-4"}
-        style={showSapKpi ? { gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" } : undefined}>
-        {loading ? Array.from({ length: showSapKpi ? 7 : 5 }).map((_, i) => (
+      {/* KPI row — the five tiles everybody has always had, unchanged. */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        {loading ? Array.from({ length: 5 }).map((_, i) => (
           <div key={`kpi-sk-${i}`} className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SkeletonBlock className="h-3 w-20 mb-3" />
@@ -3567,11 +3563,6 @@ export default function Production() {
         )) : (<>
           <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
             bar={totals.completion} barColor={vypColor(totals.completion)} primary />
-          {showSapKpi && (
-            <Kpi label={t("production.kpiVypSap")} value={pct(totals.sap_completion)} icon={Target}
-              accent={vypColor(totals.sap_completion)} title={t("production.kpiVypSapHint")}
-              bar={totals.sap_completion ?? undefined} barColor={vypColor(totals.sap_completion)} />
-          )}
           <Kpi label={t("production.kpiPeople")} icon={Users}
             value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>} />
           <Kpi label={t("production.kpiTotalLabor")} value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
@@ -3579,15 +3570,39 @@ export default function Production() {
           <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} accent={loadColor(totals.avg_load)}
             value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
             bar={totals.avg_load ?? undefined} barColor={loadColor(totals.avg_load)} />
-          {showSapKpi && (
-            <Kpi label={t("production.kpiAvgLoadSap")} icon={Gauge} accent={loadColor(totals.sap_avg_load)}
-              title={t("production.kpiAvgLoadSapHint")}
-              value={<>{pct(totals.sap_avg_load)}{peopleUntyped > 0 && totals.sap_avg_load != null
-                && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
-              bar={totals.sap_avg_load ?? undefined} barColor={loadColor(totals.sap_avg_load)} />
-          )}
         </>)}
       </div>
+
+      {/* The two SAP twins on a line of their own (admins and shift managers).
+          A grid of five equal tracks, the width the row above gives each
+          tile, so on a wide card each one stands directly under the figure it
+          is read against — «Вып % · SAP» under «Вып %», «Ср. загруженность ·
+          SAP» under «Ср. загруженность». The grid starts at 50rem, the width
+          at which the row above stops wrapping (5 × 150px + gaps); below it
+          this row wraps exactly as that one does. Measured on the column's own
+          width (@container), not the screen. */}
+      {showSapKpi && (
+        <div className="@container mb-4">
+          <div className="flex flex-wrap gap-3 @min-[50rem]:grid @min-[50rem]:grid-cols-5">
+            {loading ? [0, 1].map((i) => (
+              <div key={`kpi-sap-sk-${i}`} className={`rounded-2xl px-4 py-3.5 flex-1 min-w-[150px] ${i ? "col-start-5" : ""}`}
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                <SkeletonBlock className="h-3 w-20 mb-3" />
+                <SkeletonBlock className="h-7 w-24" />
+              </div>
+            )) : (<>
+              <Kpi label={t("production.kpiVypSap")} value={pct(totals.sap_completion)} icon={Target}
+                accent={vypColor(totals.sap_completion)} title={t("production.kpiVypSapHint")}
+                bar={totals.sap_completion ?? undefined} barColor={vypColor(totals.sap_completion)} />
+              <Kpi label={t("production.kpiAvgLoadSap")} icon={Gauge} accent={loadColor(totals.sap_avg_load)}
+                title={t("production.kpiAvgLoadSapHint")} className="col-start-5"
+                value={<>{pct(totals.sap_avg_load)}{peopleUntyped > 0 && totals.sap_avg_load != null
+                  && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
+                bar={totals.sap_avg_load ?? undefined} barColor={loadColor(totals.sap_avg_load)} />
+            </>)}
+          </div>
+        </div>
+      )}
 
       {/* Both figures above are DIVIDED BY, or ARE, ΣN — and ΣN counts only the
           «Кол-во» somebody typed. So whenever any team is missing one the pair
