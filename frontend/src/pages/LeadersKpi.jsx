@@ -1,17 +1,17 @@
-// «Liderlar KPI» (/leaders-kpi) — the leaders' KPIs on ONE page, as a
+// «Liderlar KPI» (/leaders-kpi) — the leaders' five KPIs on ONE page, as a
 // leaderboard, month by month (2026-10-19, the operator's rulings; it merged
 // /worker-concerns, /turnover and /foreign-objects, which now redirect here).
-// HR's five, and from 2026-10-23 a sixth — plan fulfilment («Plan», the
-// «Plan Bajarish» page's figure per cell), weight 0 until the operator names one.
+// A sixth tab, plan fulfilment, was added on 2026-10-23 and removed on
+// 2026-11-06 (the operator: it was never one of the leaders' KPIs).
 //
 // One question per screen: «which cell — and so which owner — stands where
 // this month, and why». Six tabs over ONE request (`GET /api/leaders-kpi`):
 // the board (one row per OWNED cell, the Σ of five KPI scores × weights out
-// of 5), then one tab per KPI — the four the platform computes (worker
+// of 5), then one tab per KPI — all five the platform computes (worker
 // concerns · turnover · foreign objects · category compliance · the
 // technologists' audit, live from 2026-11-06 off `public.audit`: one summary
-// line, then a ranking whose card header switches to its register), then plan
-// fulfilment. The month, the plant / shift / brigadir scope and the search are
+// line, then a ranking whose card header switches to its register). The month,
+// the plant / shift / brigadir scope and the search are
 // shared by every tab. `services/leaders_kpi.py` computes; this page never
 // re-derives a figure, only filters what it shows.
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,8 +46,6 @@ import ConcernsTab from "../components/kpi/ConcernsTab";
 import TurnoverTab from "../components/kpi/TurnoverTab";
 import ForeignTab from "../components/kpi/ForeignTab";
 import ComplianceTab from "../components/kpi/ComplianceTab";
-import PlanTab from "../components/kpi/PlanTab";
-import PlanExplain from "../components/kpi/PlanExplain";
 import AuditTab from "../components/kpi/AuditTab";
 import AuditExplain from "../components/kpi/AuditExplain";
 import CellKpiModal from "../components/kpi/CellKpiModal";
@@ -58,7 +56,7 @@ import ForeignExplain from "../components/foreign/ForeignExplain";
 import ComplianceExplain from "../components/kpi/ComplianceExplain";
 import { PAST_FROM, START_MONTH, curMonth, errText, monthLabel, prevMonth, scoreOf, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
 
-const TAB_KEYS = ["board", "concerns", "turnover", "foreign", "compliance", "audit", "plan"];
+const TAB_KEYS = ["board", "concerns", "turnover", "foreign", "compliance", "audit"];
 
 // The last calendar day of «YYYY-MM» — the register's `date_to`.
 const lastDayOf = (ym) => {
@@ -356,11 +354,6 @@ export default function LeadersKpi() {
           <AuditTab T={T} tl={tl} tx={tx} data={data} rows={allRows} needle={needle} onExplain={openExplain} />
         );
         break;
-      case "plan":
-        body = noMonth ? monthEmpty : (
-          <PlanTab T={T} tl={tl} data={data} rows={allRows} needle={needle} onExplain={openExplain} />
-        );
-        break;
       default:
         body = noMonth ? monthEmpty : (
           <LeaderboardTab T={T} tl={tl} data={data} rows={rows} prev={prevQ.data} sort={sort} onSort={onSort}
@@ -398,10 +391,6 @@ export default function LeadersKpi() {
       {ex?.kind === "audit" && exItem && data && (
         <AuditExplain open onClose={() => setEx(null)} item={exItem} data={data}
           T={T} tx={tx} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
-      )}
-      {ex?.kind === "plan" && exItem && data && (
-        <PlanExplain open onClose={() => setEx(null)} item={exItem} data={data}
-          T={T} title={exTitle} subtitle={exSub} zIndex={openRow ? 60 : undefined} />
       )}
       {ex?.kind === "concerns" && exItem && data && (
         <ConcernsCellModal T={T} tl={tl} row={exItem} data={data} listParams={listParams}

@@ -1,5 +1,5 @@
 // «Liderlar KPI» — the small pieces the page, its tabs and its dialogs share:
-// the KPI keys in the page's order (HR's five, then plan fulfilment), which of them the platform computes,
+// the five KPI keys in the page's order, which of them the platform computes,
 // number and date formats (turnover's own — one spelling across the leaders'
 // KPI surfaces), the score's colour, sorting, and the scales drawn from the
 // rules the server sent (never a second copy of a rule).
@@ -10,10 +10,10 @@ import { n0, pct1 } from "../turnover/turnoverUtil";
 
 export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM, START_MONTH } from "../turnover/turnoverUtil";
 
-export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit", "plan"];
+export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit"];
 // The fallback when a payload carries no `kpis` — the server's `kpis[].live`
 // decides (the audit is live only while its source table can be read).
-export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance", "audit", "plan"]);
+export const LIVE = new Set(["concerns", "turnover", "foreign", "compliance", "audit"]);
 export const MAX_POINTS = 5;
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -37,7 +37,7 @@ export const errText = async (e) => {
 
 const NUM_KEYS = new Set(["rank", "total", "pct", "score", "points", "working", "left", "rate", "days", "hired", "leftOn",
   "count", "all", "filed", "done", "uplifted", "open", "pct0", "concerns", "turnover", "foreign", "compliance", "audit", "date",
-  "counted", "compliant", "tenure", "since", "verdict", "plan", "actual", "short", "audits", "min", "rating"]);
+  "counted", "compliant", "tenure", "since", "verdict", "audits", "min", "rating"]);
 
 export function sortRows(rows, sort, get) {
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -78,12 +78,6 @@ export function bandLines(key, rule) {
     }
     out.push([`> ${prev ?? 0}%`, rule.worst ?? 1]);
     return out;
-  }
-  if (key === "plan") {
-    // «at least N%» → score, the whole percent as printed.
-    const bands = [...(rule.bands || [])].sort((a, b) => b.min - a.min);
-    const low = bands.length ? `< ${bands[bands.length - 1].min}%` : "";
-    return [...bands.map((b) => [`≥ ${b.min}%`, b.score]), [low, rule.worst ?? 1]];
   }
   if (key === "audit") {
     // HR's IFS on the month's average, one decimal as printed: strictly above → score.
@@ -143,11 +137,6 @@ export function figureOf(row, key, T) {
     if (a.pct == null) return T.figAuditNone;
     return fill(T.figAudit, { n: a.audits, pct: pct1(a.pct) });
   }
-  if (key === "plan") {
-    const p = row.plan;
-    if (!p || p.pct0 == null) return T.figPlanNone;
-    return fill(T.figPlan, { a: n0(p.actual), p: n0(p.plan), pct: p.pct0 });
-  }
   return T.cmNotLive;
 }
 
@@ -164,16 +153,6 @@ export async function fetchPeople(ym, keys) {
     api.get("/api/category-compliance/people", { params: { month: ym, keys: c.join(",") } }).then((r) => r.data?.people || {})));
   return Object.assign({}, ...parts);
 }
-
-// A percent on the plan-fulfilment scale — the client twin of
-// `leaders_kpi.plan_score` (at least N% → score), used only to colour a day in
-// the cell's day strip; keep the two in step.
-export const planScoreOf = (pct, rule) => {
-  if (pct == null) return null;
-  const bands = [...(rule?.bands || [])].sort((a, b) => b.min - a.min);
-  for (const b of bands) if (pct >= b.min) return b.score;
-  return rule?.worst ?? 1;
-};
 
 // A percent on the technologists'-audit scale — the client twin of
 // `tech_audit.score_of` (strictly above a band's edge → its score, else the

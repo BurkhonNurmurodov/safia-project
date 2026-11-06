@@ -9,6 +9,7 @@ import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
 import Tooltip from "../ui/Tooltip";
 import SegmentedToggle from "../ui/SegmentedToggle";
+import SearchInput from "../ui/SearchInput";
 import TableCard, { SectionHead, Th } from "../ui/DataTable";
 import { RankedList } from "../ui/AnalysisBoard";
 import { SkeletonCard, SkeletonChart } from "../ui/Skeleton";
@@ -20,6 +21,7 @@ import { useChartTheme } from "../../hooks/useChartTheme";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import useIsMobile from "../../hooks/useIsMobile";
 import { surnameInitial } from "../../utils/personName";
+import { searchFold, matchScore } from "../../utils/searchFold";
 import { FOLD_COLOR } from "../../utils/chartPalette";
 import api from "../../utils/api";
 import { TXT, fill } from "./demographicsText";
@@ -248,6 +250,26 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
     ? { key, dir: p.dir === "asc" ? "desc" : "asc" }
     : { key, dir: key === "name" || key === "place" ? "asc" : "desc" }));
 
+  // The search reads the name cell as it is printed (a cell row: its code and
+  // its brigadir), folded on both sides by the header search's own rule — a
+  // Cyrillic «конд» finds the «Konditer» an Uzbek reader sees, «xolmatov» the
+  // «Холматов» a Russian one does.
+  // One query per grouping, so a job's name never filters a list of people.
+  const [queries, setQueries] = useState({});
+  const query = queries[group] || "";
+  const setQuery = (v) => setQueries((p) => ({ ...p, [group]: v }));
+  const items = useMemo(() => rows.map((r) => {
+    const name = group === "unit" ? tl(r.label) : group === "job" ? (r.label ? tx(r.label) : T.noJob) : r.label;
+    const boss = group === "cell" && r.unit != null && unitName[r.unit] ? tl(unitName[r.unit]) : null;
+    const hay = searchFold([name, r.label, boss, boss && unitName[r.unit]].filter(Boolean).join(" "));
+    return { r, name, boss, hay };
+  }), [rows, unitName, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needle = searchFold(query);
+  const shown = useMemo(
+    () => (needle ? items.filter((it) => matchScore(needle, [it.hay]) > 0) : items),
+    [items, needle],
+  );
+
   // ── states ─────────────────────────────────────────────────────────────────
   const head = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
@@ -404,8 +426,14 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
           <div className="flex items-center gap-2">
             <SegmentedToggle size="sm" value={group} onChange={setGroup}
               options={[["unit", T.byUnit], ["job", T.byJob], ["cell", T.byCell]]} />
-            <span className="text-xs tabular-nums whitespace-nowrap max-sm:hidden" style={{ color: "var(--text-3)" }}>{fill(T.rows, { n: rows.length })}</span>
+            <span className="text-xs tabular-nums whitespace-nowrap max-sm:hidden" style={{ color: "var(--text-3)" }}>
+              {needle ? fill(T.rowsOf, { n: shown.length, total: items.length }) : fill(T.rows, { n: items.length })}
+            </span>
           </div>
+        )}
+        toolbar={(
+          <SearchInput value={query} onChange={setQuery} placeholder={T.searchPh[group]}
+            aria-label={T.searchAria} clearLabel={T.searchClear} className="w-full sm:w-72" />
         )}
         minWidth={820}
       >
@@ -422,13 +450,12 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const name = group === "unit" ? tl(r.label) : group === "job" ? (r.label ? tx(r.label) : T.noJob) : r.label;
-            const sub = group === "cell" && r.unit != null && unitName[r.unit] ? surnameInitial(tl(unitName[r.unit])) : null;
+          {shown.map(({ r, name, boss }) => {
+            const sub = boss ? surnameInitial(boss) : null;
             const wp = pct(r.women, r.n);
             return (
               <tr key={String(r.key)}>
-                <td className="px-3 py-2 max-w-[260px] truncate" title={sub ? `${name} · ${tl(unitName[r.unit])}` : name}>
+                <td className="px-3 py-2 max-w-[260px] truncate" title={boss ? `${name} · ${boss}` : name}>
                   <span className={group === "cell" ? "font-mono" : ""}>{name}</span>
                   {sub && <span className="ml-2" style={{ color: "var(--text-3)" }}>{sub}</span>}
                 </td>
@@ -453,6 +480,13 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
               </tr>
             );
           })}
+          {needle && !shown.length && (
+            <tr>
+              <td colSpan={8} className="px-3 py-8 text-center whitespace-normal" style={{ color: "var(--text-3)" }}>
+                {fill(T.noMatch, { q: query.trim().slice(0, 60) })}
+              </td>
+            </tr>
+          )}
         </tbody>
       </TableCard>
     </>
