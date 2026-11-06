@@ -20,6 +20,8 @@ import { useFactorySection } from "../components/ui/FactorySelect";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { shortPerson } from "../utils/personName";
+import SolutionAnalytics from "../components/idle/SolutionAnalytics";
+import { usePersistentState } from "../hooks/usePersistentState";
 import OwnerChip from "../components/idle/OwnerChip";
 import { catColor, iconFor } from "../components/idle/categories";
 import { TXT, fill } from "./idleSolutionsText";
@@ -317,6 +319,7 @@ export default function IdleSolutions() {
   const fparams = useFactoryParams(params);
   const factorySection = useFactorySection();
   const [openCat, setOpenCat] = useState(null);
+  const [view, setView] = usePersistentState("idle_solutions_view", "problems"); // problems | analytics
   // Brigadir picker: several at once, limited to the plant on screen (a pick
   // the plant no longer offers is dropped, never left over an empty page).
   const { data: allSupervisors = [] } = useQuery({
@@ -336,7 +339,15 @@ export default function IdleSolutions() {
     queryFn: () => api.get("/api/idle-solutions/analysis", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
-  const refresh = () => qc.invalidateQueries({ queryKey: ["idle-solutions"] });
+  const analyticsQ = useQuery({
+    queryKey: ["idle-solutions-analytics", fparams],
+    queryFn: () => api.get("/api/idle-solutions/analytics", { params: fparams }).then((r) => r.data),
+    enabled: ready && view === "analytics",
+  });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["idle-solutions"] });
+    qc.invalidateQueries({ queryKey: ["idle-solutions-analytics"] });
+  };
 
   const label = (code) => {
     const v = t(`downtime.cat.${code}.label`);
@@ -381,6 +392,10 @@ export default function IdleSolutions() {
 
   return (
     <Layout title={T.title} subtitle={null}>
+      <div className="mb-3">
+        <SegmentedToggle asTabs value={view === "analytics" ? "analytics" : "problems"} onChange={setView}
+          options={[["problems", T.tabProblems], ["analytics", T.tabAnalytics]]} />
+      </div>
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
           compactLabel triggerClassName="px-3 py-2 text-sm" />
@@ -388,7 +403,15 @@ export default function IdleSolutions() {
       </div>
       <p className="text-xs mb-4" style={{ color: "var(--text-3)" }}>{T.hint}</p>
 
-      {isError ? (
+      {view === "analytics" ? (
+        analyticsQ.isError ? (
+          <EmptyState tone="danger" title={T.errLoad} message="" showUploadLink={false} action={<Button onClick={() => analyticsQ.refetch()}>{T.retry}</Button>} />
+        ) : analyticsQ.isLoading || !analyticsQ.data ? (
+          <div className="space-y-3"><SkeletonBlock className="h-24" /><SkeletonBlock className="h-72" /></div>
+        ) : (
+          <SolutionAnalytics T={T} data={analyticsQ.data} label={label} />
+        )
+      ) : isError ? (
         <EmptyState tone="danger" title={T.errLoad} message="" showUploadLink={false} action={<Button onClick={() => refetch()}>{T.retry}</Button>} />
       ) : isLoading || !data ? (
         <div className="space-y-3"><SkeletonBlock className="h-24" /><SkeletonBlock className="h-72" /></div>

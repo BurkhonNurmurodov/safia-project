@@ -34,6 +34,17 @@ const uz = {
   writeProblemPh: "Shu to'xtash qayta takrorlanmasligi uchun nima qilinadi? Kim, qachongacha?",
   stops: "Kiritilgan to'xtashlar — har biriga yechim", noStops: "Bu davrda kiritilgan to'xtash yo'q", noNote: "Izoh yozilmagan", addAnother: "+ Yana yechim qo'shish", unitSol: "Brigadir bo'yicha umumiy yechimlar",
   show: "Ko'rsatish", hide: "Yopish", yours: "Sizniki",
+  tabProblems: "Muammolar", tabAnalytics: "Tahlil",
+  aRepeat: "Takrorlanayotgan sabablar", aRepeatSub: "{n} va undan ko'p alohida kunda", aWorks: "Ish bergan yechimlar", aOf: "{n} tadan baholangan",
+  aRethink: "Qayta ko'rib chiqish kerak", aRethinkSub: "bajarilgan, lekin kutish kamaymagan", aEarly: "Hali erta", aEarlySub: "yozilganiga {n} kun bo'lmagan",
+  aSecWeekly: "Sabablar dinamikasi — haftalar bo'yicha", aWeeks: "{n} hafta", aTrend: { down: "Kamaymoqda", up: "Oshmoqda", flat: "O'zgarmagan" },
+  aSecRepeat: "Takrorlanayotgan sabablar — qaysi brigadirda", aRows: "{n} ta", aNoRepeat: "Bu davrda takrorlanayotgan sabab yo'q.",
+  cCause: "Sabab", aDays: "Kun", aStops: "To'xtash", aCell: "Yacheyka · kun", aSolved: "Yechim",
+  aSecEffect: "Yechimlar samarasi — oldin va keyin", aSolution: "Yechim", aWritten: "Yozilgan", aBefore: "Oldin, daq/kun", aAfter: "Keyin, daq/kun", aChange: "O'zgarish", aVerdict: "Xulosa",
+  aWhole: "Butun sabab", aNoEffect: "Hali yechim yozilmagan.",
+  aAdvice: "Yechim kutishni kamaytirmadi — boshqacha yondashuv sinab ko'ring",
+  aV: { works: "Ish bermoqda", weak: "Deyarli o'zgarmadi", worse: "Yomonlashdi", early: "Hali erta", none: "Kutish yo'q", new: "Yangi kutish" },
+  aMethod: "Yechim yozilgunga qadar {w} kun va undan keyingi kunlarda (ko'pi bilan {w}) kuniga o'rtacha daqiqalar solishtiriladi. {d}% va undan ko'p kamaysa — ish bermoqda, {r}% va undan ko'p oshsa — yomonlashgan; {a} kundan kam bo'lsa — hali erta.",
 };
 
 const uz_cyrl = {
@@ -64,6 +75,17 @@ const uz_cyrl = {
   writeProblemPh: "Шу тўхташ такрорланмаслиги учун нима қилинади? Ким, қачонгача?",
   stops: "Киритилган тўхташлар — ҳар бирига ечим", noStops: "Бу даврда киритилган тўхташ йўқ", noNote: "Изоҳ ёзилмаган", addAnother: "+ Яна ечим қўшиш", unitSol: "Бригадир бўйича умумий ечимлар",
   show: "Кўрсатиш", hide: "Ёпиш", yours: "Сизники",
+  tabProblems: "Муаммолар", tabAnalytics: "Таҳлил",
+  aRepeat: "Такрорланаётган сабаблар", aRepeatSub: "{n} ва ундан кўп алоҳида кунда", aWorks: "Иш берган ечимлар", aOf: "{n} тадан баҳоланган",
+  aRethink: "Қайта кўриб чиқиш керак", aRethinkSub: "бажарилган, лекин кутиш камаймаган", aEarly: "Ҳали эрта", aEarlySub: "ёзилганига {n} кун бўлмаган",
+  aSecWeekly: "Сабаблар динамикаси — ҳафталар бўйича", aWeeks: "{n} ҳафта", aTrend: { down: "Камаймоқда", up: "Ошмоқда", flat: "Ўзгармаган" },
+  aSecRepeat: "Такрорланаётган сабаблар — қайси бригадирда", aRows: "{n} та", aNoRepeat: "Бу даврда такрорланаётган сабаб йўқ.",
+  cCause: "Сабаб", aDays: "Кун", aStops: "Тўхташ", aCell: "Ячейка · кун", aSolved: "Ечим",
+  aSecEffect: "Ечимлар самараси — олдин ва кейин", aSolution: "Ечим", aWritten: "Ёзилган", aBefore: "Олдин, дақ/кун", aAfter: "Кейин, дақ/кун", aChange: "Ўзгариш", aVerdict: "Хулоса",
+  aWhole: "Бутун сабаб", aNoEffect: "Ҳали ечим ёзилмаган.",
+  aAdvice: "Ечим кутишни камайтирмади — бошқача ёндашув синаб кўринг",
+  aV: { works: "Иш бермоқда", weak: "Деярли ўзгармади", worse: "Ёмонлашди", early: "Ҳали эрта", none: "Кутиш йўқ", new: "Янги кутиш" },
+  aMethod: "Ечим ёзилгунга қадар {w} кун ва ундан кейинги кунларда (кўпи билан {w}) кунига ўртача дақиқалар солиштирилади. {d}% ва ундан кўп камайса — иш бермоқда, {r}% ва ундан кўп ошса — ёмонлашган; {a} кундан кам бўлса — ҳали эрта.",
 };
 
 const ru = {
@@ -94,6 +116,17 @@ const ru = {
   writeProblemPh: "Что будет сделано, чтобы эта остановка не повторялась? Кто, к какому сроку?",
   stops: "Внесённые остановки — решение по каждой", noStops: "За период остановок не внесено", noNote: "Комментарий не указан", addAnother: "+ Добавить ещё решение", unitSol: "Общие решения по бригадиру",
   show: "Показать", hide: "Скрыть", yours: "Ваша",
+  tabProblems: "Проблемы", tabAnalytics: "Аналитика",
+  aRepeat: "Повторяющиеся причины", aRepeatSub: "в {n} и более разных днях", aWorks: "Решения, которые работают", aOf: "из {n} оценённых",
+  aRethink: "Нужно пересмотреть", aRethinkSub: "сделано, а ожидания не снизились", aEarly: "Ещё рано", aEarlySub: "с записи прошло меньше {n} дн.",
+  aSecWeekly: "Динамика причин — по неделям", aWeeks: "{n} нед.", aTrend: { down: "Снижается", up: "Растёт", flat: "Без изменений" },
+  aSecRepeat: "Повторяющиеся причины — у каких бригадиров", aRows: "{n} шт.", aNoRepeat: "За период повторяющихся причин нет.",
+  cCause: "Причина", aDays: "Дней", aStops: "Остановок", aCell: "Ячейка · дней", aSolved: "Решения",
+  aSecEffect: "Эффект решений — до и после", aSolution: "Решение", aWritten: "Записано", aBefore: "До, мин/день", aAfter: "После, мин/день", aChange: "Изменение", aVerdict: "Вывод",
+  aWhole: "Вся причина", aNoEffect: "Решений пока не записано.",
+  aAdvice: "Решение не сократило ожидания — попробуйте другой подход",
+  aV: { works: "Работает", weak: "Почти не изменилось", worse: "Стало хуже", early: "Ещё рано", none: "Ожиданий нет", new: "Новые ожидания" },
+  aMethod: "Сравниваются средние минуты в день за {w} дн. до записи решения и в дни после неё (не более {w}). Снижение на {d}% и больше — работает, рост на {r}% и больше — хуже; меньше {a} дн. — ещё рано.",
 };
 
 const en = {
@@ -124,6 +157,17 @@ const en = {
   writeProblemPh: "What will be done so this stop does not repeat? Who, by when?",
   stops: "Filed stops — a solution for each", noStops: "No stops filed in this period", noNote: "No comment written", addAnother: "+ Add another solution", unitSol: "General solutions for this brigadir",
   show: "Show", hide: "Hide", yours: "Yours",
+  tabProblems: "Problems", tabAnalytics: "Analytics",
+  aRepeat: "Repeating reasons", aRepeatSub: "on {n} or more separate days", aWorks: "Solutions that work", aOf: "of {n} judged",
+  aRethink: "Needs a rethink", aRethinkSub: "marked done, waiting did not fall", aEarly: "Too early", aEarlySub: "under {n} days since written",
+  aSecWeekly: "Reasons over time — by week", aWeeks: "{n} weeks", aTrend: { down: "Falling", up: "Rising", flat: "Unchanged" },
+  aSecRepeat: "Repeating reasons — which brigadirs", aRows: "{n}", aNoRepeat: "No repeating reasons in this period.",
+  cCause: "Cause", aDays: "Days", aStops: "Stops", aCell: "Cell · days", aSolved: "Solved",
+  aSecEffect: "Did the solutions work — before and after", aSolution: "Solution", aWritten: "Written", aBefore: "Before, min/day", aAfter: "After, min/day", aChange: "Change", aVerdict: "Verdict",
+  aWhole: "Whole cause", aNoEffect: "No solutions written yet.",
+  aAdvice: "The solution did not cut the waiting — try a different approach",
+  aV: { works: "Working", weak: "Barely changed", worse: "Got worse", early: "Too early", none: "No waiting", new: "New waiting" },
+  aMethod: "Average minutes per day in the {w} days before the solution was written against the days since (at most {w}). A fall of {d}% or more is working, a rise of {r}% or more is worse; under {a} days is too early.",
 };
 
 export const TXT = { uz, uz_cyrl, ru, en };

@@ -14,7 +14,7 @@ category lock, applied through the same `idle_scope` calls.
 A solution is a small log entry (open → doing → done), never a rewrite of the
 previous one, so the history of what was promised stays readable.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,6 +28,17 @@ from app.permissions import require_page
 from app.services import action_log, idle_scope
 
 router = APIRouter(prefix="/api/idle-solutions", tags=["idle-solutions"])
+
+TZ = timezone(timedelta(hours=5))   # Tashkent, the platform's wall clock
+
+# «Is a solution working?» — the same problem's waiting, per day, in the WINDOW
+# days before the solution was written against the days since (at most WINDOW).
+# These are choices, not rulings — one constant each to move.
+WINDOW = 14
+MIN_AFTER_DAYS = 7      # fewer days since the solution = too early to say
+WORKS_DROP = 30.0       # % fall in minutes per day that counts as working
+WORSE_RISE = 15.0       # % rise that counts as worse
+REPEAT_DAYS = 3         # a reason seen on this many separate days is repeating
 
 STATUSES = ("open", "doing", "done")
 MAX_DAYS = 124
@@ -239,6 +250,166 @@ def analysis(
         "problems_n": sum(r["problems_n"] for r in rows),
         "cat_locked": lock,
         "is_admin": is_admin,
+    }
+
+
+def _sol_date(r) -> date:
+    return (r.created_at.astimezone(TZ) if r.created_at else datetime.now(TZ)).date()
+
+
+def _verdict(before: float, after: float, after_days: int) -> tuple:
+    """(verdict, change%) — minutes PER DAY before against after."""
+    if after_days < MIN_AFTER_DAYS:
+        return "early", None
+    if before <= 0:
+        return ("none" if after <= 0 else "new"), None
+    ch = round(100.0 * (after - before) / before, 1)
+    if ch <= -WORKS_DROP:
+        return "works", ch
+    if ch >= WORSE_RISE:
+        return "worse", ch
+    return "weak", ch
+
+
+@router.get("/analytics")
+def analytics(
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("downtime")),
+):
+    """Is the waiting repeating, and did the written solutions change it?
+
+    Nothing new is measured: the minutes are `_downtime`'s own rows (the page's
+    computation), the stops are `analysis()`'s events. Three answers:
+    `repeats` — a (cause, brigadir) seen on several separate days / the same cell
+    again and again; `weekly` — each cause's minutes per Monday-week; `effect` —
+    per written solution, minutes per day before against after it (see `_verdict`).
+    """
+    _admin_only(payload)
+    from app.routers.downtime import _downtime
+
+    base = analysis(date_from=date_from, date_to=date_to, shift=shift, factory=factory,
+                    manager_id=manager_id, db=db, payload=payload)
+    d_from = date.fromisoformat(base["date_from"])
+    d_to = date.fromisoformat(base["date_to"])
+    today = datetime.now(TZ).date()
+
+    sols = (db.query(IdleCategorySolution)
+            .order_by(IdleCategorySolution.created_at.desc(), IdleCategorySolution.id.desc())
+            .limit(400).all())
+    sols = [r for r in sols if r.category not in EXCLUDED
+            and (not manager_id or r.manager_id is None or r.manager_id in manager_id)]
+    wide_from = d_from
+    for r in sols:
+        wide_from = min(wide_from, _sol_date(r) - timedelta(days=WINDOW))
+    wide_to = max(d_to, today)
+    wide_from = max(wide_from, wide_to - timedelta(days=MAX_DAYS - 1))
+    out = _downtime(db, payload, wide_from, wide_to, shift, manager_id, False, factory)
+    lock = idle_scope.viewer_categories(db, payload)
+    out = idle_scope.narrow_downtime(out, idle_scope.resolve_cats(db, payload, []), lock=lock)
+
+    # (category, manager, iso day) -> minutes, and (category, iso day) -> minutes
+    cm: dict[tuple, float] = {}
+    cc: dict[tuple, float] = {}
+    for r in out.get("rows") or []:
+        dstr = str(r.get("date"))[:10]
+        for c, v in (r.get("by_category") or {}).items():
+            v = float(v or 0)
+            if v <= 0 or c in EXCLUDED:
+                continue
+            cm[(c, r.get("manager_id"), dstr)] = cm.get((c, r.get("manager_id"), dstr), 0.0) + v
+            cc[(c, dstr)] = cc.get((c, dstr), 0.0) + v
+
+    def span(c, mid, a: date, b: date) -> float:
+        tot, d = 0.0, a
+        while d <= b:
+            k = d.isoformat()
+            tot += cc.get((c, k), 0.0) if mid is None else cm.get((c, mid, k), 0.0)
+            d += timedelta(days=1)
+        return tot
+
+    # weekly minutes per cause over the page's period
+    weeks: list[str] = []
+    d = d_from - timedelta(days=d_from.weekday())
+    while d <= d_to:
+        weeks.append(d.isoformat())
+        d += timedelta(days=7)
+    weekly = []
+    for row in base["categories"]:
+        c = row["category"]
+        if row["minutes"] <= 0:
+            continue
+        vals = []
+        for w in weeks:
+            w0 = max(date.fromisoformat(w), d_from)
+            w1 = min(date.fromisoformat(w) + timedelta(days=6), d_to)
+            vals.append(round(span(c, None, w0, w1), 1))
+        half = len(vals) // 2
+        first, last = sum(vals[:half]), sum(vals[half:])
+        trend = "flat"
+        if half >= 1 and first > 0:
+            ch = 100.0 * (last - first) / first
+            trend = "down" if ch <= -WORKS_DROP else ("up" if ch >= WORSE_RISE else "flat")
+        weekly.append({"category": c, "minutes": row["minutes"], "values": vals, "trend": trend,
+                       "solutions_n": row["solutions_n"]})
+
+    # repeating reasons: a (cause, brigadir) on many separate days / one cell again
+    repeats = []
+    for row in base["categories"]:
+        for p in row["problems"]:
+            ev = p.get("events") or []
+            days = {e["date"] for e in ev}
+            by_cell: dict[str, set] = {}
+            for e in ev:
+                by_cell.setdefault(e.get("cell") or "—", set()).add(e["date"])
+            top_cell = max(by_cell.items(), key=lambda kv: len(kv[1]), default=None)
+            if len(days) < REPEAT_DAYS and not (top_cell and len(top_cell[1]) >= REPEAT_DAYS):
+                continue
+            repeats.append({
+                "category": row["category"], "manager_id": p["manager_id"],
+                "manager_name": p["manager_name"], "minutes": p["minutes"],
+                "stops": len(ev), "days": len(days),
+                "cell": top_cell[0] if top_cell else None,
+                "cell_days": len(top_cell[1]) if top_cell else 0,
+                "solved": p["solved_n"], "state": p["state"],
+            })
+    repeats.sort(key=lambda r: (-r["days"], -r["minutes"]))
+
+    # did each written solution change the waiting?
+    effect = []
+    for r in sols:
+        sd = _sol_date(r)
+        b0, b1 = sd - timedelta(days=WINDOW), sd - timedelta(days=1)
+        a0, a1 = sd + timedelta(days=1), min(today, sd + timedelta(days=WINDOW))
+        a_days = max(0, (a1 - a0).days + 1)
+        before = span(r.category, r.manager_id, b0, b1) / WINDOW
+        after = (span(r.category, r.manager_id, a0, a1) / a_days) if a_days else 0.0
+        verdict, ch = _verdict(before, after, a_days)
+        effect.append({
+            "id": r.id, "category": r.category, "manager_id": r.manager_id,
+            "manager_name": next((p["manager_name"] for row in base["categories"]
+                                  if row["category"] == r.category for p in row["problems"]
+                                  if p["manager_id"] == r.manager_id), None),
+            "event_id": r.event_id, "text": r.text, "status": r.status,
+            "author_name": r.author_name, "date": sd.isoformat(),
+            "before": round(before, 1), "after": round(after, 1), "after_days": a_days,
+            "change": ch, "verdict": verdict,
+            # a solution that is marked done (or in progress) yet changed nothing
+            "rethink": verdict in ("weak", "worse") and r.status in ("doing", "done"),
+        })
+    counts = {k: sum(1 for e in effect if e["verdict"] == k)
+              for k in ("works", "weak", "worse", "early", "none", "new")}
+    return {
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+        "window": WINDOW, "min_after_days": MIN_AFTER_DAYS,
+        "works_drop": WORKS_DROP, "worse_rise": WORSE_RISE, "repeat_days": REPEAT_DAYS,
+        "weeks": weeks, "weekly": weekly, "repeats": repeats,
+        "effect": effect, "counts": counts,
+        "rethink_n": sum(1 for e in effect if e["rethink"]),
     }
 
 
