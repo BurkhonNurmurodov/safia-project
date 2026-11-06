@@ -8182,41 +8182,6 @@ def _closed_day_trace_job() -> None:
                       closed_day_trace_report.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: can `public.audit` feed «Texnologlar auditi»? (2026-11-06) ─────
-# The operator asked whether `public.audit` (written outside this codebase,
-# owned by safia_prod_rw) fits one of the leaders' KPIs; the only candidate is
-# the empty technologists' audit (one % per cell per month). READ-ONLY
-# (`services/audit_kpi_fit_report_nov06.py`): its columns from the CATALOG
-# (readable without the GRANT), keys, who writes it, and — if the app may read
-# it — its rows matched against our cells' codes, DMed once to Burkhon as text
-# + .xlsx. Changing what it sends needs a NEW flag key. Delete this block, the
-# module and both entrypoint calls once it has landed.
-AUDIT_KPI_FIT_REPORT_FLAG = "audit_kpi_fit_report_2026_11_06_v1"
-_AUDIT_KPI_FIT_REPORT_DELAY_S = 150
-
-
-def report_audit_kpi_fit() -> None:
-    """public.audit against the technologists' audit KPI, DMed once to
-    Burkhon. Only SCHEDULES a job (one flag read). Never raises."""
-    try:
-        if not _report_pending(AUDIT_KPI_FIT_REPORT_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("audit-kpi-fit-report",
-                    datetime.now(timezone.utc) + timedelta(seconds=_AUDIT_KPI_FIT_REPORT_DELAY_S),
-                    _audit_kpi_fit_job)
-    except Exception as exc:
-        print(f"[startup] audit KPI fit report could not be scheduled: {exc}")
-
-
-def _audit_kpi_fit_job() -> None:
-    print("[startup] audit KPI fit report: started")
-    from app.services import audit_kpi_fit_report_nov06
-    _send_report_once(AUDIT_KPI_FIT_REPORT_FLAG, "audit KPI fit report",
-                      audit_kpi_fit_report_nov06.send, REPORT_CHAT_BURKHON)
-
-
 # ── one-shot: the live copies that were written twice (2026-10-20) ──────────
 # The trace above found Yog'mirov Feruz's 18.10 copied into `attendance` twice
 # at once: 130 rows for 65 people, every row twice. `live_projection.lock` now

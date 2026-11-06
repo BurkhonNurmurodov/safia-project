@@ -150,7 +150,6 @@ async def lifespan(app: FastAPI):
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
-        report_audit_kpi_fit,
         repair_live_copy_dupes,
         check_leader_kinds, check_leader_kind_pins,
         set_kenjayeva_photo_from_verifix,
@@ -763,11 +762,6 @@ async def lifespan(app: FastAPI):
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     later(report_closed_day_trace)
-    # ⚠ TEMPORARY one-shot (2026-11-06) — can public.audit feed «Texnologlar
-    # auditi»? Read-only, DMed once to Burkhon. Remove this line,
-    # `startup.report_audit_kpi_fit` and `services/audit_kpi_fit_report_nov06.py`
-    # once it has landed.
-    later(report_audit_kpi_fit)
     # ⚠ TEMPORARY one-shot (2026-10-20) — the live copies written twice at
     # once (Yog'mirov Feruz's 18.10: 130 rows for 65 people): their exact
     # duplicates deleted, split halves untouched, each fix in the Jurnal, the
