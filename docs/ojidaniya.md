@@ -583,6 +583,10 @@ brigadirs), the days of a MONTH across.
   five-tab report beside it, because it carries a different measure; two
   measures in one workbook is how a reader compares two columns that cannot be
   compared. Logged as `export.ojidaniya_matrix`.
+- **The file reads A-Z, the tab biggest-first** (the operator, 2026-11-06):
+  categories by their printed label, and the brigadirs under each by their
+  printed name, both A-Z — sorted in `export_downtime_matrix`, so the tab
+  keeps `ojidaniya_matrix.build`'s carriers-first order.
 - Visible to everyone who can open `/downtime` and scoped exactly as the page is
   (`_downtime` calls `scoped_manager_ids`), so a supervisor sees their own row
   under each category. The period is capped at `_MATRIX_MAX_DAYS` (62).

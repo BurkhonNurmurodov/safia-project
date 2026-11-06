@@ -1267,9 +1267,13 @@ def export_downtime_matrix(
             # identity, the words are why anybody would recognise it.
             "label": f"{c['name']} — {lbl}" if lbl else c["name"],
             "color": meta.get("color"),
-            "sups": [{**sp, "name": disp(sp["manager_id"], sp["name"])}
-                     for sp in c["sups"]],
+            # The file reads A-Z (the operator, 2026-11-06), by the name as
+            # printed; the tab keeps `build`'s biggest-first order.
+            "sups": sorted(({**sp, "name": disp(sp["manager_id"], sp["name"])}
+                            for sp in c["sups"]),
+                           key=lambda sp: sp["name"].casefold()),
         })
+    cats.sort(key=lambda c: c["label"].casefold())
 
     dates_iso = [datetime.strptime(d, "%d.%m.%Y").date().isoformat()
                  for d in mx["dates"]]
