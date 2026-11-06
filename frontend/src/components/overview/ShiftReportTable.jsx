@@ -289,6 +289,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, r.quality?.reason]))]
     .filter((k) => REASON_ICON[k]);
 
+  const picked = !!data?.picked;
+  const todayKey = picked ? "overview.sr.pickedDay" : "overview.sr.today";
+  const prevKey = picked ? "overview.sr.pickedPrev" : "overview.sr.yesterday";
   const shiftName = (s) => (s === 1 || s === 2
     ? fill(t("overview.sr.subShift"), { n: s })
     : t("overview.sr.noShift"));
@@ -309,9 +312,6 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     : multi ? t("overview.sr.subAll") : undefined;
   // One shift on screen: the header names the date. Two: each group row does,
   // because the two shifts' «today» can be different dates.
-  const picked = !!data?.picked;
-  const todayKey = picked ? "overview.sr.pickedDay" : "overview.sr.today";
-  const prevKey = picked ? "overview.sr.pickedPrev" : "overview.sr.yesterday";
   const dated = (whenKey, iso) => (single && iso
     ? fill(t("overview.sr.capDated"), { when: t(whenKey), date: ddmm(iso) })
     : t(whenKey));
