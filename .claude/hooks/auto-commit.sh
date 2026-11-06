@@ -145,9 +145,15 @@ USED_AI="no"
   # The push IS the deploy and nothing else stands between an edit and the
   # plant, so the backend's unit tests that need no database run first, and a
   # failing one stops the commit exactly as a failing build does. The ones that
-  # need a real Postgres skip themselves unless SAFIA_TEST_PG is set (it is not,
-  # here), so this is ~40 tests and about a second. `DATABASE_URL` is pointed at
-  # a dead port: whatever a test might reach for, it cannot be a real database.
+  # need a real Postgres (~294) skip themselves unless SAFIA_TEST_PG is set; this
+  # gate sets it (2026-11-06) when a server on THIS machine answers — each test
+  # class then makes and drops its own throwaway `safia_t_*` database, never
+  # touching an existing one — and the run is ~340 tests, about two minutes.
+  # Only localhost is probed, so no scratch database is ever made on a remote
+  # server unless SAFIA_TEST_PG is exported by hand. With no local server (a
+  # cloud session, a laptop without Postgres) the Postgres tests skip and the
+  # log says so, as before. `DATABASE_URL` is pointed at a dead port either way:
+  # whatever a test might reach for, it cannot be a real database.
   # A missing interpreter skips the gate — a deploy is never blocked over tooling.
   # Deleting a module a test imports (the temporary one-shots) fails it: delete
   # the test with the module.
@@ -156,9 +162,29 @@ USED_AI="no"
     if [ -x "$c" ]; then TEST_PY="$c"; break; fi
   done
   if [ -n "$TEST_PY" ] && [ -d "$PROJECT/backend/tests" ]; then
+    PG_URL="${SAFIA_TEST_PG:-}"
+    if [ -z "$PG_URL" ]; then
+      cand="postgresql://$(id -un)@localhost:5432/postgres"
+      # A role that can connect AND create databases; anything less would fail
+      # the tests for a reason that is not the code's.
+      if "$TEST_PY" -c 'import sys, psycopg2
+c = psycopg2.connect(sys.argv[1], connect_timeout=3).cursor()
+c.execute("select rolcreatedb or rolsuper from pg_roles where rolname = current_user")
+sys.exit(0 if c.fetchone()[0] else 1)' "$cand" >/dev/null 2>&1; then
+        PG_URL="$cand"
+      fi
+    fi
+    if [ -n "$PG_URL" ]; then
+      T_LIMIT=420
+      echo "backend tests: with the Postgres tests (scratch databases on the local server)" >>"$LOG"
+    else
+      T_LIMIT=240
+      echo "backend tests: NO local Postgres answered — the Postgres tests (~294) are skipped" >>"$LOG"
+    fi
     if ! ( cd "$PROJECT/backend" \
-           && DATABASE_URL="postgresql://nobody@127.0.0.1:1/none" \
-              perl -e 'alarm shift; exec @ARGV' 240 \
+           && env ${PG_URL:+SAFIA_TEST_PG="$PG_URL"} \
+              DATABASE_URL="postgresql://nobody@127.0.0.1:1/none" \
+              perl -e 'alarm shift; exec @ARGV' "$T_LIMIT" \
               "$TEST_PY" -m unittest discover -s tests -p 'test_*.py' ) >>"$LOG" 2>&1; then
       echo "TESTS FAILED — nothing committed" >>"$LOG"
       finish "Backend tests failed — nothing was committed or deployed. See .claude/auto-commit.log"

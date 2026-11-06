@@ -862,4 +862,6 @@ test), `live_exchange_repair_oct08`, `one_process_seed_oct10`,
   photo-requirement list from `leader_rules_sep19`, and the temporary
   `t11_proof_report` imports both — so they go with that report, not alone.
 * **A module that a test imports cannot be deleted without its test** — the
-  commit gate (`.claude/hooks/auto-commit.sh`) runs `backend/tests`.
+  commit gate (`.claude/hooks/auto-commit.sh`) runs `backend/tests`, the
+  Postgres-backed ones too whenever a local server answers (see CLAUDE.md,
+  «The backend's unit tests run first»).
