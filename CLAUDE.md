@@ -4449,6 +4449,18 @@ are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
   «cleaning is part of the work, we don't need a solution for that»):
   `idle_solutions.EXCLUDED` drops it from the causes, the totals, the brigadir
   table and the write door (400). Nothing else moves — /downtime keeps it.
+- **«Tahlil» tab** (2026-11-05, the operator: is the reason repeating, did the
+  solution work, if not change the approach) — `GET /api/idle-solutions/analytics`
+  + `components/idle/SolutionAnalytics.jsx`, nothing new measured (`_downtime`
+  rows and `analysis()`'s stops). Weekly minutes per cause with a falling /
+  rising / flat verdict; **repeating reasons** = a (cause, brigadir) on
+  `REPEAT_DAYS` (3) or more separate days, or one cell that often; **effect per
+  written solution** = minutes per day in the `WINDOW` (14) days before it was
+  written against the days since (at most 14): ≤ −30% works, ≥ +15% worse,
+  between = weak, under `MIN_AFTER_DAYS` (7) too early (`_verdict`; choices, one
+  constant each). A solution marked doing / done that is weak or worse is
+  flagged «rethink». It reads the solution's own brigadir × cause (a
+  whole-cause solution: the cause across every unit in scope).
 
 
 ## WHO answers for a waiting category (`idle-owner`)
