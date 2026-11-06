@@ -3157,9 +3157,8 @@ tasks 40/41 name it.
   (before · future · open · ended); the turnover half keeps its own
   (past · open · closing · closed · saved).
 - **The board is KEPT between requests** (2026-10-24, after the 23 Oct «too
-  slow» report). One build is every KPI of the month — the plan half alone is
-  `plan_fulfillment.build` over every unit for every day so far (~0.75 s
-  locally, 2–3 s on production) — and the page used to ask for it every 4 s
+  slow» report). One build is every KPI of the month, and the page used to
+  ask for it every 4 s
   for as long as a Verifix read ran: minutes, 15+ full rebuilds a minute, on
   the one worker. Now:
   - **The router keeps the answer** (`routers/leaders_kpi._KEPT`, a
@@ -3177,9 +3176,6 @@ tasks 40/41 name it.
     .last_write`) — a month closed, a read started or a Quality refresh from
     this page's own buttons shows at once. Others may read an answer up to
     5 min old.
-  - **The plan half is kept 3 min per (month, days, units)**
-    (`leaders_kpi._plan_by_cell`, `_PLAN_TTL_S`), never for a viewer who wrote
-    since — a read finishing or another viewer's lock does not recompute it.
   - **While a read runs the page polls only its STATE**:
     `GET /api/category-compliance/read` every 4 s (`read` = the journals,
     `directory` = the turnover read — one request for both), and asks for the
@@ -3190,9 +3186,9 @@ tasks 40/41 name it.
   - The Excel export builds its own board (uncached), as before.
 - **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
-  category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file),
-  plus a sixth, plan fulfilment, at weight 0 from 2026-10-23 (see «Plan
-  bajarish» below). **A KPI the platform has no source for counts 0** — the technologists'
+  category compliance 0.20 · technologists' audit 0.10 — HR's July 2026 file)
+  — those five and no others (plan fulfilment is NOT one; see «Plan
+  fulfilment is not a leaders' KPI» below). **A KPI the platform has no source for counts 0** — the technologists'
   audit alone since the evening of 2026-10-19 (category compliance went live
   the same day — see its own section and the tab bullet below), so a perfect
   cell today reads 4.7 / 5 (94%). The board's meta line COMPUTES that
@@ -3807,45 +3803,21 @@ migrate).
   override falling back whole); the first real read lands with the deploy's
   boot catch-up.
 
-## «Plan bajarish» — the sixth leaders' KPI (`/leaders-kpi` → «Plan», 2026-10-23)
+## Plan fulfilment is not a leaders' KPI (removed 2026-11-06)
 
-The operator: «can you also add Plan Fulfillment» (asked on the «Liderlar KPI»
-board). A sixth KPI after HR's five — uz «Plan bajarish», uz_cyrl «План
-бажариш», ru «Выполнение плана», en «Plan fulfillment» (the /plan page's own
-name), tab «Plan» — and **NOT one of HR's five, so its weight is 0**: it is a
-tab, a board column, a radar spoke, a line in the cell dialog, the rules and
-the workbook's «Plan bajarish» sheet, scored 1–5, and it adds NO points. HR's
-total out of 5.0 did not move. Nobody ruled on a weight; one is set through
-`plan_rule` in app_settings (`PUT /admin/settings`, weight 0–1 + bands), and
-it joins the total at once — lower the other weights in the same change, or a
-total can pass 5.0 (`MAX_POINTS` stays 5).
-
-- **The figure is the «Plan Bajarish» page's own, per cell** —
-  `leaders_kpi._plan_by_cell` calls `plan_fulfillment.build` (now with
-  `compare=False`: no comparison period read) over the units the board's
-  in-scope owned cells stand in, for the month from `ZAGRUZKA_FROM` to today,
-  and reads its `cell_rows`: Σ fact ÷ Σ plan minutes of the cell's share
-  (`wc_group.share`), a unit-day counted only once both halves are in. The
-  WHOLE percent, half up, judged as printed (`_pct_half_up`).
-- **The rule** (`DEFAULT_PLAN_RULE`, `plan_rule`, `plan_score`): at least 95 →
-  5, 90 → 4, 80 → 3, 70 → 2, else 1. A cell with no plan minutes on a counted
-  day has no % and no score («—», 0 in the total). A month before 2 Sep 2026
-  (`before_floor`) is an empty state; September is clamped and says so.
-- **Credited like the other KPIs** — one row per owned cell on the month's last
-  day (`turnover.cell_map` + `owned`), the owner named.
-- **Payload**: each board row's `plan` {plan, actual, short, pct0, days,
-  no_fact, score, points}; `totals.by_kpi.plan`; the tab's half `plan`
-  {days, daily (cell key → the /plan day strip), plan, actual, short, pct0,
-  no_plan_cells, no_fact_days, floor, before_floor, clamped}.
-- **The tab** (`components/kpi/PlanTab.jsx`): one summary (the month's % ·
-  fact / plan minutes · shortfall; «jamiga qo'shilmaydi — vazni 0%» while the
-  weight is 0), a ranking worst % first (plan · fact · shortfall minutes · % ·
-  days counted · score · points), notes folded under it. A row opens
-  `PlanExplain.jsx`: the %, the minutes, the band framed, score × weight, and
-  the month day by day — each day coloured by the KPI's own scale
-  (`kpiUtil.planScoreOf`, the client twin of `plan_score`; keep them in step).
-- **Consequence to know**: while the weight is 0 the zones still count it —
-  «Diqqat zonasi» is «a KPI scored 1–2», and plan fulfilment is a KPI.
+«Liderlar KPI» carried a sixth KPI, «Plan bajarish» (a «Plan» tab, a board
+column, a radar spoke, the cell dialog, the rules and a workbook sheet, weight
+0), from **v4.322.0, 23 Oct 2026** (session `session_01WpqNpekBFxJJYP75Cih22v`,
+which 27 minutes later also put plan fulfilment on «Brigadirlar reytingi»,
+v4.323.0). The operator, 2026-11-06: «It was never one of their KPI» — removed
+whole: `plan_rule` / `plan_score` / `_plan_by_cell` and the kept plan half in
+`services/leaders_kpi.py`, the row's `plan`, `totals.by_kpi.plan` and the
+payload's `plan` half, the workbook's «Plan bajarish» sheet, `PlanTab.jsx` /
+`PlanExplain.jsx`, `kpiUtil.planScoreOf` and every `pl*` / `*Plan*` string.
+A saved `?tab=plan` falls back to the board. An app setting `plan_rule`, if
+one was ever saved, is now read by nothing. **Plan fulfilment is the
+BRIGADIRS' figure** — «Brigadirlar reytingi» and «Plan Bajarish» (/plan) keep
+it; never add it back to the leaders' board without the operator asking.
 
 ## Who answers for a Quality record (`quality_attribution`, 2026-11-02)
 
@@ -8739,8 +8711,7 @@ upload filled them. The whole design, every critique and its verdict, is
   (`SWEEP_LOCK`, a connection of its own). One Jurnal row per pass
   (`org.catalog_moved`), one admin DM (`routers.boot._recipients`) for what was
   named, gave up or needs a look (`ATTENTION`). After each commit the kept
-  answers (`kept_answer.forget_all`), the shift report cache and the «Liderlar
-  KPI» plan keep are dropped.
+  answers (`kept_answer.forget_all`) and the shift report cache are dropped.
 - **The sweep is OFF until the retro flag reads `done`** (`catalog_follow.enabled`)
   — following live moves earlier would act on catalogs the retro still has to
   rewrite — and `unsettled` is off with it.

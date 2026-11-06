@@ -931,7 +931,6 @@ class FollowEngine(_World):
 
     def test_a_build_started_before_a_forget_is_not_kept(self):
         from app.routers import shift_report
-        from app.services import leaders_kpi
         import time as _t
         t0 = _t.monotonic()
         shift_report.forget()
@@ -939,9 +938,6 @@ class FollowEngine(_World):
         self.assertIsNone(shift_report._cache_get(("rv-test",)))
         shift_report._cache_put(("rv-test",), _t.monotonic(), {"new": True})
         self.assertEqual(shift_report._cache_get(("rv-test",))[1], {"new": True})
-        shift_report.forget()
-        leaders_kpi.forget_plan()
-        self.assertGreaterEqual(leaders_kpi._plan_forgot, t0)
 
     def test_edges_from_and_to_no_unit(self):
         """A brigadir-less cell gaining a unit moves nothing; a cell whose
