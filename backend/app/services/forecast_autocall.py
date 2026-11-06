@@ -169,6 +169,12 @@ def run(shift: int) -> dict:
             # the very history this count was averaged over, never re-derived
             _send_call_notice(db, mgr, target, eff, r["forecast"], max_workers,
                               AUTO_SENDER, row=r)
+            # Record each unit the moment its DM has gone: the notice row is the
+            # guard that stops a second run (a restart's catch-up, a deploy's
+            # next copy) from telling the same brigadir again. One commit after
+            # the loop left every DM already sent unrecorded for as long as the
+            # loop ran — and for good if the process died inside it.
+            db.commit()
             called.append(f"{mgr.name}: {r['forecast']}")
         db.commit()
         summary["sent"] = len(called)

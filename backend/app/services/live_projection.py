@@ -219,10 +219,36 @@ def lock(db: Session, mid: int, day: date) -> None:
                {"ns": _LOCK_NS, "k": _lock_key(mid, day)})
 
 
-def write(db: Session, mid: int, ctx: live_staff.Ctx, force: bool = False) -> Optional[int]:
+def _reread(db: Session, ctx: live_staff.Ctx) -> live_staff.Ctx:
+    """The same shift-day, read again from the database. The caller's pending
+    writes are flushed first (they are this transaction's own and are kept) —
+    `expire_all` would otherwise throw them away — and every object the session
+    holds is expired, so the documents, deletions, placements and clock fixes
+    come back as committed NOW rather than as the identity map remembers them.
+    The Verifix read (`store`, `directory`) and the clock are the caller's own."""
+    if db.get_bind().dialect.name != "postgresql":
+        return ctx
+    db.flush()
+    db.expire_all()
+    return live_staff.load(db, ctx.day, ctx.directory, ctx.store, ctx.now)
+
+
+def _still_closed(db: Session, mid: int, day: date) -> bool:
+    """Is the unit-day closed RIGHT NOW? A column read, so it is never answered
+    from what this session loaded before it waited for a lock."""
+    return db.query(LiveDayClose.manager_id).filter(
+        LiveDayClose.manager_id == mid, LiveDayClose.day == day).first() is not None
+
+
+def write(db: Session, mid: int, ctx: live_staff.Ctx, force: bool = False,
+          require_closed: bool = False) -> Optional[int]:
     """Copy the unit-day into `attendance` when it changed (always with
     `force`). Returns the rows written, or None when nothing moved. The caller
-    commits — which is what releases the unit-day's lock."""
+    commits — which is what releases the unit-day's lock.
+
+    `require_closed` is for a re-copy of a day somebody ELSE closed (`refresh`):
+    the day may have been reopened while this waited for the lock, and a copy
+    written then would sit under a day every page reads as open."""
     day = ctx.day
     rows = rows_for(ctx, mid)
     digest = _digest(rows)
@@ -239,6 +265,17 @@ def write(db: Session, mid: int, ctx: live_staff.Ctx, force: bool = False) -> Op
     if not force and stored() == digest:
         return None
     lock(db, mid, day)
+    if require_closed and not _still_closed(db, mid, day):
+        return None
+    # `ctx` was read BEFORE the lock, so it is only as new as the moment this
+    # request started waiting. A decision committed while it waited — a second
+    # approval, a deletion, a clock fix — is in the copy the lock holder just
+    # wrote, and rebuilding from the old ctx would put the older copy back over
+    # it: on a day the job no longer reads, nothing would ever repair that.
+    # Read the day again now that nobody else can write it.
+    ctx = _reread(db, ctx)
+    rows = rows_for(ctx, mid)
+    digest = _digest(rows)
     if not force and stored() == digest:
         return None
     db.query(Attendance).filter(Attendance.manager_id == mid,
@@ -317,13 +354,24 @@ def refresh(db: Session, ctx: live_staff.Ctx, units=None) -> int:
             # /staff-live before the floor reached it (the copy did not exist
             # then) — is half-closed: its copy would land while every reader
             # still read it as open. The close's other half is written here.
+            #
+            # The list above was read before anything was locked, and a REOPEN
+            # (`unproject`, which holds this same lock) deletes the close, the
+            # copy and `DayApproval` together. Healing a `DayApproval` back on
+            # the strength of the stale list would undo the reopen for every
+            # page that reads the day as closed — /production, /idle-cell, the
+            # загрузка — so take the lock first and ask again.
             healed = False
             if not db.query(DayApproval.id).filter_by(manager_id=mid, date=ctx.day).first():
+                lock(db, mid, ctx.day)
+                if not _still_closed(db, mid, ctx.day):
+                    db.commit()      # reopened meanwhile: nothing to copy, lock released
+                    continue
                 db.add(DayApproval(manager_id=mid, date=ctx.day, approved_by_telegram_id=0,
                                    approved_by_name=closer or "",
                                    approved_at=datetime.now(timezone.utc)))
                 healed = True
-            if write(db, mid, ctx, force=healed) is not None or healed:
+            if write(db, mid, ctx, force=healed, require_closed=True) is not None or healed:
                 db.commit()
                 done += 1
                 log.info("live copy: unit %s on %s re-copied%s", mid, ctx.day,

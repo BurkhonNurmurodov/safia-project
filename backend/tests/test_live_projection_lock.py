@@ -125,7 +125,8 @@ class ConcurrentCopies(unittest.TestCase):
         # threads must not overlap their patches: A patches, writes, unpatches
         # before B starts; B's patch lives while A only sleeps.
         with mock.patch.object(live_projection, "_original", return_value=[]), \
-             mock.patch.object(live_projection, "_roster", return_value=[]):
+             mock.patch.object(live_projection, "_roster", return_value=[]), \
+             mock.patch.object(live_projection, "_reread", side_effect=lambda db, ctx: ctx):
             ta = threading.Thread(target=a)
             ta.start()
             a_wrote.wait(5)
@@ -177,7 +178,8 @@ class ConcurrentCopies(unittest.TestCase):
             db.close()
 
         with mock.patch.object(live_projection, "_original", return_value=[]), \
-             mock.patch.object(live_projection, "_roster", return_value=[]):
+             mock.patch.object(live_projection, "_roster", return_value=[]), \
+             mock.patch.object(live_projection, "_reread", side_effect=lambda db, ctx: ctx):
             ta = threading.Thread(target=a)
             ta.start()
             a_wrote.wait(5)
@@ -191,6 +193,40 @@ class ConcurrentCopies(unittest.TestCase):
         self.assertGreaterEqual(waited, HOLD_S * 0.7)
         self.assertEqual(removed, 6)
         self.assertEqual(self._counts(), (0, None, 0))
+
+
+class ReadAfterTheLock(unittest.TestCase):
+    """No database. A copy built before it got the unit-day's lock is only as new
+    as the moment it started waiting: a decision committed meanwhile is in the
+    copy the lock holder wrote, and the older rows must not go back over it. So
+    the rows that are written come from a read taken AFTER the lock (2026-11-06)."""
+
+    def test_the_rows_come_from_the_read_taken_after_the_lock(self):
+        from app.services import live_projection
+        stale = SimpleNamespace(day=DAY, tag="stale")
+        fresh = SimpleNamespace(day=DAY, tag="fresh")
+        seen: list = []
+
+        def rows_for(ctx, mid):
+            seen.append(("rows", ctx.tag))
+            return []
+
+        def lock(db, mid, day):
+            seen.append(("lock",))
+
+        def reread(db, ctx):
+            seen.append(("reread", ctx.tag))
+            return fresh
+
+        with mock.patch.object(live_projection, "rows_for", side_effect=rows_for), \
+             mock.patch.object(live_projection, "lock", side_effect=lock), \
+             mock.patch.object(live_projection, "_reread", side_effect=reread), \
+             mock.patch.object(live_projection, "_original", return_value=[]), \
+             mock.patch.object(live_projection, "_roster", return_value=[]):
+            live_projection.write(mock.MagicMock(), MID, stale, force=True)
+
+        self.assertEqual(seen, [("rows", "stale"), ("lock",), ("reread", "stale"),
+                                ("rows", "fresh")])
 
 
 if __name__ == "__main__":

@@ -220,16 +220,43 @@ def unschedule(job_id: str) -> None:
         pass
 
 
+# How long a retiring copy waits for the jobs already running before it lets go
+# of the jobs lock. The supervisor kills it 60 s after SIGTERM and process death
+# releases the lock anyway, so this only has to be shorter than that.
+JOBS_DRAIN_S = 20
+
+
+def _stop_and_drain(sched: BackgroundScheduler) -> None:
+    """No new fire times, then wait — bounded — for the jobs that are running."""
+    def stop() -> None:
+        try:
+            sched.shutdown(wait=True)
+        except Exception:
+            logger.exception("Scheduler shutdown failed")
+
+    t = threading.Thread(target=stop, name="scheduler-drain", daemon=True)
+    t.start()
+    t.join(JOBS_DRAIN_S)
+    if t.is_alive():
+        logger.warning("Scheduler: jobs still running after %s s — releasing the jobs "
+                       "lock anyway", JOBS_DRAIN_S)
+
+
 def shutdown_scheduler() -> None:
-    """Stop accepting new fire times on the way down. Running jobs are daemon
-    threads elsewhere (the broadcast fan-out), so nothing is waited on."""
+    """Stop accepting new fire times on the way down, and give the jobs that are
+    running a moment to finish BEFORE the jobs lock is let go.
+
+    Releasing the lock at once (the old `shutdown(wait=False)`) let the next copy
+    start its jobs — a misfired catch-up of the very job the old copy was in the
+    middle of, such as the 19:00 forecast DMs — while the old one was still
+    running it, so the same people were told twice."""
     global _scheduler
     with _lock:
-        if _scheduler is not None and _scheduler.running:
-            try:
-                _scheduler.shutdown(wait=False)
-            except Exception:
-                logger.exception("Scheduler shutdown failed")
+        sched = _scheduler
+    # Not under `_lock`: a running job may need it (`schedule_at`) to finish.
+    if sched is not None and sched.running:
+        _stop_and_drain(sched)
+    with _lock:
         _scheduler = None
         # Let the next copy take the jobs now, not when this process finally
         # exits after draining its last requests.

@@ -2044,14 +2044,16 @@ def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = 
     return {"ok": True}
 
 
-def _recopy(db: Session, d: Optional[date]) -> None:
+def _recopy(db: Session, d: Optional[date], only: Optional[int] = None) -> None:
     """A document of a live day was decided: re-copy every CLOSED unit of that
     day whose rows moved (ruling 13 — the receiving unit may have closed
-    already). Best effort: a decision is never undone by its copy failing."""
+    already). Best effort: a decision is never undone by its copy failing.
+    `only` narrows it to one unit — the close's own check, below."""
     if d is None or not live_day.is_live(d):
         return
     try:
-        closed = [m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)]
+        closed = [m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)
+                  if only is None or m == only]
         if not closed:
             return
         rd = None
@@ -2147,6 +2149,14 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     if live:
         copied = live_projection.close(db, mid, ctx, _tg(caller), _who(caller))
     db.commit()
+    if live:
+        # A document decided while this close was being built re-copied the
+        # CLOSED units it could see, and this one's close was not committed yet:
+        # its copy was built before that decision and nothing would copy it
+        # again. Anything decided before this commit is visible now, anything
+        # after it finds the close and re-copies by itself — so look once, now.
+        # Best effort and one unit only; unchanged is a digest compare.
+        _recopy(db, d, only=mid)
     pending = live_staff.pending_count(db, mid, d)
     action_log.enrich(target_kind="day", target_id=f"{mid}:{d}", unit_id=mid,
                       unit_name=_unit_name(db, mid), day=d,

@@ -10,7 +10,7 @@ claimed a profile from a Telegram account has no web login either — that is th
 intended shape, not a gap: there would be nowhere to send the password.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
 import jwt
@@ -35,12 +35,24 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/web/login")
 
 
 def _client_ip(request: Request) -> str:
-    """The real client address. nginx sits in front, so the socket peer is
-    always 127.0.0.1 — the first hop in X-Forwarded-For is the caller."""
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else ""
+    """The client address the throttles count by.
+
+    NOT the first hop of X-Forwarded-For: nginx and Cloudflare APPEND to that
+    header, so its first entry is whatever the caller typed — one request
+    header and every per-IP throttle (login, forgot, impersonate) counted a new
+    address each time. Trust order, as the action register and the report door
+    use: Cloudflare's own header (the edge overwrites it), nginx's ``X-Real-IP``
+    (set from ``$remote_addr``), then the socket peer. Truncated: a header is
+    attacker-sized."""
+    h = request.headers
+    return (h.get("cf-connecting-ip") or h.get("x-real-ip")
+            or (request.client.host if request.client else "") or "").strip()[:64]
+
+
+# A password reset already issued this recently is still the password: «forgot»
+# is an unauthenticated door, and every call to it signs the person out of every
+# browser and app session. One call per account per this long, whoever asks.
+FORGOT_COOLDOWN = timedelta(minutes=15)
 
 
 class LoginBody(BaseModel):
@@ -221,6 +233,17 @@ class ForgotBody(BaseModel):
     username: str
 
 
+def _reset_too_recent(cred: WebCredential) -> bool:
+    """True when this login's password was set less than FORGOT_COOLDOWN ago —
+    by a reset, an admin or the person themself."""
+    at = cred.password_set_at
+    if at is None:
+        return False
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - at < FORGOT_COOLDOWN
+
+
 @router.post("/forgot")
 def web_forgot(body: ForgotBody, request: Request, db: Session = Depends(get_db)):
     """Issue a fresh password and DM it to the profile's Telegram holders.
@@ -237,7 +260,14 @@ def web_forgot(body: ForgotBody, request: Request, db: Session = Depends(get_db)
 
     username = web_auth.normalize_username(body.username)
     cred = db.query(WebCredential).filter(WebCredential.username == username).first()
-    if cred and cred.enabled:
+    if cred and cred.enabled and _reset_too_recent(cred):
+        # Answered like every other case, and recorded: the person who really
+        # forgot their password was DMed the one issued a moment ago.
+        log.info("WEB-LOGIN self_reset_skipped | login=%s | profile=%s | ip=%s | reason=cooldown",
+                 cred.username, cred.profile_key, ip)
+        action_log.enrich(target_kind="weblogin", target_id=cred.profile_key,
+                          details=[("login", cred.username), ("status", "cooldown")])
+    elif cred and cred.enabled:
         password = web_auth.generate_password()
         web_auth.set_password(cred, password)
         # A reset must not leave old browser sessions alive — the point of

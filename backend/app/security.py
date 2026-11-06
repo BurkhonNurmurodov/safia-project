@@ -114,23 +114,24 @@ def _bearer_token(request: Request) -> str:
     return token.strip() if scheme.lower() == "bearer" else ""
 
 
-def _has_live_web_session(request: Request) -> bool:
-    """True when the request carries a valid, unrevoked BROWSER session token.
+def _web_token_live(request: Request) -> bool | None:
+    """The standing of a BROWSER session token on this request.
 
-    Only tokens minted by ``/api/auth/web/login`` qualify — they are the ones
-    that carry ``web``. A Telegram-issued JWT reaching this code path is still
-    rejected, so the initData wall stands exactly where it did for every session
-    that has one.
-    """
+    ``None`` — the request carries no browser token (none at all, an invalid one,
+    or a Telegram-issued JWT). ``True`` — a browser token that is still honoured.
+    ``False`` — a browser token that is not (login disabled, password reset,
+    signed out everywhere, profile gone), or one whose standing could not be read.
+
+    Only tokens minted by ``/api/auth/web/login`` carry ``web``."""
     token = _bearer_token(request)
     if not token:
-        return False
+        return None
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
-        return False
+        return None
     if not payload.get("web"):
-        return False
+        return None
 
     # Revocation is only meaningful if it is checked here: this token IS the
     # caller's whole proof of origin.
@@ -138,11 +139,20 @@ def _has_live_web_session(request: Request) -> bool:
     from app.web_auth import web_session_is_live
     db = SessionLocal()
     try:
-        return web_session_is_live(db, payload)
+        return bool(web_session_is_live(db, payload))
     except Exception:
         return False
     finally:
         db.close()
+
+
+def _has_live_web_session(request: Request) -> bool:
+    """True when the request carries a valid, unrevoked BROWSER session token.
+
+    A Telegram-issued JWT reaching this code path is still rejected, so the
+    initData wall stands exactly where it did for every session that has one.
+    """
+    return _web_token_live(request) is True
 
 
 def _check_init_data(request: Request) -> None:
@@ -168,6 +178,16 @@ def _check_init_data(request: Request) -> None:
         if _has_live_web_session(request):
             return
         raise HTTPException(status_code=401, detail="Invalid or expired Telegram initData")
+
+    # Valid initData proves only that SOME Telegram user opened the mini app, and
+    # anybody can. It says nothing about the bearer token riding with it, and the
+    # endpoints check that token's signature and expiry alone — so a browser
+    # token an admin has since revoked (login disabled, password reset, «sign out
+    # everywhere») would go on working for whoever pairs it with their own
+    # initData. A browser token is honoured only while it is live, whatever
+    # else the request carries.
+    if _web_token_live(request) is False:
+        raise HTTPException(status_code=401, detail="Session no longer valid")
 
 
 def enforce_telegram_origin_global(request: Request) -> None:
