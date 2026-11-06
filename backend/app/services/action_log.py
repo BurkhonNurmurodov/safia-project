@@ -445,6 +445,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/turnover/close",                       "leader_review", "turnover.month_closed"),
     (("POST",),   "/api/turnover/compute",                     "leader_review", "turnover.month_computed"),
     (("POST",),   "/api/turnover/reopen",                      "leader_review", "turnover.month_reopened"),
+    (("PUT",),    "/api/turnover/exclusions",                  "config", "config.turnover_exclusions_saved"),
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
     (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
     (("POST",),   "/api/brigadirs-kpi/export.xlsx",            "sync_export", "export.brigadirs_kpi"),

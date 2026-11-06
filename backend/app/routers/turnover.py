@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, turnover, turnover_sync
+from app.services import action_log, kept_answer, turnover, turnover_sync
 
 router = APIRouter(prefix="/api/turnover", tags=["turnover"])
 
@@ -147,3 +147,48 @@ def compute_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = De
     started = turnover_sync.start_read(f"compute:{turnover.ym(m)}", month=m, by=_who(admin))
     action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m))
     return {"started": started, "reason": None if started else "busy", **turnover.read_info(db)}
+
+
+# ── the dismissal reasons that do not count (admin) ───────────────────────────
+
+@router.get("/exclusions")
+def exclusions(month: Optional[str] = Query(None), db: Session = Depends(get_db),
+               _: dict = Depends(verify_admin)):
+    """Every reason Verifix has given for a dismissal, with how many left for it
+    in this month and whether it is excluded — the «Sabablar» dialog's list."""
+    return turnover.reasons_seen(db, _month(month))
+
+
+@router.get("/exclusions/preview")
+def exclusions_preview(month: Optional[str] = Query(None), reasons: list[str] = Query(default=[]),
+                       db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """What the plant's rate and the cells' scores would be with this list —
+    nothing is stored. A closed or saved month keeps its own list (`applies`
+    false)."""
+    return turnover.exclusion_preview(db, _month(month), reasons)
+
+
+class ExclusionsIn(BaseModel):
+    reasons: list[str] = []
+
+
+@router.put("/exclusions")
+def save_exclusions(body: ExclusionsIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+    """Set the reasons whose leavers are not counted. It reaches the open month
+    and the ones after it; a month that is already closed (or saved) keeps the
+    list it was closed with until an admin reopens it."""
+    if len(body.reasons) > turnover.MAX_EXCLUDED:
+        raise HTTPException(status_code=400, detail={"code": "too_many",
+                                                     "message": f"at most {turnover.MAX_EXCLUDED} reasons"})
+    before = turnover.clean_reasons(turnover.rule(db).get("exclude_reasons"))
+    saved = turnover.save_exclusions(db, body.reasons)
+    db.commit()
+    kept_answer.forget_all()
+    was = {turnover.norm_reason(x) for x in before}
+    now = {turnover.norm_reason(x) for x in saved}
+    action_log.enrich(target_kind="setting", target_id=turnover.RULE_KEY, target_name="turnover_rule",
+                      details=[("by", _who(admin)),
+                               ("added", "; ".join(x for x in saved if turnover.norm_reason(x) not in was) or "—"),
+                               ("removed", "; ".join(x for x in before if turnover.norm_reason(x) not in now) or "—"),
+                               ("total", len(saved))])
+    return {"exclude_reasons": saved}

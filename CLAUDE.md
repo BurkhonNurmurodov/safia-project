@@ -3624,6 +3624,50 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   freezers 17xx/18xx, 0611 — carry the code only in the name), matched to
   /cells; a unit that is anybody's DEPARTMENT (`division_id`) is never a cell.
   A code /cells lacks counts toward nobody and is NAMED on the page.
+- **Dismissal reasons an admin may take out of the count** (2026-11-06, the
+  operator asked how an admin could keep a reason out of the calculation, then
+  «build it»). Until then every dismissal counted as «left» whatever Verifix's
+  journal said; the reason was shown and never read. `turnover_rule` gained
+  `exclude_reasons` (Verifix's own words, ≤ 100, `clean_reasons`). `aggregate`
+  is THE place it bites: a leaver whose reason is on the list adds to no cell's
+  «left» (nor to the «not on /cells» tally) and is listed with `counted:
+  "reason"` — muted, labelled «Sabab hisobga olinmaydi», never dropped, so the
+  page stays able to say who left.
+  - **Compared by `norm_reason`** (trimmed, spaces squeezed, case-folded): the
+    journal spells one reason a few ways. **A leaver with no reason is always
+    counted** — if the journal was unreadable that night the KPI must not
+    depend on it; the dialog says so on its own row.
+  - **A closed month keeps the list it was closed with.** `close()` and
+    `save_past()` already froze `rule(db)` into `turnover_months.rule`, so the
+    list rides that freeze and a later change never moves a closed or saved
+    month; a month closed before this reads no exclusions. To change a closed
+    month an admin reopens it (`reopen` drops its frozen rule). An open or
+    closing month reads the live list. `brigadirs_kpi` and «Hisobotlar» read
+    the same month payload, so they follow it.
+  - **The rule's two halves are independent now** (`rule()`): a malformed
+    scoring override falls back to HR's bands, the exclusions are kept either
+    way; `save_exclusions` writes only `exclude_reasons` beside whatever else
+    the override holds (an override left empty is deleted).
+  - **Where an admin sets it**: «Sabablar» on the «Ketganlar» view of the
+    turnover tab (`components/turnover/TurnoverReasons.jsx`, «Sabablar · N»
+    once a list is in force). Ticks mean «counts». The list is every reason
+    ever seen (`reasons_seen`: live leavers + frozen months), most used this
+    month first, plus any excluded reason nobody carries now (so it can be put
+    back); a search box from 13 reasons. Under the list a fixed-height line
+    states the price BEFORE saving — people not counted, the plant's rate
+    before → after, how many cells change score (`exclusion_preview`, the same
+    `aggregate` over the whole plant; never a figure for an earlier tick). A
+    closed month says it keeps its own list instead of previewing.
+  - **Doors** (`routers/turnover.py`, all `verify_admin`, none grantable):
+    `GET /api/turnover/exclusions?month=`, `GET …/exclusions/preview?month=&
+    reasons=`, `PUT …/exclusions` {reasons}. The PUT flushes every kept answer
+    (`kept_answer.forget_all`) and is logged as `config.turnover_exclusions_saved`
+    (added / removed / total); category `config`, so the assistant cannot make
+    it. Everyone else reads the rule — a line in «Qanday hisoblanadi?» and the
+    muted rows — never the controls.
+  - Not built: excluding one PERSON (a reason applies to everybody alike and is
+    easy to audit; per-person exclusions invite a dispute per case), a start
+    date per list (the month's close is the date), a per-reason weight.
 - **A cell's turnover is its OWNER's, and the ranking is PER CELL** (owner
   from 2026-10-13, the operator: «the KPIs will be calculated for the cell
   owner»; per cell from 2026-10-14: «rank per cell … do not include the ones

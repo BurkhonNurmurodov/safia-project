@@ -59,6 +59,7 @@ LABELS_UZ = {
     "colFault": "Yacheyka aybi", "colStatus": "Holat", "colDescription": "Tavsif",
     "colNo": "№", "colWorker": "Ishchi", "colText": "Havotir",
     "countedOwner": "Egasiga", "countedNoOwner": "Egasi yo'q yacheyka", "countedNoCell": "Yacheyka /cells'da yo'q",
+    "countedReason": "Sabab hisobga olinmaydi",
     "countedNotFault": "Aybdor emas — hisoblanmadi", "countedUnknown": "Ayb belgisi yo'q — hisoblanmadi",
     "statuses": {"done": "Hal bo'lgan", "doing": "Jarayonda", "todo": "Yangi", "uplifted": "Ko'tarilgan"},
     "kinds": {}, "sources": {}, "qstatuses": {},
@@ -362,7 +363,8 @@ def _leavers(wb: Workbook, p: dict) -> None:
     labels = [_l(p, k) for k in ("colName", "colCell", "colOwner", "colBrigadir", "colJob", "colHired",
                                  "colLeftOn", "colDays", "colReason", "colCounted")]
     row = _banner(ws, 2, C1, C1 + len(labels) - 1, p.get("title") or "", p.get("subtitle") or "")
-    counted = {"owner": _l(p, "countedOwner"), "no_owner": _l(p, "countedNoOwner"), "no_cell": _l(p, "countedNoCell")}
+    counted = {"owner": _l(p, "countedOwner"), "no_owner": _l(p, "countedNoOwner"), "no_cell": _l(p, "countedNoCell"),
+               "reason": _l(p, "countedReason")}
     out = []
     for x in pay.get("leavers") or []:
         out.append(([_name(p, x.get("name")), x.get("code"), _name(p, x.get("owner")) if x.get("owner") else None,

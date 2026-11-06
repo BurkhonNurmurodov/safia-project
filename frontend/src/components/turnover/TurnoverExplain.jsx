@@ -52,6 +52,9 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
     staleTime: 60_000,
   });
   const leavers = (data.leavers || []).filter((l) => keys.includes(l.cell_key));
+  // Someone who left for a reason an admin took out of the count is listed, muted,
+  // and is not in the figure above — so the list's own count is those who counted.
+  const nCounted = leavers.filter((l) => l.counted !== "reason").length;
   const workingBy = peopleQ.data?.working || {};
   const codeOf = Object.fromEntries(cells.map((c) => [c.key, c]));
 
@@ -104,7 +107,7 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
       </Section>
 
       {/* 2 — who left */}
-      <Section icon={UserMinus} title={T.exLeftList} count={n0(leavers.length)} caption={T.exWhyLeft}>
+      <Section icon={UserMinus} title={T.exLeftList} count={n0(nCounted)} caption={T.exWhyLeft}>
         {leavers.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--text-3)" }}>{T.exNone}</p>
         ) : (
@@ -112,7 +115,7 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
             {leavers.map((l) => (
               <li key={l.key} className="px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
                 <div className="flex items-start justify-between gap-3">
-                  <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(l.name)}</span>
+                  <span className="font-medium" style={{ color: l.counted === "reason" ? "var(--text-3)" : "var(--text-1)" }}>{tl(l.name)}</span>
                   <span className="tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{dmy(l.left)}</span>
                 </div>
                 <div className="text-xs mt-0.5 flex flex-wrap gap-x-2" style={{ color: "var(--text-3)" }}>
@@ -120,6 +123,7 @@ export default function TurnoverExplain({ open, onClose, item, kind, data, T, tl
                   {l.job && <span>{tx(l.job)}</span>}
                   <span>{T.colTenure}: {tenure(l.days, T)}</span>
                   {l.reason && <span style={{ color: "var(--text-2)" }}>{tx(l.reason)}</span>}
+                  {l.counted === "reason" && <span>· {T.countedReason}</span>}
                 </div>
               </li>
             ))}

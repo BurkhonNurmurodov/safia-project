@@ -7,7 +7,7 @@ import { fill } from "../../pages/turnoverText";
 import { weightPct } from "./turnoverUtil";
 import { BandScale } from "./TurnoverBits";
 
-export default function TurnoverRules({ open, onClose, rule, T }) {
+export default function TurnoverRules({ open, onClose, rule, T, tx = (v) => v }) {
   return (
     <Modal open={open} onClose={onClose} title={T.rulesTitle} maxWidth="max-w-2xl"
       icon={<BookOpen size={18} style={{ color: "var(--brand-text)" }} />}
@@ -32,6 +32,11 @@ export default function TurnoverRules({ open, onClose, rule, T }) {
           {fill(T.kpiLine, { w: weightPct(rule) })} · {T.smallTeam}
         </p>
       </div>
+      {rule.exclude_reasons?.length > 0 && (
+        <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>
+          {fill(T.rulesOff, { list: rule.exclude_reasons.map((x) => tx(x)).join("; ") })}
+        </p>
+      )}
     </Modal>
   );
 }
