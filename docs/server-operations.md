@@ -863,5 +863,42 @@ test), `live_exchange_repair_oct08`, `one_process_seed_oct10`,
   `t11_proof_report` imports both — so they go with that report, not alone.
 * **A module that a test imports cannot be deleted without its test** — the
   commit gate (`.claude/hooks/auto-commit.sh`) runs `backend/tests`, the
-  Postgres-backed ones too whenever a local server answers (see CLAUDE.md,
-  «The backend's unit tests run first»).
+  Postgres-backed ones too whenever a local server answers (see the section
+  below, «The commit gate runs the Postgres tests too»).
+
+## The commit gate runs the Postgres tests too (2026-11-06)
+
+`.claude/hooks/auto-commit.sh` runs `backend/tests` before the build, and a
+failing test stops the commit (`TESTS FAILED — nothing committed`). Until
+2026-11-06 that was only the ~45 tests that need no database: the other 294 are
+gated on `@unittest.skipUnless(SERVER, …)` and skipped, because `SAFIA_TEST_PG`
+was never set. The operator asked for them in the gate after the first full run.
+
+- **How the gate picks a server.** `SAFIA_TEST_PG` if it is already exported;
+  otherwise `postgresql://<this user>@localhost:5432/postgres`, used only if a
+  probe with the backend venv's `psycopg2` connects AND the role has
+  `rolcreatedb` or `rolsuper`. Only localhost is ever probed, so a scratch
+  database is never made on a remote server unless someone exports the variable
+  by hand.
+- **What the tests do to it.** `tests/pg_scratch.py` `ScratchDB` makes a
+  throwaway `safia_t_<hex>` database per test class and drops it; no existing
+  database is touched. `DATABASE_URL` stays pointed at a dead port either way,
+  so the app's own database is never reachable from a test.
+- **Cost.** 339 tests, about two minutes (timeout 420 s; 240 s without
+  Postgres). Every commit on a machine with a local Postgres pays it.
+- **No server → same as before.** A cloud session or a laptop without Postgres
+  skips the 294 in about a second, and the log says
+  `NO local Postgres answered — the Postgres tests (~294) are skipped`; a run
+  that did use them says `with the Postgres tests`. Read
+  `.claude/auto-commit.log` to know which one a commit had.
+- **Why it matters.** Unrun tests rot. The first full run (2026-11-06) found
+  `test_catalog_follow_retro.RetroGuards.test_window_cells_moved` failing — and
+  failing identically on the code from before that day's work. It still
+  asserted the pre-28-Oct behaviour (two cells leaving one code on one day name
+  each other `window_cells_moved`); the 28 Oct ruling, «A TEAM is followed as
+  ONE group» (`docs/production-catalog.md`), had changed the code and nothing
+  had run the test since. It was rewritten as
+  `test_a_team_leaving_one_code_together_goes_whole` (v4.436.2).
+- **A failure here is a real stop.** If a Postgres test fails on a machine that
+  has a server, the commit and the deploy both wait. Fix the test or the code;
+  do not unset `SAFIA_TEST_PG` to get past it.
