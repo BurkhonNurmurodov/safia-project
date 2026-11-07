@@ -389,7 +389,12 @@ def analytics(
         before = span(r.category, r.manager_id, b0, b1) / WINDOW
         after = (span(r.category, r.manager_id, a0, a1) / a_days) if a_days else 0.0
         verdict, ch = _verdict(before, after, a_days)
+        # daily minutes around the solution day, for the "did it repeat" chart
+        s0 = b0
+        daily = [round(span(r.category, r.manager_id, s0 + timedelta(days=i), s0 + timedelta(days=i)), 1)
+                 for i in range((a1 - s0).days + 1)]
         effect.append({
+            "daily": daily, "daily_from": s0.isoformat(), "marker": (sd - s0).days,
             "id": r.id, "category": r.category, "manager_id": r.manager_id,
             "manager_name": next((p["manager_name"] for row in base["categories"]
                                   if row["category"] == r.category for p in row["problems"]

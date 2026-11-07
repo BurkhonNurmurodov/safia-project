@@ -105,7 +105,68 @@ function tempDemo(d) {
     mk("Cat F", 3, () => 80),
     mk("Cat K", 4, (x) => (x < 0.5 ? 0 : 60 * (x - 0.4))),
   ].map((r) => ({ ...r, trend: trendOf(r) })) : [];
-  return { ...d, weeks, weekly };
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const iso = (x) => x.toISOString().slice(0, 10);
+  const demoEffect = (id, category, mgr, text, status, back, pattern) => {
+    const sd = new Date(today); sd.setDate(sd.getDate() - back);
+    const s0 = new Date(sd); s0.setDate(s0.getDate() - 14);
+    const len = 14 + back + 1 > 29 ? 29 : 14 + back + 1;
+    const daily = Array.from({ length: len }, (_, i) => Math.max(0, Math.round(pattern(i - 14, i))));
+    const b = daily.slice(0, 14), a = daily.slice(15);
+    const before = b.reduce((x, y) => x + y, 0) / 14, after = a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    const ch = before ? Math.round((100 * (after - before)) / before) : null;
+    const verdict = a.length < 3 ? "early" : ch <= -30 ? "works" : ch >= 15 ? "worse" : "weak";
+    return { id, category, manager_id: id, manager_name: mgr, text, status, date: iso(sd), daily, daily_from: iso(s0), marker: 14,
+      before: Math.round(before * 10) / 10, after: Math.round(after * 10) / 10, after_days: a.length, change: ch, verdict, rethink: false };
+  };
+  const effect = [
+    demoEffect(901, "Cat B", "R. Kamola", "Oborudivaniya navbatchi texnik biriktirildi", "done", 12, (k, i) => (k < 0 ? 22 + ((i * 7) % 9) : k < 3 ? 12 : (i % 5 === 0 ? 4 : 0))),
+    demoEffect(902, "Cat D3", "K. Nargiza", "Otdel bilan kelishuv grafigi tuzildi", "doing", 12, (k, i) => (k < 0 ? 20 + ((i * 5) % 8) : 18 + ((i * 3) % 9))),
+    demoEffect(903, "Cat I", "I. Sayyora", "Smena topshirish ro'yxati kiritildi", "done", 9, (k, i) => (k < 0 ? 15 + ((i * 3) % 7) : 14 + ((i * 11) % 14) + k)),
+  ];
+  return { ...d, weeks, weekly, effect, counts: { works: 1, weak: 1, worse: 1, early: 0 }, rethink_n: 0 };
+}
+
+function RepeatChart({ e, T }) {
+  const v = e.daily || [];
+  if (v.length < 3) return null;
+  const W = 600, H = 70, P = 2, m = e.marker;
+  const max = Math.max(1, ...v);
+  const bw = (W - P * 2) / v.length;
+  const ink = INK[e.verdict] || "#94a3b8";
+  const afterDays = v.slice(m + 1), repeated = afterDays.filter((x) => x > 0).length;
+  const beforeDays = v.slice(0, m), repeatedB = beforeDays.filter((x) => x > 0).length;
+  return (
+    <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+      <div className="flex items-start justify-between gap-3 mb-1.5">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
+            <span style={{ color: catColor(e.category) }}>{e.category}</span> · {e.manager_name || T.aWhole}
+          </div>
+          <div className="text-xs truncate" style={{ color: "var(--text-2)" }} title={e.text}>«{e.text}» · {ddmmyy(e.date)}</div>
+        </div>
+        <Chip ink={ink}>{T.aV[e.verdict]}</Chip>
+      </div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
+        aria-label={fill(T.aRepeatAfterSum, { r: repeated, n: afterDays.length })}>
+        {v.map((x, i) => {
+          const h = x > 0 ? Math.max(3, (x / max) * (H - 8)) : 1.5;
+          return <rect key={i} x={P + i * bw + 0.5} y={H - h} width={Math.max(1, bw - 1.5)} height={h} rx={1}
+            fill={i < m ? "#94a3b8" : i === m ? "var(--brand)" : ink} opacity={x > 0 ? 0.9 : 0.35} />;
+        })}
+        <line x1={P + m * bw + bw / 2} x2={P + m * bw + bw / 2} y1={0} y2={H} stroke="var(--brand)" strokeWidth={1.5}
+          strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mt-1.5 text-xs tabular-nums">
+        <span style={{ color: "var(--text-3)" }}>{fill(T.aBeforeLine, { r: repeatedB, n: beforeDays.length, m: e.before })}</span>
+        <span style={{ color: "var(--brand-text)" }}>{T.aMarkSol}</span>
+        <span className="font-semibold" style={{ color: ink }}>
+          {afterDays.length ? fill(T.aRepeatAfterSum, { r: repeated, n: afterDays.length }) + ` · ${e.after} ${T.aPerDay}` : T.aEarlyShort}
+          {e.change != null && afterDays.length ? ` · ${e.change > 0 ? "+" : ""}${e.change}%` : ""}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export default function SolutionAnalytics({ T, data: realData, label }) {
@@ -171,6 +232,14 @@ export default function SolutionAnalytics({ T, data: realData, label }) {
           );
         })()}
       </div>
+
+      {data.effect.length > 0 && (
+        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={CheckCircle2} title={T.aSecRepeatAfter} right={fill(T.aRows, { n: data.effect.length })} />
+          <div className="px-4 pb-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.aRepeatAfterHint}</div>
+          {data.effect.map((e) => <RepeatChart key={e.id} e={e} T={T} />)}
+        </div>
+      )}
 
       <TableCard icon={Repeat2} title={T.aSecRepeat} right={fill(T.aRows, { n: data.repeats.length })} maxHeight="50vh">
         <thead>
