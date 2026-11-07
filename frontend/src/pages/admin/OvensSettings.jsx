@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CookingPot, Plus, Pencil, Power, Trash2 } from "lucide-react";
+import { CookingPot, Plus, Pencil, Trash2 } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
@@ -49,11 +49,6 @@ export default function OvensSettings() {
     onSuccess: (r, f) => { done(f.id ? T.saved : T.added)(r); setForm(null); },
     onError: (e) => setFormErr({ code: errCode(e), text: errOf(T, e) }),
   });
-  const toggle = useMutation({
-    mutationFn: (o) => api.put(`/api/admin/ovens/${o.id}`, { active: !o.active }),
-    onSuccess: done(T.saved),
-    onError: (e) => toast(errOf(T, e), "error"),
-  });
   const remove = useMutation({
     mutationFn: (o) => api.delete(`/api/admin/ovens/${o.id}`),
     onSuccess: (r) => { done(T.removed)(r); setRemoving(null); },
@@ -86,7 +81,7 @@ export default function OvensSettings() {
                   </div>
                 </div>
                 <RowMenu o={o} T={T} onEdit={() => { setFormErr(null); setForm({ ...o, port: String(o.port), note: o.note || "" }); }}
-                  onToggle={() => toggle.mutate(o)} onRemove={() => { setRemoveErr(null); setRemoving(o); }} />
+                  onRemove={() => { setRemoveErr(null); setRemoving(o); }} />
               </li>
             ))}
           </ul>
@@ -111,7 +106,7 @@ export default function OvensSettings() {
               <td className="px-3 py-2 max-w-0 truncate" style={{ color: "var(--text-3)" }} title={o.note || ""}>{o.note || ""}</td>
               <td className="px-2 py-1 text-right">
                 <RowMenu o={o} T={T} onEdit={() => { setFormErr(null); setForm({ ...o, port: String(o.port), note: o.note || "" }); }}
-                  onToggle={() => toggle.mutate(o)} onRemove={() => { setRemoveErr(null); setRemoving(o); }} />
+                  onRemove={() => { setRemoveErr(null); setRemoving(o); }} />
               </td>
             </tr>
           )) : (
@@ -161,12 +156,11 @@ export default function OvensSettings() {
   );
 }
 
-function RowMenu({ o, T, onEdit, onToggle, onRemove }) {
+function RowMenu({ o, T, onEdit, onRemove }) {
   const hasHistory = o.log_files > 0 || !!o.status_at;
   return (
     <ActionMenu label={o.name} items={[
       { key: "edit", label: T.edit, icon: Pencil, onSelect: onEdit },
-      { key: "toggle", label: o.active ? T.switchOff : T.switchOn, icon: Power, onSelect: onToggle },
       { key: "remove", label: T.remove, icon: Trash2, tone: "danger", onSelect: onRemove,
         disabled: hasHistory, title: hasHistory ? T.cantRemove : undefined },
     ]} />

@@ -34,6 +34,9 @@ register is `/panel/ovens` (tools group, no capKey).
 - **The register accepts private LAN IPv4 only** (`_check_ip`): the collector
   is sent wherever the list says. An oven with collected data cannot be
   deleted (409 `has_history`) — switch it off.
+  (2026-11-07: the register's «O'chirish» row action is GONE — the floor blamed it
+  for ovens turning off. It only ever stopped collecting; no command reaches an
+  oven. `active` is still read by the plan and the API, just not toggled here.)
 - **Storage**: `revent_ovens` (register + last status lines + zlib settings
   + ServiceData text) and `revent_oven_logs` (one row per oven × log file,
   zlib, `day` = its first record's date). `services/revent_log.py` is THE
