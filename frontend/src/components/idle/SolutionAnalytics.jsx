@@ -18,6 +18,7 @@ const INK = {
   repeating: "var(--status-bad)", new: "var(--status-bad)", unanswered: "var(--status-warn)",
   early: "#94a3b8", nodata: "#94a3b8", reduced: "var(--status-warn)", solved: "var(--status-ok)", none: "#94a3b8",
 };
+const MARK = { repeat: "var(--status-bad)", doing: "var(--status-warn)", solved: "var(--status-ok)", none: "#94a3b8" };
 const catCode = (n) => String(n || "").replace(/^Cat\s*/i, "");
 const ddmmyy = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
@@ -151,6 +152,13 @@ function CauseRow({ c, T, label }) {
               <div className="text-[11px] font-semibold uppercase tracking-wider pt-3 pb-1" style={{ color: "var(--text-3)" }}>
                 {unanswered ? T.rUnitsTitleUn : T.rUnitsTitle}
               </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                {["repeat", "doing", "solved", "none"].map((k) => (
+                  <span key={k} className="inline-flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full" style={{ background: MARK[k] }} />{T.rMark[k]}
+                  </span>
+                ))}
+              </div>
               {units.map((u) => (
                 <div key={u.manager_id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
                   <div className="min-w-0 flex-1">
@@ -167,6 +175,8 @@ function CauseRow({ c, T, label }) {
                       <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.rNoNote}</div>
                     ) : u.notes.map((n, i) => (
                       <div key={i} className="text-xs flex gap-2 min-w-0" style={{ color: "var(--text-2)" }}>
+                        <span className="inline-block w-2 h-2 rounded-full flex-shrink-0 mt-1" title={T.rMark[n.mark]}
+                          style={{ background: MARK[n.mark] || MARK.none }} aria-label={T.rMark[n.mark]} />
                         <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
                           {ddmm(n.date)}{n.cell ? ` · ${n.cell}` : ""}{n.minutes ? ` · ${Math.round(n.minutes)} ${T.aMinShort}` : ""}
                         </span>
@@ -219,7 +229,7 @@ function tempDemo() {
   const unit = (id, name, cell, days, cellDays, min, last, covered = true) => ({
     manager_id: id, manager_name: name, minutes: min, days, last_seen: last ? iso(-last) : null, cell, cell_days: cellDays,
     verdict: null, covered, since: null,
-    notes: Array.from({ length: Math.min(3, days) }, (_, k) => ({ date: iso(-((last || 0) + k * 2)), cell, minutes: 20 + ((id + k * 7) % 25), note: NOTES[(id + k) % NOTES.length] })),
+    notes: Array.from({ length: Math.min(3, days) }, (_, k) => ({ date: iso(-((last || 0) + k * 2)), cell, minutes: 20 + ((id + k * 7) % 25), note: NOTES[(id + k) % NOTES.length], mark: k === 0 ? "repeat" : k === 1 ? "doing" : "solved" })),
   });
   const noise = (i, k) => 14 + ((i * 7 + k * 5) % 17);
   const causes = [

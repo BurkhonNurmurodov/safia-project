@@ -41,7 +41,7 @@ MIN_QUIET = 7           # working days without it before «solved» (the floor)
 MAX_QUIET = 28          # ... and the ceiling, however rare the cause used to be
 QUIET_X = 3             # solved needs QUIET_X × the cause's usual gap quiet
 REDUCED_DROP = 50.0     # % fall in occurrences per working day that counts as reduced
-UNIT_NOTES = 3          # stop notes served per brigadir under a cause
+UNIT_NOTES = 4          # stop notes served per brigadir under a cause
 REPEAT_DAYS = 3         # a cause with no solution on this many days is flagged
 
 STATUSES = ("open", "doing", "done")
@@ -469,13 +469,26 @@ def analytics(
             a0 = since + timedelta(days=1) if since else d_from
             od = occ_days(c, mid, a0, asof if since else d_to)
             cells: dict[str, set] = {}
-            recent = []   # the brigadir's own words on the stops since (newest first)
+            recent = []   # the brigadir's own words on their latest stops (newest first)
+            sd_u = _sol_date(sol_u).isoformat() if sol_u else None
             for e in p.get("events") or []:
                 dd = str(e.get("date"))[:10]
                 if dd >= a0.isoformat():
                     cells.setdefault(e.get("cell") or "—", set()).add(dd)
-                    recent.append({"date": dd, "cell": e.get("cell"), "minutes": e.get("minutes"),
-                                   "note": e.get("note") or ""})
+                # what became of THIS stop: answered by its own solution, else by the
+                # scope's — a stop after that solution is a repeat (red), one before it
+                # is solved (done) or in process (open / doing); nothing written = none
+                evs = e.get("solutions") or []
+                if evs:
+                    mark = "solved" if all(x["status"] == "done" for x in evs) else "doing"
+                elif sol_u is None:
+                    mark = "none"
+                elif dd > sd_u:
+                    mark = "repeat"
+                else:
+                    mark = "solved" if sol_u.status == "done" else "doing"
+                recent.append({"date": dd, "cell": e.get("cell"), "minutes": e.get("minutes"),
+                               "note": e.get("note") or "", "mark": mark})
             tc = max(cells.items(), key=lambda kv: len(kv[1]), default=(None, set()))
             own = judged.get(mid) if None not in scope_sol else None
             units.append({
