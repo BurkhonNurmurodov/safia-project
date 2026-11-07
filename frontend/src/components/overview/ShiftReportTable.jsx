@@ -392,6 +392,11 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       </td>
     );
   };
+  // The day's work behind the load %: plan minutes as hours, and the people.
+  const loadTitle = (c) => (isNum(c?.plan_min)
+    ? fill(t("overview.sr.loadWork"), { hours: (c.plan_min / 60).toFixed(1), people: c.people })
+    : undefined);
+
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;
     return figTd({
@@ -515,7 +520,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                   {pctText(c.value)}
                   {c.partial && <span className="ml-px font-normal opacity-70">*</span>}
                 </>
-              ), undefined, productionTarget(r.load, r, g.today))}
+              ), loadTitle(r.load), productionTarget(r.load, r, g.today))}
               {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), undefined,
                 productionTarget(r.compl, r, g.yesterday))}

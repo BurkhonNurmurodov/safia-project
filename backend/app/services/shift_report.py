@@ -134,6 +134,10 @@ def load_cell(totals: Optional[dict]) -> dict:
         # divided by it, so a partly typed unit reads HIGH. The Production page
         # marks its own KPI «*» for this; the table carries the same mark.
         "partial": (totals.get("people_untyped") or 0) > 0,
+        # the day's work in minutes (I1) and the people it is split over (ΣN):
+        # the tooltip prints them as hours, so the % can be read against a size
+        "plan_min": round(float(totals.get("total_plan_labor") or 0), 1),
+        "people": people,
         "reason": None,
     }
 
