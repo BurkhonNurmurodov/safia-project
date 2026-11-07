@@ -70,7 +70,8 @@ _downtime_page = require_page("downtime")
 def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dict:
     """The page's read gate: the /downtime page key, plus top-managers, who hold
     no /downtime access but may read this analysis (read-only, whole plant)."""
-    from jose import jwt, JWTError
+    import jwt
+    from jwt import PyJWTError as JWTError
     from app.config import settings
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
