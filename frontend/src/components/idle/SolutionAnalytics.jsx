@@ -1,3 +1,4 @@
+import { Sparkline } from "../ui/KpiDeltaCard";
 import { AlertTriangle, CheckCircle2, Clock, Repeat2, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import TableCard, { SectionHead } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
@@ -131,7 +132,7 @@ export default function SolutionAnalytics({ T, data: realData, label }) {
                 </div>
                 <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(w.minutes) })}</div>
               </div>
-              <div className="flex-1 min-w-0"><Bars values={w.values} hue={hue} /></div>
+              <div className="flex-1 min-w-0"><Sparkline values={w.values} color={trendInk[w.trend]} /></div>
               <div className="flex items-center gap-1 text-xs font-medium flex-shrink-0 w-28 justify-end" style={{ color: trendInk[w.trend] }}>
                 <TI size={14} /> {T.aTrend[w.trend]}
               </div>
