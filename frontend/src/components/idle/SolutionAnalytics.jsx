@@ -5,6 +5,7 @@ import SegmentedToggle from "../ui/SegmentedToggle";
 import { useTranslit } from "../../utils/transliterate";
 import { shortPerson } from "../../utils/personName";
 import { catColor } from "./categories";
+import OwnerChip from "./OwnerChip";
 import { fill } from "../../pages/idleSolutionsText";
 
 /**
@@ -16,7 +17,7 @@ import { fill } from "../../pages/idleSolutionsText";
  */
 const INK = {
   repeating: "var(--status-bad)", new: "var(--status-bad)", unanswered: "var(--status-warn)",
-  early: "#94a3b8", nodata: "#94a3b8", reduced: "var(--status-warn)", solved: "var(--status-ok)", none: "#94a3b8",
+  early: "#94a3b8", nodata: "#94a3b8", reduced: "var(--status-warn)", solved: "var(--status-ok)", none: "#94a3b8", once: "#94a3b8",
 };
 const MARK = { repeat: "var(--status-bad)", doing: "var(--status-warn)", solved: "var(--status-ok)", none: "#94a3b8" };
 const catCode = (n) => String(n || "").replace(/^Cat\s*/i, "");
@@ -117,12 +118,15 @@ function CauseRow({ c, T, label }) {
         className="w-full text-left px-4 py-3 flex flex-wrap md:flex-nowrap items-center gap-x-4 gap-y-2 hover:bg-[var(--bg-inner)] transition-colors"
         style={{ boxShadow: `inset 3px 0 0 ${ink}` }}>
         <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-        <div className="min-w-0 flex-1 md:flex-none md:w-48">
+        <div className="min-w-0 flex-1 md:flex-none md:w-56">
           <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
             <span style={{ color: catColor(c.category) }}>{c.category}</span>{c.demo ? <span className="ml-1 text-[10px] font-bold" style={{ color: "var(--status-warn)" }}>DEMO</span> : null}{" "}
             {label(catCode(c.category)) ? <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span> : null}
           </div>
-          <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(c.minutes) })}</div>
+          <div className="flex items-center gap-1.5 min-w-0 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+            <span className="flex-shrink-0">{fill(T.minutes, { m: Math.round(c.minutes) })}</span>
+            <OwnerChip owners={{ [c.category]: c.owner }} category={c.category} size="sm" />
+          </div>
         </div>
         <div className="order-last md:order-none basis-full md:basis-0 md:flex-1 min-w-0 pl-7 md:pl-0">
           <WeekBars daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} label={fact} />
@@ -130,7 +134,7 @@ function CauseRow({ c, T, label }) {
         <div className="flex-shrink-0 text-right md:w-36">
           <div className="text-sm font-bold tabular-nums leading-tight" style={{ color: ink }}>{bigText(c, T)}</div>
           <div className="text-[11px] font-medium" style={{ color: j.relapse ? INK.repeating : "var(--text-3)" }}>
-            {j.relapse ? T.rRelapseTag : T.rStatus[c.status]}
+            {j.relapse ? T.rRelapseTag : (T.rStatus[c.status] || T.rOnceShort)}
           </div>
         </div>
       </button>
@@ -237,39 +241,61 @@ const GROUPS = [
 
 export default function SolutionAnalytics({ T, data, label, filtered }) {
   const [f, setF] = useState("all");
+  const [showOnce, setShowOnce] = useState(false);
   // TEMP-DEMO: invented causes ride below the real ones, and only while no shift /
   // brigadir / plant filter is on — they cannot be narrowed, so under a filter they hide.
-  const causes = [...(data.causes || []), ...(filtered ? [] : tempDemo())]
+  const all = [...(data.causes || []), ...(filtered ? [] : tempDemo())]
     .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
+  // a cause with no solution seen on 1–2 days is not a problem yet: kept apart, collapsed
+  const once = all.filter((x) => x.status === "once");
+  const causes = all.filter((x) => x.status !== "once");
   const n = (keys) => causes.filter((x) => keys.includes(x.status)).length;
   const rep = n(["repeating", "new"]);
   const shown = f === "all" ? causes : causes.filter((x) => GROUPS.find((g) => g[0] === f)?.[1].includes(x.status));
   const options = [["all", `${T.rAll} · ${causes.length}`],
     ...GROUPS.filter(([, ks]) => n(ks) > 0).map(([k, ks]) => [k, `${T.rKpi[k]} · ${n(ks)}`])];
   const safeF = options.some(([k]) => k === f) ? f : "all";
+  const rowKey = (x) => `${x.demo ? "demo-" : ""}${x.category}`;
   return (
     <>
       <div className="rounded-2xl p-4 mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="text-base font-bold" style={{ color: rep ? INK.repeating : INK.solved }}>
           {causes.length === 0 ? T.empty : rep ? fill(T.rHeadline, { n: rep, t: causes.length }) : T.rHeadlineOk}
         </div>
+        {data.widened && <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{fill(T.rWidened, { n: data.period_min })}</div>}
         <div className="flex h-2.5 rounded-full overflow-hidden mt-3 gap-px" aria-hidden="true" style={{ background: "var(--border)" }}>
           {GROUPS.map(([k, ks]) => n(ks) > 0 && (
             <div key={k} style={{ width: `${(100 * n(ks)) / causes.length}%`, background: INK[k] }} title={`${T.rKpi[k]} · ${n(ks)}`} />
           ))}
         </div>
         <div className="mt-3"><SegmentedToggle value={safeF} onChange={setF} options={options} /></div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px]" style={{ color: "var(--text-2)" }}>
+          <span style={{ color: "var(--text-3)" }}>{T.rLegend}</span>
+          {[["#94a3b8", T.rLeg.before], ["var(--brand)", T.rLeg.week], [INK.repeating, T.rLeg.after]].map(([col, txt]) => (
+            <span key={txt} className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-[3px]" style={{ background: col }} />{txt}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Repeat2} title={T.rSec} right={fill(T.aRows, { n: shown.length })} />
         {shown.length === 0 ? (
           <div className="px-4 py-6 text-xs" style={{ color: "var(--text-3)" }}>{T.empty}</div>
-        ) : shown.map((x) => <CauseRow key={`${x.demo ? "demo-" : ""}${x.category}`} c={x} T={T} label={label} />)}
-        <div className="px-4 py-2.5 text-[11px]"
-          style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)", color: "var(--text-2)" }}>
-          {T.rLegend}
-        </div>
+        ) : shown.map((x) => <CauseRow key={rowKey(x)} c={x} T={T} label={label} />)}
+        {once.length > 0 && (
+          <div style={{ borderTop: "1px solid var(--border)" }}>
+            <button type="button" onClick={() => setShowOnce((o) => !o)} aria-expanded={showOnce}
+              className="w-full text-left px-4 py-2.5 flex items-center gap-2 text-xs hover:bg-[var(--bg-inner)] transition-colors"
+              style={{ color: "var(--text-2)", background: "var(--bg-inner)" }}>
+              {showOnce ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <span className="font-semibold">{fill(T.rOnce, { n: once.length })}</span>
+              <span style={{ color: "var(--text-3)" }}>{T.rOnceHint}</span>
+            </button>
+            {showOnce && once.map((x) => <CauseRow key={rowKey(x)} c={x} T={T} label={label} />)}
+          </div>
+        )}
       </div>
       <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
         {fill(T.rMethod, { b: data.before_days, x: data.quiet_x, lo: data.min_quiet, hi: data.max_quiet, d: data.reduced_drop, e: data.early_days })}

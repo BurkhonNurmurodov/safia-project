@@ -41,6 +41,7 @@ MIN_QUIET = 7           # working days without it before «solved» (the floor)
 MAX_QUIET = 28          # ... and the ceiling, however rare the cause used to be
 QUIET_X = 3             # solved needs QUIET_X × the cause's usual gap quiet
 REDUCED_DROP = 50.0     # % fall in occurrences per working day that counts as reduced
+PERIOD_MIN = 28         # the Tahlil tab never looks at fewer days: repeating is a question of weeks
 UNIT_NOTES = 4          # stop notes served per brigadir under a cause
 REPEAT_DAYS = 3         # a cause with no solution on this many days is flagged
 
@@ -285,7 +286,7 @@ def _sol_date(r) -> date:
     return (r.created_at.astimezone(TZ) if r.created_at else datetime.now(TZ)).date()
 
 
-ORDER = ("repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none")
+ORDER = ("repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none", "once")
 
 
 def _days(a: date, b: date):
@@ -329,7 +330,13 @@ def analytics(
     _reader_only(payload)
     from app.routers.downtime import _downtime
 
-    base = analysis(date_from=date_from, date_to=date_to, shift=shift, factory=factory,
+    # A picked day (or any span under PERIOD_MIN) is widened backwards from its end.
+    end = date_to or datetime.now(TZ).date()
+    start = date_from or end - timedelta(days=13)
+    widened = start <= end and (end - start).days + 1 < PERIOD_MIN
+    if widened:
+        start = end - timedelta(days=PERIOD_MIN - 1)
+    base = analysis(date_from=start, date_to=end, shift=shift, factory=factory,
                     manager_id=manager_id, db=db, payload=payload)
     d_from = date.fromisoformat(base["date_from"])
     d_to = date.fromisoformat(base["date_to"])
@@ -460,8 +467,9 @@ def analytics(
             sol, j = min(judged.values(), key=lambda sj: ORDER.index(sj[1]["verdict"]))
             status = min(verdicts, key=ORDER.index)
         else:
-            sol, status = None, "unanswered"
             pd = occ_days(c, None, d_from, d_to)
+            # no solution: a cause seen on fewer than REPEAT_DAYS days is not a problem yet
+            sol, status = None, ("unanswered" if len(pd) >= REPEAT_DAYS else "once")
             j = {"verdict": "unanswered", "after_n": len(pd), "after_wd": wdays(None, d_from, d_to),
                  "last_seen": pd[-1] if pd else None, "quiet": None, "relapse": False,
                  "daily": [round(minutes_on(c, None, d.isoformat()), 1) for d in _days(d_from, d_to)],
@@ -514,6 +522,7 @@ def analytics(
             }
         causes.append({
             "category": c, "minutes": round(float(row.get("minutes") or 0), 1), "status": status,
+            "owner": row.get("owner"),
             "j": j, "solution": sol_out, "solutions_n": len([r for r in sols if r.category == c]),
             "units": units, "orphans_n": len(orphans),
             "rethink": bool(sol_out) and sol_out["status"] in ("doing", "done") and j["verdict"] in ("repeating", "new"),
@@ -524,7 +533,7 @@ def analytics(
         "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
         "before_days": BEFORE_DAYS, "early_days": EARLY_DAYS, "min_quiet": MIN_QUIET,
         "max_quiet": MAX_QUIET, "quiet_x": QUIET_X, "reduced_drop": REDUCED_DROP,
-        "repeat_days": REPEAT_DAYS,
+        "repeat_days": REPEAT_DAYS, "widened": widened, "period_min": PERIOD_MIN,
         "causes": causes, "counts": counts,
         "rethink_n": sum(1 for x in causes if x["rethink"]),
     }
