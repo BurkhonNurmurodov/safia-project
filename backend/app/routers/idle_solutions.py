@@ -358,7 +358,12 @@ def analytics(
     wd_all: set = set()
     wd_m: dict = {}
     for r in out.get("rows") or []:
-        dstr = str(r.get("date"))[:10]
+        # `_downtime` spells a row's day «dd.mm.yyyy»; everything here keys on ISO
+        raw = str(r.get("date"))[:10]
+        try:
+            dstr = datetime.strptime(raw, "%d.%m.%Y").date().isoformat()
+        except ValueError:
+            dstr = raw
         wd_all.add(dstr)
         wd_m.setdefault(r.get("manager_id"), set()).add(dstr)
         for c, v in (r.get("by_category") or {}).items():
