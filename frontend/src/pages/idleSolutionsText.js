@@ -7,7 +7,7 @@ export const fill = (s, vars) =>
   String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
 
 const uz = {
-  title: "Kutish yechimlari",
+  demoNote: "Namuna sahifa — bu yerdagi ba'zi raqamlar sinov uchun to'qilgan.", title: "Kutish yechimlari",
   hint: "Qaysi sabab eng ko'p kutdirmoqda, kim javob beradi va nima qilmoqchi",
   kTotal: "Jami kutish", kTotalSub: "brigadirlar bo'yicha yig'indi, daq",
   kTop: "Eng katta sabab", kNoOwner: "Mas'ulsiz sabablar", kNoSol: "Yechimsiz muammolar",
@@ -49,7 +49,7 @@ const uz = {
 };
 
 const uz_cyrl = {
-  title: "Кутиш ечимлари",
+  demoNote: "Намуна саҳифа — бу ердаги баъзи рақамлар синов учун тўқилган.", title: "Кутиш ечимлари",
   hint: "Қайси сабаб энг кўп кутдирмоқда, ким жавоб беради ва нима қилмоқчи",
   kTotal: "Жами кутиш", kTotalSub: "бригадирлар бўйича йиғинди, дақ",
   kTop: "Энг катта сабаб", kNoOwner: "Масъулсиз сабаблар", kNoSol: "Ечимсиз муаммолар",
@@ -91,7 +91,7 @@ const uz_cyrl = {
 };
 
 const ru = {
-  title: "Решения по ожиданиям",
+  demoNote: "Пробная страница — часть цифр здесь придумана для проверки.", title: "Решения по ожиданиям",
   hint: "Какая причина ожиданий самая тяжёлая, кто за неё отвечает и что собирается делать",
   kTotal: "Всего ожиданий", kTotalSub: "сумма по бригадирам, мин",
   kTop: "Главная причина", kNoOwner: "Причины без ответственного", kNoSol: "Проблемы без решения",
@@ -133,7 +133,7 @@ const ru = {
 };
 
 const en = {
-  title: "Idle-time solutions",
+  demoNote: "Preview page — some figures here are made up for testing.", title: "Idle-time solutions",
   hint: "Which cause costs the most waiting, who answers for it and what they plan to do",
   kTotal: "Total waiting", kTotalSub: "sum over brigadirs, min",
   kTop: "Biggest cause", kNoOwner: "Causes with no owner", kNoSol: "Problems with no solution",

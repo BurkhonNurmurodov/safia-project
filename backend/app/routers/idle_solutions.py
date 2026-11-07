@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app import identity
 from app.database import get_db
 from app.models import IdleCategorySolution
-from app.permissions import require_page
+from app.permissions import _oauth2, require_page
 from app.services import action_log, idle_scope
 
 router = APIRouter(prefix="/api/idle-solutions", tags=["idle-solutions"])
@@ -64,6 +64,23 @@ def _state(rows) -> str:
     return "done"
 
 
+_downtime_page = require_page("downtime")
+
+
+def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dict:
+    """The page's read gate: the /downtime page key, plus top-managers, who hold
+    no /downtime access but may read this analysis (read-only, whole plant)."""
+    from jose import jwt, JWTError
+    from app.config import settings
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if payload.get("role") == "top-manager":
+        return payload
+    return _downtime_page(token, db)
+
+
 def _admin_only(payload: dict) -> None:
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
@@ -71,7 +88,7 @@ def _admin_only(payload: dict) -> None:
 
 def _reader_only(payload: dict) -> None:
     """Reading: admins and shift-managers (writes stay admin / the category owner)."""
-    if payload.get("role") not in ("admin", "shift-manager"):
+    if payload.get("role") not in ("admin", "shift-manager", "top-manager"):
         raise HTTPException(status_code=403, detail="Admin only")
 
 
@@ -103,7 +120,7 @@ def analysis(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime")),
+    payload: dict = Depends(_reader),
 ):
     _reader_only(payload)
     # Lazy: the downtime router is a sibling router, not a service.
@@ -285,7 +302,7 @@ def analytics(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime")),
+    payload: dict = Depends(_reader),
 ):
     """Is the waiting repeating, and did the written solutions change it?
 
