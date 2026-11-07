@@ -84,7 +84,21 @@ function explainWeekly(T, data, label) {
   return { lines, how: fill(T.aExplainHow, { a: A, b: B }) };
 }
 
-export default function SolutionAnalytics({ T, data, label }) {
+// TEMP-DEMO (remove in the next commit): invented weekly figures so the dynamics block can be previewed.
+function tempDemo(d) {
+  const mon = new Date(); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7) - 49);
+  const weeks = Array.from({ length: 8 }, (_, i) => { const x = new Date(mon); x.setDate(x.getDate() + 7 * i); return x.toISOString().slice(0, 10); });
+  const mk = (category, values, trend) => ({ category, values, trend, minutes: values.reduce((a, b) => a + b, 0), solutions_n: 1 });
+  return { ...d, weeks, weekly: [
+    mk("Cat D3", [40, 55, 60, 90, 120, 150, 170, 160], "up"),
+    mk("Cat B", [200, 180, 190, 150, 110, 90, 70, 60], "down"),
+    mk("Cat F", [80, 75, 85, 80, 78, 82, 79, 81], "flat"),
+    mk("Cat K", [0, 0, 0, 0, 30, 45, 60, 55], "up"),
+  ] };
+}
+
+export default function SolutionAnalytics({ T, data: realData, label }) {
+  const data = tempDemo(realData); // TEMP-DEMO
   const { tl } = useTranslit();
   const c = data.counts || {};
   const trendIcon = { down: TrendingDown, up: TrendingUp, flat: Minus };
