@@ -394,7 +394,11 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   };
   // The day's work behind the load %: plan minutes as hours, and the people.
   const loadTitle = (c) => (isNum(c?.plan_min)
-    ? fill(t("overview.sr.loadWork"), { hours: (c.plan_min / 60).toFixed(1), people: c.people })
+    ? fill(t(isNum(c.cap_min) ? "overview.sr.loadWork" : "overview.sr.loadWorkNoCap"), {
+      hours: (c.plan_min / 60).toFixed(1), people: c.people,
+      cap: isNum(c.cap_min) ? (c.cap_min / 60).toFixed(1) : "",
+      each: isNum(c.cap_min) && c.people ? (c.cap_min / 60 / c.people).toFixed(1) : "",
+    })
     : undefined);
 
   const figCell = (cell, toneFn, render, extraTitle, target) => {

@@ -138,6 +138,10 @@ def load_cell(totals: Optional[dict]) -> dict:
         # the tooltip prints them as hours, so the % can be read against a size
         "plan_min": round(float(totals.get("total_plan_labor") or 0), 1),
         "people": people,
+        # the time the people have: ΣN × shift_min, recovered from the unit's
+        # own avg_load so it is the very shift length the % was divided by
+        "cap_min": (round(float(totals["total_plan_labor"]) / float(totals["avg_load"]), 1)
+                    if totals.get("avg_load") else None),
         "reason": None,
     }
 
