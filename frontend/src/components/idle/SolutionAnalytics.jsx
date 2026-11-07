@@ -52,6 +52,38 @@ function Bars({ values, hue }) {
   );
 }
 
+function explainWeekly(T, data, label) {
+  const rows = data.weekly || [];
+  const weeks = data.weeks || [];
+  if (!rows.length || weeks.length < 2) return null;
+  const half = Math.floor(weeks.length / 2);
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+  const per = rows.map((r) => ({ c: r.category, a: sum(r.values.slice(0, half)), b: sum(r.values.slice(half)), v: r.values }));
+  const A = Math.round(sum(per.map((r) => r.a))), B = Math.round(sum(per.map((r) => r.b)));
+  const lines = [];
+  const pct = (a, b) => Math.round((100 * Math.abs(b - a)) / a);
+  if (A > 0) {
+    const ch = (100 * (B - A)) / A;
+    const dir = Math.abs(ch) < 5 ? T.aExplainSame : ch > 0 ? T.aExplainWentUp : T.aExplainWentDown;
+    lines.push(fill(T.aExplainTotal, { a: A, b: B, dir, p: (ch > 0 ? "+" : ch < 0 ? "−" : "") + pct(A, B) }));
+  }
+  const grew = per.filter((r) => r.a > 0 && r.b > r.a).sort((x, y) => (y.b - y.a) - (x.b - x.a))[0];
+  const fell = per.filter((r) => r.a > 0 && r.b < r.a).sort((x, y) => (x.b - x.a) - (y.b - y.a))[0];
+  const fresh = per.filter((r) => r.a === 0 && r.b > 0).sort((x, y) => y.b - x.b)[0];
+  const nm = (c) => `${c} — ${label(catCode(c))}`;
+  if (grew) lines.push(fill(T.aExplainUp, { c: nm(grew.c), a: Math.round(grew.a), b: Math.round(grew.b), p: pct(grew.a, grew.b) }));
+  if (fresh) lines.push(fill(T.aExplainNew, { c: nm(fresh.c), b: Math.round(fresh.b) }));
+  if (fell) lines.push(fill(T.aExplainDown, { c: nm(fell.c), a: Math.round(fell.a), b: Math.round(fell.b), p: pct(fell.a, fell.b) }));
+  const tot = weeks.map((_, i) => sum(per.map((r) => r.v[i] || 0)));
+  const pi = tot.indexOf(Math.max(...tot));
+  if (tot[pi] > 0) {
+    const top = per.slice().sort((x, y) => (y.v[pi] || 0) - (x.v[pi] || 0))[0];
+    const d = weeks[pi].slice(5).split("-").reverse().join(".");
+    lines.push(fill(T.aExplainPeak, { w: d, m: Math.round(tot[pi]), c: nm(top.c) }));
+  }
+  return { lines, how: fill(T.aExplainHow, { a: A, b: B }) };
+}
+
 export default function SolutionAnalytics({ T, data, label }) {
   const { tl } = useTranslit();
   const c = data.counts || {};
@@ -92,6 +124,19 @@ export default function SolutionAnalytics({ T, data, label }) {
             </div>
           );
         })}
+        {(() => {
+          const ex = explainWeekly(T, data, label);
+          if (!ex) return null;
+          return (
+            <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}>
+              <div className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-3)" }}>{T.aExplainTitle}</div>
+              <ul className="space-y-1 text-sm" style={{ color: "var(--text-1)" }}>
+                {ex.lines.map((l, i) => <li key={i}>{l}</li>)}
+              </ul>
+              <div className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>{ex.how}</div>
+            </div>
+          );
+        })()}
       </div>
 
       <TableCard icon={Repeat2} title={T.aSecRepeat} right={fill(T.aRows, { n: data.repeats.length })} maxHeight="50vh">
