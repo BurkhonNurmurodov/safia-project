@@ -384,6 +384,13 @@ function AuthGate({ children }) {
   return children;
 }
 
+/** Admin plus the named roles (a read-only page the server also narrows). */
+function RequireRoles({ roles, children }) {
+  const { auth } = useAuth();
+  if (!roles.includes(auth?.role)) return <Navigate to="/" replace />;
+  return children;
+}
+
 /** Strictly admin-only. Used by pages that are not part of the capability
  *  catalog (e.g. /gamification) — a grant must never widen those. */
 function RequireAdmin({ children }) {
@@ -637,7 +644,7 @@ function AppWithLang() {
             <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
-            <Route path="/idle-solutions" element={<AuthGate><RequireAdmin><IdleSolutions /></RequireAdmin></AuthGate>} />
+            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", "shift-manager"]}><IdleSolutions /></RequireRoles></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />

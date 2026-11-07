@@ -69,6 +69,12 @@ def _admin_only(payload: dict) -> None:
         raise HTTPException(status_code=403, detail="Admin only")
 
 
+def _reader_only(payload: dict) -> None:
+    """Reading: admins and shift-managers (writes stay admin / the category owner)."""
+    if payload.get("role") not in ("admin", "shift-manager"):
+        raise HTTPException(status_code=403, detail="Admin only")
+
+
 def _fmt_dt(v):
     return v.isoformat() if v else None
 
@@ -99,7 +105,7 @@ def analysis(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
-    _admin_only(payload)
+    _reader_only(payload)
     # Lazy: the downtime router is a sibling router, not a service.
     from app.routers.downtime import _downtime
 
@@ -289,7 +295,7 @@ def analytics(
     again and again; `weekly` — each cause's minutes per Monday-week; `effect` —
     per written solution, minutes per day before against after it (see `_verdict`).
     """
-    _admin_only(payload)
+    _reader_only(payload)
     from app.routers.downtime import _downtime
 
     base = analysis(date_from=date_from, date_to=date_to, shift=shift, factory=factory,

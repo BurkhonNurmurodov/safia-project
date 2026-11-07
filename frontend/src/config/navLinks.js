@@ -46,7 +46,7 @@ export const ALL_LINKS = [
   { to: "/workers/composition", adminOnly: true, key: "nav.workersComposition", icon: Contact,        group: "people" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   // Which waiting cause hurts most, who answers for it, and what they wrote they will do.
-  { to: "/idle-solutions", adminOnly: true, key: "nav.idleSolutions", icon: Lightbulb, group: "prod" },
+  { to: "/idle-solutions", adminOnly: true, roles: ["shift-manager"], key: "nav.idleSolutions", icon: Lightbulb, group: "prod" },
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },

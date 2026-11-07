@@ -110,7 +110,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     ? appLinks
     : [
       ...ALL_LINKS
-        .filter(l => (l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
+        .filter(l => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role)) : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
         // A launcher's «/» is the launcher, so its overview answers at /overview.
         .map(l => (launcher ? { ...l, to: adminPath(l.to) } : l)),
       ...adminRows,
