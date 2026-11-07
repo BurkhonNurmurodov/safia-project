@@ -920,3 +920,27 @@ new decision; the two locks below are the feature.
   who may FILE an ojidaniya.
 
 Related memory: `idle-category-owner-role`.
+
+## «Kutish yechimlari» — Tahlil tab: is it SOLVED or REPEATING? (`/idle-solutions`, 2026-11-07)
+
+The operator's first question of the tab is «did the problem come back after the
+solution», minutes second. `GET /api/idle-solutions/analytics` therefore judges by
+**occurrences** — a working day on which the cause shows up at all (a
+`by_category` minute > 0) — never by minutes; the old minutes-per-day
+before/after, the weekly trend card, the «repeating reasons» and the «effect»
+tables are gone. Per cause the NEWEST solution of each scope (a brigadir's own,
+else the category-wide one) is judged by `judge()` in `routers/idle_solutions.py`:
+`solved` (quiet for QUIET_X=3 × the cause's own usual gap before, 7–28 working
+days), `repeating` (came back; `relapse` = after a quiet as long as `solved`
+needed), `reduced` (occurrences per working day at least REDUCED_DROP=50% down),
+`early` (not enough quiet yet, or under EARLY_DAYS=3 calendar days), `new`,
+`nodata` (under 5 working days before), and `unanswered` for a cause with no
+solution (or a brigadir with the same waiting on ≥ REPEAT_DAYS=3 days and none of
+their own). **Quiet is counted in the scope's WORKING days** (days it has a row in
+`_downtime`), so a weekend is not a cure. The page leads with the verdict (list
+sorted repeating first); a row opens to the solution, before/after/quiet/last-seen,
+the day strip and the brigadirs it came back with. A solution's comment date stands
+in for the date it took effect — there is no «implemented on» field yet.
+**TEMP-DEMO** (`tempDemo()` in `SolutionAnalytics.jsx`, plus the DEMO banner in
+`IdleSolutions.jsx`) still feeds invented causes into the tab until the operator
+says to erase it.
