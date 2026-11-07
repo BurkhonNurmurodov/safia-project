@@ -31,23 +31,34 @@ function Chip({ ink, children }) {
   );
 }
 
-/** One cell per day, like a calendar strip. A day the cause happened is a full
- *  cell (the thing being counted), a quiet day a low faint one; grey before the
- *  solution, gold on the day it was written, coloured after. Hover = date. */
-function DayCells({ daily, from, marker, ink, h = 18, label }) {
+/** One bar per WEEK: how many days that week the cause happened. Grey before the
+ *  solution, gold in the week it was written, coloured after — tall bars after the
+ *  gold one = it keeps coming back. Last 12 weeks; hover = the week's span. */
+function WeekBars({ daily, from, marker, ink, h = 30, label }) {
   const v = daily || [];
-  if (v.length < 2) return null;
-  const t0 = from ? Date.parse(from) : null;
+  if (v.length < 2 || !from) return null;
+  const t0 = Date.parse(from), weeks = [], at = new Map();
+  v.forEach((x, i) => {
+    const t = t0 + i * 864e5, wk = t - ((new Date(t).getUTCDay() + 6) % 7) * 864e5;
+    if (!at.has(wk)) { at.set(wk, weeks.length); weeks.push({ wk, n: 0, days: 0, mark: false, after: false }); }
+    const w = weeks[at.get(wk)];
+    w.days += 1;
+    if (x > 0) w.n += 1;
+    if (marker != null && i === marker) w.mark = true;
+    if (marker != null && i > marker) w.after = true;
+  });
+  const shown = weeks.slice(-12);
+  const max = Math.max(5, ...shown.map((w) => w.n));
+  const fmt = (t) => new Date(t).toISOString().slice(5, 10).split("-").reverse().join(".");
   return (
-    <div className="flex items-end gap-px w-full" style={{ height: h }} role="img" aria-label={label}>
-      {v.map((x, i) => {
-        const mark = marker != null && i === marker;
-        const after = marker != null && i > marker;
-        const d = t0 == null ? "" : new Date(t0 + i * 864e5).toISOString().slice(5, 10).split("-").reverse().join(".");
+    <div className="flex items-end gap-1 w-full" style={{ height: h }} role="img" aria-label={label}>
+      {shown.map((w) => {
+        const color = w.mark ? "var(--brand)" : w.after || marker == null ? ink : "#94a3b8";
         return (
-          <span key={i} title={x > 0 ? `${d} · ${Math.round(x)}` : d}
-            className="flex-1 min-w-[2px] max-w-[12px] rounded-[2px]"
-            style={{ height: mark || x > 0 ? "100%" : "28%", background: mark ? "var(--brand)" : after ? ink : "#94a3b8", opacity: mark || x > 0 ? 1 : 0.28 }} />
+          <div key={w.wk} className="flex-1 min-w-[6px] max-w-[26px] flex items-end" style={{ height: "100%" }}
+            title={`${fmt(w.wk)}–${fmt(w.wk + 6 * 864e5)} · ${w.n}`}>
+            <div className="w-full rounded-[3px]" style={{ height: w.n ? Math.max(5, (w.n / max) * (h - 2)) : 3, background: color, opacity: w.n ? 1 : 0.3 }} />
+          </div>
         );
       })}
     </div>
@@ -114,7 +125,7 @@ function CauseRow({ c, T, label }) {
           <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(c.minutes) })}</div>
         </div>
         <div className="order-last md:order-none basis-full md:basis-0 md:flex-1 min-w-0 pl-7 md:pl-0">
-          <DayCells daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} label={fact} />
+          <WeekBars daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} label={fact} />
         </div>
         <div className="flex-shrink-0 text-right md:w-36">
           <div className="text-sm font-bold tabular-nums leading-tight" style={{ color: ink }}>{bigText(c, T)}</div>
