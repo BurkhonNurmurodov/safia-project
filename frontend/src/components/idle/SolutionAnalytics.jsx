@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, Clock, Repeat2, TrendingDown, ClipboardCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, Repeat2 } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { useTranslit } from "../../utils/transliterate";
 import { shortPerson } from "../../utils/personName";
 import { catColor } from "./categories";
@@ -29,42 +30,41 @@ function Chip({ ink, children }) {
   );
 }
 
-function Kpi({ icon: Icon, label, value, sub, tone }) {
+/** One cell per day, like a calendar strip. A day the cause happened is a full
+ *  cell (the thing being counted), a quiet day a low faint one; grey before the
+ *  solution, gold on the day it was written, coloured after. Hover = date. */
+function DayCells({ daily, from, marker, ink, h = 18, label }) {
+  const v = daily || [];
+  if (v.length < 2) return null;
+  const t0 = from ? Date.parse(from) : null;
   return (
-    <div className="rounded-2xl p-4 min-w-0" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        <Icon size={13} className="flex-shrink-0" /> <span className="truncate">{label}</span>
-      </div>
-      <div className="text-2xl font-bold mt-1 tabular-nums" style={{ color: tone || "var(--text-1)" }}>{value}</div>
-      <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>{sub || " "}</div>
+    <div className="flex items-end gap-px w-full" style={{ height: h }} role="img" aria-label={label}>
+      {v.map((x, i) => {
+        const mark = marker != null && i === marker;
+        const after = marker != null && i > marker;
+        const d = t0 == null ? "" : new Date(t0 + i * 864e5).toISOString().slice(5, 10).split("-").reverse().join(".");
+        return (
+          <span key={i} title={x > 0 ? `${d} · ${Math.round(x)}` : d}
+            className="flex-1 min-w-[2px] max-w-[12px] rounded-[2px]"
+            style={{ height: mark || x > 0 ? "100%" : "28%", background: mark ? "var(--brand)" : after ? ink : "#94a3b8", opacity: mark || x > 0 ? 1 : 0.28 }} />
+        );
+      })}
     </div>
   );
 }
 
-/** One bar per day, the solution day marked. Occurrence mode: every day it
- *  happened is a full bar (the thing being counted); minutes mode: height is
- *  that day's waiting minutes (the detail view). */
-function OccStrip({ daily, marker, ink, height = 22, byMinutes = false, label }) {
-  const v = daily || [];
-  if (v.length < 2) return null;
-  const W = 600, H = height, P = 1;
-  const bw = (W - P * 2) / v.length;
-  const max = Math.max(1, ...v);
-  return (
-    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
-      {v.map((x, i) => {
-        const h = x > 0 ? (byMinutes ? Math.max(5, (x / max) * (H - 3)) : H - 2) : 2;
-        const after = marker != null && i > marker;
-        return <rect key={i} x={P + i * bw + 0.4} y={H - h} width={Math.max(1, bw - 1)} height={h} rx={1}
-          fill={marker != null && i === marker ? "var(--brand)" : after ? ink : "#94a3b8"}
-          opacity={x > 0 ? 0.95 : 0.3} />;
-      })}
-      {marker != null && (
-        <line x1={P + marker * bw + bw / 2} x2={P + marker * bw + bw / 2} y1={0} y2={H} stroke="var(--brand)"
-          strokeWidth={1.5} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-      )}
-    </svg>
-  );
+/** The one figure a row is read by, in the verdict's own words. */
+function bigText(c, T) {
+  const j = c.j || {}, B = T.rBig;
+  switch (j.verdict) {
+    case "repeating": return fill(B.repeating, { n: j.after_n });
+    case "new": return fill(B.repeating, { n: j.after_n });
+    case "solved": return fill(B.solved, { q: j.quiet });
+    case "early": return j.after_days >= 3 && j.after_n === 0 ? fill(B.early, { q: j.quiet, n: j.quiet_needed }) : fill(B.earlyDays, { d: j.after_days });
+    case "reduced": return fill(B.reduced, { a: j.after_n, aw: j.after_wd });
+    case "unanswered": return fill(B.unanswered, { n: j.after_n || 0 });
+    default: return "—";
+  }
 }
 
 /** The one sentence a cause's row opens with — what its verdict rests on. */
@@ -95,13 +95,15 @@ function CauseRow({ c, T, label }) {
   const ink = INK[c.status] || "#94a3b8";
   const sol = c.solution;
   const units = c.units || [];
-  const unanswered = c.status === "unanswered" && !sol;
+  const unanswered = !sol;
+  const fact = factText(c, T);
   return (
     <div style={{ borderTop: "1px solid var(--border)" }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-        className="w-full text-left px-4 py-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 hover:bg-[var(--bg-inner)] transition-colors">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={fact}
+        className="w-full text-left px-4 py-3 flex flex-wrap md:flex-nowrap items-center gap-x-4 gap-y-2 hover:bg-[var(--bg-inner)] transition-colors"
+        style={{ boxShadow: `inset 3px 0 0 ${ink}` }}>
         <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-        <div className="w-44 min-w-0 flex-1 md:flex-none">
+        <div className="min-w-0 flex-1 md:flex-none md:w-48">
           <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
             <span style={{ color: catColor(c.category) }}>{c.category}</span>{" "}
             <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span>
@@ -109,18 +111,26 @@ function CauseRow({ c, T, label }) {
           <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(c.minutes) })}</div>
         </div>
         <div className="order-last md:order-none basis-full md:basis-0 md:flex-1 min-w-0 pl-7 md:pl-0">
-          <div className="text-xs font-medium truncate" style={{ color: "var(--text-2)" }} title={factText(c, T)}>{factText(c, T)}</div>
-          <div className="mt-1"><OccStrip daily={j.daily} marker={j.marker} ink={ink} label={factText(c, T)} /></div>
+          <DayCells daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} label={fact} />
         </div>
-        <div className="flex-shrink-0 flex flex-col items-end gap-1">
-          <Chip ink={ink}>{T.rStatus[c.status]}</Chip>
-          {j.relapse && <span className="text-[11px] font-medium" style={{ color: "var(--status-bad)" }}>{T.rRelapseTag}</span>}
+        <div className="flex-shrink-0 text-right md:w-36">
+          <div className="text-sm font-bold tabular-nums leading-tight" style={{ color: ink }}>{bigText(c, T)}</div>
+          <div className="text-[11px] font-medium" style={{ color: j.relapse ? INK.repeating : "var(--text-3)" }}>
+            {j.relapse ? T.rRelapseTag : T.rStatus[c.status]}
+          </div>
         </div>
       </button>
       {open && (
         <div className="px-4 pb-4 pt-3" style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
+          <div className="text-sm font-medium mb-2" style={{ color: ink }}>{fact}</div>
+          <DayCells daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} h={44} label={fact} />
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mt-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+            <span>{j.daily_from ? ddmm(j.daily_from) : ""}</span>
+            {!unanswered && <span style={{ color: "var(--brand-text)" }}>{T.aMarkSol} · {ddmm(sol.date)}</span>}
+            <span>{ddmm(j.daily_from ? new Date(Date.parse(j.daily_from) + ((j.daily || []).length - 1) * 864e5).toISOString().slice(0, 10) : "")}</span>
+          </div>
           {sol ? (
-            <div className="mb-3">
+            <div className="mt-3">
               <div className="text-sm" style={{ color: "var(--text-1)" }}>«{sol.text}»</div>
               <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
                 {ddmmyy(sol.date)}{sol.author_name ? ` · ${shortPerson(tl(sol.author_name) || sol.author_name)}` : ""}
@@ -129,62 +139,32 @@ function CauseRow({ c, T, label }) {
               </div>
             </div>
           ) : (
-            <div className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{T.rNoSolution}</div>
+            <div className="text-xs mt-3" style={{ color: "var(--text-3)" }}>{T.rNoSolution}</div>
           )}
-
-          {!unanswered && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-              {[
-                [T.rBefore, fill(T.rDaysOf, { a: j.before_n, b: j.before_wd }), null],
-                [T.rAfter, fill(T.rDaysOf, { a: j.after_n, b: j.after_wd }), j.after_n > 0 ? INK.repeating : INK.solved],
-                [T.rQuiet, fill(T.rQuietOf, { q: j.quiet, n: j.quiet_needed }), null],
-                [T.rLast, j.last_seen ? ddmmyy(j.last_seen) : "—", null],
-              ].map(([k, v, tone]) => (
-                <div key={k} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                  <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{k}</div>
-                  <div className="text-sm font-bold tabular-nums" style={{ color: tone || "var(--text-1)" }}>{v}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <OccStrip daily={j.daily} marker={j.marker} ink={ink} height={64} byMinutes label={factText(c, T)} />
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mt-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-            <span>{j.daily_from ? ddmm(j.daily_from) : ""}</span>
-            {!unanswered && <span style={{ color: "var(--brand-text)" }}>{T.aMarkSol}</span>}
-            {!unanswered && j.min_before != null && (
-              <span>{fill(T.rMinutes, { b: Math.round(j.min_before), a: Math.round(j.min_after) })}</span>
-            )}
-          </div>
-
-          <div className="text-[11px] font-semibold uppercase tracking-wider pt-3 pb-1" style={{ color: "var(--text-3)" }}>
-            {unanswered ? T.rUnitsTitleUn : T.rUnitsTitle}
-          </div>
-          {units.length === 0 ? (
-            <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.aWhoNone}</div>
-          ) : units.map((u) => (
-            <div key={u.manager_id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
-              <div className="w-44 min-w-0 flex-1 sm:flex-none">
-                <div className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{shortPerson(tl(u.manager_name) || u.manager_name)}</div>
-                <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                  {u.cell ? `${T.aCellShort} ${u.cell} · ${fill(T.rUnitDays, { n: u.cell_days })}` : "—"}
-                </div>
-              </div>
-              <div className="flex-1 min-w-0 text-xs tabular-nums" style={{ color: u.days > 0 && !unanswered ? INK.repeating : "var(--text-2)" }}>
-                <span className="font-bold">{fill(T.rUnitDays, { n: u.days })}</span>
-                {u.last_seen ? ` · ${T.rLast.toLowerCase()} ${ddmm(u.last_seen)}` : ""}
-                <span style={{ color: "var(--text-3)" }}> · {Math.round(u.minutes)} {T.aMinShort}</span>
-              </div>
-              <div className="flex-shrink-0 flex items-center gap-2">
-                {!u.covered && <span className="text-[11px] font-medium" style={{ color: INK.unanswered }}>{T.rUncovered}</span>}
-                {u.verdict && <Chip ink={INK[u.verdict] || "#94a3b8"}>{T.rStatus[u.verdict]}</Chip>}
-              </div>
-            </div>
-          ))}
           {c.rethink && (
-            <div className="mt-3 text-xs font-medium flex items-start gap-1.5" style={{ color: "var(--status-bad)" }}>
+            <div className="mt-2 text-xs font-medium flex items-start gap-1.5" style={{ color: "var(--status-bad)" }}>
               <AlertTriangle size={14} className="flex-shrink-0 mt-px" /> {T.rAdvice}
             </div>
+          )}
+          {units.length > 0 && (
+            <>
+              <div className="text-[11px] font-semibold uppercase tracking-wider pt-3 pb-1" style={{ color: "var(--text-3)" }}>
+                {unanswered ? T.rUnitsTitleUn : T.rUnitsTitle}
+              </div>
+              {units.map((u) => (
+                <div key={u.manager_id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{shortPerson(tl(u.manager_name) || u.manager_name)}</div>
+                    <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                      {u.cell ? `${T.aCellShort} ${u.cell}` : "—"}{u.last_seen ? ` · ${T.rLast.toLowerCase()} ${ddmm(u.last_seen)}` : ""}
+                      {` · ${Math.round(u.minutes)} ${T.aMinShort}`}
+                    </div>
+                  </div>
+                  {!u.covered && <span className="text-[11px] font-medium" style={{ color: INK.unanswered }}>{T.rUncovered}</span>}
+                  <span className="text-sm font-bold tabular-nums w-16 text-right" style={{ color: u.days > 0 ? ink : "var(--text-3)" }}>{fill(T.rUnitDays, { n: u.days })}</span>
+                </div>
+              ))}
+            </>
           )}
         </div>
       )}
@@ -254,29 +234,47 @@ function tempDemo(d) {
   return { ...d, causes, counts, rethink_n: causes.filter((x) => x.rethink).length };
 }
 
+// the five groups a reader sorts causes into, worst first
+const GROUPS = [
+  ["repeating", ["repeating", "new"]],
+  ["unanswered", ["unanswered"]],
+  ["reduced", ["reduced"]],
+  ["early", ["early", "nodata", "none"]],
+  ["solved", ["solved"]],
+];
+
 export default function SolutionAnalytics({ T, data: realData, label }) {
   const data = tempDemo(realData); // TEMP-DEMO
-  const c = data.counts || {};
+  const [f, setF] = useState("all");
   const causes = data.causes || [];
+  const n = (keys) => causes.filter((x) => keys.includes(x.status)).length;
+  const rep = n(["repeating", "new"]);
+  const shown = f === "all" ? causes : causes.filter((x) => GROUPS.find((g) => g[0] === f)?.[1].includes(x.status));
+  const options = [["all", `${T.rAll} · ${causes.length}`],
+    ...GROUPS.filter(([, ks]) => n(ks) > 0).map(([k, ks]) => [k, `${T.rKpi[k]} · ${n(ks)}`])];
+  const safeF = options.some(([k]) => k === f) ? f : "all";
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-        <Kpi icon={Repeat2} label={T.rKpi.repeating} value={(c.repeating || 0) + (c.new || 0)}
-          sub={T.rKpiSub.repeating} tone={(c.repeating || 0) + (c.new || 0) ? INK.repeating : undefined} />
-        <Kpi icon={TrendingDown} label={T.rKpi.reduced} value={c.reduced || 0} sub={T.rKpiSub.reduced} tone={c.reduced ? INK.reduced : undefined} />
-        <Kpi icon={CheckCircle2} label={T.rKpi.solved} value={c.solved || 0} sub={T.rKpiSub.solved} tone={c.solved ? INK.solved : undefined} />
-        <Kpi icon={Clock} label={T.rKpi.early} value={(c.early || 0) + (c.nodata || 0)} sub={T.rKpiSub.early} />
-        <Kpi icon={ClipboardCheck} label={T.rKpi.unanswered} value={c.unanswered || 0} sub={T.rKpiSub.unanswered} tone={c.unanswered ? INK.unanswered : undefined} />
+      <div className="rounded-2xl p-4 mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="text-base font-bold" style={{ color: rep ? INK.repeating : INK.solved }}>
+          {causes.length === 0 ? T.empty : rep ? fill(T.rHeadline, { n: rep, t: causes.length }) : T.rHeadlineOk}
+        </div>
+        <div className="flex h-2.5 rounded-full overflow-hidden mt-3 gap-px" aria-hidden="true" style={{ background: "var(--border)" }}>
+          {GROUPS.map(([k, ks]) => n(ks) > 0 && (
+            <div key={k} style={{ width: `${(100 * n(ks)) / causes.length}%`, background: INK[k] }} title={`${T.rKpi[k]} · ${n(ks)}`} />
+          ))}
+        </div>
+        <div className="mt-3"><SegmentedToggle value={safeF} onChange={setF} options={options} /></div>
       </div>
 
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Repeat2} title={T.rSec} right={fill(T.aRows, { n: causes.length })} />
-        {causes.length === 0 ? (
+        <SectionHead icon={Repeat2} title={T.rSec} right={fill(T.aRows, { n: shown.length })} />
+        {shown.length === 0 ? (
           <div className="px-4 py-6 text-xs" style={{ color: "var(--text-3)" }}>{T.empty}</div>
-        ) : causes.map((x) => <CauseRow key={x.category} c={x} T={T} label={label} />)}
-        <div className="px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px]"
+        ) : shown.map((x) => <CauseRow key={x.category} c={x} T={T} label={label} />)}
+        <div className="px-4 py-2.5 text-[11px]"
           style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)", color: "var(--text-2)" }}>
-          <span>{T.rLegend}</span>
+          {T.rLegend}
         </div>
       </div>
       <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
