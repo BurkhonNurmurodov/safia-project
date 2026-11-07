@@ -333,17 +333,19 @@ def analytics(
                     manager_id=manager_id, db=db, payload=payload)
     d_from = date.fromisoformat(base["date_from"])
     d_to = date.fromisoformat(base["date_to"])
-    today = datetime.now(TZ).date()
+    # Judged AS OF the end of the period (never later than today): a past period
+    # shows the picture at that time, and a solution written after it is unknown.
+    asof = min(datetime.now(TZ).date(), d_to)
 
     sols = (db.query(IdleCategorySolution)
             .order_by(IdleCategorySolution.created_at.desc(), IdleCategorySolution.id.desc())
             .limit(400).all())
-    sols = [r for r in sols if r.category not in EXCLUDED
+    sols = [r for r in sols if r.category not in EXCLUDED and _sol_date(r) <= d_to
             and (not manager_id or r.manager_id is None or r.manager_id in manager_id)]
     wide_from = d_from
     for r in sols:
         wide_from = min(wide_from, _sol_date(r) - timedelta(days=BEFORE_DAYS))
-    wide_to = max(d_to, today)
+    wide_to = d_to
     wide_from = max(wide_from, wide_to - timedelta(days=MAX_DAYS - 1))
     out = _downtime(db, payload, wide_from, wide_to, shift, manager_id, False, factory)
     lock = idle_scope.viewer_categories(db, payload)
@@ -382,7 +384,7 @@ def analytics(
     def judge(c, mid, sol) -> dict:
         sd = _sol_date(sol)
         b0, b1 = max(sd - timedelta(days=BEFORE_DAYS), wide_from), sd - timedelta(days=1)
-        a0, a1 = max(sd + timedelta(days=1), wide_from), today
+        a0, a1 = max(sd + timedelta(days=1), wide_from), asof
         ob, oa = occ_days(c, mid, b0, b1), occ_days(c, mid, a0, a1)
         wb = max(wdays(mid, b0, b1), len(ob))
         wa = max(wdays(mid, a0, a1), len(oa))
@@ -420,9 +422,13 @@ def analytics(
         }
 
     cat_rows = {r["category"]: r for r in base["categories"]}
+    # Shown: a cause that happened in the period (under every filter), or one whose
+    # solution was written in the period AND that shows up at all under the filters —
+    # a filter that leaves a cause no data must hide it, never print it «solved».
     cats = [r["category"] for r in base["categories"] if (r["minutes"] or 0) > 0]
+    seen_cats = {k[0] for k in cc}
     for r in sols:
-        if r.category not in cats:
+        if r.category not in cats and d_from <= _sol_date(r) <= d_to and r.category in seen_cats:
             cats.append(r.category)
 
     causes = []
@@ -461,7 +467,7 @@ def analytics(
             sol_u = scope_sol.get(mid) or scope_sol.get(None)
             since = _sol_date(sol_u) if sol_u else None
             a0 = since + timedelta(days=1) if since else d_from
-            od = occ_days(c, mid, a0, today if since else d_to)
+            od = occ_days(c, mid, a0, asof if since else d_to)
             cells: dict[str, set] = {}
             recent = []   # the brigadir's own words on the stops since (newest first)
             for e in p.get("events") or []:

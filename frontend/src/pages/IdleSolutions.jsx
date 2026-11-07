@@ -414,7 +414,8 @@ export default function IdleSolutions() {
         ) : analyticsQ.isLoading || !analyticsQ.data ? (
           <div className="space-y-3"><SkeletonBlock className="h-24" /><SkeletonBlock className="h-72" /></div>
         ) : (
-          <SolutionAnalytics T={T} data={analyticsQ.data} label={label} />
+          <SolutionAnalytics T={T} data={analyticsQ.data} label={label}
+            filtered={!!(fparams.factory || fparams.shift || (fparams.manager_id && fparams.manager_id.length))} />
         )
       ) : isError ? (
         <EmptyState tone="danger" title={T.errLoad} message="" showUploadLink={false} action={<Button onClick={() => refetch()}>{T.retry}</Button>} />

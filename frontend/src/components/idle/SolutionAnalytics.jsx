@@ -105,7 +105,7 @@ function CauseRow({ c, T, label }) {
         <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
         <div className="min-w-0 flex-1 md:flex-none md:w-48">
           <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
-            <span style={{ color: catColor(c.category) }}>{c.category}</span>{" "}
+            <span style={{ color: catColor(c.category) }}>{c.category}</span>{c.demo ? <span className="ml-1 text-[10px] font-bold" style={{ color: "var(--status-warn)" }}>DEMO</span> : null}{" "}
             {label(catCode(c.category)) ? <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span> : null}
           </div>
           <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(c.minutes) })}</div>
@@ -188,7 +188,7 @@ function CauseRow({ c, T, label }) {
 
 // TEMP-DEMO (remove when the operator says so): invented causes covering every
 // verdict, so the new logic can be previewed. Anchored to today, not the filter.
-function tempDemo(d) {
+function tempDemo() {
   const today = new Date(); today.setHours(12, 0, 0, 0);
   const iso = (off) => { const x = new Date(today); x.setDate(x.getDate() + off); return x.toISOString().slice(0, 10); };
   const BEFORE = 28;
@@ -243,12 +243,9 @@ function tempDemo(d) {
     j: { verdict: "unanswered", after_n: 9, after_wd: 30, last_seen: iso(-2), quiet: null, relapse: false, daily: fd, daily_from: iso(-29), marker: null },
     units: [unit(806, "K. Nargiza", "8623", 6, 4, 220, 2, false), unit(807, "R. Kamola", "8613", 3, 2, 140, 6, false)],
   });
-  const order = ["repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none"];
-  causes.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
-  const counts = {};
-  causes.forEach((x) => { counts[x.status] = (counts[x.status] || 0) + 1; });
-  return { ...d, causes, counts, rethink_n: causes.filter((x) => x.rethink).length };
+  return causes.map((x) => ({ ...x, demo: true }));
 }
+const ORDER = ["repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none"];
 
 // the five groups a reader sorts causes into, worst first
 const GROUPS = [
@@ -259,10 +256,12 @@ const GROUPS = [
   ["solved", ["solved"]],
 ];
 
-export default function SolutionAnalytics({ T, data: realData, label }) {
-  const data = tempDemo(realData); // TEMP-DEMO
+export default function SolutionAnalytics({ T, data, label, filtered }) {
   const [f, setF] = useState("all");
-  const causes = data.causes || [];
+  // TEMP-DEMO: invented causes ride below the real ones, and only while no shift /
+  // brigadir / plant filter is on — they cannot be narrowed, so under a filter they hide.
+  const causes = [...(data.causes || []), ...(filtered ? [] : tempDemo())]
+    .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
   const n = (keys) => causes.filter((x) => keys.includes(x.status)).length;
   const rep = n(["repeating", "new"]);
   const shown = f === "all" ? causes : causes.filter((x) => GROUPS.find((g) => g[0] === f)?.[1].includes(x.status));
@@ -287,7 +286,7 @@ export default function SolutionAnalytics({ T, data: realData, label }) {
         <SectionHead icon={Repeat2} title={T.rSec} right={fill(T.aRows, { n: shown.length })} />
         {shown.length === 0 ? (
           <div className="px-4 py-6 text-xs" style={{ color: "var(--text-3)" }}>{T.empty}</div>
-        ) : shown.map((x) => <CauseRow key={x.category} c={x} T={T} label={label} />)}
+        ) : shown.map((x) => <CauseRow key={`${x.demo ? "demo-" : ""}${x.category}`} c={x} T={T} label={label} />)}
         <div className="px-4 py-2.5 text-[11px]"
           style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)", color: "var(--text-2)" }}>
           {T.rLegend}
