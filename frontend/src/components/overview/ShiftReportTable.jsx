@@ -62,7 +62,8 @@
 //   cannot open is plain, never a dead link; the NAME opens the brigadir's
 //   profile, and the row itself no longer does, because a cell now has a
 //   destination of its own.
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -371,6 +372,21 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // link, and its tooltip adds where it leads. `paint` replaces the band fill
   // for a column painted on a scale of its own («Davomat»); `tone` still says
   // whether the figure is read in bold.
+  // An instant tooltip: the browser's own `title` waits about a second, which
+  // reads as «nothing there» on a board scanned row by row. A fixed portal, so
+  // the table's scroller never clips it; it closes on leave and on scroll.
+  const [tip, setTip] = useState(null);
+  useEffect(() => {
+    if (!tip) return undefined;
+    const off = () => setTip(null);
+    window.addEventListener("scroll", off, true);
+    return () => window.removeEventListener("scroll", off, true);
+  }, [tip]);
+  const showTip = (e, text) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ text, x: r.left + r.width / 2, y: r.top });
+  };
+
   const figTd = ({ tone, paint, title, target, children }) => {
     const hint = target ? fill(t("overview.sr.goto"), { page: target.page }) : null;
     const fullTitle = [title, hint].filter(Boolean).join("\n") || undefined;
@@ -378,7 +394,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       <td
         className={`${TD_FIG} ${target ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
         style={{ ...(paint ?? toneFill(tone)), ...RULE }}
-        title={fullTitle}
+        onMouseEnter={fullTitle ? (e) => showTip(e, fullTitle) : undefined}
+        onMouseLeave={fullTitle ? () => setTip(null) : undefined}
       >
         {target ? (
           <Link
@@ -585,6 +602,19 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   return (
     <section className="mb-6" aria-label={t("overview.sr.title")}>
+      {tip && createPortal(
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[300] max-w-[18rem] whitespace-pre-line rounded-lg px-2.5 py-1.5 text-xs font-medium shadow-lg"
+          style={{
+            left: tip.x, top: tip.y - 6, transform: "translate(-50%, -100%)",
+            background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--border)",
+          }}
+        >
+          {tip.text}
+        </div>,
+        document.body,
+      )}
       <TableCard
         icon={ListChecks}
         title={t("overview.sr.title")}
