@@ -87,15 +87,25 @@ function explainWeekly(T, data, label) {
 
 // TEMP-DEMO (remove in the next commit): invented weekly figures so the dynamics block can be previewed.
 function tempDemo(d) {
-  const mon = new Date(); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7) - 49);
-  const weeks = Array.from({ length: 8 }, (_, i) => { const x = new Date(mon); x.setDate(x.getDate() + 7 * i); return x.toISOString().slice(0, 10); });
-  const mk = (category, values, trend) => ({ category, values, trend, minutes: values.reduce((a, b) => a + b, 0), solutions_n: 1 });
-  return { ...d, weeks, weekly: [
-    mk("Cat D3", [40, 55, 60, 90, 120, 150, 170, 160], "up"),
-    mk("Cat B", [200, 180, 190, 150, 110, 90, 70, 60], "down"),
-    mk("Cat F", [80, 75, 85, 80, 78, 82, 79, 81], "flat"),
-    mk("Cat K", [0, 0, 0, 0, 30, 45, 60, 55], "up"),
-  ] };
+  // follows the picked period: one point per Monday-week the server returned
+  const weeks = d.weeks && d.weeks.length ? d.weeks : [];
+  const n = weeks.length;
+  const jit = (w, k) => ((Date.parse(w) / 864e5 * 7 + k * 13) % 11) - 5; // stable ±5 per week
+  const mk = (category, k, shape) => {
+    const values = weeks.map((w, i) => Math.max(0, Math.round(shape(n > 1 ? i / (n - 1) : 1) + jit(w, k))));
+    return { category, values, trend: "flat", minutes: values.reduce((x, y) => x + y, 0), solutions_n: 1 };
+  };
+  const trendOf = (r) => {
+    const h = Math.floor(n / 2), f = r.values.slice(0, h).reduce((x, y) => x + y, 0), l = r.values.slice(h).reduce((x, y) => x + y, 0);
+    return !h || !f ? (l > 0 ? "up" : "flat") : (l - f) / f <= -0.2 ? "down" : (l - f) / f >= 0.15 ? "up" : "flat";
+  };
+  const weekly = n ? [
+    mk("Cat D3", 1, (x) => 40 + 130 * x),
+    mk("Cat B", 2, (x) => 200 - 140 * x),
+    mk("Cat F", 3, () => 80),
+    mk("Cat K", 4, (x) => (x < 0.5 ? 0 : 60 * (x - 0.4))),
+  ].map((r) => ({ ...r, trend: trendOf(r) })) : [];
+  return { ...d, weeks, weekly };
 }
 
 export default function SolutionAnalytics({ T, data: realData, label }) {
