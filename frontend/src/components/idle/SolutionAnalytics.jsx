@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, Repeat2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Repeat2 } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { useTranslit } from "../../utils/transliterate";
@@ -94,9 +94,11 @@ function CauseRow({ c, T, label }) {
   const [open, setOpen] = useState(false);
   const j = c.j || {};
   const ink = INK[c.status] || "#94a3b8";
-  const sol = c.solution;
-  const units = c.units || [];
-  const unanswered = !sol;
+  // the problem itself: every brigadir's latest stop notes, one list, newest first
+  const stops = (c.units || [])
+    .flatMap((u) => (u.notes || []).map((n) => ({ ...n, who: u.manager_name })))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 8);
   const fact = factText(c, T);
   return (
     <div style={{ borderTop: "1px solid var(--border)" }}>
@@ -123,73 +125,29 @@ function CauseRow({ c, T, label }) {
       </button>
       {open && (
         <div className="px-4 pb-4 pt-3" style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
-          <div className="text-sm font-medium mb-2" style={{ color: ink }}>{fact}</div>
-          <DayCells daily={j.daily} from={j.daily_from} marker={j.marker} ink={ink} h={44} label={fact} />
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mt-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-            <span>{j.daily_from ? ddmm(j.daily_from) : ""}</span>
-            {!unanswered && <span style={{ color: "var(--brand-text)" }}>{T.aMarkSol} · {ddmm(sol.date)}</span>}
-            <span>{ddmm(j.daily_from ? new Date(Date.parse(j.daily_from) + ((j.daily || []).length - 1) * 864e5).toISOString().slice(0, 10) : "")}</span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pb-2 text-[11px]" style={{ color: "var(--text-3)" }}>
+            {["repeat", "doing", "solved", "none"].map((k) => (
+              <span key={k} className="inline-flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full" style={{ background: MARK[k] }} />{T.rMark[k]}
+              </span>
+            ))}
           </div>
-          {sol ? (
-            <div className="mt-3">
-              <div className="text-sm" style={{ color: "var(--text-1)" }}>«{sol.text}»</div>
-              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
-                {ddmmyy(sol.date)}{sol.author_name ? ` · ${shortPerson(tl(sol.author_name) || sol.author_name)}` : ""}
-                {` · ${T.st[sol.status] || sol.status}`}
-                {sol.manager_name ? ` · ${shortPerson(tl(sol.manager_name) || sol.manager_name)}` : ""}
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs mt-3" style={{ color: "var(--text-3)" }}>{T.rNoSolution}</div>
-          )}
-          {c.rethink && (
-            <div className="mt-2 text-xs font-medium flex items-start gap-1.5" style={{ color: "var(--status-bad)" }}>
-              <AlertTriangle size={14} className="flex-shrink-0 mt-px" /> {T.rAdvice}
-            </div>
-          )}
-          {units.length > 0 && (
-            <>
-              <div className="text-[11px] font-semibold uppercase tracking-wider pt-3 pb-1" style={{ color: "var(--text-3)" }}>
-                {unanswered ? T.rUnitsTitleUn : T.rUnitsTitle}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                {["repeat", "doing", "solved", "none"].map((k) => (
-                  <span key={k} className="inline-flex items-center gap-1.5">
-                    <span className="inline-block w-2 h-2 rounded-full" style={{ background: MARK[k] }} />{T.rMark[k]}
-                  </span>
-                ))}
-              </div>
-              {units.map((u) => (
-                <div key={u.manager_id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{shortPerson(tl(u.manager_name) || u.manager_name)}</div>
-                    <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                      {u.cell ? `${T.aCellShort} ${u.cell}` : "—"}{u.last_seen ? ` · ${T.rLast.toLowerCase()} ${ddmm(u.last_seen)}` : ""}
-                      {` · ${Math.round(u.minutes)} ${T.aMinShort}`}
-                    </div>
-                  </div>
-                  {!u.covered && <span className="text-[11px] font-medium" style={{ color: INK.unanswered }}>{T.rUncovered}</span>}
-                  <span className="text-sm font-bold tabular-nums w-16 text-right" style={{ color: u.days > 0 ? ink : "var(--text-3)" }}>{fill(T.rUnitDays, { n: u.days })}</span>
-                  <div className="basis-full pl-3 space-y-0.5" style={{ borderLeft: `2px solid ${ink}` }}>
-                    {(u.notes || []).length === 0 ? (
-                      <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.rNoNote}</div>
-                    ) : u.notes.map((n, i) => (
-                      <div key={i} className="text-xs flex gap-2 min-w-0" style={{ color: "var(--text-2)" }}>
-                        <span className="inline-block w-2 h-2 rounded-full flex-shrink-0 mt-1" title={T.rMark[n.mark]}
-                          style={{ background: MARK[n.mark] || MARK.none }} aria-label={T.rMark[n.mark]} />
-                        <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
-                          {ddmm(n.date)}{n.cell ? ` · ${n.cell}` : ""}{n.minutes ? ` · ${Math.round(n.minutes)} ${T.aMinShort}` : ""}
-                        </span>
-                        <span className={n.note ? "" : "italic"} style={n.note ? undefined : { color: "var(--text-3)" }}>
-                          {n.note ? `«${n.note}»` : T.rNoNote}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+          {stops.length === 0 ? (
+            <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.aWhoNone}</div>
+          ) : stops.map((n, i) => (
+            <div key={i} className="flex items-start gap-2 py-1.5 text-sm min-w-0" style={{ borderTop: i ? "1px solid var(--border)" : undefined }}>
+              <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" title={T.rMark[n.mark]}
+                style={{ background: MARK[n.mark] || MARK.none }} aria-label={T.rMark[n.mark]} />
+              <div className="min-w-0 flex-1">
+                <div style={{ color: n.note ? "var(--text-1)" : "var(--text-3)", fontStyle: n.note ? undefined : "italic" }}>
+                  {n.note ? `«${n.note}»` : T.rNoNote}
                 </div>
-              ))}
-            </>
-          )}
+                <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                  {ddmm(n.date)} · {shortPerson(tl(n.who) || n.who)}{n.cell ? ` · ${T.aCellShort} ${n.cell}` : ""}{n.minutes ? ` · ${Math.round(n.minutes)} ${T.aMinShort}` : ""}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
