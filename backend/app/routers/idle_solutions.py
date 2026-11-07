@@ -378,8 +378,26 @@ def analytics(
         if half >= 1 and first > 0:
             ch = 100.0 * (last - first) / first
             trend = "down" if ch <= -WORKS_DROP else ("up" if ch >= WORSE_RISE else "flat")
+        # who caused it: the cause's minutes per brigadir, week by week
+        by_unit = []
+        for p_ in row["problems"]:
+            if (p_.get("minutes") or 0) <= 0:
+                continue
+            mid = p_["manager_id"]
+            uvals = []
+            for w in weeks:
+                w0 = max(date.fromisoformat(w), d_from)
+                w1 = min(date.fromisoformat(w) + timedelta(days=6), d_to)
+                uvals.append(round(span(c, mid, w0, w1), 1))
+            cells: dict[str, float] = {}
+            for e in (p_.get("events") or []):
+                cells[e.get("cell") or "—"] = cells.get(e.get("cell") or "—", 0) + 1
+            top = max(cells.items(), key=lambda kv: kv[1], default=(None, 0))
+            by_unit.append({"manager_id": mid, "manager_name": p_["manager_name"], "minutes": p_["minutes"],
+                            "values": uvals, "cell": top[0], "stops": len(p_.get("events") or [])})
+        by_unit.sort(key=lambda u: -u["minutes"])
         weekly.append({"category": c, "minutes": row["minutes"], "values": vals, "trend": trend,
-                       "solutions_n": row["solutions_n"]})
+                       "solutions_n": row["solutions_n"], "by_unit": by_unit})
 
     # repeating reasons: a (cause, brigadir) on many separate days / one cell again
     repeats = []

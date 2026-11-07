@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Sparkline } from "../ui/KpiDeltaCard";
-import { AlertTriangle, CheckCircle2, Clock, Repeat2, TrendingDown, TrendingUp, Minus } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, Clock, Repeat2, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import TableCard, { SectionHead } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
 import { useTranslit } from "../../utils/transliterate";
@@ -53,6 +54,73 @@ function Bars({ values, hue }) {
   );
 }
 
+function pctChange(values) {
+  const h = Math.floor(values.length / 2);
+  const f = values.slice(0, h).reduce((x, y) => x + y, 0), l = values.slice(h).reduce((x, y) => x + y, 0);
+  return { ch: h && f > 0 ? Math.round((100 * (l - f)) / f) : null, l };
+}
+const fmtPct = (ch) => `${ch > 0 ? "+" : ch < 0 ? "−" : ""}${Math.abs(ch)}%`;
+
+function WeeklyRow({ w, T, label, trendInk, trendIcon }) {
+  const { tl } = useTranslit();
+  const [open, setOpen] = useState(false);
+  const TI = trendIcon[w.trend];
+  const { ch, l } = pctChange(w.values);
+  const units = w.by_unit || [];
+  const total = units.reduce((x, u) => x + u.minutes, 0) || 1;
+  return (
+    <div style={{ borderTop: "1px solid var(--border)" }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-inner)] transition-colors">
+        <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
+        <div className="w-44 min-w-0 flex-shrink-0">
+          <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
+            {w.category} <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(w.category))}</span>
+          </div>
+          <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(w.minutes) })}</div>
+        </div>
+        <div className="flex-1 min-w-0"><Sparkline values={w.values} color={trendInk[w.trend]} /></div>
+        <div className="flex-shrink-0 w-32 text-right" style={{ color: trendInk[w.trend] }}>
+          <div className="flex items-center gap-1 text-xs font-medium justify-end"><TI size={14} /> {T.aTrend[w.trend]}</div>
+          <div className="text-base font-bold tabular-nums leading-tight">{ch == null ? (l > 0 ? T.aNewShort : "—") : fmtPct(ch)}</div>
+        </div>
+      </button>
+      {open && (
+        <div className="px-4 pb-3 pt-1" style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider py-2" style={{ color: "var(--text-3)" }}>{T.aWhoTitle}</div>
+          {units.length === 0 ? (
+            <div className="text-xs pb-1" style={{ color: "var(--text-3)" }}>{T.aWhoNone}</div>
+          ) : units.map((u) => {
+            const c = pctChange(u.values);
+            const share = Math.round((100 * u.minutes) / total);
+            const ink = c.ch == null ? "#94a3b8" : c.ch >= 15 ? trendInk.up : c.ch <= -20 ? trendInk.down : trendInk.flat;
+            return (
+              <div key={u.manager_id} className="flex items-center gap-3 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
+                <div className="w-44 min-w-0 flex-shrink-0 pl-6">
+                  <div className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{shortPerson(tl(u.manager_name) || u.manager_name)}</div>
+                  <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                    {u.cell ? `${T.aCellShort} ${u.cell} · ` : ""}{fill(T.aStopsN, { n: u.stops })}
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 flex items-center gap-3">
+                  <div className="w-28 flex-shrink-0 h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }} aria-hidden="true">
+                    <div className="h-full rounded-full" style={{ width: `${share}%`, background: catColor(w.category) }} />
+                  </div>
+                  <span className="text-xs tabular-nums w-24 flex-shrink-0" style={{ color: "var(--text-2)" }}>{share}% · {Math.round(u.minutes)} {T.aMinShort}</span>
+                  <div className="flex-1 min-w-0"><Sparkline values={u.values} color={ink} /></div>
+                </div>
+                <div className="flex-shrink-0 w-32 text-right text-sm font-bold tabular-nums" style={{ color: ink }}>
+                  {c.ch == null ? (c.l > 0 ? T.aNewShort : "—") : fmtPct(c.ch)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // TEMP-DEMO (remove in the next commit): invented weekly figures so the dynamics block can be previewed.
 function tempDemo(d) {
   // follows the picked period: one point per Monday-week the server returned
@@ -73,6 +141,13 @@ function tempDemo(d) {
     mk("Cat F", 3, () => 80),
     mk("Cat K", 4, (x) => (x < 0.5 ? 0 : 60 * (x - 0.4))),
   ].map((r) => ({ ...r, trend: trendOf(r) })) : [];
+  const people = [["R. Kamola", "8613", 0.5], ["K. Nargiza", "8623", 0.3], ["I. Sayyora", "7424", 0.2]];
+  weekly.forEach((r, k) => {
+    r.by_unit = people.map(([name, cell, share], j) => {
+      const values = r.values.map((v, i) => Math.round(v * share * (j === 0 && r.trend === "up" ? 1.15 : 1) + ((i + j + k) % 3)));
+      return { manager_id: 800 + j, manager_name: name, minutes: values.reduce((x, y) => x + y, 0), values, cell, stops: 3 + j };
+    });
+  });
   const today = new Date(); today.setHours(12, 0, 0, 0);
   const iso = (x) => x.toISOString().slice(0, 10);
   const demoEffect = (id, category, mgr, text, status, back, pattern) => {
@@ -160,32 +235,9 @@ export default function SolutionAnalytics({ T, data: realData, label }) {
         <SectionHead icon={Repeat2} title={T.aSecWeekly} right={fill(T.aWeeks, { n: data.weeks.length })} />
         {data.weekly.length === 0 ? (
           <div className="px-4 py-6 text-xs" style={{ color: "var(--text-3)" }}>{T.empty}</div>
-        ) : data.weekly.map((w) => {
-          const hue = catColor(w.category);
-          const TI = trendIcon[w.trend];
-          return (
-            <div key={w.category} className="px-4 py-3 flex items-center gap-3" style={{ borderTop: "1px solid var(--border)" }}>
-              <div className="w-44 min-w-0 flex-shrink-0">
-                <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
-                  {w.category} <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(w.category))}</span>
-                </div>
-                <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(w.minutes) })}</div>
-              </div>
-              <div className="flex-1 min-w-0"><Sparkline values={w.values} color={trendInk[w.trend]} /></div>
-              {(() => {
-                const h = Math.floor(w.values.length / 2);
-                const f = w.values.slice(0, h).reduce((x, y) => x + y, 0), l = w.values.slice(h).reduce((x, y) => x + y, 0);
-                const ch = h && f > 0 ? Math.round((100 * (l - f)) / f) : null;
-                return (
-                  <div className="flex-shrink-0 w-32 text-right" style={{ color: trendInk[w.trend] }}>
-                    <div className="flex items-center gap-1 text-xs font-medium justify-end"><TI size={14} /> {T.aTrend[w.trend]}</div>
-                    <div className="text-base font-bold tabular-nums leading-tight">{ch == null ? (l > 0 ? T.aNewShort : "—") : `${ch > 0 ? "+" : ch < 0 ? "−" : ""}${Math.abs(ch)}%`}</div>
-                  </div>
-                );
-              })()}
-            </div>
-          );
-        })}
+        ) : data.weekly.map((w) => (
+          <WeeklyRow key={w.category} w={w} T={T} label={label} trendInk={trendInk} trendIcon={trendIcon} />
+        ))}
         <div className="px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px]"
           style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)", color: "var(--text-2)" }}>
           {[["up", T.aLegUp], ["down", T.aLegDown], ["flat", T.aLegFlat]].map(([k, txt]) => (
