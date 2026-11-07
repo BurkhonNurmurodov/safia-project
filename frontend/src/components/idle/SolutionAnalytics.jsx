@@ -106,7 +106,7 @@ function CauseRow({ c, T, label }) {
         <div className="min-w-0 flex-1 md:flex-none md:w-48">
           <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
             <span style={{ color: catColor(c.category) }}>{c.category}</span>{" "}
-            <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span>
+            {label(catCode(c.category)) ? <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span> : null}
           </div>
           <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(c.minutes) })}</div>
         </div>
@@ -162,6 +162,20 @@ function CauseRow({ c, T, label }) {
                   </div>
                   {!u.covered && <span className="text-[11px] font-medium" style={{ color: INK.unanswered }}>{T.rUncovered}</span>}
                   <span className="text-sm font-bold tabular-nums w-16 text-right" style={{ color: u.days > 0 ? ink : "var(--text-3)" }}>{fill(T.rUnitDays, { n: u.days })}</span>
+                  <div className="basis-full pl-3 space-y-0.5" style={{ borderLeft: `2px solid ${ink}` }}>
+                    {(u.notes || []).length === 0 ? (
+                      <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.rNoNote}</div>
+                    ) : u.notes.map((n, i) => (
+                      <div key={i} className="text-xs flex gap-2 min-w-0" style={{ color: "var(--text-2)" }}>
+                        <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                          {ddmm(n.date)}{n.cell ? ` · ${n.cell}` : ""}{n.minutes ? ` · ${Math.round(n.minutes)} ${T.aMinShort}` : ""}
+                        </span>
+                        <span className={n.note ? "" : "italic"} style={n.note ? undefined : { color: "var(--text-3)" }}>
+                          {n.note ? `«${n.note}»` : T.rNoNote}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </>
@@ -201,9 +215,11 @@ function tempDemo(d) {
     return { category, minutes, status: verdict, j, solution: sol, solutions_n: 1, orphans_n: 0, units,
       rethink: ["doing", "done"].includes(status) && ["repeating", "new"].includes(verdict) };
   };
+  const NOTES = ["Xom ashyo kech keldi, pech bo'sh turdi", "Texnik kutildi — pech sozlanmoqda", "Qadoqlash materiali yetmadi", "Otdel javobi kechikdi", ""];
   const unit = (id, name, cell, days, cellDays, min, last, covered = true) => ({
     manager_id: id, manager_name: name, minutes: min, days, last_seen: last ? iso(-last) : null, cell, cell_days: cellDays,
     verdict: null, covered, since: null,
+    notes: Array.from({ length: Math.min(3, days) }, (_, k) => ({ date: iso(-((last || 0) + k * 2)), cell, minutes: 20 + ((id + k * 7) % 25), note: NOTES[(id + k) % NOTES.length] })),
   });
   const noise = (i, k) => 14 + ((i * 7 + k * 5) % 17);
   const causes = [

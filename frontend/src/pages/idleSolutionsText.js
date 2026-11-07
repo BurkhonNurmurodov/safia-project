@@ -65,6 +65,7 @@ const uz = {
   rMethod: "Qoida: sabab uchragan ish kuni — bitta «takror». Yechimdan oldingi {b} kun bilan solishtiriladi. «Hal bo'ldi» — sabab odatda qanchalik tez-tez uchrasa, shuning {x} baravari tinch o'tganda ({lo}–{hi} ish kuni). «Kamaydi» — takror kamida {d}% kamaygan. Yechimga {e} kundan kam bo'lsa — «Hali erta». Daqiqalar ikkinchi darajali.",
   rAll: "Hammasi", rHeadline: "{t} ta sababdan {n} tasi yechimdan keyin takrorlanmoqda", rHeadlineOk: "Takrorlanayotgan sabab yo'q",
   rBig: { repeating: "{n} kun qaytdi", solved: "{q} kun tinch", early: "{q}/{n} kun tinch", earlyDays: "{d} kun o'tdi", reduced: "{a}/{aw} kun", unanswered: "{n} kun uchradi" },
+  rNoNote: "izoh yozilmagan",
   aV: { works: "Ish bermoqda", weak: "Deyarli o'zgarmadi", worse: "Yomonlashdi", early: "Hali erta", none: "Kutish yo'q", new: "Yangi kutish" },
   aMethod: "Yechim yozilgunga qadar {w} kun va undan keyingi kunlarda (ko'pi bilan {w}) kuniga o'rtacha daqiqalar solishtiriladi. {d}% va undan ko'p kamaysa — ish bermoqda, {r}% va undan ko'p oshsa — yomonlashgan; {a} kundan kam bo'lsa — hali erta.",
 };
@@ -128,6 +129,7 @@ const uz_cyrl = {
   rMethod: "Қоида: сабаб учраган иш куни — битта «такрор». Ечимдан олдинги {b} кун билан солиштирилади. «Ҳал бўлди» — сабаб одатда қанчалик тез-тез учраса, шунинг {x} баравари тинч ўтганда ({lo}–{hi} иш куни). «Камайди» — такрор камида {d}% камайган. Ечимга {e} кундан кам бўлса — «Ҳали эрта». Дақиқалар иккинчи даражали.",
   rAll: "Ҳаммаси", rHeadline: "{t} та сабабдан {n} таси ечимдан кейин такрорланмоқда", rHeadlineOk: "Такрорланаётган сабаб йўқ",
   rBig: { repeating: "{n} кун қайтди", solved: "{q} кун тинч", early: "{q}/{n} кун тинч", earlyDays: "{d} кун ўтди", reduced: "{a}/{aw} кун", unanswered: "{n} кун учради" },
+  rNoNote: "изоҳ ёзилмаган",
   aV: { works: "Иш бермоқда", weak: "Деярли ўзгармади", worse: "Ёмонлашди", early: "Ҳали эрта", none: "Кутиш йўқ", new: "Янги кутиш" },
   aMethod: "Ечим ёзилгунга қадар {w} кун ва ундан кейинги кунларда (кўпи билан {w}) кунига ўртача дақиқалар солиштирилади. {d}% ва ундан кўп камайса — иш бермоқда, {r}% ва ундан кўп ошса — ёмонлашган; {a} кундан кам бўлса — ҳали эрта.",
 };
@@ -191,6 +193,7 @@ const ru = {
   rMethod: "Правило: рабочий день, когда причина была, — одно «повторение». Сравнивается с {b} днями до решения. «Решено» — тихо в {x} раза дольше обычного промежутка между случаями ({lo}–{hi} раб. дн.). «Снизилось» — повторений как минимум на {d}% меньше. Если с решения меньше {e} дн. — «Ещё рано». Минуты второстепенны.",
   rAll: "Все", rHeadline: "{n} из {t} причин повторяются после решения", rHeadlineOk: "Повторяющихся причин нет",
   rBig: { repeating: "вернулось: {n} дн.", solved: "{q} дн. тихо", early: "{q}/{n} дн. тихо", earlyDays: "прошло {d} дн.", reduced: "{a}/{aw} дн.", unanswered: "было {n} дн." },
+  rNoNote: "комментария нет",
   aV: { works: "Работает", weak: "Почти не изменилось", worse: "Стало хуже", early: "Ещё рано", none: "Ожиданий нет", new: "Новые ожидания" },
   aMethod: "Сравниваются средние минуты в день за {w} дн. до записи решения и в дни после неё (не более {w}). Снижение на {d}% и больше — работает, рост на {r}% и больше — хуже; меньше {a} дн. — ещё рано.",
 };
@@ -254,6 +257,7 @@ const en = {
   rMethod: "Rule: a working day on which the cause shows up counts as one «repeat». It is compared with the {b} days before the solution. «Solved» — quiet for {x}× the gap it usually had between cases ({lo}–{hi} working days). «Reduced» — at least {d}% fewer repeats. Under {e} days since the solution — «Too early». Minutes are secondary.",
   rAll: "All", rHeadline: "{n} of {t} causes are repeating after their solution", rHeadlineOk: "No cause is repeating",
   rBig: { repeating: "back {n} days", solved: "{q} days quiet", early: "{q}/{n} days quiet", earlyDays: "{d} days in", reduced: "{a}/{aw} days", unanswered: "{n} days seen" },
+  rNoNote: "no note written",
   aV: { works: "Working", weak: "Barely changed", worse: "Got worse", early: "Too early", none: "No waiting", new: "New waiting" },
   aMethod: "Average minutes per day in the {w} days before the solution was written against the days since (at most {w}). A fall of {d}% or more is working, a rise of {r}% or more is worse; under {a} days is too early.",
 };

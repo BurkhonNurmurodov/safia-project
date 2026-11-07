@@ -41,6 +41,7 @@ MIN_QUIET = 7           # working days without it before «solved» (the floor)
 MAX_QUIET = 28          # ... and the ceiling, however rare the cause used to be
 QUIET_X = 3             # solved needs QUIET_X × the cause's usual gap quiet
 REDUCED_DROP = 50.0     # % fall in occurrences per working day that counts as reduced
+UNIT_NOTES = 3          # stop notes served per brigadir under a cause
 REPEAT_DAYS = 3         # a cause with no solution on this many days is flagged
 
 STATUSES = ("open", "doing", "done")
@@ -462,10 +463,13 @@ def analytics(
             a0 = since + timedelta(days=1) if since else d_from
             od = occ_days(c, mid, a0, today if since else d_to)
             cells: dict[str, set] = {}
+            recent = []   # the brigadir's own words on the stops since (newest first)
             for e in p.get("events") or []:
                 dd = str(e.get("date"))[:10]
                 if dd >= a0.isoformat():
                     cells.setdefault(e.get("cell") or "—", set()).add(dd)
+                    recent.append({"date": dd, "cell": e.get("cell"), "minutes": e.get("minutes"),
+                                   "note": e.get("note") or ""})
             tc = max(cells.items(), key=lambda kv: len(kv[1]), default=(None, set()))
             own = judged.get(mid) if None not in scope_sol else None
             units.append({
@@ -474,6 +478,7 @@ def analytics(
                 "cell": tc[0], "cell_days": len(tc[1]),
                 "verdict": own[1]["verdict"] if own else None,
                 "covered": sol_u is not None, "since": since.isoformat() if since else None,
+                "notes": recent[:UNIT_NOTES],
             })
         units.sort(key=lambda u: (-u["days"], -u["minutes"]))
         sol_out = None
