@@ -143,9 +143,17 @@ export default function SolutionAnalytics({ T, data: realData, label }) {
                 <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.minutes, { m: Math.round(w.minutes) })}</div>
               </div>
               <div className="flex-1 min-w-0"><Sparkline values={w.values} color={trendInk[w.trend]} /></div>
-              <div className="flex items-center gap-1 text-xs font-medium flex-shrink-0 w-28 justify-end" style={{ color: trendInk[w.trend] }}>
-                <TI size={14} /> {T.aTrend[w.trend]}
-              </div>
+              {(() => {
+                const h = Math.floor(w.values.length / 2);
+                const f = w.values.slice(0, h).reduce((x, y) => x + y, 0), l = w.values.slice(h).reduce((x, y) => x + y, 0);
+                const ch = h && f > 0 ? Math.round((100 * (l - f)) / f) : null;
+                return (
+                  <div className="flex-shrink-0 w-32 text-right" style={{ color: trendInk[w.trend] }}>
+                    <div className="flex items-center gap-1 text-xs font-medium justify-end"><TI size={14} /> {T.aTrend[w.trend]}</div>
+                    <div className="text-base font-bold tabular-nums leading-tight">{ch == null ? (l > 0 ? T.aNewShort : "—") : `${ch > 0 ? "+" : ch < 0 ? "−" : ""}${Math.abs(ch)}%`}</div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
