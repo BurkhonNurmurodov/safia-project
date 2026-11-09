@@ -296,7 +296,8 @@ computes the four itself (the operator's pick, asked).
     waves 1+2's surplus to wave 3.
   - Windows that OVERLAP («МЯСНАЯ ВЫПЕЧКА» and «Мини Кухня NEW», waves 1
     and 2 both 10:00–22:00) count the same production for both waves, as the
-    sheet does. The page says so in a notice.
+    sheet does. No notice on the page: the analysts ruled it is not a
+    problem (2026-11-09).
   - Verified against the sheet: 310/310 product-wave rows on 18.08 and
     01.06.2026, every group × wave and group average to 0 difference, and
     «СДОБА» 90.84% = «средний on time».
@@ -325,6 +326,9 @@ computes the four itself (the operator's pick, asked).
     no «заход» window for the wave). Both gather per group FOLDED, so two
     spellings of one group are one entry. A read with no «свод» tab counts
     every ordered product as before (`notes.tracked` false).
+    From 2026-11-09 the page shows only the `no_window` notice: the analysts
+    ruled that leaving out what «свод» does not list is the sheet's design,
+    not a problem. `notes.not_tracked` is still served.
   - **The sheet's own errors, found 2026-11-03 (theirs to fix; the page does
     not copy them)**: «свод» LN4:LN390 divides by SUM(LK$4:LK$314), so row
     3 — and «средний on time» B, which reads it — runs over 100% (104–107%

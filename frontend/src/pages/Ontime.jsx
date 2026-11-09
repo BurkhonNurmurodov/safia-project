@@ -199,15 +199,9 @@ export default function Ontime() {
     notices.push({ icon: AlertTriangle, warn: true,
       text: fill(T.readFailed, { at: stamp(last.finished_at), e: errText(last.error), ok: ok?.finished_at ? stamp(ok.finished_at) : "—" }) });
   }
-  if (data?.notes?.overlap?.length) {
-    notices.push({ icon: Info, text: fill(T.overlapNote, { g: data.notes.overlap.map(gn).join(", ") }) });
-  }
   const leftOut = (list) => list.map((x) => `${gn(x.grp)} (${Math.round(x.qty).toLocaleString("ru-RU")})`).join(", ");
-  // What is ordered and not counted: not on the sheet's «свод» list (the
-  // sheet leaves it out too), or on it with no «заход» window for the wave.
-  if (data?.notes?.not_tracked?.length) {
-    notices.push({ icon: Info, text: fill(T.notTrackedNote, { g: leftOut(data.notes.not_tracked) }) });
-  }
+  // Ordered with no «заход» window for the wave. The overlapping windows and
+  // what «свод» leaves out are the sheet's own design — no notice (analysts, 2026-11-09).
   if (data?.notes?.no_window?.length) {
     notices.push({ icon: Info, text: fill(T.noWindowNote, { g: leftOut(data.notes.no_window) }) });
   }
