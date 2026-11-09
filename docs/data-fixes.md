@@ -136,9 +136,17 @@ it done at once — v4.455.2 runs it from 9 Nov, 09:00–24:00:
 
 Tested on two copies of the 9 Nov local snapshot (with and without the pick,
 with a same-date clash); the first run caught Haydarov's 17 Oct checks
-staying behind and a login row deleted under its own session bump. Delete the
-module, both startup functions and both calls once the flag reads «done» (or
-«blocked») and the report has gone.
+staying behind and a login row deleted under its own session bump.
+
+**APPLIED on 9 Nov at 19:30** (v4.455.2): Majidov is profile #458 (owes from
+11 Jul, alias «Yuldashov Nodirbek Kadamboy O'g'li»), holding 88 days, 185
+automatic checks, 530 photos, 843 AI verdicts, 13 objections (4 open), 97
+concerns held (10 open) and 77 filed, 2 tasks, 1 late proof and the 26 Aug
+exclusion; 7331's link events 209–211. Destroyed, as ruled: #298's 17 Oct day
+5659 and its 3 photos. #298 and #436 are deleted. The record (every moved id,
+both profiles' snapshots) stays in app setting
+`leader_merge_majidov_7331_2026_11_10`. The module and its startup wiring were
+deleted in the next release.
 
 ## Cell 9123's 5 October counts for Raximova Kamola (`cell_day_fix_oct05`)
 

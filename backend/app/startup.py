@@ -7602,51 +7602,6 @@ def _pin_mismatch_job() -> None:
                       pin_mismatch_report.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: cell 7331's two leaders → Majidov Ozodjon (2026-11-09) ─────────
-# The operator: Yuldashov Nodirbek (#298) and Haydarov Zaynobiddin (#436) are
-# stopped and deleted; MAJIDOV OZODJON (Verifix 2918) runs 7331 and carries
-# their history (`services/leader_merge_nov10.py`). Runs once from 9 Nov,
-# 09:00–24:00 Tashkent, one transaction with its flag; the record is DMed to
-# Burkhon. TEMPORARY: delete this block, the module and both entrypoint calls
-# once the flag reads «done» (or «blocked») and its report has gone.
-
-
-def merge_leader_majidov_7331() -> None:
-    """Schedules the handover when its flag or report is still pending.
-    Never raises."""
-    try:
-        from app.services import leader_merge_nov10 as fx
-        db = SessionLocal()
-        try:
-            if not fx.pending(db):
-                return
-        finally:
-            db.close()
-        from app.scheduler import schedule_at
-        schedule_at("leader-merge-7331", fx.run_at(), _leader_merge_7331_job)
-    except Exception as exc:
-        print(f"[startup] 7331 leader handover could not be scheduled: {exc}")
-
-
-def _leader_merge_7331_job() -> None:
-    from app.services import leader_merge_nov10 as fx
-    db = SessionLocal()
-    try:
-        rec = fx.run(db)
-        if rec is not None:
-            print(f"[startup] 7331 leader handover: {rec.get('result')}")
-        res = fx.result(db)
-        again = fx.pending(db) and not res
-    finally:
-        db.close()
-    if res:
-        _send_report_once(fx.dm_flag(res), "7331 leader handover report", fx.send_report,
-                          REPORT_CHAT_BURKHON)
-    elif again:
-        # Woken outside the window (a boot at 10:59) or a failed try: next slot.
-        merge_leader_majidov_7331()
-
-
 # ── one-shot: the catalog follows the cells that ALREADY moved (2026-10-26) ──
 # The operator's rulings (docs/plan-catalog-follows-cells.md, decision Q3): a
 # cell's positions follow it from its own move day, closed days included. The
