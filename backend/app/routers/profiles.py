@@ -57,8 +57,8 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.services import (
-    action_log, cell_hours, cell_links, cell_register, leader_kind, leader_shift,
-    profile_photo, supervisor_kind, wc_group,
+    action_log, cell_hours, cell_links, cell_register, hr_contact, leader_kind,
+    leader_shift, profile_photo, supervisor_kind, wc_group,
 )
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
@@ -3275,7 +3275,15 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         db.query(TelegramUserRole)
         .filter(TelegramUserRole.status == "approved").all()
     )
-    approved_guest_ids = {r.role_id for r in approved if r.role == "guest"}
+    # The re-claim picker offers only guest profiles NOBODY has a request on:
+    # «no approved holder» listed every waiting and refused request too, which
+    # on 9 Nov 2026 was 27 job seekers' full names, shown to anyone who
+    # pressed Start (docs/registration.md). A guest re-trying their own
+    # refused request types their name — the bot re-uses their profile.
+    claimed_guest_ids = {
+        rid for (rid,) in db.query(TelegramUserRole.role_id)
+        .filter(TelegramUserRole.role == "guest").all()
+    }
     held_direct: set[tuple[str, int]] = set()
     held_leader_keys: set[str] = set()
     held_leader_named: set[tuple[int, str]] = set()
@@ -3373,9 +3381,11 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         "leaders": leaders,
         "guests": [
             {"id": p.id, "name": p.name}
-            for p in guest_profiles if p.id not in approved_guest_ids
+            for p in guest_profiles if p.id not in claimed_guest_ids
         ],
         "entries": entries,
+        # Where /login sends a job seeker ({text, link}; link null for a phone).
+        "hr_contact": hr_contact.payload(db),
     }
 
 

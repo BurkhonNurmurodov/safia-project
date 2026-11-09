@@ -462,6 +462,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/admin/trello/boards/{}",               "config", "config.trello_board_set"),
     (("DELETE",), "/api/admin/trello/boards/{}",               "config", "config.trello_board_removed"),
     (("PUT",),    "/api/admin/trello",                         "config", "config.trello_saved"),
+    (("PUT",),    "/admin/hr-contact",                         "config", "config.hr_contact_saved"),
     (("POST",),   "/api/admin/ovens",                          "config", "config.oven_added"),
     (("PUT",),    "/api/admin/ovens/{}",                       "config", "config.oven_set"),
     (("DELETE",), "/api/admin/ovens/{}",                       "config", "config.oven_removed"),

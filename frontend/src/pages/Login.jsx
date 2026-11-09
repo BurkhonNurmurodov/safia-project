@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  ArrowLeft, ChevronRight, Headset, SearchX, ShieldAlert, UserRound, Users,
+  ArrowLeft, Briefcase, ChevronRight, Headset, SearchX, ShieldAlert, UserRound, Users,
 } from "lucide-react";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
@@ -62,18 +62,24 @@ function fold(value) {
 
 // Same handler the sidebar's support link uses — Telegram refuses to open a
 // t.me link through window.open on most platforms.
-function openSupport() {
+// openTelegramLink takes t.me links only — the HR contact may be any https page.
+function openUrl(url) {
+  const isTme = /^https:\/\/t\.me\//i.test(url);
   if (tg?.openTelegramLink || tg?.openLink) {
     try {
-      if (tg.platform === "macos") tg.openLink(SUPPORT_URL);
-      else if (tg.openTelegramLink) tg.openTelegramLink(SUPPORT_URL);
-      else tg.openLink(SUPPORT_URL);
+      if (isTme && tg.platform !== "macos" && tg.openTelegramLink) tg.openTelegramLink(url);
+      else if (tg.openLink) tg.openLink(url);
+      else tg.openTelegramLink(url);
       return;
     } catch (err) {
       console.error(err);
     }
   }
-  window.open(SUPPORT_URL, "_blank");
+  window.open(url, "_blank");
+}
+
+function openSupport() {
+  openUrl(SUPPORT_URL);
 }
 
 const ROW_STYLE = { borderBottom: "1px solid var(--border)", color: "var(--text-1)" };
@@ -219,6 +225,8 @@ export default function Login() {
   );
 
   const guestProfiles = options?.guests ?? [];
+  // Set by an admin on the Users tab («HR kontakti»); {text:""} until then.
+  const hr = options?.hr_contact ?? { text: "", link: null };
 
   // Guest name validation: script follows the UI language, two words minimum.
   const guestLatin    = lang === "uz" || lang === "en";
@@ -311,6 +319,7 @@ export default function Login() {
           <h1 className="text-lg font-semibold" style={{ color: "var(--text-1)" }}>
             {step === "confirm" ? t("login.confirmTitle")
               : step === "guest" ? t("login.chooseRole.guest")
+              : step === "job"   ? t("login.jobTitle")
               : t("login.findTitle")}
           </h1>
           {step === "find" && !browse && (
@@ -361,15 +370,29 @@ export default function Login() {
                   showUploadLink={false}
                   height="py-5 px-4"
                   action={
-                    <button
-                      type="button"
-                      onClick={openSupport}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-                      style={{ background: "var(--brand)", color: "#fff" }}
-                    >
-                      <Headset size={14} />
-                      {t("login.contactAdmin")}
-                    </button>
+                    /* Two people land here: a leader not yet in the list, and a
+                       job seeker who typed their own name. Each button is
+                       labelled as the answer for ONE of them. */
+                    <div className="flex flex-col items-stretch gap-2">
+                      <button
+                        type="button"
+                        onClick={openSupport}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-semibold"
+                        style={{ background: "var(--brand)", color: "var(--on-brand)" }}
+                      >
+                        <Headset size={14} />
+                        {t("login.contactAdmin")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStep("job")}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-semibold"
+                        style={{ background: "transparent", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                      >
+                        <Briefcase size={14} />
+                        {t("login.iWantJob")}
+                      </button>
+                    </div>
                   }
                 />
               </div>
@@ -399,6 +422,18 @@ export default function Login() {
               >
                 <Users size={15} style={{ color: "var(--text-3)" }} />
                 {t("login.browseByUnit")}
+                <ChevronRight size={15} className="ml-auto" style={{ color: "var(--text-4)" }} />
+              </button>
+              {/* Above guest: job seekers find the bot by searching «Safia» and
+                  took «Men mehmonman» as their door (docs/registration.md). */}
+              <button
+                type="button"
+                onClick={() => setStep("job")}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm transition-colors"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+              >
+                <Briefcase size={15} style={{ color: "var(--text-3)" }} />
+                {t("login.iWantJob")}
                 <ChevronRight size={15} className="ml-auto" style={{ color: "var(--text-4)" }} />
               </button>
               <button
@@ -490,7 +525,17 @@ export default function Login() {
               {t("login.back")}
             </button>
 
-            <p className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{t("login.guestIntro")}</p>
+            <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{t("login.guestIntro")}</p>
+            <button
+              type="button"
+              onClick={() => setStep("job")}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold mb-3 min-h-[32px]"
+              style={{ color: "var(--brand-text)" }}
+            >
+              <Briefcase size={13} />
+              {t("login.guestJobLink")}
+              <ChevronRight size={13} />
+            </button>
 
             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
               {t("login.guestNameLabel")}
@@ -576,6 +621,58 @@ export default function Login() {
             >
               {t("login.confirm")}
             </button>
+          </div>
+        )}
+
+        {/* ── Job seekers — the bot does not hire; HR does ───────────────── */}
+        {step === "job" && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setStep("find")}
+              className="flex items-center gap-1 text-xs mb-3"
+              style={{ color: "var(--text-3)" }}
+            >
+              <ArrowLeft size={13} />
+              {t("login.back")}
+            </button>
+
+            <p className="text-sm mb-4" style={{ color: "var(--text-2)" }}>{t("login.jobBody")}</p>
+
+            {hr.text ? (
+              <>
+                <div
+                  className="rounded-xl px-4 py-3 mb-3"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>
+                    {t("login.jobContactLabel")}
+                  </div>
+                  {hr.link ? (
+                    <span className="text-base font-semibold break-all select-all" style={{ color: "var(--text-1)" }}>{hr.text}</span>
+                  ) : (
+                    /* A phone number: Telegram buttons cannot dial, a tel: link
+                       may — and the number stays readable if it does not. */
+                    <a href={`tel:${hr.text.replace(/[^\d+]/g, "")}`} className="text-base font-semibold" style={{ color: "var(--brand-text)" }}>
+                      {hr.text}
+                    </a>
+                  )}
+                </div>
+                {hr.link && (
+                  <button
+                    type="button"
+                    onClick={() => openUrl(hr.link)}
+                    className="w-full py-2.5 rounded-lg text-sm font-semibold inline-flex items-center justify-center gap-2"
+                    style={{ background: "var(--brand)", color: "var(--on-brand)" }}
+                  >
+                    <Briefcase size={15} />
+                    {t("login.jobWriteHr")}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: "var(--text-2)" }}>{t("login.jobNoContact")}</p>
+            )}
           </div>
         )}
 

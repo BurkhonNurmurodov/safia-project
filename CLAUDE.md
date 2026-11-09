@@ -52,6 +52,7 @@ loaded by themselves:
 - `docs/notifications-and-telegram.md` — the notification centre, phone notifications, coloured and disabled Telegram buttons.
 - `docs/admin-registers.md` — the action register «Jurnal» and its undo, «Foydalanuvchilar faolligi».
 - `docs/web-clients.md` — the browser login, the installable PWA, the boot path, offline mode.
+- `docs/registration.md` — **job seekers go to HR** (`hr_contact`, set on the Users tab): the bot's description, welcome, waiting and closed guest requests and /login all name it; copy names ROLES, never «employees»; the guest picker lists only unclaimed profiles.
 - `docs/android.md` — the Android app.
 - `docs/exam.md` — the dashboard exam «Imtihon».
 - `docs/assistant-and-ai.md` — «Yordamchi» and the «AI kalitlari» tab (every AI caller asks `ai_features`).

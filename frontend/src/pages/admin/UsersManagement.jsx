@@ -19,6 +19,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
+import HrContactButton from "../../components/admin/HrContactButton";
 
 // Roles an existing registration may be CONVERTED to (the per-row select).
 // Guest is deliberately absent: converting only re-points role/role_id, and a
@@ -292,6 +293,7 @@ export default function UsersManagement() {
               }))}
             />
             <div className="ml-auto flex items-center gap-2">
+              <HrContactButton />
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
               <Button variant="secondary" size="lg" icon={<RefreshCw size={13} />} onClick={() => refetch()}>
                 {t("admin.refresh")}

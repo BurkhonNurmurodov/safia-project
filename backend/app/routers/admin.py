@@ -463,6 +463,38 @@ def update_settings(
     return {"status": "ok"}
 
 
+# ── HR contact for job seekers (docs/registration.md) ─────────────────────────
+
+@router.get("/hr-contact")
+def get_hr_contact(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    from app.services import hr_contact
+    return {"contact": hr_contact.get(db)}
+
+
+@router.put("/hr-contact")
+def put_hr_contact(payload: dict, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """Save where job seekers are sent, then rewrite the bot's Telegram
+    description to name it. A failed Telegram call never undoes the save —
+    `bot_synced: false` tells the panel to say so."""
+    from app.services import hr_contact
+    from app.telegram_bot import set_bot_descriptions
+    try:
+        value = hr_contact.normalize(payload.get("contact"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="hr_contact_invalid")
+    old = hr_contact.get(db)
+    row = db.get(AppSetting, hr_contact.KEY)
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=hr_contact.KEY, value=value))
+    db.commit()
+    action_log.enrich(target_kind="setting", target_id=hr_contact.KEY,
+                      target_name=hr_contact.KEY,
+                      changes=[(hr_contact.KEY, old or None, value or None)])
+    return {"contact": value, "bot_synced": set_bot_descriptions(value)}
+
+
 # ── User management ───────────────────────────────────────────────────────────
 
 @router.get("/users")

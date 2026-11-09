@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.reg_token import make_reg_token
 from app.services import (
-    action_log, android_release, leader_ai, leader_auto, leader_cells,
+    action_log, android_release, hr_contact, leader_ai, leader_auto, leader_cells,
     leader_checklist, leader_close, leader_late_proof, leader_load, leader_proof,
     leader_tasks, tg_later,
 )
@@ -82,7 +82,24 @@ _state: dict[int, dict] = {}
 _MESSAGES = {
     "uz": {
         "choose_language":   "🌐 Tilni tanlang:",
-        "welcome_new":       "👋 Xush kelibsiz! Ro'yxatdan o'tish uchun quyidagi tugmani bosing.",
+        # Who the bot is for comes FIRST: job seekers find it by searching
+        # «Safia» and read «Ro'yxatdan o'tish» as «apply» (docs/registration.md).
+        "welcome_new": (
+            "👋 Xush kelibsiz!\n\n"
+            "Bu bot — Safia ishlab chiqarishidagi liderlar, brigadirlar va "
+            "menejerlar uchun ichki tizim. Shu lavozimlardan birida ishlasangiz, "
+            "pastdagi «{btn}» tugmasini bosing."
+        ),
+        "job_hr":            "💼 Ishga kirmoqchimisiz? Bu bot orqali ishga qabul qilinmaydi — HR bo'limiga yozing: {hr}",
+        "job_hr_none":       "💼 Ishga kirmoqchimisiz? Bu bot orqali ishga qabul qilinmaydi — Safia HR bo'limiga murojaat qiling.",
+        "rejected_guest": (
+            "Sizning so'rovingiz yopildi.\n\n"
+            "Bu bot — Safia ishlab chiqarishidagi liderlar, brigadirlar va "
+            "menejerlar uchun ichki tizim."
+        ),
+        "bot_desc":          "Safia ishlab chiqarishidagi liderlar, brigadirlar va menejerlar uchun ichki tizim.",
+        "bot_short":         "Safia ishlab chiqarish rahbarlari uchun ichki tizim. Ishga kirish — HR: {hr}",
+        "bot_short_none":    "Safia ishlab chiqarish rahbarlari uchun ichki tizim. Bu yerda ishga qabul qilinmaydi.",
         "register_btn":      "📝 Ro'yxatdan o'tish",
         "share_contact_prompt": (
             "✅ Ma'lumotlaringiz qabul qilindi!\n\n"
@@ -182,7 +199,19 @@ _MESSAGES = {
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
-        "welcome_new":       "👋 Хуш келибсиз! Рўйхатдан ўтиш учун қуйидаги тугмани босинг.",
+        "welcome_new": (
+            "👋 Хуш келибсиз!\n\n"
+            "Бу бот — Safia ишлаб чиқаришидаги лидерлар, бригадирлар ва "
+            "менежерлар учун ички тизим. Шу лавозимлардан бирида ишласангиз, "
+            "пастдаги «{btn}» тугмасини босинг."
+        ),
+        "job_hr":            "💼 Ишга кирмоқчимисиз? Бу бот орқали ишга қабул қилинмайди — HR бўлимига ёзинг: {hr}",
+        "job_hr_none":       "💼 Ишга кирмоқчимисиз? Бу бот орқали ишга қабул қилинмайди — Safia HR бўлимига мурожаат қилинг.",
+        "rejected_guest": (
+            "Сизнинг сўровингиз ёпилди.\n\n"
+            "Бу бот — Safia ишлаб чиқаришидаги лидерлар, бригадирлар ва "
+            "менежерлар учун ички тизим."
+        ),
         "register_btn":      "📝 Рўйхатдан ўтиш",
         "share_contact_prompt": (
             "✅ Маълумотларингиз қабул қилинди!\n\n"
@@ -281,7 +310,22 @@ _MESSAGES = {
     },
     "ru": {
         "choose_language":   "🌐 Выберите язык:",
-        "welcome_new":       "👋 Добро пожаловать! Нажмите кнопку ниже для регистрации.",
+        "welcome_new": (
+            "👋 Добро пожаловать!\n\n"
+            "Этот бот — внутренняя система для лидеров, бригадиров и "
+            "менеджеров производства Safia. Если вы работаете на одной из этих "
+            "должностей, нажмите кнопку «{btn}» ниже."
+        ),
+        "job_hr":            "💼 Хотите устроиться на работу? Через этот бот на работу не принимают — напишите в отдел кадров (HR): {hr}",
+        "job_hr_none":       "💼 Хотите устроиться на работу? Через этот бот на работу не принимают — обратитесь в отдел кадров (HR) Safia.",
+        "rejected_guest": (
+            "Ваша заявка закрыта.\n\n"
+            "Этот бот — внутренняя система для лидеров, бригадиров и "
+            "менеджеров производства Safia."
+        ),
+        "bot_desc":          "Внутренняя система для лидеров, бригадиров и менеджеров производства Safia.",
+        "bot_short":         "Внутренняя система руководителей производства Safia. Работа — HR: {hr}",
+        "bot_short_none":    "Внутренняя система руководителей производства Safia. Приём на работу — не здесь.",
         "register_btn":      "📝 Зарегистрироваться",
         "share_contact_prompt": (
             "✅ Данные приняты!\n\n"
@@ -380,7 +424,22 @@ _MESSAGES = {
     },
     "en": {
         "choose_language":   "🌐 Choose your language:",
-        "welcome_new":       "👋 Welcome! Press the button below to register.",
+        "welcome_new": (
+            "👋 Welcome!\n\n"
+            "This bot is the internal system for Safia production leaders, "
+            "supervisors and managers. If you hold one of these positions, "
+            "press «{btn}» below."
+        ),
+        "job_hr":            "💼 Looking for a job? This bot does not hire — write to HR: {hr}",
+        "job_hr_none":       "💼 Looking for a job? This bot does not hire — contact Safia's HR department.",
+        "rejected_guest": (
+            "Your request has been closed.\n\n"
+            "This bot is the internal system for Safia production leaders, "
+            "supervisors and managers."
+        ),
+        "bot_desc":          "The internal system for Safia production leaders, supervisors and managers.",
+        "bot_short":         "Internal system for Safia production managers. Jobs — HR: {hr}",
+        "bot_short_none":    "Internal system for Safia production managers. Not for job applications.",
         "register_btn":      "📝 Register",
         "share_contact_prompt": (
             "✅ Details received!\n\n"
@@ -496,6 +555,29 @@ _MEDIA_LABELS = {
 
 def _msg(lang: str, key: str) -> str:
     return _MESSAGES.get(lang, _MESSAGES["uz"]).get(key, _MESSAGES["uz"].get(key, key))
+
+
+def _job_line(lang: str, contact: str | None = None) -> str:
+    """«Looking for a job? → HR» — the line every surface a job seeker reaches
+    carries (services/hr_contact.py). Plain text: Telegram links an @username,
+    a URL and a phone number in it by itself."""
+    if contact is None:
+        try:
+            with SessionLocal() as db:
+                contact = hr_contact.get(db)
+        except Exception:
+            logger.warning("hr_contact read failed", exc_info=True)
+            contact = ""
+    return _msg(lang, "job_hr").format(hr=contact) if contact else _msg(lang, "job_hr_none")
+
+
+def _pending_msg(lang: str, roles) -> str:
+    """«Already under review» — and, for a waiting GUEST request, the way to
+    HR: that request is almost always a job seeker's (docs/registration.md)."""
+    text = _msg(lang, "already_pending")
+    if any(r.role == "guest" and r.status == "pending" for r in roles):
+        text += "\n\n" + _job_line(lang)
+    return text
 
 
 def _media_label(lang: str, kind: str) -> str:
@@ -800,7 +882,7 @@ def _start(message: types.Message):
             if _awaiting_contact(tid):
                 _ask_contact(tid, lang)
             else:
-                bot.send_message(tid, _msg(lang, "already_pending"),
+                bot.send_message(tid, _pending_msg(lang, roles),
                                  reply_markup=types.ReplyKeyboardRemove())
         else:
             _state.pop(tid, None)
@@ -827,7 +909,7 @@ def _begin_registration(tid: int):
             if _awaiting_contact(tid):
                 _ask_contact(tid, lang)
             else:
-                bot.send_message(tid, _msg(lang, "already_pending"))
+                bot.send_message(tid, _pending_msg(lang, roles))
             return
         if "approved" in statuses:
             bot.send_message(tid, _msg(lang, "add_role_hint"), reply_markup=_webapp_register_kb(lang, tid))
@@ -991,7 +1073,11 @@ def _language(call: types.CallbackQuery):
         pass
 
     # Send register button as a ReplyKeyboard (required for sendData() to work)
-    bot.send_message(tid, _msg(lang, "welcome_new"), reply_markup=_webapp_register_kb(lang, tid))
+    # ONE message: the register button is a reply keyboard (sendData needs it),
+    # so HR cannot be an inline button beside it — it rides in the text.
+    welcome = (_msg(lang, "welcome_new").format(btn=_msg(lang, "register_btn"))
+               + "\n\n" + _job_line(lang))
+    bot.send_message(tid, welcome, reply_markup=_webapp_register_kb(lang, tid))
 
 
 @bot.message_handler(content_types=["web_app_data"])
@@ -1083,7 +1169,7 @@ def _webapp_data(message: types.Message):
                     bot.send_message(tid, _msg(lang, "already_approved"),
                                      reply_markup=_dashboard_kb(lang))
                 else:
-                    bot.send_message(tid, _msg(lang, "already_pending"))
+                    bot.send_message(tid, _msg(lang, "already_pending") + "\n\n" + _job_line(lang))
                 return
 
             def _held_by_other(profile_id: int):
@@ -1714,10 +1800,35 @@ def notify_status_change(telegram_id: int, status: str, lang: str = "uz", role: 
         if status == "approved":
             _set_menu_button(telegram_id, lang, force=True)
             bot.send_message(telegram_id, _msg(lang, "approved") + suffix, reply_markup=_dashboard_kb(lang))
+        elif status == "rejected" and role == "guest":
+            # A closed guest request is nearly always a job seeker's: no
+            # «contact the admin» (that sent them to us), the way to HR instead.
+            bot.send_message(telegram_id, _msg(lang, "rejected_guest") + "\n\n" + _job_line(lang))
         elif status == "rejected":
             bot.send_message(telegram_id, _msg(lang, "rejected") + suffix)
     except Exception:
         pass
+
+
+def set_bot_descriptions(contact: str) -> bool:
+    """The bot's Telegram description (the empty chat, before Start) and short
+    description (its profile, a shared link) — who the bot is for and where a
+    job seeker goes. Written when an admin saves the HR contact, never at
+    boot, so nothing in Telegram changes until somebody decides it. Telegram
+    has no Uzbek-Cyrillic code: the default (no code) is Uzbek Latin."""
+    ok = True
+    for code, lang in ((None, "uz"), ("uz", "uz"), ("ru", "ru"), ("en", "en")):
+        desc = _msg(lang, "bot_desc") + "\n\n" + _job_line(lang, contact)
+        short = _msg(lang, "bot_short").format(hr=contact) if contact else ""
+        if not short or len(short) > 120:          # Telegram's cap
+            short = _msg(lang, "bot_short_none")
+        try:
+            bot.set_my_description(desc[:512], language_code=code)
+            bot.set_my_short_description(short, language_code=code)
+        except Exception:
+            logger.warning("set bot description failed (%s)", code, exc_info=True)
+            ok = False
+    return ok
 
 
 def notify_admins_of_decision(target_telegram_id: int, status: str, decided_by: str | None = None,
