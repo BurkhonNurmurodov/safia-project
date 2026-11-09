@@ -71,10 +71,10 @@ const rowVyp = (r) => (r.total_labor ? r.actual_labor / r.total_labor : null);
 const NUM_DEC = { labor: 2, people: 1, plan: 0, fact: 0, cap: 2, cnt: 0,
   actual_labor: 1, labor_total: 1, minutes: 1 };
 // The four containers a position is packed into (services/pp_containers, the
-// brigadirs' «Umar oka» form): a CAPACITY per container on the catalog line —
-// grams when the line's ПЛАН is in kg, the line's own unit otherwise — and the
-// count the day's plan needs, ROUNDUP(ПЛАН × (1000 if kg) ÷ capacity), the
-// form's own formula (rounded to six places first, as the form does).
+// brigadirs' «Umar oka» form): a CAPACITY per container on the catalog line, in
+// the same unit as the line's ПЛАН — a «kg» line's numbers are grams on both
+// sides (2026-11-09, the operator) — and the count the day's plan needs,
+// ROUNDUP(ПЛАН ÷ capacity), rounded to six places first, as the form does.
 const CONTAINERS = [
   { id: "yellow", field: "cap_yellow" },   // rectangle
   { id: "round", field: "cap_round" },     // circular yellow
@@ -88,7 +88,7 @@ const containerCount = (r, field) => {
   const cap = Number(r[field]);
   const plan = r.plan_qty;
   if (!cap || plan == null || Number.isNaN(Number(plan))) return null;
-  const q = Number(plan) * (r.uom === "kg" ? 1000 : 1) / cap;
+  const q = Number(plan) / cap;
   return Math.ceil(Math.round(q * 1e6) / 1e6);
 };
 // Excel inks for the screen's muted / warning text (light theme values).
@@ -2951,7 +2951,7 @@ export default function Production() {
           // field: the measure's audience writes it, dated like the measure.
           return (
             <QtyCell key={key} col={key} row={i} readOnly={!canEditCaps || r.id == null}
-              title={t(r.uom === "kg" ? "production.cap.inGrams" : "production.cap.inUnits")}
+              title={t("production.cap.inUnits")}
               value={r[c.field] ?? null} onSave={saveCapacity(r, c.field, key)} />
           );
         }

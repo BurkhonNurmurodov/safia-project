@@ -2,15 +2,17 @@
 plan fills (2026-10-30, the operator, from the brigadirs' «Umar oka» form).
 
 A catalog line carries one CAPACITY per container — how much of the product
-ONE container holds, in GRAMS when the line's ПЛАН is counted in kg
-(`services/pp_uom`), in the line's own unit otherwise — and the
+ONE container holds, in the SAME unit as the line's ПЛАН — and the
 «Pozitsiyalar» table prints, beside each, how many containers the day's plan
 needs:
 
-    count = ROUNDUP(ПЛАН × (1000 if kg else 1) ÷ capacity)
+    count = ROUNDUP(ПЛАН ÷ capacity)
 
-the form's own formula, rounded to six places first so a plan that divides
-exactly never reads one container too many. A blank capacity has no count.
+No unit conversion (2026-11-09, the operator): on a line marked «kg» the
+numbers are really grams, plan and capacity alike, so the ×1000 for kg that
+stood here from 2026-10-30 inflated every such count a thousandfold (A2891:
+3 339 ÷ 20 read 166 950 containers instead of 167). Rounded to six places
+first so a plan that divides exactly never reads one container too many. A blank capacity has no count.
 
 The capacity is a property of the LINE, not of a day — a product's container
 does not change from shift to shift — so it lives on `pp_products` beside
@@ -46,8 +48,8 @@ def norm_capacity(value):
 
 def count(plan, uom, capacity):
     """How many containers a plan needs — the form's formula, the twin of
-    `containerCount` in Production.jsx (keep them in step): ROUNDUP(plan ×
-    (1000 if kg else 1) ÷ capacity), rounded to six places first. None
+    `containerCount` in Production.jsx (keep them in step): ROUNDUP(plan ÷
+    capacity) — `uom` is kept in the signature and not read — rounded to six places first. None
     without a capacity or a plan."""
     import math
     try:
@@ -57,7 +59,7 @@ def count(plan, uom, capacity):
         return None
     if not cap or q is None:
         return None
-    return math.ceil(round(q * (1000 if uom == "kg" else 1) / cap, 6))
+    return math.ceil(round(q / cap, 6))
 
 
 def keys():

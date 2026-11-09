@@ -584,8 +584,8 @@ last columns, after «Pareto» (the operator's call, same day), and
 
 - **The capacity is a CATALOG field** — `pp_products.cap_yellow / cap_round /
   cap_grey / cap_bucket / cap_box` (NUMERIC, NULL = not stated,
-  `startup.add_pp_product_containers`, both entrypoints), in grams when the
-  line's «O'lchov birligi» is kg, in the line's own unit otherwise. A
+  `startup.add_pp_product_containers`, both entrypoints), in the same unit as
+  the line's ПЛАН (on a «kg» line both are really grams). A
   product's container does not change from shift to shift, so it is not a
   per-day number. Dated by `pp_catalog` (in `LINE_FIELDS`), carried across an
   ABC import on the line's key like the measure, read by no figure.
@@ -616,8 +616,11 @@ last columns, after «Pareto» (the operator's call, same day), and
   of `containerCount` — keep them in step), the plan read through
   `zagruzka_source.line_facts`, so only lines with a Трудоемкость count.
 - **The count is computed by the page** (`containerCount` in
-  Production.jsx, the form's formula): `ROUNDUP(ПЛАН × (1000 if kg else 1) ÷
-  capacity)`, rounded to six places first; «—» without a capacity or a plan.
+  Production.jsx, the form's formula): `ROUNDUP(ПЛАН ÷ capacity)`, rounded
+  to six places first; «—» without a capacity or a plan. **No ×1000 for kg**
+  (2026-11-09, the operator: «the containers written in kg are actually in
+  grams») — the ×1000 that stood from 2026-10-30 put A2891 at 166 950
+  rectangle containers for a plan of 3 339 at capacity 20; it reads 167 now.
   The «Excel» button inserts the eight as values (capacities green, as typed
   inputs).
 
