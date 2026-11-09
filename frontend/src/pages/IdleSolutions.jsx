@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ChevronDown, ChevronRight, ClipboardCheck, Clock, FlaskConical, Lightbulb, UserRound, Users,
+  AlertTriangle, ChevronDown, ChevronRight, ClipboardCheck, Clock, Lightbulb, UserRound, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
@@ -392,11 +392,6 @@ export default function IdleSolutions() {
 
   return (
     <Layout title={T.title} subtitle={null}>
-      <div className="mb-3 px-3 py-2 rounded-xl flex items-center gap-2 text-sm font-semibold"
-        style={{ background: "color-mix(in srgb, var(--status-warn) 14%, transparent)", color: "var(--status-warn)", border: "1px solid color-mix(in srgb, var(--status-warn) 40%, transparent)" }}>
-        <FlaskConical size={16} className="flex-shrink-0" /> DEMO
-        <span className="font-normal text-xs" style={{ color: "var(--text-2)" }}>{T.demoNote}</span>
-      </div>
       <div className="mb-3">
         <SegmentedToggle asTabs value={view === "analytics" ? "analytics" : "problems"} onChange={setView}
           options={[["problems", T.tabProblems], ["analytics", T.tabAnalytics]]} />
@@ -414,8 +409,7 @@ export default function IdleSolutions() {
         ) : analyticsQ.isLoading || !analyticsQ.data ? (
           <div className="space-y-3"><SkeletonBlock className="h-24" /><SkeletonBlock className="h-72" /></div>
         ) : (
-          <SolutionAnalytics T={T} data={analyticsQ.data} label={label}
-            filtered={!!(fparams.factory || fparams.shift || (fparams.manager_id && fparams.manager_id.length))} />
+          <SolutionAnalytics T={T} data={analyticsQ.data} label={label} />
         )
       ) : isError ? (
         <EmptyState tone="danger" title={T.errLoad} message="" showUploadLink={false} action={<Button onClick={() => refetch()}>{T.retry}</Button>} />

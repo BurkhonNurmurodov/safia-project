@@ -6,8 +6,7 @@
 export const fill = (s, vars) =>
   String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
 
-const uz = {
-  demoNote: "Namuna sahifa — bu yerdagi ba'zi raqamlar sinov uchun to'qilgan.", title: "Kutish yechimlari",
+const uz = { title: "Kutish yechimlari",
   hint: "Qaysi sabab eng ko'p kutdirmoqda, kim javob beradi va nima qilmoqchi",
   kTotal: "Jami kutish", kTotalSub: "brigadirlar bo'yicha yig'indi, daq",
   kTop: "Eng katta sabab", kNoOwner: "Mas'ulsiz sabablar", kNoSol: "Yechimsiz muammolar",
@@ -73,8 +72,7 @@ const uz = {
   aMethod: "Yechim yozilgunga qadar {w} kun va undan keyingi kunlarda (ko'pi bilan {w}) kuniga o'rtacha daqiqalar solishtiriladi. {d}% va undan ko'p kamaysa — ish bermoqda, {r}% va undan ko'p oshsa — yomonlashgan; {a} kundan kam bo'lsa — hali erta.",
 };
 
-const uz_cyrl = {
-  demoNote: "Намуна саҳифа — бу ердаги баъзи рақамлар синов учун тўқилган.", title: "Кутиш ечимлари",
+const uz_cyrl = { title: "Кутиш ечимлари",
   hint: "Қайси сабаб энг кўп кутдирмоқда, ким жавоб беради ва нима қилмоқчи",
   kTotal: "Жами кутиш", kTotalSub: "бригадирлар бўйича йиғинди, дақ",
   kTop: "Энг катта сабаб", kNoOwner: "Масъулсиз сабаблар", kNoSol: "Ечимсиз муаммолар",
@@ -140,8 +138,7 @@ const uz_cyrl = {
   aMethod: "Ечим ёзилгунга қадар {w} кун ва ундан кейинги кунларда (кўпи билан {w}) кунига ўртача дақиқалар солиштирилади. {d}% ва ундан кўп камайса — иш бермоқда, {r}% ва ундан кўп ошса — ёмонлашган; {a} кундан кам бўлса — ҳали эрта.",
 };
 
-const ru = {
-  demoNote: "Пробная страница — часть цифр здесь придумана для проверки.", title: "Решения по ожиданиям",
+const ru = { title: "Решения по ожиданиям",
   hint: "Какая причина ожиданий самая тяжёлая, кто за неё отвечает и что собирается делать",
   kTotal: "Всего ожиданий", kTotalSub: "сумма по бригадирам, мин",
   kTop: "Главная причина", kNoOwner: "Причины без ответственного", kNoSol: "Проблемы без решения",
@@ -207,8 +204,7 @@ const ru = {
   aMethod: "Сравниваются средние минуты в день за {w} дн. до записи решения и в дни после неё (не более {w}). Снижение на {d}% и больше — работает, рост на {r}% и больше — хуже; меньше {a} дн. — ещё рано.",
 };
 
-const en = {
-  demoNote: "Preview page — some figures here are made up for testing.", title: "Idle-time solutions",
+const en = { title: "Idle-time solutions",
   hint: "Which cause costs the most waiting, who answers for it and what they plan to do",
   kTotal: "Total waiting", kTotalSub: "sum over brigadirs, min",
   kTop: "Biggest cause", kNoOwner: "Causes with no owner", kNoSol: "Problems with no solution",

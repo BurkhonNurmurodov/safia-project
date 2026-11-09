@@ -940,7 +940,4 @@ their own). **Quiet is counted in the scope's WORKING days** (days it has a row 
 `_downtime`), so a weekend is not a cure. The page leads with the verdict (list
 sorted repeating first); a row opens to the solution, before/after/quiet/last-seen,
 the day strip and the brigadirs it came back with. A solution's comment date stands
-in for the date it took effect — there is no «implemented on» field yet.
-**TEMP-DEMO** (`tempDemo()` in `SolutionAnalytics.jsx`, plus the DEMO banner in
-`IdleSolutions.jsx`) still feeds invented causes into the tab until the operator
-says to erase it.
+in for the date it took effect — there is no «implemented on» field yet. The invented demo causes and the DEMO banner used to preview this were erased on 2026-11-09.

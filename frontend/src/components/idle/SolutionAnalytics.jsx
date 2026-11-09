@@ -120,7 +120,7 @@ function CauseRow({ c, T, label }) {
         <span className="flex-shrink-0" style={{ color: "var(--text-3)" }}>{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
         <div className="min-w-0 flex-1 md:flex-none md:w-56">
           <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }}>
-            <span style={{ color: catColor(c.category) }}>{c.category}</span>{c.demo ? <span className="ml-1 text-[10px] font-bold" style={{ color: "var(--status-warn)" }}>DEMO</span> : null}{" "}
+            <span style={{ color: catColor(c.category) }}>{c.category}</span>{" "}
             {label(catCode(c.category)) ? <span className="font-normal" style={{ color: "var(--text-2)" }}>— {label(catCode(c.category))}</span> : null}
           </div>
           <div className="flex items-center gap-1.5 min-w-0 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
@@ -169,66 +169,7 @@ function CauseRow({ c, T, label }) {
   );
 }
 
-// TEMP-DEMO (remove when the operator says so): invented causes covering every
-// verdict, so the new logic can be previewed. Anchored to today, not the filter.
-function tempDemo() {
-  const today = new Date(); today.setHours(12, 0, 0, 0);
-  const iso = (off) => { const x = new Date(today); x.setDate(x.getDate() + off); return x.toISOString().slice(0, 10); };
-  const BEFORE = 28;
-  const build = ({ category, back, before, after, text, status, who, units, minutes }) => {
-    const len = BEFORE + 1 + back;
-    const daily = Array.from({ length: len }, (_, i) => (i < BEFORE ? before(i) : i === BEFORE ? 0 : after(i - BEFORE)));
-    const ob = daily.slice(0, BEFORE).filter((x) => x > 0).length;
-    const oaIdx = daily.map((x, i) => (i > BEFORE && x > 0 ? i - BEFORE : null)).filter((x) => x != null);
-    const need = ob ? Math.min(28, Math.max(7, Math.ceil((3 * BEFORE) / ob))) : 7;
-    const lastK = oaIdx.length ? oaIdx[oaIdx.length - 1] : null;
-    const quiet = lastK == null ? back : back - lastK;
-    const rb = ob / BEFORE, ra = back ? oaIdx.length / back : 0;
-    let verdict = back < 3 ? "early" : !ob ? (oaIdx.length ? "new" : "none") : !oaIdx.length ? (quiet >= need ? "solved" : "early")
-      : back >= 7 && ra <= rb * 0.5 ? "reduced" : "repeating";
-    const relapse = !!ob && oaIdx.length > 0 && oaIdx[0] - 1 >= need;
-    const from = -(BEFORE + back);
-    const j = {
-      verdict, date: iso(-back), before_n: ob, before_wd: BEFORE, after_n: oaIdx.length, after_wd: back, after_days: back,
-      quiet_needed: need, quiet, last_seen: lastK == null ? null : iso(-(back - lastK)), relapse,
-      min_before: daily.slice(0, BEFORE).reduce((x, y) => x + y, 0), min_after: daily.slice(BEFORE + 1).reduce((x, y) => x + y, 0),
-      daily, daily_from: iso(from), marker: BEFORE,
-    };
-    const sol = { id: 900 + back, text, status, author_name: who, date: iso(-back), manager_id: null, manager_name: null };
-    return { category, minutes, status: verdict, j, solution: sol, solutions_n: 1, orphans_n: 0, units,
-      rethink: ["doing", "done"].includes(status) && ["repeating", "new"].includes(verdict) };
-  };
-  const NOTES = ["Xom ashyo kech keldi, pech bo'sh turdi", "Texnik kutildi — pech sozlanmoqda", "Qadoqlash materiali yetmadi", "Otdel javobi kechikdi", ""];
-  const unit = (id, name, cell, days, cellDays, min, last, covered = true) => ({
-    manager_id: id, manager_name: name, minutes: min, days, last_seen: last ? iso(-last) : null, cell, cell_days: cellDays,
-    verdict: null, covered, since: null,
-    notes: Array.from({ length: Math.min(3, days) }, (_, k) => ({ date: iso(-((last || 0) + k * 2)), cell, minutes: 20 + ((id + k * 7) % 25), note: NOTES[(id + k) % NOTES.length], mark: k === 0 ? "repeat" : k === 1 ? "doing" : "solved" })),
-  });
-  const noise = (i, k) => 14 + ((i * 7 + k * 5) % 17);
-  const causes = [
-    build({ category: "Cat D3", back: 20, text: "Otdel bilan kelishuv grafigi tuzildi", status: "doing", who: "A. Aripova", minutes: 640,
-      before: (i) => (i % 2 === 0 ? noise(i, 1) : 0), after: (k) => ([2, 5, 7, 12, 15, 18].includes(k) ? noise(k, 2) : 0),
-      units: [unit(801, "R. Kamola", "8613", 5, 4, 310, 2), unit(802, "K. Nargiza", "8623", 3, 3, 190, 5), unit(803, "I. Sayyora", "7424", 1, 1, 60, 11)] }),
-    build({ category: "Cat E", back: 30, text: "Yetkazib beruvchi bilan yangi jadval", status: "done", who: "B. Karimov", minutes: 410,
-      before: (i) => (i % 3 === 0 ? noise(i, 3) : 0), after: (k) => ([27, 29].includes(k) ? noise(k, 4) : 0),
-      units: [unit(804, "S. Dilnoza", "7101", 2, 2, 150, 1)] }),
-    build({ category: "Cat I", back: 21, text: "Smena topshirish ro'yxati kiritildi", status: "done", who: "I. Sayyora", minutes: 280,
-      before: (i) => (i % 2 === 0 ? noise(i, 5) : 0), after: (k) => (k % 6 === 0 ? noise(k, 6) : 0),
-      units: [unit(805, "I. Sayyora", "7424", 3, 3, 90, 3)] }),
-    build({ category: "Cat K", back: 10, text: "Ehtiyot qismlar zaxirasi to'ldirildi", status: "done", who: "N. Aziz", minutes: 120,
-      before: (i) => ([3, 12, 21].includes(i) ? noise(i, 7) : 0), after: () => 0, units: [] }),
-    build({ category: "Cat B", back: 24, text: "Oborudovaniya navbatchi texnik biriktirildi", status: "done", who: "R. Kamola", minutes: 520,
-      before: (i) => (i % 2 === 1 ? noise(i, 8) : 0), after: () => 0, units: [] }),
-  ];
-  const fd = Array.from({ length: 30 }, (_, i) => ([1, 4, 6, 9, 13, 14, 20, 24, 27].includes(i) ? noise(i, 9) : 0));
-  causes.push({
-    category: "Cat F", minutes: 360, status: "unanswered", solution: null, solutions_n: 0, orphans_n: 0, rethink: false,
-    j: { verdict: "unanswered", after_n: 9, after_wd: 30, last_seen: iso(-2), quiet: null, relapse: false, daily: fd, daily_from: iso(-29), marker: null },
-    units: [unit(806, "K. Nargiza", "8623", 6, 4, 220, 2, false), unit(807, "R. Kamola", "8613", 3, 2, 140, 6, false)],
-  });
-  return causes.map((x) => ({ ...x, demo: true }));
-}
-const ORDER = ["repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none"];
+const ORDER = ["repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none", "once"];
 
 // the five groups a reader sorts causes into, worst first
 const GROUPS = [
@@ -239,12 +180,10 @@ const GROUPS = [
   ["solved", ["solved"]],
 ];
 
-export default function SolutionAnalytics({ T, data, label, filtered }) {
+export default function SolutionAnalytics({ T, data, label }) {
   const [f, setF] = useState("all");
   const [showOnce, setShowOnce] = useState(false);
-  // TEMP-DEMO: invented causes ride below the real ones, and only while no shift /
-  // brigadir / plant filter is on — they cannot be narrowed, so under a filter they hide.
-  const all = [...(data.causes || []), ...(filtered ? [] : tempDemo())]
+  const all = [...(data.causes || [])]
     .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
   // a cause with no solution seen on 1–2 days is not a problem yet: kept apart, collapsed
   const once = all.filter((x) => x.status === "once");
@@ -255,7 +194,7 @@ export default function SolutionAnalytics({ T, data, label, filtered }) {
   const options = [["all", `${T.rAll} · ${causes.length}`],
     ...GROUPS.filter(([, ks]) => n(ks) > 0).map(([k, ks]) => [k, `${T.rKpi[k]} · ${n(ks)}`])];
   const safeF = options.some(([k]) => k === f) ? f : "all";
-  const rowKey = (x) => `${x.demo ? "demo-" : ""}${x.category}`;
+  const rowKey = (x) => x.category;
   return (
     <>
       <div className="rounded-2xl p-4 mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
