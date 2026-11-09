@@ -409,15 +409,17 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       </td>
     );
   };
-  // The day's work behind the load %: plan minutes as hours, and the people.
+  // Hours per person, spelled as hours and minutes (7.8 h → 7 h 48 min).
+  const hm = (minutes) => {
+    const total = Math.round(minutes);
+    return fill(t("overview.sr.hm"), { h: Math.floor(total / 60), m: total % 60 });
+  };
+  // The day's work behind the load %: plan minutes per person.
   const loadTitle = (c) => (isNum(c?.plan_min) && c.people
-    ? fill(t("overview.sr.loadWork"), { hours: (c.plan_min / 60 / c.people).toFixed(1) })
-    : undefined);
-
-  // Plan fulfilment's twin: hours done of the hours planned, the day before.
+    ? hm(c.plan_min / c.people) : undefined);
+  // Plan fulfilment's twin: the actual minutes per person, the day before.
   const complTitle = (c) => (isNum(c?.actual_min) && c.people
-    ? fill(t("overview.sr.loadWork"), { hours: (c.actual_min / 60 / c.people).toFixed(1) })
-    : undefined);
+    ? hm(c.actual_min / c.people) : undefined);
 
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;
