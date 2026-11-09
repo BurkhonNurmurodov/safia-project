@@ -441,7 +441,10 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
     setEditing(false);
     if (!save) return;
     const raw = draft.trim();
-    const num = raw === "" ? null : Number(raw.replace(",", "."));
+    // «+20» adds 20 to what the cell holds; «50+20» sums as typed.
+    const parts = raw.replace(/,/g, ".").split("+");
+    if (parts[0].trim() === "") parts[0] = String(value ?? 0);
+    const num = raw === "" ? null : parts.reduce((s, p) => s + Number(p), 0);
     if (raw !== "" && Number.isNaN(num)) return;
     if (num !== (value ?? null)) onSave(num);
   };
@@ -475,7 +478,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
     else if (k === "ArrowUp") { e.preventDefault(); moveCell(e.currentTarget, 0, -1); }
     else if (k === "ArrowRight") { e.preventDefault(); moveCell(e.currentTarget, 1, 0); }
     else if (k === "ArrowLeft") { e.preventDefault(); moveCell(e.currentTarget, -1, 0); }
-    else if (k.length === 1 && /[\d.,-]/.test(k)) { e.preventDefault(); start(k); }
+    else if (k.length === 1 && /[\d.,+-]/.test(k)) { e.preventDefault(); start(k); }
   };
 
   // A day the unit has signed off on is read-only, and it renders as an ORDINARY
