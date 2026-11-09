@@ -593,7 +593,7 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
 // takes (code, Команда, name, Трудоемкость); "sap" draws the code alone and
 // names the line it belongs to, read-only. "full" is the admin's form.
 function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "full", line = null,
-                         sapSwitch = true }) {
+                         sapSwitch = true, wcOpts = [] }) {
   const { t } = useLang();
   if (mode === "sap") {
     return (
@@ -634,8 +634,15 @@ function CatalogFields({ draft, setDraft, groupOpts = [], uomOpts = [], mode = "
         <Field label={t("production.col.sapCode")} hint={t("production.cat.codeOptional")} alignTop>
           <ModalInput value={draft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
         </Field>
+        {/* Команда is PICKED from the unit's teams, never typed (2026-11-09):
+            a typo made a team nobody runs. */}
         <Field label={t("production.col.wc")} required alignTop>
-          <ModalInput value={draft.work_center} onChange={setDraft("work_center")} className="font-mono" />
+          <StyledSelect
+            value={draft.work_center ?? ""}
+            onChange={setDraft("work_center")}
+            searchable
+            options={wcOpts}
+          />
         </Field>
       </div>
       <Field label={t("production.col.name")}>
@@ -2525,6 +2532,11 @@ export default function Production() {
     () => [...new Set(rows.map((r) => r.work_center).filter(Boolean))].sort(),
     [rows]
   );
+  // The catalog form's Команда choices: the unit's teams, every centre its
+  // catalog names, and the draft's own so the select can always show it.
+  const wcPickOpts = (current) => [...new Set(
+    [...wcs.map((w) => w.work_center), ...wcOptions, current]
+      .map((c) => String(c ?? "").trim()).filter(Boolean))].sort();
   // Filtered + sorted view of rows. Search matches Сап код OR Наименование OR
   // an EXACT Трудоемкость; sort is applied only when a column is active
   // (otherwise original SAP order).
@@ -4522,6 +4534,7 @@ export default function Production() {
           <CatalogFields draft={catDraft} setDraft={setCatField}
             mode={sapGrant ? "sap" : "full"} line={editRow}
             uomOpts={uomOpts} sapSwitch={!typedOnly}
+            wcOpts={wcPickOpts(catDraft.work_center)}
             groupOpts={groupOptsFor(catDraft.work_center,
               sameWc(catDraft.work_center, editRow.work_center) ? [editRow.wc_group] : [])} />
           {catalogFromHint && (
@@ -4547,6 +4560,7 @@ export default function Production() {
           <CatalogFields draft={catDraft} setDraft={setCatField}
             mode={sapGrant ? "create" : "full"}
             uomOpts={uomOpts} sapSwitch={!typedOnly}
+            wcOpts={wcPickOpts(catDraft.work_center)}
             groupOpts={groupOptsFor(catDraft.work_center)} />
           {catalogFromHint && (
             <p className="text-[11px] leading-relaxed mt-3" style={{ color: "var(--text-3)" }}>{catalogFromHint}</p>
