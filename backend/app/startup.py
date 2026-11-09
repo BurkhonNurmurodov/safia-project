@@ -7605,8 +7605,8 @@ def _pin_mismatch_job() -> None:
 # ── one-shot: cell 7331's two leaders → Majidov Ozodjon (2026-11-09) ─────────
 # The operator: Yuldashov Nodirbek (#298) and Haydarov Zaynobiddin (#436) are
 # stopped and deleted; MAJIDOV OZODJON (Verifix 2918) runs 7331 and carries
-# their history (`services/leader_merge_nov10.py`). Runs once from 10 Nov,
-# 11:00–19:00 Tashkent, one transaction with its flag; the record is DMed to
+# their history (`services/leader_merge_nov10.py`). Runs once from 9 Nov,
+# 09:00–24:00 Tashkent, one transaction with its flag; the record is DMed to
 # Burkhon. TEMPORARY: delete this block, the module and both entrypoint calls
 # once the flag reads «done» (or «blocked») and its report has gone.
 

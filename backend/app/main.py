@@ -475,7 +475,7 @@ async def lifespan(app: FastAPI):
     # ⚠ TEMPORARY one-shot (2026-11-09) — cell 7331's two leaders (Yuldashov
     # #298, Haydarov #436) are stopped and deleted, Majidov Ozodjon takes their
     # history (services/leader_merge_nov10.py). Only SCHEDULES a job (from
-    # 10 Nov, 11:00–19:00). Remove this line and `startup.merge_leader_majidov_7331`
+    # 9 Nov, 09:00–24:00). Remove this line and `startup.merge_leader_majidov_7331`
     # once its flag reads «done» and the report has gone.
     run(merge_leader_majidov_7331)
 

@@ -1,4 +1,4 @@
-"""TEMPORARY one-shot (2026-11-09 → runs from 10 Nov): cell 7331's two leaders
+"""TEMPORARY one-shot (2026-11-09): cell 7331's two leaders
 are stopped and Majidov Ozodjon takes their history.
 
 The operator (2026-11-09), asked one by one after production and Verifix were
@@ -31,8 +31,8 @@ nothing filed left on it but #298's 17 Oct day. What stays under the old names
 (authorship, snapshotted): comments, chat messages, read marks, bell rows,
 activity, the Jurnal.
 
-Runs ONCE, from 10 Nov between 11:00 and 19:00 Tashkent (the unit works nights;
-the last night's filing shuts at 09:00 and its AI queue drains), in ONE
+Runs ONCE, from 9 Nov evening, between 09:00 and 24:00 Tashkent (the operator
+asked it done at once; the old profiles had lost every Telegram holder), in ONE
 transaction with its flag, refused (`blocked`, nothing written) unless the data
 is as read on 9 Nov. Every moved id and every deleted row is kept in the record
 (app setting `leader_merge_majidov_7331_2026_11_10`) so it can be put back by
@@ -79,12 +79,14 @@ Y_OVERLAP_DAY, H_OVERLAP_DAY = 5659, 5679                 # 15% (cut) · 95%
 OWES_FROM = date(2026, 7, 11)                             # #298's creation: it owed from then
 BEFORE_MARK = date(2026, 10, 12)                          # the dated links' floor
 LINK_DAYS = (date(2026, 10, 13), date(2026, 10, 17))      # after event 100 · after event 173
-FIRST_DAY = date(2026, 11, 10)
+FIRST_DAY = date(2026, 11, 9)
 # Every Telegram role row that ever held #298 / #436 (128 Yuldashov's own, 370
 # Majidov's account until 9 Nov, 451 / 455 Haydarov's) — concerns and tasks
 # filed through them carry the id.
 OLD_ROLE_ROWS = (128, 370, 451, 455)
-WINDOW = (11, 19)                                         # Tashkent hours
+# Tashkent hours. From 9 Nov evening (the operator: «do it now»): the pick is made
+# and both old profiles have no Telegram holder, so nothing can be filed on them.
+WINDOW = (9, 24)
 
 # Tables naming a leader profile that this pass does not move: any row for
 # #298 / #436 there blocks it (the delete would drop or detach it silently).
@@ -172,8 +174,7 @@ def pending(db: Session) -> bool:
 
 
 def run_at(now: Optional[datetime] = None) -> datetime:
-    """From 10 Nov, between 11:00 and 19:00 Tashkent: unit 18 works nights, its
-    last night's filing shut at 09:00 and nothing is being filed."""
+    """From 9 Nov, 09:00–24:00 Tashkent (last night's filing shut at 09:00)."""
     now = now or datetime.now(timezone.utc)
     loc = now.astimezone(TZ)
     if loc.date() >= FIRST_DAY and WINDOW[0] <= loc.hour < WINDOW[1]:

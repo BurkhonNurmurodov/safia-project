@@ -105,8 +105,11 @@ TEMPORARY `services/leader_merge_nov10.py` (`startup.merge_leader_majidov_7331`
 → `_leader_merge_7331_job`, both entrypoints, flag
 `leader_merge_majidov_7331_2026_11_10_v1`, record in app setting
 `leader_merge_majidov_7331_2026_11_10` with every moved id and a snapshot of
-every deleted row) runs ONCE from 10 Nov between 11:00 and 19:00 Tashkent, one
-transaction with its flag, refused (`blocked`) unless the data is as read:
+every deleted row) runs ONCE, one transaction with its flag, refused
+(`blocked`) unless the data is as read. v4.455.1 held it for 10 Nov 11:00–19:00
+(so Haydarov could not file while his history moved); the same evening the
+operator had made the pick and unbound both profiles' Telegram accounts and asked
+it done at once — v4.455.2 runs it from 9 Nov, 09:00–24:00:
 
 - The pick, through `cell_register.pick_manager`, when the cell form's was not
   made — the profile tied to Verifix 2918 is the survivor either way.
