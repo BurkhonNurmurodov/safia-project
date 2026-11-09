@@ -135,6 +135,7 @@ try:
         register_leader_temp_hours,
         move_sanjarbek_checklist_shift,
         land_waiting_leader_links,
+        patch_task11_description_nov09,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -636,6 +637,8 @@ try:
     # made. Remove this line, `startup.land_waiting_leader_links` and its flag
     # constant once the flag reads «done».
     land_waiting_leader_links()
+    # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
+    patch_task11_description_nov09()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

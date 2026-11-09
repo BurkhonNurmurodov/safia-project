@@ -43,6 +43,14 @@ floor (`owns` is the test both closes ask), asked at the END of the shift
   reached mid-day, an answer filed by screenshot before the switch stands and
   a filled table grants the points (`_staff_list_filed`).
 - /kelish opened to leader · supervisor · shift-manager (`open_kelish_page`).
+- **The description** (2026-11-09, the operator: «it still asks for a
+  screenshot»): the rollout wrote the automatic text on the 21 units it
+  switched but left the GLOBAL description asking for a spreadsheet
+  screenshot, which every other unit inherited. One-shot
+  `startup.patch_task11_description_nov09` puts the automatic text
+  (`TASK11_DESC`, no screenshot mentioned) on the global level and clears
+  every unit / leader copy mentioning «skrinshot», so all inherit it. The
+  note «Foto hisobot» and the AI `criteria` were left as they were.
 - **The #11 result is a block of labelled lines, and WHEN the list was fully
   filled is one of them** (2026-10-12, the operator — first «show when it was
   fully filled alongside», then «why is it not marked?», then «everything

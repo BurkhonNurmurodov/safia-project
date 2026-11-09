@@ -8522,6 +8522,47 @@ def patch_task10_description_sep19() -> None:
         db.close()
 
 
+TASK11_DESC_FLAG = "task11_desc_no_screenshot_2026_11_09_v1"
+TASK11_DESC = (
+    "«Ish grafigi» sahifasida yacheykalaringiz ro'yxatini to'ldiring: "
+    "ro'yxatdagi har bir xodim yonida «Keladi» yoki «Kelmaydi» belgilangan "
+    "bo'lsin. Kim belgilagani muhim emas — ro'yxat to'liq bo'lsin."
+    "\n\nBu vazifani tizim o'zi tekshiradi. Tekshiruv smena oxirida, vazifa "
+    "ekranida yozilgan vaqtda o'tkaziladi; 30 daqiqa oldin eslatma keladi, "
+    "natija esa tekshiruvdan so'ng darhol yuboriladi.")
+
+
+def patch_task11_description_nov09() -> None:
+    """2026-11-09 (the operator): task #11 has been an automatic check since
+    5 Oct, yet its GLOBAL description still asked for a spreadsheet screenshot
+    — every unit without a row of its own read that. The global text becomes
+    the automatic one, and the unit / leader copies the 5 Oct rollout wrote
+    (which still said «skrinshot … shart emas») are cleared so every level
+    inherits this one text. `criteria` (the AI's) is left alone."""
+    from app.models import LeaderTaskDef, LeaderTaskLeaderSetting, LeaderTaskSetting
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=TASK11_DESC_FLAG).first():
+            return
+        td = db.query(LeaderTaskDef).filter_by(id=11).first()
+        if td:
+            td.description = TASK11_DESC
+        cleared = 0
+        for model in (LeaderTaskSetting, LeaderTaskLeaderSetting):
+            for r in db.query(model).filter(model.task_id == 11,
+                                            model.description.ilike("%skrinshot%")).all():
+                r.description = None
+                cleared += 1
+        db.add(AppSetting(key=TASK11_DESC_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] task 11 description patched; {cleared} override(s) cleared")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] task 11 description patch failed: {exc}")
+    finally:
+        db.close()
+
+
 def _rules_in_shift(shift: int, now) -> bool:
     """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours
     `leader_ai.SHIFT_WINDOW` carries: shift 1 is a daytime range, shift 2
