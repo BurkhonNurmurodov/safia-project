@@ -145,6 +145,7 @@ try:
         add_pp_product_archive_columns,
         add_pp_product_uom,
         add_assessment_answer_columns,
+        seed_hr_kaizen_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -289,6 +290,7 @@ try:
     add_pp_product_archive_columns()
     add_pp_product_uom()
     add_assessment_answer_columns()
+    seed_hr_kaizen_questions()
     add_pp_product_containers()
     add_forecast_answer_columns()
     add_assistant_run_lease()

@@ -9835,3 +9835,72 @@ def add_assessment_answer_columns() -> None:
     _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer + candidates.employee_id")
 
 
+
+
+def seed_hr_kaizen_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-11-09), `services/assessment_seed_hr_kaizen_nov09.py`:
+    the TB department's questions become OKK's, then the HR document's 14 test
+    questions and the Kaizen document's 20 test questions + 10 cases join the
+    bank (each with its expected answer). A question its department already
+    holds (folded text) is skipped, its answer filled in if it has none.
+    Sittings already drawn keep their own copies. The move, the rows and the
+    flag ride ONE transaction. Delete this function, the module and both calls
+    once the flag reads «done»."""
+    import re as _re
+    from datetime import datetime, timezone
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services import assessment_seed_hr_kaizen_nov09 as seed
+    fold = lambda t: _re.sub(r"\s+", " ", (t or "").strip().lower())
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.FLAG).first():
+            return
+        now = datetime.now(timezone.utc)
+        moved = (db.query(AssessmentQuestion)
+                 .filter(AssessmentQuestion.department == seed.MOVE_FROM).all())
+        for q in moved:
+            q.department = seed.MOVE_TO
+            q.updated_at = now
+            q.updated_by = seed.MOVED_BY
+        db.flush()
+        stats = {}
+        for dept in seed.SOURCES:
+            have = {fold(q.text): q for q in db.query(AssessmentQuestion).filter(
+                AssessmentQuestion.department == dept).all()}
+            st = stats[dept] = {"added": 0, "answered": 0, "skipped": 0}
+            for d, qtype, text, answer in seed.QUESTIONS:
+                if d != dept:
+                    continue
+                q = have.get(fold(text))
+                if q is not None:
+                    if not (q.answer or "").strip():
+                        q.answer = answer
+                        st["answered"] += 1
+                    else:
+                        st["skipped"] += 1
+                    continue
+                db.add(AssessmentQuestion(department=dept, qtype=qtype, text=text,
+                                          answer=answer, created_by=seed.SOURCES[dept]))
+                st["added"] += 1
+        db.add(AppSetting(key=seed.FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] HR / Kaizen questions import + TB→OKK move skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] assessment bank: {len(moved)} TB questions moved to OKK; "
+          + "; ".join(f"{d}: {s['added']} added, {s['answered']} answers filled, "
+                      f"{s['skipped']} already there" for d, s in stats.items()))
+    action_log.record_system("training", "assessment.questions_moved",
+                             target_kind="assessment_question",
+                             details=[("from", seed.MOVE_FROM), ("to", seed.MOVE_TO),
+                                      ("moved", len(moved))])
+    for dept, s in stats.items():
+        action_log.record_system("training", "assessment.questions_imported",
+                                 target_kind="assessment_question",
+                                 details=[("department", dept), ("added", s["added"]),
+                                          ("answered", s["answered"]), ("skipped", s["skipped"]),
+                                          ("source", seed.SOURCES[dept])])

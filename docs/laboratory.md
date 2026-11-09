@@ -137,7 +137,23 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   `assessment_tb_food_safety_seed_2026_10_31_v1` written with the rows, Jurnal
   `assessment.questions_imported`) over `services/assessment_seed_tb_oct31.py`.
   A question already in the TB bank is skipped (its missing answer filled in).
-  Delete the module, the function and both calls once the flag reads «done».
+  (Module and function since deleted.)
+- **On 2026-11-09 those 20 questions became OKK's, and HR and Kaizen got real
+  questions** (the operator: «make the current questions of TB the questions
+  of OKK»). TEMPORARY `startup.seed_hr_kaizen_questions` (`later`, both
+  entrypoints, flag `assessment_hr_kaizen_seed_tb_to_okk_2026_11_09_v1` in the
+  same transaction as the rows) over `services/assessment_seed_hr_kaizen_nov09.py`:
+  every `tb` question → `okk` (`updated_by` names the move; sittings keep their
+  copies), then «HR- тест саволлари» — 14 multiple-choice THEORY questions —
+  and «Brigadirlar uchun Kaizen keyslar va test» — 20 multiple-choice THEORY
+  questions + 10 production cases as PRACTICAL (situation + task; the grading
+  guide is the expected answer). A multiple-choice question carries its A–D
+  options in the text; its expected answer is «To'g'ri javob: X) …». Extracted
+  by script from the documents, checked against both Kaizen answer keys.
+  Jurnal `assessment.questions_moved` + `assessment.questions_imported`.
+  **Consequence: TB holds no question until somebody adds some, so no sitting
+  can be opened (`pool_short`) until TB has 3.** Delete the module, the
+  function and both calls once the flag reads «done».
 - **SAMPLE questions for trying the page out** (the operator, 2026-10-31: «for
   now, later we delete and put actual questions»): 40 written by the
   assistant, in Russian, with expected answers — Kaizen 5 theory + 7
