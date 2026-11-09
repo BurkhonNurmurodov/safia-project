@@ -90,3 +90,40 @@ profile is deleted too** when the one claim on it is refused. The HR DM still go
 out (it needs only the account id and language, read before the delete);
 nothing undoes the delete. Requests
 refused before this change (2 on 9 Nov) are left as they were.
+
+## The registrant's Telegram profile («Profilni ko'rish», `/tg-user/:tid`, 2026-11-09)
+
+The operator: a registrant writes to the BOT, not to a person, so no admin can
+open their Telegram profile and see who they are. Every registration request
+the bot DMs to the admins (and every `/pending` row) now carries a first button
+**«👤 Profilni ko'rish»** (`telegram_bot._tg_profile_btn`), a mini-app button
+opening `/tg-user/<telegram id>` — and the button STAYS on the message once the
+request is decided (only ✅/❌ and the panel button go), because a person is
+worth looking up after the decision too.
+
+The page (`pages/TgProfile.jsx`, admins only — `RequireAdmin`, the endpoint
+`verify_admin`) is drawn like Telegram's own profile: the header in the
+person's profile colour (Bot API «profile accent colors», light / dark set by
+the app theme) with their profile-background emoji scattered round the avatar,
+the name with the emoji status, the Telegram rating level as a shield (red when
+negative — Telegram's own sign of a doubtful buyer); then the personal channel
+(title, description, subscribers), the info rows (username and every other
+active username, bio, the phone they SHARED at /start — `telegram_users.phone`,
+birthday with age, business address and intro, paid-message price), the
+Telegram ID, and tabs for all profile photos (tap → full size), gifts and
+profile music (playable).
+
+`GET /admin/tg-profile/{telegram_id}` (`routers/admin.py`) asks Telegram in
+parallel: `getChat`, `getUserProfilePhotos`, `getUserProfileAudios`,
+`getUserGifts`, `getCustomEmojiStickers` (the status and pattern emoji), and
+`getChat` + `getChatMemberCount` for the channel. A method Telegram refuses
+leaves its part empty; a refused `getChat` is the page's 404. Every picture and
+track goes through the existing `/admin/tg-file/raw` proxy as a blob — the file
+URL carries the bot token. The route is hidden from «Yordamchi»
+(`assistant_api._HIDDEN_PREFIXES`): strangers' bios and phones are not platform
+data.
+
+**What a bot cannot see, so the page cannot show:** stories, «last seen» /
+online, the channel's latest post, anything the person's privacy settings hide
+from non-contacts (a hidden photo is simply absent). The page says the first two
+in its footnote. Business opening hours are left out (no registrant has one).

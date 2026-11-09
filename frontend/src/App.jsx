@@ -80,6 +80,7 @@ const LeaderUnitReport = lazyWithReload(() => import("./pages/LeaderUnitReport")
 const LeaderAppeal = lazyWithReload(() => import("./pages/LeaderAppeal"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
+const TgProfile = lazyWithReload(() => import("./pages/TgProfile"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const NotionTasks = lazyWithReload(() => import("./pages/NotionTasks"));
 const IdleSolutions = lazyWithReload(() => import("./pages/IdleSolutions"));
@@ -172,6 +173,7 @@ function preloadOpenedRoute() {
       Page = second === "movements" ? WorkersMovements
         : second === "composition" ? WorkersComposition : WorkersAttendance;
     } else if (first === "cells" && second) Page = CellDetails;
+    else if (first === "tg-user") Page = TgProfile;
     else if (first === "education" && second) Page = EducationLesson;
     else if (first === "targets" && second) Page = TargetGoal;
     else if (first === "assessment" && second) Page = AssessmentGrade;
@@ -679,6 +681,8 @@ function AppWithLang() {
                 The read endpoint is gated the same way; every write keeps its
                 own capability/admin guard. */}
             <Route path="/cells/:id" element={<AuthGate><CellDetails /></AuthGate>} />
+            {/* a registrant's Telegram profile — the bot's «Profilni ko'rish» button (docs/registration.md) */}
+            <Route path="/tg-user/:tid" element={<AuthGate><RequireAdmin><TgProfile /></RequireAdmin></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/notion-tasks" element={<AuthGate><RequirePage page="notion-tasks"><NotionTasks /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />

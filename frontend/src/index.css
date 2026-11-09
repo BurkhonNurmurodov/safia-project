@@ -98,6 +98,8 @@
      on the logo gold is the platform's look. */
   --on-brand:      #ffffff;
   --brand-rose:    #E8A0B0;
+  /* Telegram's link blue — /tg-user draws a Telegram profile (AA on the card). */
+  --tg-link:       #6ab3f3;
   --brand-bg:      rgba(200,151,63,0.12);
   --brand-hover:   rgba(200,151,63,0.20);
   --brand-border:  rgba(200,151,63,0.25);
@@ -154,6 +156,8 @@
   --brand-text:    #B07828;
   --on-brand:      #ffffff;
   --brand-rose:    #C8687E;
+  /* Telegram's link blue — /tg-user draws a Telegram profile (AA on the card). */
+  --tg-link:       #1c6fb5;
   --brand-bg:      rgba(200,151,63,0.10);
   --brand-hover:   rgba(200,151,63,0.17);
   --brand-border:  rgba(200,151,63,0.30);
@@ -1385,3 +1389,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
   .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }
 }
+
+/* /tg-user — the Telegram-profile page's tap targets (pages/TgProfile.jsx). */
+.tgp-tap { transition: opacity 150ms, background-color 150ms; }
+.tgp-tap:active { opacity: 0.7; }
+.tgp-tap:focus-visible { outline: 2px solid var(--tg-link); outline-offset: 2px; }
+.tgp-hover:hover { background: var(--bg-accent) !important; }
