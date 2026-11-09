@@ -601,8 +601,11 @@ last columns, after «Pareto» (the operator's call, same day), and
   (2026-10-31, the operator — it was one card per team), listing each team that
   needs it with Σ of its positions' counts, in the load view's team order, and
   «Jami» (Σ of the rows) in the card's head — a whole-centre row counts every
-  line at its Команда, a group row the lines carrying its letter (unlettered
-  lines of a grouped centre are on no group row). A team none of whose lines
+  line at its Команда, a group row the lines carrying its letter, and a
+  grouped centre's UNLETTERED lines get one more row after its letters — the
+  code with «harfsiz» (2026-11-09: Abdukarimov Sanjar's capacities all sat on
+  unlettered lines of A2891 / A28910, so every card read «none»; until then
+  they were on no row). A team none of whose lines
   states that capacity is not listed; a container no team needs reads «Jami —»
   and «Sig'imi kiritilgan pozitsiya yo'q».
 - **«Smena kunligi» carries the day's PLANT totals** — «Konteynerlar — jami»

@@ -2396,10 +2396,20 @@ export default function Production() {
   // order so a cell sits on the same line of every card. A team none of whose
   // positions states this container's capacity is not listed; the card's total
   // is the sum of the rows it lists.
+  // A grouped centre's UNLETTERED lines (2026-11-09, the operator: Abdukarimov
+  // Sanjar's capacities all sat on lines of A2891 / A28910 carrying no letter,
+  // so every card read «none») get one more row after that centre's letters —
+  // the code with «harfsiz» — so no typed capacity falls off the cards.
+  const containerTeams = teamCards.flatMap((x, i) => {
+    const next = teamCards[i + 1];
+    const lastOfGrouped = x.g && next?.w !== x.w;
+    return lastOfGrouped ? [x, { w: x.w, g: null, rest: true }] : [x];
+  });
+  const restOf = (w) => teamContainers.get(`${String(w.work_center ?? "").trim().toUpperCase()}|`) ?? {};
   const containerCards = teamsView !== "containers" ? [] : CONTAINERS.map((c) => {
-    const list = teamCards
+    const list = containerTeams
       .filter(({ g }) => !g?.orphan)
-      .map(({ w, g }) => ({ w, g, n: containersOf(w, g)[c.id] }))
+      .map(({ w, g, rest }) => ({ w, g, rest, n: (rest ? restOf(w) : containersOf(w, g))[c.id] }))
       .filter((x) => x.n != null);
     return { c, list, total: list.length ? list.reduce((s, x) => s + x.n, 0) : null };
   });
@@ -3704,16 +3714,18 @@ export default function Production() {
                 <p className="text-[11px] py-1" style={{ color: "var(--text-3)" }}>{t("production.cont.none")}</p>
               ) : (
                 <ul className="flex flex-col">
-                  {list.map(({ w, g, n }) => {
+                  {list.map(({ w, g, rest, n }) => {
                     const wcg = wcColor(w.work_center);
                     return (
-                      <li key={g ? gKey(w.work_center, g.group) : w.work_center}
+                      <li key={g ? gKey(w.work_center, g.group) : `${w.work_center}${rest ? "|" : ""}`}
                         className="flex items-center justify-between gap-2 min-h-[30px]">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-xs font-bold px-1.5 py-0.5 rounded-md"
                             title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
                             style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
                           {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
+                          {rest && <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}
+                            title={t("production.cont.noGroupHint")}>{t("production.cont.noGroup")}</span>}
                         </span>
                         <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-1)" }}>{fmt(n, 0)}</span>
                       </li>
