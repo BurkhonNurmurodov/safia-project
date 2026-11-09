@@ -152,8 +152,13 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   by script from the documents, checked against both Kaizen answer keys.
   Jurnal `assessment.questions_moved` + `assessment.questions_imported`.
   **Consequence: TB holds no question until somebody adds some, so no sitting
-  can be opened (`pool_short`) until TB has 3.** Delete the module, the
-  function and both calls once the flag reads «done».
+  can be opened (`pool_short`) until TB has 3.** The same day (asked) the SAMPLE
+  questions of HR, Kaizen and OKK were ARCHIVED — `startup.archive_sample_questions`,
+  same module, flag `assessment_samples_archived_hr_kaizen_okk_2026_11_09_v1`,
+  Jurnal `assessment.samples_archived`; Production keeps its samples (it has no
+  real questions). «Namunalarni o'chirish» still removes archived samples and
+  the sittings that drew them. Delete the module, both functions and their
+  calls once both flags read «done».
 - **SAMPLE questions for trying the page out** (the operator, 2026-10-31: «for
   now, later we delete and put actual questions»): 40 written by the
   assistant, in Russian, with expected answers — Kaizen 5 theory + 7

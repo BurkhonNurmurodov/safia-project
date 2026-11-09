@@ -9904,3 +9904,44 @@ def seed_hr_kaizen_questions() -> None:
                                  details=[("department", dept), ("added", s["added"]),
                                           ("answered", s["answered"]), ("skipped", s["skipped"]),
                                           ("source", seed.SOURCES[dept])])
+
+
+def archive_sample_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-11-09), the same module: the SAMPLE questions
+    (`assessment.SAMPLE_SOURCE`) of HR, Kaizen and OKK — the departments that
+    now hold real questions — are archived: out of the draw, kept, restorable
+    one by one from the bank. Production keeps its samples. A sample already
+    archived is left as it is. The rows and the flag ride ONE transaction.
+    Delete with `seed_hr_kaizen_questions`."""
+    from datetime import datetime, timezone
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services.assessment import SAMPLE_SOURCE
+    from app.services import assessment_seed_hr_kaizen_nov09 as seed
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.ARCHIVE_FLAG).first():
+            return
+        now = datetime.now(timezone.utc)
+        rows = (db.query(AssessmentQuestion)
+                .filter(AssessmentQuestion.created_by == SAMPLE_SOURCE,
+                        AssessmentQuestion.department.in_(seed.ARCHIVE_DEPARTMENTS),
+                        AssessmentQuestion.archived_at.is_(None)).all())
+        per = {}
+        for q in rows:
+            q.archived_at, q.archived_by = now, seed.ARCHIVED_BY
+            per[q.department] = per.get(q.department, 0) + 1
+        db.add(AppSetting(key=seed.ARCHIVE_FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] sample questions archive skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] assessment bank: {len(rows)} sample questions archived "
+          + ", ".join(f"{d} {n}" for d, n in sorted(per.items())))
+    action_log.record_system("training", "assessment.samples_archived",
+                             target_kind="assessment_question",
+                             details=[("archived", len(rows))]
+                                     + [(d, per.get(d, 0)) for d in seed.ARCHIVE_DEPARTMENTS])

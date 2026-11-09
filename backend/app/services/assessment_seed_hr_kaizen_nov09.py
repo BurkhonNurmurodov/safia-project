@@ -17,14 +17,22 @@ retyped; numbering dropped, the options and the answer keys checked against
 both of the Kaizen document's keys). `startup.seed_hr_kaizen_questions`
 writes it once (flag below), skipping a question its department already holds
 (whitespace and case folded) and filling in the expected answer of such a
-question when it has none. Delete this module, the startup function and both
-calls once the flag reads «done».
+question when it has none. `startup.archive_sample_questions` then archives
+the sample questions of HR, Kaizen and OKK (step 4 below). Delete this module,
+both startup functions and their calls once both flags read «done».
 """
 
 FLAG = "assessment_hr_kaizen_seed_tb_to_okk_2026_11_09_v1"
 MOVE_FROM = "tb"
 MOVE_TO = "okk"
 MOVED_BY = "TB savollari OKK'ga ko'chirildi (2026-11-09)"
+# 4. (asked the same day, after the import) the SAMPLE questions of the three
+#    departments that now hold real ones are ARCHIVED — out of the draw, kept,
+#    restorable from the bank one by one. Production keeps its samples: it has
+#    no real questions yet. Its own flag, since step 1–3's had already run.
+ARCHIVE_FLAG = "assessment_samples_archived_hr_kaizen_okk_2026_11_09_v1"
+ARCHIVE_DEPARTMENTS = ("hr", "kaizen", "okk")
+ARCHIVED_BY = "Namunalar arxivlandi — haqiqiy savollar keldi (2026-11-09)"
 SOURCES = {
     "hr": "Import: HR- тест саволлари (docx)",
     "kaizen": "Import: Brigadirlar uchun Kaizen keyslar va test (docx)",
