@@ -270,7 +270,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const params = useFactoryParams(base);
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["shift-report", params],
+    queryKey: ["shift-report", "hrs", params],
     queryFn: () => api.get("/api/shift-report", { params }).then((r) => r.data),
     enabled: pageReady,
     staleTime: 60_000,
