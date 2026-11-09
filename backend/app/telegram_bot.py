@@ -1874,6 +1874,21 @@ def forget_registration_notices(target_telegram_id: int):
         db.commit()
 
 
+def _drop_rejected_guest(db, role_row: TelegramUserRole) -> None:
+    """A rejected guest claim leaves nothing behind (docs/registration.md):
+    the request goes — the account too when it was its only role — and the
+    guest profile with it unless another request still names it. Caller commits."""
+    from app.routers.profiles import _remove_role_row, _purge_profile_key
+    pid = role_row.role_id
+    _remove_role_row(db, role_row)
+    db.flush()
+    if pid and not db.query(TelegramUserRole).filter_by(role="guest", role_id=pid).first():
+        p = db.query(RoleProfile).filter_by(id=pid, role="guest").first()
+        if p:
+            _purge_profile_key(db, "guest", pid)
+            db.delete(p)
+
+
 def decide_registration(role_ref: int, status: str, decided_by: str | None = None) -> bool:
     """Apply an approve/reject decision to a single role request, then fan out:
     tell the registrant, and edit every admin's notification with the outcome.
@@ -1941,9 +1956,11 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
                         TelegramUserRole.id != role_row.id)
                 .all()
             ):
-                l.status = "rejected"
                 lu = db.query(TelegramUser).filter_by(telegram_id=l.telegram_id).first()
                 losers.append((l.id, l.telegram_id, (lu.language if lu else "uz") or "uz", "guest"))
+                _drop_rejected_guest(db, l)
+        elif decided_role == "guest" and status == "rejected":
+            _drop_rejected_guest(db, role_row)
         else:
             role_row.status = status
             if status == "approved":

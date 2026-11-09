@@ -65,11 +65,28 @@ guest profile without an APPROVED holder — pending and rejected requests too,
 which on 9 Nov was exactly the 27 job seekers' full names, shown to anyone who
 pressed Start. It now lists only guest profiles NOBODY has a request on
 (an admin's unclaimed pre-created ones). A guest retrying their own refused
-request types their name; the bot re-uses their profile. The minted profiles
-stay in the admin Profiles tab — nothing was deleted.
+request types their name; the bot mints a fresh profile (the refused one is
+gone — see below).
 
 **The backlog** (25 pending, 2 rejected on 9 Nov) is closed by an admin
 rejecting each pending guest request on the Users tab — with Ghost Mode off,
 each person receives the HR message naming the seeded contact. The 2 already
 rejected were told «contact the admin» and get nothing new unless messaged by
 hand.
+
+## A rejected guest is deleted (`telegram_bot._drop_rejected_guest`, 2026-11-09)
+
+The operator: «when the guest registration is rejected, delete them». A refused
+guest request used to stay as a `rejected` row on a profile nobody could pick
+again, so the Profiles tab's «Mehmonlar» filled with «Bog'lanmagan» names.
+Now `decide_registration` — the panel's ❌ and the Telegram button alike —
+deletes the request instead of marking it, through `profiles._remove_role_row`
+(the account goes too when that was its only role, exactly as the panel's
+profile delete does), then deletes the guest profile and everything keyed to it
+(`_purge_profile_key`) unless another request still names it. The same holds
+for the auto-rejected rivals when one claim on a profile is approved — their
+requests go, the profile stays with the winner. **An admin's pre-created guest
+profile is deleted too** when the one claim on it is refused. The HR DM still goes
+out (it needs only the account id and language, read before the delete);
+nothing undoes the delete. Requests
+refused before this change (2 on 9 Nov) are left as they were.

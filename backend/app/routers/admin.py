@@ -622,9 +622,9 @@ def update_user_role(
     if alert_changes:
         alert_grant_use(
             db, admin_payload, CAP_USERS_MANAGE, "user.role_updated",
-            details=[("user", user.full_name or user.tg_name or f"#{user.telegram_id}"),
-                     ("account", user.telegram_id),
-                     ("profile", role_row.full_name)],
+            # snapshots: a rejected guest's rows are deleted by now
+            details=[("user", user_label), ("account", account_id),
+                     ("profile", profile_name)],
             changes=alert_changes,
         )
 
