@@ -176,6 +176,11 @@ def compl_cell(totals: Optional[dict]) -> dict:
         # the minutes behind the % (F1 and I1) — the tooltip prints them as hours
         "actual_min": round(float(totals.get("total_actual_labor") or 0), 1),
         "plan_min": round(float(totals.get("total_plan_labor") or 0), 1),
+        # who did it and the shift's length: ΣN, and ΣN × shift_min recovered
+        # from avg_load as `load_cell` does — the tooltip prints hours PER PERSON
+        "people": totals.get("total_people") or None,
+        "cap_min": (round(float(totals["total_plan_labor"]) / float(totals["avg_load"]), 1)
+                    if totals.get("avg_load") else None),
         "reason": None,
     }
 

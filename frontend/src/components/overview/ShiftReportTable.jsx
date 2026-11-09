@@ -415,11 +415,21 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     : undefined);
 
   // Plan fulfilment's twin: hours done of the hours planned, the day before.
-  const complTitle = (c) => (isNum(c?.plan_min) && isNum(c?.actual_min)
-    ? fill(t("overview.sr.complWork"), {
+  const complTitle = (c) => {
+    if (!isNum(c?.plan_min) || !isNum(c?.actual_min)) return undefined;
+    const total = fill(t("overview.sr.complWork"), {
       done: (c.actual_min / 60).toFixed(1), plan: (c.plan_min / 60).toFixed(1),
-    })
-    : undefined);
+    });
+    // per person against the shift: did the people finish inside their shift?
+    if (!c.people || !isNum(c.cap_min)) return total;
+    const shift = c.cap_min / c.people / 60;
+    return [
+      fill(t("overview.sr.complPerson"), {
+        done: (c.actual_min / 60 / c.people).toFixed(1), shift: shift.toFixed(1),
+      }),
+      total,
+    ].join("\n");
+  };
 
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;
