@@ -509,6 +509,9 @@ def _purge_leader_profile(db: Session, leader_id: int) -> None:
     ex("DELETE FROM leader_ai_disputes WHERE leader_id = :lid")
     ex("DELETE FROM leader_ai_reviews  WHERE leader_id = :lid")
     ex("DELETE FROM leader_day_reports WHERE leader_id = :lid")
+    # The platform's own verdicts on the checklist (`leader_auto`) — NOT NULL FK
+    # to role_profiles, so one auto-checked task was enough to 500 the delete.
+    ex("DELETE FROM leader_auto_checks WHERE leader_id = :lid")
 
     for table, col in _LEADER_CONFIG_REFS:
         ex(f"DELETE FROM {table} WHERE {col} = :lid")
