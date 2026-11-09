@@ -510,7 +510,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}
             >
               {fill(t("overview.sr.group"), {
-                shift: shiftName(g.shift), today: ddmm(g.today), yesterday: ddmm(g.yesterday),
+                shift: shiftName(g.shift), when: t(todayKey), today: ddmm(g.today), prev: t(prevKey), yesterday: ddmm(g.yesterday),
               })}
             </td>
           </tr>
