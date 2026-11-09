@@ -644,7 +644,7 @@ function AppWithLang() {
             <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
-            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", "shift-manager", "top-manager"]}><IdleSolutions /></RequireRoles></AuthGate>} />
+            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", "shift-manager", "top-manager", "supervisor"]}><IdleSolutions /></RequireRoles></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />

@@ -73,8 +73,9 @@ _downtime_page = require_page("downtime")
 
 
 def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dict:
-    """The page's read gate: the /downtime page key, plus top-managers, who hold
-    no /downtime access but may read this analysis (read-only, whole plant)."""
+    """The page's read gate: the /downtime page key, plus top-managers and
+    supervisors (brigadirs), who hold no /downtime access but may read this page —
+    read-only; a viewer's plant lock still applies through `_downtime`."""
     import jwt
     from jwt import PyJWTError as JWTError
     from app.config import settings
@@ -82,7 +83,7 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if payload.get("role") == "top-manager":
+    if payload.get("role") in ("top-manager", "supervisor"):
         return payload
     return _downtime_page(token, db)
 
@@ -93,8 +94,9 @@ def _admin_only(payload: dict) -> None:
 
 
 def _reader_only(payload: dict) -> None:
-    """Reading: admins and shift-managers (writes stay admin / the category owner)."""
-    if payload.get("role") not in ("admin", "shift-manager", "top-manager"):
+    """Reading: admins, shift-managers, top-managers and supervisors (writes stay
+    admin / the category owner)."""
+    if payload.get("role") not in ("admin", "shift-manager", "top-manager", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin only")
 
 

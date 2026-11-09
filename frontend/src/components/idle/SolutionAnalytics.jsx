@@ -140,6 +140,18 @@ function CauseRow({ c, T, label }) {
       </button>
       {open && (
         <div className="px-4 pb-4 pt-3" style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}>
+          {c.solution ? (
+            <div className="mb-3 rounded-xl px-3 py-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+              <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{T.rSolTitle}</div>
+              <div className="text-sm mt-0.5" style={{ color: "var(--text-1)" }}>«{c.solution.text}»</div>
+              <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                {ddmmyy(c.solution.date)}{c.solution.author_name ? ` · ${shortPerson(tl(c.solution.author_name) || c.solution.author_name)}` : ""}
+                {` · ${T.st[c.solution.status] || c.solution.status}`}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{T.rNoSolution}</div>
+          )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 pb-2 text-[11px]" style={{ color: "var(--text-3)" }}>
             {["repeat", "doing", "solved", "none"].map((k) => (
               <span key={k} className="inline-flex items-center gap-1.5">
