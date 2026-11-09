@@ -131,6 +131,11 @@ def analysis(
     payload: dict = Depends(_reader),
 ):
     _reader_only(payload)
+    # A supervisor (brigadir) reads ONLY their own unit's problems — whatever
+    # brigadirs they pick; a supervisor with no unit reads nothing.
+    if payload.get("role") == "supervisor":
+        mine = payload.get("role_id")
+        manager_id = [mine] if mine is not None else [-1]
     # Lazy: the downtime router is a sibling router, not a service.
     from app.routers.downtime import _downtime
 
@@ -330,6 +335,8 @@ def analytics(
     WORKING days of the scope (days it has a row), so a weekend is not a cure.
     """
     _reader_only(payload)
+    if payload.get("role") == "supervisor":
+        raise HTTPException(status_code=403, detail="Analytics are not open to supervisors")
     from app.routers.downtime import _downtime
 
     # A picked day (or any span under PERIOD_MIN) is widened backwards from its end.

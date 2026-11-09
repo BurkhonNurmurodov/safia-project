@@ -4,6 +4,7 @@ import {
   AlertTriangle, ChevronDown, ChevronRight, ClipboardCheck, Clock, Lightbulb, UserRound, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import { useAuth } from "../context/AuthContext";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -314,12 +315,15 @@ export default function IdleSolutions() {
   const T = useT();
   const { t } = useLang();
   const { tl } = useTranslit();
+  const { auth } = useAuth();
+  const isSupervisor = auth?.role === "supervisor"; // read-only, own unit's problems only: no Tahlil, no brigadir filter
   const qc = useQueryClient();
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, shift, setShift, brigadirIds, setBrigadirIds } = useFilters();
   const fparams = useFactoryParams(params);
   const factorySection = useFactorySection();
   const [openCat, setOpenCat] = useState(null);
-  const [view, setView] = usePersistentState("idle_solutions_view", "problems"); // problems | analytics
+  const [savedView, setView] = usePersistentState("idle_solutions_view", "problems"); // problems | analytics
+  const view = isSupervisor ? "problems" : savedView;
   // Brigadir picker: several at once, limited to the plant on screen (a pick
   // the plant no longer offers is dropped, never left over an empty page).
   const { data: allSupervisors = [] } = useQuery({
@@ -372,7 +376,7 @@ export default function IdleSolutions() {
           options={[[null, t("filter.all") || "—"], [1, "S1"], [2, "S2"]]} />
       ),
     },
-    {
+    ...(isSupervisor ? [] : [{
       key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
       active: brigadirIds.length > 0,
       display: brigadirIds.length === 1
@@ -387,15 +391,17 @@ export default function IdleSolutions() {
           render={(v) => supOptions.find((o) => o.value === v)?.label || v}
         />
       ),
-    },
+    }]),
   ];
 
   return (
     <Layout title={T.title} subtitle={null}>
-      <div className="mb-3">
-        <SegmentedToggle asTabs value={view === "analytics" ? "analytics" : "problems"} onChange={setView}
-          options={[["problems", T.tabProblems], ["analytics", T.tabAnalytics]]} />
-      </div>
+      {!isSupervisor && (
+        <div className="mb-3">
+          <SegmentedToggle asTabs value={view === "analytics" ? "analytics" : "problems"} onChange={setView}
+            options={[["problems", T.tabProblems], ["analytics", T.tabAnalytics]]} />
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
           compactLabel triggerClassName="px-3 py-2 text-sm" />
