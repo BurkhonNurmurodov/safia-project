@@ -171,7 +171,13 @@ def compl_cell(totals: Optional[dict]) -> dict:
         return _blank("no_plan")
     if not totals.get("total_actual_labor"):
         return _blank("no_fact")
-    return {"value": _ratio(totals.get("completion")), "reason": None}
+    return {
+        "value": _ratio(totals.get("completion")),
+        # the minutes behind the % (F1 and I1) — the tooltip prints them as hours
+        "actual_min": round(float(totals.get("total_actual_labor") or 0), 1),
+        "plan_min": round(float(totals.get("total_plan_labor") or 0), 1),
+        "reason": None,
+    }
 
 
 def fold_quality(counts: Iterable[tuple]) -> dict[int, dict]:

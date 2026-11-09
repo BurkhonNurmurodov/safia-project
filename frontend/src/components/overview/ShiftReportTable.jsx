@@ -414,6 +414,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     ? fill(t("overview.sr.loadWork"), { hours: (c.plan_min / 60 / c.people).toFixed(1) })
     : undefined);
 
+  // Plan fulfilment's twin: hours done of the hours planned, the day before.
+  const complTitle = (c) => (isNum(c?.plan_min) && isNum(c?.actual_min)
+    ? fill(t("overview.sr.complWork"), {
+      done: (c.actual_min / 60).toFixed(1), plan: (c.plan_min / 60).toFixed(1),
+    })
+    : undefined);
+
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;
     return figTd({
@@ -539,7 +546,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                 </>
               ), loadTitle(r.load), productionTarget(r.load, r, g.today))}
               {attCell(r.att, r, g.today)}
-              {figCell(r.compl, vypTone, (c) => pctText(c.value), undefined,
+              {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure. «done/actionable» was printed
                   beside it and is not (the operator's call, 2026-09-16) — it
