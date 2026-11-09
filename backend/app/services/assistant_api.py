@@ -53,8 +53,9 @@ _HIDDEN_PREFIXES = (
     "/api/translations", "/api/education/seen/", "/api/education/progress",
     "/api/education/resolve", "/api/version", "/health", "/docs", "/openapi",
     # Reads that are not data: the database-dump inventory, a raw Telegram file
-    # fetcher that takes any file id, the «AI kalitlari» tab.
-    "/admin/db-dump", "/admin/tg-file", "/api/admin/ai",
+    # fetcher that takes any file id, the «AI kalitlari» tab, a stranger's
+    # Telegram profile (registrants' bios and phones are not platform data).
+    "/admin/db-dump", "/admin/tg-file", "/admin/tg-profile", "/api/admin/ai",
 )
 
 # A file the page itself would hand over. Reading, not changing.

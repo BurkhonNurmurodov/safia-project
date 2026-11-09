@@ -671,10 +671,22 @@ def _admin_panel_kb() -> types.InlineKeyboardMarkup:
     return kb
 
 
-def _registration_kb(role_ref: int) -> types.InlineKeyboardMarkup:
-    """Inline Approve/Reject for a registration request, plus the original
-    'open panel' button kept alongside (per the 'keep both' decision)."""
+def _tg_profile_btn(target_id: int) -> types.InlineKeyboardButton:
+    """Opens the registrant's Telegram profile as the bot sees it (/tg-user/:id,
+    docs/registration.md «The registrant's Telegram profile») — they wrote to the
+    bot, so no admin can open their profile in Telegram itself."""
+    return types.InlineKeyboardButton(
+        "👤 Profilni ko'rish",
+        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}/tg-user/{target_id}"),
+    )
+
+
+def _registration_kb(role_ref: int, target_id: int) -> types.InlineKeyboardMarkup:
+    """Inline Approve/Reject for a registration request, the registrant's
+    Telegram profile, and the original 'open panel' button kept alongside (per
+    the 'keep both' decision)."""
     kb = types.InlineKeyboardMarkup()
+    kb.add(_tg_profile_btn(target_id))
     kb.row(
         types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"ap:reg:a:{role_ref}"),
         types.InlineKeyboardButton("❌ Rad etish",  callback_data=f"ap:reg:r:{role_ref}"),
@@ -769,7 +781,7 @@ def _notify_admins_of_registration(db, target_id: int, text: str, role_ref: int 
     message so it can be edited with the outcome later. Per-admin failures are
     swallowed — one unreachable admin must not block the others."""
     sent_any = False
-    kb = _registration_kb(role_ref) if role_ref else _admin_panel_kb()
+    kb = _registration_kb(role_ref, target_id) if role_ref else _admin_panel_kb()
     for admin_id in sorted(_admin_ids()):
         try:
             sent = bot.send_message(admin_id, text, reply_markup=kb)
@@ -1834,7 +1846,8 @@ def set_bot_descriptions(contact: str) -> bool:
 def notify_admins_of_decision(target_telegram_id: int, status: str, decided_by: str | None = None,
                               role_ref: int | None = None):
     """Edit every admin's registration notification for this role request with
-    the outcome and drop its button, then forget the notices. Called by the
+    the outcome and drop its decision buttons (the profile button stays), then
+    forget the notices. Called by the
     admin panel after a decision. Notices written before the multi-role
     rollout have no role_ref and are matched by user instead."""
     outcome = "✅ Tasdiqlandi" if status == "approved" else "❌ Rad etildi"
@@ -1857,7 +1870,8 @@ def notify_admins_of_decision(target_telegram_id: int, status: str, decided_by: 
                     f"{n.text}\n\n{outcome}",
                     chat_id=n.admin_telegram_id,
                     message_id=n.message_id,
-                    reply_markup=None,
+                    reply_markup=types.InlineKeyboardMarkup().add(
+                        _tg_profile_btn(n.target_telegram_id)),
                 )
             except Exception:
                 logger.warning("Could not edit notice msg %s for admin %s",
@@ -2123,7 +2137,7 @@ def _pending_list(tid: int):
             try:
                 body = _registration_text(role_row.full_name, role_row.role, user.phone,
                                           user.telegram_id, user.username)
-                sent = _send_burst(tid, body, reply_markup=_registration_kb(role_row.id))
+                sent = _send_burst(tid, body, reply_markup=_registration_kb(role_row.id, user.telegram_id))
                 # Track these too, so they also get edited with the outcome.
                 db.add(RegistrationNotice(
                     target_telegram_id=user.telegram_id,

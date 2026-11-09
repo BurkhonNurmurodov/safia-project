@@ -7,6 +7,7 @@ import os
 import tempfile
 
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -1433,6 +1434,96 @@ def admin_tg_file_raw(file_id: str, _: dict = Depends(verify_admin)):
     if meta["file_size"]:
         headers["Content-Length"] = str(meta["file_size"])
     return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+
+
+# ── A registrant's Telegram profile («Profilni ko'rish») ──────────────────────
+# A registrant wrote to the BOT, not to a person, so no admin can open their
+# Telegram profile to see who they are. The bot can: this gathers what the Bot
+# API shows a bot about a user (docs/registration.md «The registrant's Telegram
+# profile»). Stories and «last seen» are not among it — no Bot API method
+# returns them. Pictures go through /admin/tg-file/raw, never a token URL.
+
+def _tg_call(method: str, **params):
+    """One Bot API call → its result, or None when Telegram refuses (privacy,
+    an unknown chat, nothing of that kind on the account)."""
+    try:
+        body = requests.post(f"{_TG_API}/bot{settings.telegram_bot_token}/{method}",
+                             json=params, timeout=15).json()
+    except (requests.RequestException, ValueError):
+        raise HTTPException(status_code=502, detail="Telegram API unreachable")
+    return body.get("result") if body.get("ok") else None
+
+
+def _sticker_img(s: dict | None) -> str | None:
+    """A file_id an <img> can show for a sticker: its webp thumbnail, else the
+    sticker itself when it is a static webp (lottie / webm are not images)."""
+    if not s:
+        return None
+    th = (s.get("thumbnail") or {}).get("file_id")
+    if th:
+        return th
+    return None if s.get("is_animated") or s.get("is_video") else s.get("file_id")
+
+
+def _hex(c):
+    return f"#{c:06x}" if isinstance(c, int) else None   # Telegram sends RGB ints
+
+
+def _gift_tile(g: dict) -> dict:
+    gift = g.get("gift") or {}
+    if g.get("type") == "unique":
+        bd = (gift.get("backdrop") or {}).get("colors") or {}
+        return {"img": _sticker_img((gift.get("model") or {}).get("sticker")),
+                "name": gift.get("base_name"), "number": gift.get("number"),
+                "colors": [_hex(bd.get("center_color")), _hex(bd.get("edge_color"))]}
+    return {"img": _sticker_img(gift.get("sticker")), "stars": gift.get("star_count")}
+
+
+@router.get("/tg-profile/{telegram_id}")
+def admin_tg_profile(telegram_id: int, db: Session = Depends(get_db),
+                     _: dict = Depends(verify_admin)):
+    if not settings.telegram_bot_token:
+        raise HTTPException(status_code=503, detail="Bot token not configured")
+    chat = _tg_call("getChat", chat_id=telegram_id)
+    if not chat or chat.get("type") != "private":
+        raise HTTPException(status_code=404, detail="Telegram does not show this account to the bot")
+    channel_id = (chat.get("personal_chat") or {}).get("id")
+    emoji_ids = [i for i in (chat.get("emoji_status_custom_emoji_id"),
+                             chat.get("profile_background_custom_emoji_id")) if i]
+    calls = {"photos": ("getUserProfilePhotos", {"user_id": telegram_id}),
+             "audios": ("getUserProfileAudios", {"user_id": telegram_id}),
+             "gifts": ("getUserGifts", {"user_id": telegram_id})}
+    if emoji_ids:
+        calls["emoji"] = ("getCustomEmojiStickers", {"custom_emoji_ids": emoji_ids})
+    if channel_id:
+        calls["channel"] = ("getChat", {"chat_id": channel_id})
+        calls["members"] = ("getChatMemberCount", {"chat_id": channel_id})
+    with ThreadPoolExecutor(len(calls)) as pool:   # independent reads: wait once, not six times
+        futs = {k: pool.submit(_tg_call, m, **p) for k, (m, p) in calls.items()}
+        got = {k: f.result() for k, f in futs.items()}
+
+    photos = (got["photos"] or {}).get("photos") or []
+    gifts = got["gifts"] or {}
+    emoji = {e.get("custom_emoji_id"): _sticker_img(e) for e in got.get("emoji") or []}
+    ch = got.get("channel") or chat.get("personal_chat")
+    user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
+    return {
+        "user": chat,                                  # ChatFullInfo as Telegram sends it
+        "phone": user.phone if user else None,         # the contact they shared at /start
+        # PhotoSize lists run small → large: ~320px for the grid, the largest to zoom
+        "photos": [{"thumb": p[min(1, len(p) - 1)]["file_id"], "full": p[-1]["file_id"]}
+                   for p in photos if p],
+        "audios": (got["audios"] or {}).get("audios") or [],
+        "gifts": [_gift_tile(g) for g in gifts.get("gifts") or []],
+        "gift_count": gifts.get("total_count"),
+        "emoji_status": emoji.get(chat.get("emoji_status_custom_emoji_id")),
+        "pattern": emoji.get(chat.get("profile_background_custom_emoji_id")),
+        "channel": ch and {"id": ch.get("id"), "title": ch.get("title"),
+                           "username": ch.get("username"),
+                           "photo": (ch.get("photo") or {}).get("small_file_id"),
+                           "description": ch.get("description"),
+                           "members": got.get("members")},
+    }
 
 
 # ── Full database dump → Telegram DM ──────────────────────────────────────────
