@@ -88,15 +88,17 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
     return _downtime_page(token, db)
 
 
-def _admin_only(payload: dict) -> None:
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+def _writer_only(payload: dict) -> None:
+    """Writing needs the admin role or the category-owner role («Kutish mas'uli»);
+    `_may_write` then narrows an owner to THEIR categories. Everyone else reads only."""
+    if payload.get("role") not in ("admin", idle_scope.OWNER_ROLE):
+        raise HTTPException(status_code=403, detail="Admin or category owner only")
 
 
 def _reader_only(payload: dict) -> None:
-    """Reading: admins, shift-managers, top-managers and supervisors (writes stay
-    admin / the category owner)."""
-    if payload.get("role") not in ("admin", "shift-manager", "top-manager", "supervisor"):
+    """Reading: admins, category owners (their own categories, locked by
+    `idle_scope`), shift-managers, top-managers and supervisors (own unit)."""
+    if payload.get("role") not in ("admin", idle_scope.OWNER_ROLE, "shift-manager", "top-manager", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin only")
 
 
@@ -582,7 +584,7 @@ def add_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
-    _admin_only(payload)
+    _writer_only(payload)
     if body.category not in idle_scope.CATEGORIES or body.category in EXCLUDED:
         raise HTTPException(status_code=400, detail="unknown_category")
     if not _may_write(db, payload, body.category):
@@ -610,7 +612,7 @@ def edit_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("downtime")),
 ):
-    _admin_only(payload)
+    _writer_only(payload)
     row = db.query(IdleCategorySolution).filter(IdleCategorySolution.id == solution_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="not_found")
