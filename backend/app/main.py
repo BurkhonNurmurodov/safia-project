@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
         report_wc_plan_history,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
+        merge_leader_majidov_7331,
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
@@ -470,6 +471,13 @@ async def lifespan(app: FastAPI):
     # phase. Remove this line, `startup.report_pin_mismatch` and
     # `services/pin_mismatch_report.py` once it has been sent.
     run(report_pin_mismatch)
+
+    # ⚠ TEMPORARY one-shot (2026-11-09) — cell 7331's two leaders (Yuldashov
+    # #298, Haydarov #436) are stopped and deleted, Majidov Ozodjon takes their
+    # history (services/leader_merge_nov10.py). Only SCHEDULES a job (from
+    # 10 Nov, 11:00–19:00). Remove this line and `startup.merge_leader_majidov_7331`
+    # once its flag reads «done» and the report has gone.
+    run(merge_leader_majidov_7331)
 
 
 

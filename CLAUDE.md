@@ -25,7 +25,7 @@ loaded by themselves:
 
 - `docs/navigation-and-shell.md` — the header search «Qidiruv», the app launcher «Ilovalar» (admins and top-managers), the admin app at `/panel/<id>` (`ADMIN_NAV` in `config/adminNav.js` is the ONE list).
 - `docs/cells-and-org.md` — **a cell is printed by its verifix CODE, never the workshop name** (`cellLabel`); «Egasi» and «Boshqaruvchi»; `in_load`; archived cells; one-process cells; **a typed code is stored in Latin** (`latin_code`); **the plant hangs on `managers.factory_id` only** (`factory_scope`); a shift-manager's reach; cell shift times; leader and brigadir kinds; a leader follows the cells they run.
-- `docs/data-fixes.md` — the one-shot data fixes and what they changed: unit «Turdimurodov Nodirjon» into Aripova's, Elnora's profile, cell 9123's 5 October, the four units that changed brigadir on 24 Oct.
+- `docs/data-fixes.md` — the one-shot data fixes and what they changed: unit «Turdimurodov Nodirjon» into Aripova's, Elnora's profile, cell 9123's 5 October, the four units that changed brigadir on 24 Oct, 7331's two leaders handed to Majidov Ozodjon (9 Nov).
 - `docs/verifix.md` — the Verifix connection, the live sync of cells, leaders and brigadirs (`verifix_sync`, dated cell links in `cell_links`), the 4–8 Oct one-shots, the «Verifix (test)» pages.
 - `docs/work-centres.md` — a work centre is NOT unique (`cell_lookup.by_sap` is keyed by unit), and its group letters (`wc_group.share` is THE split).
 - `docs/zagruzka.md` — where the загрузка's inputs come from (`zagruzka_source`, the typed «Bugungi fakt», `ZAGRUZKA_FROM`), the kept trudoyomkost, the comparison tables and heatmaps on `/zagruzka` (`utils/formulas.js` is THE definition), their bands and Excel, «Odam soni» only where the day has a plan.

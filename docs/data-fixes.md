@@ -85,6 +85,58 @@ data is as the dry run read it:
 Delete the module, both startup functions and both calls once the apply flag
 reads «done» (or «blocked») and its report has gone.
 
+## 7331's two leaders → Majidov Ozodjon (`leader_merge_nov10`, 2026-11-09)
+
+The operator: «stop these 2 leaders and keep their history; make Majidov Ozod,
+a worker on this unit, manager of the cell and keep their history as his
+own». Read first through the report door (production and the stored Verifix
+org, 9 Nov): Akbarov Tursunali's unit (#18, shift 2); Yuldashov Nodirbek
+(#298, Verifix 2920 «Лидер», dismissed 16 Oct, cut by the sync from 17 Oct)
+and Haydarov Zaynobiddin (#436, Verifix 30678 «Кондитер», picked as 7331's
+«Boshqaruvchi» on 17 Oct); MAJIDOV OZODJON XAMID O'G'LI (Verifix 2918,
+«Кондитер» in 7331, no profile; his Telegram account had held #298 from 7 Sep
+and was unassigned on 9 Nov). Asked: Majidov runs 7331 from the night of
+9 Nov (the operator picks him on the cell form, which creates his profile);
+17 Oct, which both held, counts Haydarov's 95% day (Yuldashov's 15% day,
+already cut, goes with #298); «Lider o'rnida», as Verifix's job says; the two
+old profiles are DELETED.
+
+TEMPORARY `services/leader_merge_nov10.py` (`startup.merge_leader_majidov_7331`
+→ `_leader_merge_7331_job`, both entrypoints, flag
+`leader_merge_majidov_7331_2026_11_10_v1`, record in app setting
+`leader_merge_majidov_7331_2026_11_10` with every moved id and a snapshot of
+every deleted row) runs ONCE from 10 Nov between 11:00 and 19:00 Tashkent, one
+transaction with its flag, refused (`blocked`) unless the data is as read:
+
+- The pick, through `cell_register.pick_manager`, when the cell form's was not
+  made — the profile tied to Verifix 2918 is the survivor either way.
+- Every day of #298 and #436 → Majidov, but #298's 17 Oct (5659); a date
+  Majidov filed himself keeps his own day. Every automatic check follows its
+  day (a check stays only with the SAME leader's staying day); photos, late
+  proofs and shots, AI verdicts, objections (and «who filed» one as the
+  leader), the day-report ledger and overrides' label follow their day.
+- Concerns held or filed and tasks → Majidov (role ref = his approved row,
+  else none); #298's excluded day (26 Aug) re-keyed to him; #298's cutoff
+  deleted.
+- Majidov owes from 11 Jul (#298's creation — a set `owes_from` decides
+  alone, so the history counts as it did) and carries #298's spelling as an
+  alias (the three sheet-era rows «YULDASHOV NODIRBEK», 2–4 Aug).
+- 7331's dated «Boshqaruvchi» reads him on every past day: a mark on 12 Oct
+  with `prev` = him (the first event's `prev` answers every earlier day), and
+  events on 13 Oct and 17 Oct after the ones naming #298 / #436.
+- Then #298 and #436 are deleted the Profiles tab's way (role rows — the
+  accounts that held nothing else go with them — browser sessions and login,
+  config), after a check that nothing filed is left on them but the staying
+  days. Authorship stays under the old names: comments, chat messages, read
+  marks, bell rows, activity, the Jurnal. Jurnal: `identity.profiles_merged`
+  and one `identity.profile_deleted` per profile. The report goes to Burkhon.
+
+Tested on two copies of the 9 Nov local snapshot (with and without the pick,
+with a same-date clash); the first run caught Haydarov's 17 Oct checks
+staying behind and a login row deleted under its own session bump. Delete the
+module, both startup functions and both calls once the flag reads «done» (or
+«blocked») and the report has gone.
+
 ## Cell 9123's 5 October counts for Raximova Kamola (`cell_day_fix_oct05`)
 
 The operator (2026-10-06): cell 9123 was moved to its new unit (Yogmirov Feruz)

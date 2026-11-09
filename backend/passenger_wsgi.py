@@ -124,6 +124,7 @@ try:
         report_wc_plan_history,
         schedule_catalog_follow_retro,
         report_pin_mismatch,
+        merge_leader_majidov_7331,
         report_dept_attendance,
         report_trudoyomkost_register,
         report_admin_objections,
@@ -554,6 +555,9 @@ try:
     # ⚠ TEMPORARY report (2026-10-26) — «Odam soni»: page against загрузка,
     # DMed once. Remove once it has been sent.
     report_pin_mismatch()
+    # ⚠ TEMPORARY one-shot (2026-11-09) — 7331's two leaders → Majidov Ozodjon.
+    # Remove once its flag reads «done».
+    merge_leader_majidov_7331()
     # ⚠ TEMPORARY one-shot (2026-10-04) — did work centre A1437 ever carry a
     # plan on Suvonov Elshod OF's «Zagruzka fayli»? DMed once to the operator
     # as text + a workbook. Remove this line, `startup.report_wc_plan_history`
