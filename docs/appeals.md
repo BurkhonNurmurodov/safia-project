@@ -298,6 +298,10 @@ Where this section and the two below disagree, THIS section is current.
   (`invited`). A re-filed objection carries its members (`chat.carry`).
   `CommentsThread` takes it as `mentionPeople` / `mentionNames` — tasks and
   concerns pass neither and render exactly as before.
+  **A mention in a message is a BADGE** (2026-11-09, the operator: «'@Name
+  Surname' is confusing people»): the name without its «@», in a pill tinted
+  by the person's own hue (`personInk`, the avatar's colour), transliterated
+  for the reader. The composer still types «@» — a textarea cannot hold a pill.
 - **Every appeal notice is ONE rich card** (2026-11-03, the operator: «restyle
   the notification, you might use rich message» — the «Norozilik rad etildi»
   DM was one pipe-separated line with the outcome in its title alone).

@@ -114,7 +114,7 @@ import { useTranslit } from "../../utils/transliterate";
  *   mentionPeople       – [{key, name, role, sub?, photo?, in_chat?}] — typing
  *                         «@» opens the list; the picks still named in the text
  *                         are posted as `mentionField` (a JSON list of keys)
- *   mentionNames        – names whose «@Name» is highlighted in a message
+ *   mentionNames        – names whose «@Name» shows as a badge in a message
  *                         (the people in the chat), beside the authors'
  *   mentionRoleLabel    – how a role is named on a list row (defaults to
  *                         `roleLabel`)
@@ -494,8 +494,14 @@ export function CommentsThread({
     let m;
     while ((m = mentionRe.exec(s))) {
       if (m.index > last) out.push(s.slice(last, m.index));
+      // A badge, not «@Name Surname» — the floor read the raw «@» as part of the text.
+      const name = m[0].slice(1);
       out.push(
-        <span key={`m${m.index}`} className="font-semibold" style={{ color: "var(--brand-text)" }}>{m[0]}</span>,
+        <span key={`m${m.index}`}
+          className="chat-ink inline-block whitespace-nowrap rounded-md px-1.5 font-semibold text-[14px] leading-[1.35]"
+          style={{ "--ink": personInk(name), background: `color-mix(in srgb, ${personInk(name)} 16%, transparent)` }}>
+          {tl(name)}
+        </span>,
       );
       last = m.index + m[0].length;
     }

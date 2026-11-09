@@ -24,12 +24,16 @@ held a staff role — the name search keeps staff out of the guest door.
   @username (a `t.me/<name>` link is stored as `@name`), an `https://` link, a
   phone number. Only the first two become buttons — a Telegram button cannot
   dial. Empty = nothing names a contact; every text has a «contact Safia's
-  HR» form for that case.
+  HR» form for that case. **It starts as `@safiahrrecruiting`**, the account
+  the operator named on 9 Nov: `startup.seed_hr_contact` (a `later` step)
+  writes it only when NO row exists, so an admin's own value — a blank too —
+  is never overwritten; the value lives in the setting, not in code.
 - **The bot's Telegram description and short description** (the empty chat
   before Start; the profile and a shared link) say who the bot is for and name
   HR. Written by `telegram_bot.set_bot_descriptions` WHEN AN ADMIN SAVES the
-  contact, never at boot — nothing in Telegram changes until somebody decides
-  it, and a save overwrites whatever BotFather held. Codes: default (no code)
+  contact — and once by the seed above, on the boot that creates the setting;
+  any other boot leaves Telegram alone. Either write overwrites whatever
+  BotFather held. Codes: default (no code)
   and `uz` = Uzbek Latin, `ru`, `en`; Telegram has no Uzbek-Cyrillic code. A
   failed Telegram call never undoes the save (`bot_synced: false` → a warning
   toast). **Search results show the bot's NAME, not its description** — the
@@ -65,7 +69,7 @@ request types their name; the bot re-uses their profile. The minted profiles
 stay in the admin Profiles tab — nothing was deleted.
 
 **The backlog** (25 pending, 2 rejected on 9 Nov) is closed by an admin
-rejecting each pending guest request on the Users tab — with the contact saved
-first and Ghost Mode off, each person receives the HR message. The 2 already
+rejecting each pending guest request on the Users tab — with Ghost Mode off,
+each person receives the HR message naming the seeded contact. The 2 already
 rejected were told «contact the admin» and get nothing new unless messaged by
 hand.

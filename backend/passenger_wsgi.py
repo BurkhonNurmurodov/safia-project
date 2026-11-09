@@ -243,6 +243,9 @@ try:
     migrate_cell_in_load_column()
     # Every cell of a unit whose загрузка is calculated starts ON (once).
     turn_on_cells_of_counted_units()
+    # Job seekers' HR contact starts as @safiahrrecruiting when none is saved.
+    from app.startup import seed_hr_contact
+    seed_hr_contact()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
     add_attendance_upload_source()

@@ -9986,3 +9986,40 @@ def archive_sample_questions() -> None:
                              target_kind="assessment_question",
                              details=[("archived", len(rows))]
                                      + [(d, per.get(d, 0)) for d in seed.ARCHIVE_DEPARTMENTS])
+
+
+def seed_hr_contact() -> None:
+    """The HR contact job seekers are sent to (docs/registration.md «Job
+    seekers go to HR») starts as the one the operator named on 2026-11-09,
+    @safiahrrecruiting — written only when NO value is saved, so an admin's
+    own contact (or a deliberate blank) is never overwritten, and an admin
+    changes it on the Users tab («HR kontakti»). The first write also sets the
+    bot's Telegram description once, as a save on that tab would. Never raises."""
+    import logging
+
+    from app.services import hr_contact
+
+    log = logging.getLogger(__name__)
+    value = hr_contact.normalize("@safiahrrecruiting")
+    db = SessionLocal()
+    try:
+        made = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, :v) "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"),
+            {"k": hr_contact.KEY, "v": value}).first()
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.warning("[startup] hr_contact seed failed", exc_info=True)
+        return
+    finally:
+        db.close()
+    if not made:
+        return
+    log.info("[startup] hr_contact seeded: %s", value)
+    try:
+        from app.telegram_bot import set_bot_descriptions
+        if not set_bot_descriptions(value):
+            log.warning("[startup] bot description not updated — save «HR kontakti» to retry")
+    except Exception:
+        log.warning("[startup] bot description update failed", exc_info=True)
