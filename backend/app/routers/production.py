@@ -402,7 +402,8 @@ def _cell_pick(db: Session, payload: dict, day: Optional[date], mid: int,
     pick carried over from another unit or day, or another leader's cell) is
     dropped, and a pick left with nothing is no pick — the whole page, never an
     empty one. `offered` = `_pick_cells` already read by the caller."""
-    ids = {int(i) for i in (cell_ids or ()) if i}
+    # A handler called directly (the tests) hands over its unresolved Query default.
+    ids = {int(i) for i in cell_ids if i} if isinstance(cell_ids, (list, tuple, set)) else set()
     if not ids:
         return None
     if offered is None:
