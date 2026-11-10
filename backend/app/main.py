@@ -176,6 +176,7 @@ async def lifespan(app: FastAPI):
         reorder_positions_plan_before_fact,
         latin_twin_codes,
         seed_snabjenets_english_label,
+        drop_duplicate_indexes,
         fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
@@ -330,6 +331,7 @@ async def lifespan(app: FastAPI):
     later(reorder_positions_plan_before_fact)
     later(latin_twin_codes)
     later(seed_snabjenets_english_label)
+    later(drop_duplicate_indexes)
     later(fix_orazov_schedule_2026_09_01)
     later(map_arc_brigadas_db)
     run(add_concern_profile_columns)

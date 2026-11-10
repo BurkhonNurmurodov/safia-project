@@ -160,6 +160,7 @@ try:
         reorder_positions_plan_before_fact,
         latin_twin_codes,
         seed_snabjenets_english_label,
+        drop_duplicate_indexes,
         fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
@@ -308,6 +309,7 @@ try:
     reorder_positions_plan_before_fact()
     latin_twin_codes()
     seed_snabjenets_english_label()
+    drop_duplicate_indexes()
     fix_orazov_schedule_2026_09_01()
     add_concern_profile_columns()
     add_concern_done_at()

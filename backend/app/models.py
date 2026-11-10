@@ -4043,7 +4043,6 @@ class LeaderDayExclusion(Base):
     __table_args__ = (
         Index("uq_leader_day_exclusion", "leader_key", "date",
               func.coalesce(cell_id, 0), unique=True),
-        Index("ix_leader_day_excl_date", "date"),
     )
 
 
@@ -4083,7 +4082,6 @@ class LeaderCutoff(Base):
     __tablename__ = "leader_cutoffs"
     __table_args__ = (
         UniqueConstraint("leader_key", name="uq_leader_cutoff"),
-        Index("ix_leader_cutoff_from", "from_date"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)

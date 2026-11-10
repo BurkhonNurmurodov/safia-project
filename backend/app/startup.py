@@ -3160,8 +3160,6 @@ def migrate_attendance_batches() -> None:
             "ALTER TABLE attendance_batch_cells ADD COLUMN IF NOT EXISTS prev_manager_id INTEGER",
             "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS upload_id INTEGER",
             "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS file_values JSONB",
-            "CREATE INDEX IF NOT EXISTS ix_att_batch_cells_upload ON attendance_batch_cells (upload_id)",
-            "CREATE INDEX IF NOT EXISTS ix_att_batch_rows_upload ON attendance_batch_rows (upload_id)",
         ):
             db.execute(text(stmt))
         db.commit()
@@ -5592,10 +5590,8 @@ def create_action_log() -> None:
             "CREATE INDEX IF NOT EXISTS ix_action_logs_action ON action_logs (action)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_outcome ON action_logs (outcome)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_source ON action_logs (source)",
-            "CREATE INDEX IF NOT EXISTS ix_action_logs_unit ON action_logs (unit_id)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_day ON action_logs (day)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_target ON action_logs (target_kind, target_id)",
-            "CREATE INDEX IF NOT EXISTS ix_action_logs_tid ON action_logs (actor_telegram_id)",
         ):
             db.execute(text(stmt))
         db.commit()
@@ -8696,9 +8692,6 @@ def add_leader_auto_checks() -> None:
             entry_id    INTEGER
         )"""])
     for stmt in (
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader ON leader_auto_checks (leader_id)",
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_date ON leader_auto_checks (date)",
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager ON leader_auto_checks (manager_id)",
         # 2026-09-30: every surface printing an auto task's reason reads its
         # result by ENTRY (`leader_auto.results_for`) — the register included.
         "CREATE INDEX IF NOT EXISTS ix_ltask_auto_entry ON leader_auto_checks (entry_id)",
@@ -10059,3 +10052,40 @@ def seed_hr_contact() -> None:
             log.warning("[startup] bot description not updated — save «HR kontakti» to retry")
     except Exception:
         log.warning("[startup] bot description update failed", exc_info=True)
+
+
+# (the index dropped, the identical index on the same column that stays).
+# Each pair was one column indexed twice: by the model's `index=True`
+# (create_all) and again under a second name — every write paid for both.
+_DUP_INDEXES = (
+    ("ix_att_batch_cells_upload", "ix_attendance_batch_cells_upload_id"),
+    ("ix_att_batch_rows_upload", "ix_attendance_batch_rows_upload_id"),
+    ("ix_action_logs_unit", "ix_action_logs_unit_id"),
+    ("ix_action_logs_tid", "ix_action_logs_actor_telegram_id"),
+    ("ix_ltask_auto_leader", "ix_leader_auto_checks_leader_id"),
+    ("ix_ltask_auto_date", "ix_leader_auto_checks_date"),
+    ("ix_ltask_auto_manager", "ix_leader_auto_checks_manager_id"),
+    ("ix_leader_day_excl_date", "ix_leader_day_exclusions_date"),
+    ("ix_leader_cutoff_from", "ix_leader_cutoffs_from_date"),
+)
+
+
+def drop_duplicate_indexes() -> None:
+    """2026-11-10: drop nine indexes that duplicate another one exactly.
+
+    An index goes only while its twin EXISTS, so a column is never left
+    unindexed. One transaction per index: a busy table (boot_ddl's lock
+    timeout) skips that one until the next boot and the rest still go.
+    """
+    db = SessionLocal()
+    try:
+        for drop, keep in _DUP_INDEXES:
+            try:
+                if db.execute(text("SELECT to_regclass(:k) IS NOT NULL"), {"k": keep}).scalar():
+                    db.execute(text(f"DROP INDEX IF EXISTS {drop}"))
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                db.rollback()
+                print(f"[startup] duplicate index {drop} kept: {exc}")
+    finally:
+        db.close()
