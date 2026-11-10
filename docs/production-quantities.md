@@ -849,3 +849,37 @@ rewritten afterwards, by anyone, with nothing on screen saying the day was shut.
   `detail` to text and keeps the original there, so reading `detail` alone finds
   a JSON blob where the code should be. On `day_closed` it refetches, so the
   banner appears and the cells go read-only under the operator's hands.
+
+## The «Yacheyka» pick on the «Zagruzka fayli» bar (2026-11-10)
+
+The operator asked for a cell filter beside the brigadir picker. The bar's
+chain is now plant → shift → brigadir → **cell** (`production_cell`, one
+`cells.id` or none); a supervisor, who has no picker, gets the cell section
+alone, and a leader gets it only when they run two or more cells.
+
+- **A picked cell reads the page as that cell's leader reads it.** The pick
+  goes to the server (`cell=`), and `_cell_pick` turns it into the same
+  `wc_scope` / `group_scope` pair a leader's page is built from: the engine
+  runs over the cell's work centres and the output loses the other groups'
+  lines. So the KPI cards, «Команды», «Позиции», «Odamlar soni» and the Excel
+  (`export.xlsx` takes `cell` too — the leader's file, hidden minutes as
+  constants) all narrow together, and every figure left is the brigadir's.
+  The dashboard says `scope.kind = "pick"`; the «Только ваши ячейки» banner is
+  for a leader's own pin only, since the chip already names the pick. As on a
+  leader's page, the «Arxiv» card is unit-wide and does not show.
+- **What it offers**: `unit_cells` on every dashboard — every cell standing in
+  the unit THAT day with a SAP code (`cell_lookup.unit_cells`; `by_sap` keeps
+  one cell per work centre, so it cannot list them), a leader's own only. Each
+  option prints the code and leader, then the work centre + letter the team
+  card prints («9422 · Ivanov I. · A1431»). A pick the list no longer carries
+  (another brigadir or day) is ignored by the server and dropped by the page.
+- **The «Odamlar soni» save takes the pick as well.** That save deletes a group
+  pin its body does not list, and a narrowed page lists only the picked cell's
+  groups — so without it an admin saving cell A's people would wipe the sibling
+  letter's. With it the group rules are judged against the pick, exactly a
+  leader's; the efficiency pin is NOT narrowed (it stays the unit's, the
+  brigadir's and admin's as before). The per-row writes (ПЛАН/ФАКТ, the card
+  pin, the catalog) name their own line or team and ignore it. The undo stack
+  empties when the pick changes.
+- The raw «Фаза» / «Заголовок» tabs ignore it, as they ignore the brigadir
+  pick: they are a view of the file.

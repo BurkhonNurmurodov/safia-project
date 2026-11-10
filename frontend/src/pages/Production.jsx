@@ -1592,6 +1592,7 @@ const readLinkScope = (q) => {
     production_shift: null,
     production_search: null,
     production_wc_filter: null,
+    production_cell: null,
   };
 };
 
@@ -1737,6 +1738,14 @@ export default function Production() {
   const managerParam = canPickManager
     ? (selManager != null ? { manager_id: selManager } : {})
     : (leaderUnit != null ? { manager_id: leaderUnit } : {});
+  // The page bar's «Yacheyka» pick (cells.id, null = every cell): the server
+  // reads the unit the way that cell's leader reads it — KPIs, teams, positions
+  // and the Excel all narrow — and offers the choice as `unit_cells`. It rides
+  // on the reads and on the «Odamlar soni» save (so that save deletes no group
+  // pin the page was not showing), never on the per-row writes, which name
+  // their own line or team.
+  const [cellPick, setCellPick] = usePersistentState("production_cell", null);
+  const cellParam = cellPick != null ? { cell: cellPick } : {};
   // A picker role hasn't resolved a unit yet (list still loading) → hold the
   // manager-scoped queries so they don't 400 on the missing id.
   const managerReady = !canPickManager || selManager != null;
@@ -1761,8 +1770,8 @@ export default function Production() {
   const canEditPeopleRole = ["admin", "supervisor", "leader"].includes(auth?.role);
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
-    queryKey: ["production", date, managerParam.manager_id ?? "self"],
-    queryFn: () => api.get("/api/production/dashboard", { params: { date, ...managerParam } }).then((r) => r.data),
+    queryKey: ["production", date, managerParam.manager_id ?? "self", cellPick ?? "all"],
+    queryFn: () => api.get("/api/production/dashboard", { params: { date, ...managerParam, ...cellParam } }).then((r) => r.data),
     placeholderData: keepPreviousData,
     enabled: managerReady,
   });
@@ -1770,6 +1779,16 @@ export default function Production() {
   // isn't cached yet, so keepPreviousData hands back the old date's snapshot). Drives
   // skeletons so stale numbers don't linger after the user switches dates.
   const loading = isLoading || isPlaceholderData;
+  // The cells the «Yacheyka» pick offers — this unit's on this day (a leader's
+  // own only). A pick the fresh list no longer carries (another brigadir or
+  // day picked above it) is dropped: the server has already ignored it, and a
+  // chip naming a cell the page is not showing is worse than a reset. An older
+  // backend sends no list and the pick stands.
+  const unitCells = data?.unit_cells ?? [];
+  useEffect(() => {
+    if (isPlaceholderData || !data?.unit_cells || cellPick == null) return;
+    if (!data.unit_cells.some((c) => c.id === cellPick)) setCellPick(null);
+  }, [data, isPlaceholderData, cellPick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The day's lock, straight off the dashboard — the SAME ladder /idle-cell
   // reads (services/day_state via services/idle_lock), never a second closing of
@@ -2068,7 +2087,7 @@ export default function Production() {
     if (s) toast.success(s.slice(3));
   };
   const staffing = useMutation({
-    mutationFn: (body) => api.post("/api/production/staffing", { date, ...body }, { params: managerParam }),
+    mutationFn: (body) => api.post("/api/production/staffing", { date, ...body }, { params: { ...managerParam, ...cellParam } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["production", date] });
       setStaffingSaved(true);
@@ -2284,7 +2303,9 @@ export default function Production() {
   // The stack is scoped to the (date, unit) pair the writes were made against
   // and empties when either moves: replaying an edit onto a different day would
   // write a plausible-looking figure with nothing on screen saying it happened.
-  const undoScope = `${date}|${managerParam.manager_id ?? "self"}`;
+  // …and the cell pick: an «Odamlar soni» commit replayed under another pick
+  // would judge its group pins against cells it was never made over.
+  const undoScope = `${date}|${managerParam.manager_id ?? "self"}|${cellPick ?? "all"}`;
   const history = useUndoStack({ scope: undoScope });
 
   // A write that can be taken back. `forward` performs it, `back` is its exact
@@ -3051,6 +3072,7 @@ export default function Production() {
         body: {
           date,
           ...managerParam,
+          cell: cellPick != null ? [cellPick] : [],
           lang,
           order: lines.map((r) => r.id),
           columns: visibleCols.map((c) => c.key),
@@ -3398,7 +3420,39 @@ export default function Production() {
     ),
   }] : [];
 
-  const pageSections = !canPickManager ? leaderSections : [
+  // The «Yacheyka» pick — the chain's last level, after the brigadir. Each cell
+  // by its CODE and leader, then the work centre (+ letter) its team card on
+  // this page prints, which is how a reader finds it there. Always on the bar
+  // for whoever sees a whole unit, so the toolbar does not change shape as a
+  // unit loads; a leader gets it only with two or more cells to choose from.
+  const cellWc = (c) => wcGroupLabel(c.sap, c.group);
+  const pickedCell = unitCells.find((c) => c.id === cellPick);
+  const showCellPick = !cellPinned || unitCells.length > 1 || cellPick != null;
+  const cellSection = showCellPick ? {
+    key: "cell", icon: Boxes, label: t("production.cell"),
+    active: cellPick != null,
+    display: pickedCell ? `${pickedCell.code} (${cellWc(pickedCell)})` : "",
+    onClear: () => setCellPick(null),
+    render: ({ close } = {}) => (
+      <PickFilter
+        searchable
+        close={close}
+        note={canPickManager ? chainNote(selManagerName && shortName(selManagerName), unitCells.length) : null}
+        opts={[
+          { value: null, label: t("production.cellAll") },
+          ...unitCells.map((c) => ({
+            value: c.id,
+            label: `${cellLabel(c.code, c.leader ? shortName(c.leader) : "")} · ${cellWc(c)}`,
+            title: [c.code, cellWc(c), c.leader ? tl(c.leader) : ""].filter(Boolean).join(" · "),
+          })),
+        ]}
+        value={cellPick}
+        onChange={(v) => setCellPick(v)}
+      />
+    ),
+  } : null;
+
+  const pageSections = !canPickManager ? [...leaderSections, ...(cellSection ? [cellSection] : [])] : [
     ...(factorySection ? [factorySection] : []),
     {
       key: "shift", icon: Layers, label: t("filter.shift"),
@@ -3432,6 +3486,7 @@ export default function Production() {
         />
       ),
     },
+    ...(cellSection ? [cellSection] : []),
   ];
 
   return (
@@ -3445,11 +3500,11 @@ export default function Production() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DayStepper value={date} onChange={setDate} max={null} marked={markedDates} />
         {pageSections.length > 0 && (
-          // A leader's one section — the unit switch — has nothing to clear
-          // (the page always reads one of their units), so no «clear all»
-          // and no count: a button that clears nothing is worse than none.
+          // A leader's unit switch has nothing to clear (the page always
+          // reads one of their units), so it never counts: only the cell pick
+          // does, and «clear all» clears that alone.
           <FilterPanel sections={pageSections} chipsWrap
-            {...(canPickManager ? {} : { activeCount: 0, anyActive: false })} />
+            {...(canPickManager ? {} : { activeCount: cellPick != null ? 1 : 0, anyActive: cellPick != null })} />
         )}
         {/* Undo / redo for the day's writes. It appears only once there IS a
             history — an always-visible pair of dead buttons says the page can
@@ -3509,7 +3564,7 @@ export default function Production() {
       ) : (<>
       {/* The page is pinned to the leader's own cells — say so and name them, so
           a short «Позиции» list reads as scope rather than as missing data. */}
-      {cellScope && (
+      {cellScope && cellScope.kind !== "pick" && (
         <div className="flex items-center gap-2 flex-wrap rounded-xl px-3 py-2 mb-4 text-xs"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
           <Users size={14} style={{ color: "var(--brand)" }} className="flex-shrink-0" />
