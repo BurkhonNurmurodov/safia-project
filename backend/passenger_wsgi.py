@@ -136,6 +136,7 @@ try:
         move_sanjarbek_checklist_shift,
         land_waiting_leader_links,
         patch_task11_description_nov09,
+        heal_switched_profile_keys,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -642,6 +643,7 @@ try:
     land_waiting_leader_links()
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     patch_task11_description_nov09()
+    heal_switched_profile_keys()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

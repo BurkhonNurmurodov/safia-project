@@ -149,6 +149,7 @@ async def lifespan(app: FastAPI):
         preview_leader_rules_sep19,
         patch_task10_description_sep19,
         patch_task11_description_nov09,
+        heal_switched_profile_keys,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
         register_leader_temp_hours,
@@ -778,6 +779,9 @@ async def lifespan(app: FastAPI):
     later(patch_task10_description_sep19)
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     later(patch_task11_description_nov09)
+    # A role switch left a profile's photo / login / grants under its old key
+    # (2026-11-10). Idempotent; remove once it has run on prod.
+    later(heal_switched_profile_keys)
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     later(move_sanjarbek_checklist_shift)
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes

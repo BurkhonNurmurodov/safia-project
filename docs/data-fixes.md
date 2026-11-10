@@ -247,3 +247,23 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 - **Left to the admin, named in the DM**: Erkanboyev's account also holds
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
+
+## A role switch carries the profile's keyed rows (`_rekey_profile`, 2026-11-10)
+
+Adi Ro'ziyev (profile #360) was hand-tied to Verifix 2501 on 5 Nov as a
+Top-menejer, and his Verifix photo came with the tie. An admin later switched
+him to shift-manager and the photo vanished. The switch keeps the
+`role_profiles` row, so the tie (`vfx_employee_id`, `verifix_ties` kind
+`profile`) stayed. But everything stored BY KEY (`_PROFILE_KEY_REFS`: photo,
+browser login, capabilities, page permissions, ui prefs) stayed under
+`top-manager:360` while the profile became `shift-manager:360`. The sync then
+never fetched the photo again, because `vfx_meta.photo_set` said it was
+already stored.
+
+- `admin_switch_role` now moves those rows to the new key (`_rekey_profile`)
+  on every switch, supervisor ends included. A row already under the new key
+  is an orphan, since no live profile held that key, so it is dropped first.
+- `startup.heal_switched_profile_keys` (`later`, both entrypoints) moves rows
+  that earlier switches stranded to the profile's current key, unless that
+  key already holds one. It is idempotent. TEMPORARY: delete it and both calls
+  once it has run on prod.

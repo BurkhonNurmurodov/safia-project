@@ -8563,6 +8563,42 @@ def patch_task11_description_nov09() -> None:
         db.close()
 
 
+def heal_switched_profile_keys() -> None:
+    """2026-11-10: a role switch kept the profile row but left what it owns BY
+    KEY under the old role ("top-manager:360" while the row became a
+    shift-manager — Adi Ro'ziyev's Verifix photo vanished that way). Each such
+    row moves to the profile's current key, unless that key already holds one.
+    Idempotent: a second run finds nothing. `_rekey_profile` stops new cases."""
+    from app.routers.profiles import _PROFILE_KEY_REFS
+    db = SessionLocal()
+    try:
+        moved = {}
+        for table in _PROFILE_KEY_REFS:
+            try:
+                with db.begin_nested():  # two stale keys of one profile → skip the table, log it
+                    n = db.execute(text(
+                        f"UPDATE {table} x SET profile_key = rp.role || ':' || rp.id "
+                        f"FROM role_profiles rp "
+                        f"WHERE split_part(x.profile_key, ':', 1) <> 'supervisor' "
+                        f"AND split_part(x.profile_key, ':', 2) ~ '^[0-9]+$' "
+                        f"AND rp.id = split_part(x.profile_key, ':', 2)::int "
+                        f"AND rp.role <> split_part(x.profile_key, ':', 1) "
+                        f"AND NOT EXISTS (SELECT 1 FROM {table} y "
+                        f"WHERE y.profile_key = rp.role || ':' || rp.id)")).rowcount
+                if n:
+                    moved[table] = n
+            except Exception as exc:
+                print(f"[startup] profile-key heal: {table} skipped: {exc}")
+        db.commit()
+        if moved:
+            print(f"[startup] profile-key heal moved {moved}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] profile-key heal failed: {exc}")
+    finally:
+        db.close()
+
+
 def _rules_in_shift(shift: int, now) -> bool:
     """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours
     `leader_ai.SHIFT_WINDOW` carries: shift 1 is a daytime range, shift 2
