@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Users, Check, X, RefreshCw, Trash2, Plus, UserCog,
+  Users, Check, X, RefreshCw, Trash2, Plus, UserCog, Send,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -20,6 +20,7 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
+import { useAuth } from "../../context/AuthContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import HrContactButton from "../../components/admin/HrContactButton";
@@ -64,6 +65,9 @@ const ROLE_COLOR = {
   guest:           FOLD_COLOR,
 };
 
+// The row menu's door to /tg-user/:tid — worded here like that page's own TXT.
+const TG_PROFILE = { uz: "Telegram profili", uz_cyrl: "Telegram профили", ru: "Профиль в Telegram", en: "Telegram profile" };
+
 function Chip({ color, dot = false, children }) {
   return (
     <span
@@ -97,13 +101,17 @@ function Decide({ row, t, pending, disabled, onApprove, onReject, block = false 
   const cls = block ? "flex-1" : "";
   return (
     <div className={`flex items-center gap-1.5 ${block ? "w-full" : ""}`}>
+      {/* In the table the two are bare icons — the words were wider than the
+          column they sit in; a phone card has the room and keeps them. */}
       <Button size={size} variant="success" tint className={cls} icon={<Check size={11} />}
+        title={t("admin.users.approve")} aria-label={t("admin.users.approve")}
         loading={pending} disabled={disabled} onClick={() => onApprove(row)}>
-        {t("admin.users.approve")}
+        {block && t("admin.users.approve")}
       </Button>
       <Button size={size} variant="danger" tint className={cls} icon={<X size={11} />}
+        title={t("admin.users.reject")} aria-label={t("admin.users.reject")}
         loading={pending} disabled={disabled} onClick={() => onReject(row)}>
-        {t("admin.users.reject")}
+        {block && t("admin.users.reject")}
       </Button>
     </div>
   );
@@ -115,6 +123,8 @@ export default function UsersManagement() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { auth } = useAuth();
   // ?status=pending deep-links a filter (used by the bot's notification button).
   // The last-used filter is remembered otherwise; an explicit ?status= beats it.
   const [searchParams] = useSearchParams();
@@ -256,6 +266,8 @@ export default function UsersManagement() {
   const rowMenu = (row) => {
     const { role } = row;
     return [
+      // The page behind it is admin-only; a grantee of this tab gets no dead link.
+      auth?.role === "admin" && { key: "tg", label: TG_PROFILE[lang] || TG_PROFILE.uz, icon: Send, onSelect: () => navigate(`/tg-user/${row.user.telegram_id}`) },
       role.status === "rejected" && { key: "approve", label: t("admin.users.approve"), icon: Check, disabled: busy, onSelect: () => approve(row) },
       // A guest registration is not convertible: converting only re-points
       // role/role_id, which would take a CONTENDED guest profile without
