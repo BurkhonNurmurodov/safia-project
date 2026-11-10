@@ -288,10 +288,23 @@ export default function UsersManagement() {
       <TableCard
         icon={Users}
         title={t("admin.users.title")}
+        /* The page's own actions sit in the card's head; the row under it is
+           search + filter only. Three buttons in that row wrapped onto a line
+           of their own on every laptop. */
         right={
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
-            {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-[11px] tabular-nums whitespace-nowrap mr-1" style={{ color: "var(--text-3)" }}>
+              {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
+            </span>
+            <Button variant="secondary" onClick={() => refetch()}
+              title={t("admin.refresh")} aria-label={t("admin.refresh")}
+              icon={<RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />} />
+            <HrContactButton />
+            <Button icon={<Plus size={13} />} onClick={openAdd}
+              title={t("admin.users.addRole")} aria-label={t("admin.users.addRole")}>
+              <span className="hidden sm:inline">{t("admin.users.addRole")}</span>
+            </Button>
+          </div>
         }
         toolbar={
           <>
@@ -329,13 +342,6 @@ export default function UsersManagement() {
                 ),
               }))}
             />
-            <div className="ml-auto flex items-center gap-2">
-              <HrContactButton />
-              <Button variant="secondary" size="lg" onClick={() => refetch()}
-                title={t("admin.refresh")} aria-label={t("admin.refresh")}
-                icon={<RefreshCw size={15} className={isFetching ? "animate-spin" : ""} />} />
-              <Button size="lg" icon={<Plus size={14} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
-            </div>
           </>
         }
         mobile={

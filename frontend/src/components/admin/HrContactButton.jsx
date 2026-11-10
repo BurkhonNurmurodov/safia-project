@@ -49,8 +49,10 @@ export default function HrContactButton() {
 
   return (
     <>
-      <Button variant="secondary" size="lg" icon={<Briefcase size={13} />} onClick={openModal}>
-        {t("admin.hrContact.button")}
+      {/* In a card header beside other actions: the word folds away on a phone. */}
+      <Button variant="secondary" icon={<Briefcase size={13} />} onClick={openModal}
+        title={t("admin.hrContact.button")} aria-label={t("admin.hrContact.button")}>
+        <span className="hidden sm:inline">{t("admin.hrContact.button")}</span>
       </Button>
 
       {open && (
