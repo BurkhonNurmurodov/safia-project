@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Users, Check, X, RefreshCw, Trash2, Plus,
+  Users, Check, X, RefreshCw, Trash2, Plus, UserCog,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -10,6 +10,9 @@ import Modal from "../../components/ui/Modal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
+import ActionMenu from "../../components/ui/ActionMenu";
+import ProfileAvatar from "../../components/ui/ProfileAvatar";
+import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import SearchInput from "../../components/ui/SearchInput";
@@ -44,65 +47,65 @@ function fmtDate(iso, lang) {
   });
 }
 
-/**
- * Approve / reject / delete for one row.
- *
- * Was three raw <button>s with inline rgba and onMouseEnter/onMouseLeave
- * restyling. On touch those events never fire, so the delete chip stayed
- * permanently styled like the neutral one — its danger semantics were invisible
- * on the phone where the bot deep-links admins to approve people. Button's
- * `tint` carries the semantics at rest, and `loading` finally shows the tap
- * registered.
- */
-function RowActions({ row, t, pending, disabled, onApprove, onReject, onDelete, block = false }) {
-  const { role } = row;
-  const cls = block ? "flex-1" : "";
+// Coloured text that stays readable on both themes: the hue pulled toward the
+// theme's own ink (a raw #eab308 label on a white card is ~1.9:1).
+const ink = (c) => `color-mix(in srgb, ${c} 60%, var(--text-1))`;
+const wash = (c) => `color-mix(in srgb, ${c} 14%, transparent)`;
+
+const STATUS_COLOR = { approved: "#22c55e", pending: "#eab308", rejected: "#ef4444" };
+// A role is a category: one fixed hue each, none of them a traffic-light
+// colour — the status chip sits right beside it.
+const ROLE_COLOR = {
+  "top-manager":   CATEGORY_COLORS[5],  // purple
+  "shift-manager": CATEGORY_COLORS[2],  // blue
+  supervisor:      CATEGORY_COLORS[6],  // teal
+  leader:          CATEGORY_COLORS[4],  // orange
+  "idle-owner":    CATEGORY_COLORS[7],  // pink
+  guest:           FOLD_COLOR,
+};
+
+function Chip({ color, dot = false, children }) {
   return (
-    <div className={`flex items-center gap-1.5 ${block ? "w-full" : ""}`}>
-      {role.status !== "approved" && (
-        <Button
-          size={block ? "lg" : "sm"} variant="success" tint className={cls}
-          icon={<Check size={11} />} loading={pending} disabled={disabled}
-          onClick={() => onApprove(row)}
-        >
-          {t("admin.users.approve")}
-        </Button>
-      )}
-      {role.status !== "rejected" && (
-        <Button
-          size={block ? "lg" : "sm"} variant="danger" tint className={cls}
-          icon={<X size={11} />} loading={pending} disabled={disabled}
-          onClick={() => onReject(row)}
-        >
-          {t("admin.users.reject")}
-        </Button>
-      )}
-      <Button
-        size={block ? "lg" : "sm"} variant="danger" tint className={cls}
-        icon={<Trash2 size={11} />} disabled={disabled}
-        title={t("admin.users.delete")}
-        onClick={() => onDelete(row)}
-      >
-        {t("admin.users.delete")}
-      </Button>
-    </div>
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+      style={{ background: wash(color), color: ink(color) }}
+    >
+      {dot && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />}
+      {children}
+    </span>
   );
 }
 
 function StatusBadge({ status }) {
   const { t } = useLang();
-  const styles = {
-    approved: { background: "rgba(34,197,94,0.15)",  color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)" },
-    pending:  { background: "rgba(234,179,8,0.15)",   color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" },
-    rejected: { background: "rgba(239,68,68,0.15)",   color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" },
-  };
+  return <Chip dot color={STATUS_COLOR[status] ?? STATUS_COLOR.pending}>{t(`admin.users.status.${status}`)}</Chip>;
+}
+
+function RoleChip({ role }) {
+  const { t } = useLang();
+  return <Chip color={ROLE_COLOR[role] ?? FOLD_COLOR}>{t(ROLE_LABEL_KEYS[role]) || role}</Chip>;
+}
+
+/**
+ * The two answers a WAITING request needs, on the row itself. Everything else
+ * (changing the role, undoing a decision, deleting) is rare and lives in the
+ * row's ⋮ menu, so a settled row carries no buttons at all.
+ */
+function Decide({ row, t, pending, disabled, onApprove, onReject, block = false }) {
+  if (row.role.status !== "pending") return null;
+  const size = block ? "lg" : "sm";
+  const cls = block ? "flex-1" : "";
   return (
-    <span
-      className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-      style={styles[status] ?? styles.pending}
-    >
-      {t(`admin.users.status.${status}`)}
-    </span>
+    <div className={`flex items-center gap-1.5 ${block ? "w-full" : ""}`}>
+      <Button size={size} variant="success" tint className={cls} icon={<Check size={11} />}
+        loading={pending} disabled={disabled} onClick={() => onApprove(row)}>
+        {t("admin.users.approve")}
+      </Button>
+      <Button size={size} variant="danger" tint className={cls} icon={<X size={11} />}
+        loading={pending} disabled={disabled} onClick={() => onReject(row)}>
+        {t("admin.users.reject")}
+      </Button>
+    </div>
   );
 }
 
@@ -131,7 +134,7 @@ export default function UsersManagement() {
   const [form, setForm] = useState({ userId: "", role: "supervisor", roleId: "", shift: "", supervisorId: "" });
   const [addError, setAddError] = useState("");
 
-  const { data: users = [], isLoading, refetch } = useQuery({
+  const { data: users = [], isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => api.get("/admin/users").then((r) => r.data),
   });
@@ -249,13 +252,32 @@ export default function UsersManagement() {
 
   const countByStatus = (s) => rows.filter((row) => row.role.status === s).length;
 
+  const busy = updateMut.isPending || deleteMut.isPending;
+  const rowMenu = (row) => {
+    const { role } = row;
+    return [
+      role.status === "rejected" && { key: "approve", label: t("admin.users.approve"), icon: Check, disabled: busy, onSelect: () => approve(row) },
+      // A guest registration is not convertible: converting only re-points
+      // role/role_id, which would take a CONTENDED guest profile without
+      // settling the claims already filed against it — the add-role path's job.
+      ...(role.role === "guest" ? [] : ROLES.filter((r) => r !== role.role).map((r) => ({
+        key: `role-${r}`, icon: UserCog, disabled: busy,
+        label: `${t("admin.users.colRole")}: ${t(ROLE_LABEL_KEYS[r])}`,
+        onSelect: () => changeRole(row, r),
+      }))),
+      role.status === "approved" && { key: "reject", label: t("admin.users.reject"), icon: X, tone: "danger", disabled: busy, onSelect: () => reject(row) },
+      { key: "delete", label: t("admin.users.delete"), icon: Trash2, tone: "danger", disabled: busy, onSelect: () => setConfirmDelete(row) },
+    ];
+  };
+  const menuLabel = (name) => `${t("admin.users.colActions")}: ${name || "—"}`;
+
   return (
     <div>
       <TableCard
         icon={Users}
         title={t("admin.users.title")}
         right={
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
             {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
           </span>
         }
@@ -265,15 +287,16 @@ export default function UsersManagement() {
               value={query}
               onChange={setQuery}
               placeholder={t("common.search")}
-              className="w-full sm:w-56"
+              className="w-full sm:w-64"
             />
-            {/* Status filter — single-select segmented toggle with live counts */}
+            {/* Status filter — each count wears its status colour, so the
+                waiting pile is readable before any tab is opened. */}
             <SegmentedToggle
               className="w-full sm:w-auto"
               value={statusFilter}
               onChange={setStatusFilter}
               options={[
-                ["all",      t("admin.users.filterAll"),              null],
+                ["all",      t("admin.users.filterAll"),       null],
                 ["pending",  t("admin.users.status.pending"),  countByStatus("pending")],
                 ["approved", t("admin.users.status.approved"), countByStatus("approved")],
                 ["rejected", t("admin.users.status.rejected"), countByStatus("rejected")],
@@ -283,8 +306,10 @@ export default function UsersManagement() {
                   <span className="inline-flex items-center gap-1.5">
                     {label}
                     {count !== null && (
-                      <span className="px-1 rounded text-[10px] font-mono"
-                        style={{ background: statusFilter === s ? "rgba(255,255,255,0.22)" : "var(--bg-card)" }}>
+                      <span className="px-1.5 rounded-full text-[10px] font-semibold tabular-nums"
+                        style={statusFilter === s
+                          ? { background: "rgba(255,255,255,0.24)" }
+                          : { background: wash(STATUS_COLOR[s]), color: ink(STATUS_COLOR[s]) }}>
                         {count}
                       </span>
                     )}
@@ -294,74 +319,70 @@ export default function UsersManagement() {
             />
             <div className="ml-auto flex items-center gap-2">
               <HrContactButton />
+              <Button variant="secondary" size="lg" onClick={() => refetch()}
+                title={t("admin.refresh")} aria-label={t("admin.refresh")}
+                icon={<RefreshCw size={15} className={isFetching ? "animate-spin" : ""} />} />
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
-              <Button variant="secondary" size="lg" icon={<RefreshCw size={13} />} onClick={() => refetch()}>
-                {t("admin.refresh")}
-              </Button>
             </div>
           </>
         }
-        /* At 390px the table is ~900px wide and Actions — the entire point of
-           this tab, and where the bot's registration notification deep-links —
-           was the LAST column, reachable only by a blind sideways scroll. */
         mobile={
           <div className="p-3 space-y-2.5">
             {isLoading && [...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-28 rounded-xl" />)}
             {!isLoading && filtered.length === 0 && (
-              <div className="py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
+              <div className="py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
                 {t("admin.users.empty")}
               </div>
             )}
-            {!isLoading && filtered.map(({ user, role }) => (
-              <div
-                key={`m-${user.id}-${role.id}`}
-                className="rounded-xl p-3"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm truncate" style={{ color: "var(--text-1)" }}>
-                      {tl(role.full_name || user.full_name) || "—"}
+            {!isLoading && filtered.map(({ user, role }) => {
+              const raw = role.full_name || user.full_name || "";
+              const shown = tl(raw) || "—";
+              return (
+                <div
+                  key={`m-${user.id}-${role.id}`}
+                  className="rounded-xl p-3"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <ProfileAvatar name={shown} colorKey={raw} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm truncate" style={{ color: "var(--text-1)" }}>{shown}</div>
+                      <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
+                        {user.username ? `@${user.username}` : user.phone || "—"}
+                      </div>
                     </div>
-                    <div className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
-                      {user.username ? `@${user.username}` : user.phone || "—"}
-                    </div>
+                    <ActionMenu items={rowMenu({ user, role })} label={menuLabel(shown)} />
                   </div>
-                  <StatusBadge status={role.status} />
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    <RoleChip role={role.role} />
+                    <StatusBadge status={role.status} />
+                    <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                      {fmtDate(user.last_seen, lang)}
+                    </span>
+                  </div>
+                  {role.status === "pending" && (
+                    <div className="mt-3">
+                      <Decide row={{ user, role }} t={t} block pending={pendingRole === role.id}
+                        disabled={busy} onApprove={approve} onReject={reject} />
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 mb-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                  <span>{t(ROLE_LABEL_KEYS[role.role]) || role.role}</span>
-                  <span style={{ color: "var(--text-4)" }}>·</span>
-                  <span>{fmtDate(user.last_seen, lang)}</span>
-                </div>
-                <RowActions
-                  row={{ user, role }}
-                  t={t}
-                  block
-                  pending={pendingRole === role.id}
-                  disabled={updateMut.isPending || deleteMut.isPending}
-                  onApprove={approve}
-                  onReject={reject}
-                  onDelete={setConfirmDelete}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         }
       >
               <thead>
                 <tr>
-                  {[
-                    t("admin.users.colName"),
-                    t("admin.users.colPhone"),
-                    t("admin.users.colUsername"),
-                    t("admin.users.colRole"),
-                    t("admin.users.colStatus"),
-                    t("admin.users.colLastSeen"),
-                    t("admin.users.colActions"),
-                  ].map((h) => (
-                    <Th key={h} label={h} />
-                  ))}
+                  <Th label={t("admin.users.colName")} />
+                  <Th label={t("admin.users.colRole")} />
+                  <Th label={t("admin.users.colStatus")} />
+                  <Th label={t("admin.users.colUsername")} />
+                  <Th label={t("admin.users.colPhone")} />
+                  <Th label={t("admin.users.colLastSeen")} />
+                  {/* Pinned to the card's right edge: the decision is the point
+                      of this tab and must not sit behind a sideways scroll. */}
+                  <Th label={t("admin.users.colActions")} align="right" cls="right-0 z-20" />
                 </tr>
               </thead>
               <tbody>
@@ -373,7 +394,7 @@ export default function UsersManagement() {
                   </tr>
                 ))}
                 {!isLoading && filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>
                     {t("admin.users.empty")}
                   </td></tr>
                 )}
@@ -381,88 +402,63 @@ export default function UsersManagement() {
                   // The row is named after the CLAIMED profile; the Telegram
                   // account that filed it is a different string (shared shop
                   // accounts like «Сех просеивание 8421» claim a brigadir
-                  // profile), so it gets its own muted line — otherwise the
+                  // profile), so it leads the Telegram column — otherwise the
                   // request looks absent to an admin searching for the account.
-                  const shown = tl(role.full_name || user.full_name) || "";
+                  const raw = role.full_name || user.full_name || "";
+                  const shown = tl(raw) || "";
                   const account = tl(user.tg_name) || "";
                   const showAccount =
                     account && account.trim().toLowerCase() !== shown.trim().toLowerCase();
+                  const handle = user.username ? `@${user.username}` : "";
                   return (
-                  <tr key={`${user.id}-${role.id}`}>
-                    {/* Role-scoped display name (+ multi-role marker) */}
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      <div className="font-medium" style={{ color: "var(--text-1)" }}>
-                        {shown || "—"}
+                  <tr key={`${user.id}-${role.id}`} className="group">
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-2.5">
+                        <ProfileAvatar name={shown} colorKey={raw} size={28} />
+                        <span className="font-medium truncate max-w-[18rem]" style={{ color: "var(--text-1)" }} title={shown}>
+                          {shown || "—"}
+                        </span>
                         {user.roles.length > 1 && (
                           <span
-                            className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
-                            style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}
+                            className="text-[10px] font-semibold px-1.5 rounded-full tabular-nums"
+                            style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}
                             title={t("admin.users.rolesCount").replace("{n}", user.roles.length)}
                           >
                             ×{user.roles.length}
                           </span>
                         )}
                       </div>
-                      {showAccount && (
-                        <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }} title={t("admin.users.colUsername")}>
-                          {account}
-                        </div>
-                      )}
                     </td>
 
-                    {/* Phone */}
-                    <td className="py-2.5 px-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+                    <td className="py-2 px-3"><RoleChip role={role.role} /></td>
+
+                    <td className="py-2 px-3"><StatusBadge status={role.status} /></td>
+
+                    <td className="py-2 px-3">
+                      <div className="truncate max-w-[16rem]" title={[showAccount && account, handle].filter(Boolean).join(" · ")}>
+                        {showAccount && <span style={{ color: "var(--text-2)" }}>{account}</span>}
+                        {showAccount && handle && <span style={{ color: "var(--text-4)" }}> · </span>}
+                        <span style={{ color: "var(--text-3)" }}>{handle || (showAccount ? "" : "—")}</span>
+                      </div>
+                    </td>
+
+                    <td className="py-2 px-3 tabular-nums" style={{ color: "var(--text-3)" }}>
                       {user.phone || "—"}
                     </td>
 
-                    {/* Telegram username */}
-                    <td className="py-2.5 px-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>
-                      {user.username ? `@${user.username}` : "—"}
-                    </td>
-
-                    {/* Role selector — a guest registration is not convertible,
-                        so it renders as a static label instead of the select.
-                        Converting only re-points role/role_id, which would take
-                        a CONTENDED guest profile without settling the claims
-                        already filed against it — the add-role path's job. */}
-                    <td className="py-2.5 px-3">
-                      {role.role === "guest" ? (
-                        <span className="inline-block rounded-lg px-2.5 py-1 text-[11px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
-                          {t(ROLE_LABEL_KEYS[role.role])}
-                        </span>
-                      ) : (
-                        <StyledSelect
-                          value={role.role}
-                          onChange={(v) => changeRole({ user, role }, v)}
-                          disabled={updateMut.isPending}
-                          options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEYS[r]) }))}
-                          triggerClassName="px-2.5 py-1 text-[11px]"
-                          className="inline-block w-40 align-middle"
-                        />
-                      )}
-                    </td>
-
-                    {/* Status badge */}
-                    <td className="py-2.5 px-3">
-                      <StatusBadge status={role.status} />
-                    </td>
-
-                    {/* Last seen */}
-                    <td className="py-2.5 px-3 whitespace-nowrap text-[11px]" style={{ color: "var(--text-4)" }}>
+                    <td className="py-2 px-3 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
                       {fmtDate(user.last_seen, lang)}
                     </td>
 
-                    {/* Actions */}
-                    <td className="py-2.5 px-3">
-                      <RowActions
-                        row={{ user, role }}
-                        t={t}
-                        pending={pendingRole === role.id}
-                        disabled={updateMut.isPending || deleteMut.isPending}
-                        onApprove={approve}
-                        onReject={reject}
-                        onDelete={setConfirmDelete}
-                      />
+                    <td
+                      className="py-1 px-3 sticky right-0 bg-[var(--bg-card)] group-hover:bg-[var(--bg-inner)]"
+                      style={{ boxShadow: "-1px 0 0 var(--border)" }}
+                    >
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Decide row={{ user, role }} t={t} pending={pendingRole === role.id}
+                          disabled={busy} onApprove={approve} onReject={reject} />
+                        <ActionMenu items={rowMenu({ user, role })} label={menuLabel(shown)} />
+                      </div>
                     </td>
                   </tr>
                   );
