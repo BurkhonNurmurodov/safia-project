@@ -477,3 +477,21 @@ changes is queued — a write made offline fails and says so.
   it always did. Avatars and photos are not cached here (Blobs).
 - Not built, by decision: queuing writes for later (dangerous on approvals and
   attendance), a Web Worker for the serialisation (CSP), caching photos.
+
+## A password session holds the PROFILE's permissions only (2026-11-11)
+
+Account-level grants («Shaxsiy vakolatlar» → «Hisoblar») exist so ONE person
+gets a power and nobody else holding the same profile does — the person is
+proven by Telegram. A browser / Android / «open as» session proves only the
+profile: `web_auth.session_identity` borrows the first holder's Telegram id as
+the token's `sub`, so until v4.465.0 every password session wielded that
+holder's personal grants — and those re-opened pages the profile had closed
+(PwC's login, hung on a staff account, read leaders, cells and concerns).
+
+- `capabilities.caller_caps` skips `caps_for_user` when the token carries
+  `web`. Everything else (pages, tabs, scopes, the deny list's escape hatch)
+  reads `caller_caps`, so one line covers them.
+- **Consequence**: a person with an account grant uses it in Telegram only; on
+  the website and in the Android app they hold what their profile holds.
+- Account DENIES still apply to a password session (the borrowed holder's):
+  subtracting can only hide a page, never show one.

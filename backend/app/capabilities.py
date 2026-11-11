@@ -61,6 +61,12 @@ THE RULES, in one place:
    role × page matrix. An account-level grant is therefore the escape hatch from
    a profile deny for exactly one login.
 
+   **A password session never holds an account GRANT** (2026-11-11). The
+   browser / app login belongs to the profile and whoever was given its
+   password; its token borrows a holder's Telegram id only to have a ``sub``.
+   So :func:`caller_caps` reads the profile's grants alone there, and a profile
+   deny cannot be re-opened. Account DENIES still apply — subtracting is safe.
+
    Deny is PERMANENT on both targets and never consumed — "this position does
    not see /staff" has to stay true when the person filling it changes.
 
@@ -413,7 +419,13 @@ def caller_caps(db: Session, payload: dict,
     if MODE_GRANT in _profile_perm_modes(db):
         key = viewer_profile_key(db, payload) if profile_key is _UNSET else profile_key
         caps.update(caps_for_profile(db, key))
-    caps.update(caps_for_user(db, telegram_id))
+    # An account grant is for ONE person, proven by Telegram. A password session
+    # (browser, Android app, «open as» — claim ``web``) proves only the PROFILE:
+    # its ``sub`` is merely the first holder's account, borrowed so the token has
+    # one, and anybody given the password would wield that holder's personal
+    # grants (PwC's login read the pages its holder was granted, 2026-11-11).
+    if not payload.get("web"):
+        caps.update(caps_for_user(db, telegram_id))
     return caps
 
 
