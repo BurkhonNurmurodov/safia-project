@@ -2348,8 +2348,10 @@ def _notify_all_parties(
     # Shift-managers answerable for THIS unit — every shift-manager since
     # 2026-11-04 (services/shift_scope.py) — as profiles, so a profile is
     # addressed once whether it is held by nobody, one person or three.
-    role_ids = shift_scope.role_ids_for_unit(db, manager_id)
-    profiles.update(_profile_key("shift-manager", rid) for rid in role_ids)
+    # Only notices that wait on them (`shift_scope.sm_told`, 2026-11-11).
+    if shift_scope.sm_told(nkey, params):
+        role_ids = shift_scope.role_ids_for_unit(db, manager_id)
+        profiles.update(_profile_key("shift-manager", rid) for rid in role_ids)
 
     # Supervisor
     if include_supervisor:

@@ -249,3 +249,30 @@ wake it.
   read. Objections, late proofs, concerns and tasks need words, so they keep
   only the tap that opens them.
 - A new APK is needed for this — **1.5.1**: 1.5.0 never scheduled the check (its job needs a network, and the manifest lacked `ACCESS_NETWORK_STATE`, so Android threw a SecurityException and nothing ever polled). The server and pages were fine.
+
+## What a shift-manager is told (`shift_scope.sm_told`, 2026-11-11)
+
+The operator (2026-11-11): shift managers were drowning in every unit's
+attendance news — since «notify all of them» (2026-11-04, see
+`docs/cells-and-org.md`) every people exchange, approved role change and
+closed day of EVERY unit reached EVERY shift-manager as a bell row and a
+Telegram DM. Umarbek Karimov named the people-exchange notices as unwanted.
+
+- **A shift-manager is told only what waits on them**: a role change to
+  decide (`live_role_change_new`, `new_role_change`), a people exchange to a
+  TASK (`*_exchange_created` with `target_kind` «task»), an edit / deletion
+  request (`live_delete_request`, `new_edit_request`, `new_delete_request`,
+  `bulk_delete_request`) and a day left open (`live_day_still_open`).
+  Personal notices (concerns, tasks, the learning centre) are untouched.
+- **Not sent to them any more** (`shift_scope.SM_QUIET`): an exchange to
+  another BRIGADIR (that brigadir or an admin decides it,
+  `staff._native_can_approve_doc`), and the news of a decision already taken
+  — exchange / role change approved or cancelled, a record deleted, a
+  deletion approved / rejected, an undo, a day closed / reopened, an admin's
+  edit, «approved by somebody else». Admins and the unit's brigadir still get
+  every one; /staff and the bell's «Sizdan kutilmoqda» queue (read from the
+  live records) are unchanged.
+- **One gate, two doors**: `staff._notify_all_parties` and
+  `staff_live._notify` both ask `sm_told(nkey, params)` before adding the
+  shift-managers. A new unit notice reaches them by default — add its key to
+  `SM_QUIET` when it is only news.
