@@ -88,7 +88,9 @@ _EXEMPT_PATHS = frozenset({
 #   * /api/ovens/collector/ — the oven collector on the factory LAN
 #                     (routers/ovens.py): no person, its own key, checked by
 #                     every route; it can post oven readings and nothing else.
-_EXEMPT_PREFIXES = ("/api/android/", "/api/ops/", "/api/ovens/collector/")
+#   * /api/ext/     — the external read API (routers/ext_api.py): another
+#                     system, its own key checked by the router; GETs only.
+_EXEMPT_PREFIXES = ("/api/android/", "/api/ops/", "/api/ovens/collector/", "/api/ext/")
 
 # The report door's GET (services/ops_door.run_get): a request THIS process
 # makes to itself, as the admin who allowed it, after they tapped «Ruxsat
