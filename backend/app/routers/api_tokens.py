@@ -30,7 +30,7 @@ def _row(r: ApiToken, tid: int, key: Optional[str]) -> dict:
         "mine": r.owner_tid == tid and r.owner_key == key,
         "created_at": r.created_at.isoformat(), "expires_at": r.expires_at.isoformat(),
         "last_used_at": r.last_used_at.isoformat() if r.last_used_at else None,
-        "state": api_tokens.state(r),
+        "state": api_tokens.state(r), "never": api_tokens.never(r),
     }
 
 
@@ -57,7 +57,7 @@ def create_token(body: TokenIn, payload: dict = Depends(require_page(api_tokens.
     if not name:
         raise HTTPException(status_code=400, detail={"code": "no_name", "message": "Name the token."})
     if body.days not in api_tokens.DAYS:
-        raise HTTPException(status_code=400, detail={"code": "bad_days", "message": "Pick 30, 90 or 365 days."})
+        raise HTTPException(status_code=400, detail={"code": "bad_days", "message": "Pick 30, 90 or 365 days, or 0 for never."})
     tid, key = _mine(db, payload)
     active = [r for r in db.query(ApiToken).filter(
         ApiToken.owner_tid == tid, ApiToken.owner_key == key, ApiToken.revoked_at.is_(None)).all()

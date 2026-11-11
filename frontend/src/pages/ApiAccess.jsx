@@ -79,8 +79,8 @@ export default function ApiAccess() {
   };
 
   const cols = admin ? 7 : 6;
-  const dayOptions = (data?.days || [30, 90, 365]).map((d) =>
-    [d, d === 365 ? t("apiAccess.year") : t("apiAccess.days").replace("{n}", d)]);
+  const dayOptions = (data?.days || [30, 90, 365, 0]).map((d) =>
+    [d, d === 0 ? t("apiAccess.never") : d === 365 ? t("apiAccess.year") : t("apiAccess.days").replace("{n}", d)]);
 
   return (
     <Layout title={t("nav.api")}>
@@ -129,7 +129,7 @@ export default function ApiAccess() {
                   {admin && <td className="px-3 py-2 max-w-[220px] truncate" title={r.owner || ""}>{r.owner || "—"}</td>}
                   <td className="px-3 py-2 tabular-nums">{day(r.created_at)}</td>
                   <td className="px-3 py-2 tabular-nums" style={expired ? { color: "#ef4444", fontWeight: 600 } : undefined}>
-                    {day(r.expires_at)}{expired ? ` · ${t("apiAccess.expired")}` : ""}
+                    {r.never ? t("apiAccess.never") : day(r.expires_at)}{expired ? ` · ${t("apiAccess.expired")}` : ""}
                   </td>
                   <td className="px-3 py-2 tabular-nums" style={r.last_used_at ? undefined : { color: "var(--text-3)" }}>
                     {r.last_used_at ? stamp(r.last_used_at) : t("apiAccess.neverUsed")}
@@ -195,7 +195,7 @@ export default function ApiAccess() {
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
             />
           </FormField>
-          <FormField label={t("apiAccess.lifetime")} hint={t("apiAccess.lifetimeHint")}>
+          <FormField label={t("apiAccess.lifetime")} hint={t(form.days === 0 ? "apiAccess.neverHint" : "apiAccess.lifetimeHint")}>
             <SegmentedToggle fill options={dayOptions} value={form.days} onChange={(d) => setForm({ ...form, days: d })} />
           </FormField>
         </Modal>

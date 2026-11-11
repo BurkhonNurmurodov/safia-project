@@ -2,7 +2,7 @@
 
 Whoever may open the «API» page (`page.view.api`) makes tokens for themselves
 there. A token is shown ONCE and kept as a SHA-256 digest; it carries a name
-and an expiry (a year at most), and it is its OWNER's: every call asks again
+and an expiry (30 days to a year, or never), and it is its OWNER's: every call asks again
 whether that person still holds the profile and the page, so taking either
 away stops their tokens at once — nothing to remember to revoke. The owner (or
 an admin) revokes one by hand. See docs/ext-api.md.
@@ -20,7 +20,10 @@ from app import identity
 from app.models import Admin, ApiToken
 
 PAGE = "api"
-DAYS = (30, 90, 365)
+DAYS = (30, 90, 365, 0)   # 0 = never expires (the operator's call, 2026-11-11)
+# «Never» is stored as a date a century away: `expires_at` stays NOT NULL and
+# every reader keeps one comparison.
+NEVER_DAYS = 36500
 MAX_ACTIVE = 10          # per owner
 _SEEN_EVERY = timedelta(minutes=1)
 
@@ -39,6 +42,10 @@ def state(row: ApiToken, now: Optional[datetime] = None) -> str:
     if row.revoked_at is not None:
         return "revoked"
     return "expired" if row.expires_at <= (now or _now()) else "active"
+
+
+def never(row: ApiToken) -> bool:
+    return row.expires_at - row.created_at > timedelta(days=NEVER_DAYS // 2)
 
 
 def owner_ok(db: Session, row: ApiToken) -> bool:
@@ -64,7 +71,7 @@ def mint(db: Session, payload: dict, name: str, days: int) -> tuple[str, ApiToke
         name=name, prefix=token[:9], digest=digest_of(token),
         owner_tid=int(payload["sub"]), owner_key=identity.viewer_profile_key(db, payload),
         owner_name=payload.get("full_name"), payload=keep,
-        expires_at=_now() + timedelta(days=days))
+        expires_at=_now() + timedelta(days=days or NEVER_DAYS))
     db.add(row)
     db.commit()
     db.refresh(row)

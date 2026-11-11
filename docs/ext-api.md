@@ -52,7 +52,10 @@ documentation as MD file in their selected languages».
 - **A token** (`services/api_tokens.py`, table `api_tokens`): `sfx_` + 32
   random bytes, shown ONCE in the dialog that made it and kept as a SHA-256
   digest — the page lists a nine-character prefix, never the token. It carries
-  a name (the system that will use it) and a lifetime of 30, 90 or 365 days;
+  a name (the system that will use it) and a lifetime of 30, 90 or 365 days, or «never» (the operator, 2026-11-11:
+  «Add an option: never» — `days: 0`, stored as a date a century away so
+  `expires_at` stays NOT NULL; the row says `never: true` and the page prints
+  the word, with a warning under the toggle while it is picked);
   at most ten active per owner. `last_used_at` is stamped at most once a
   minute, and every accepted call writes an `[EXT]` log line naming the owner
   and the token.
