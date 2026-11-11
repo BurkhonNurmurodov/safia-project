@@ -166,11 +166,12 @@ function Fact({ icon: Icon, color, label, dot, children }) {
         <Icon size={17} />
       </span>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wider truncate" style={{ color: "var(--text-3)" }}>{label}</div>
-        <div className="mt-0.5 flex items-center gap-1.5 min-w-0 text-[13px] font-semibold"
+        <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
+        {/* Wraps, never cuts: the login or the date is the whole tile. */}
+        <div className="mt-0.5 flex items-start gap-1.5 min-w-0 text-[13px] font-semibold leading-[18px]"
              style={{ color: "var(--text-1)" }}>
-          {dot && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: dot }} />}
-          <span className="truncate">{children}</span>
+          {dot && <span className="mt-[5px] w-2 h-2 rounded-full flex-shrink-0" style={{ background: dot }} />}
+          <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
         </div>
       </div>
     </div>
@@ -194,7 +195,7 @@ function ProfileFacts({ bind, holders = 0, web }) {
     : web.locked ? t("weblogin.lockedTag") : null;
   return (
     <>
-      <Fact icon={Send} color={HUE.tg} label={t("profile.holders")} dot={bindMap.dot}>
+      <Fact icon={Send} color={HUE.tg} label="Telegram" dot={bindMap.dot}>
         {bindMap.label}{holders > 1 ? ` · ${holders}` : ""}
       </Fact>
       <Fact icon={Globe} color={HUE.web} label={t("weblogin.section")}
@@ -266,7 +267,7 @@ function ProfileHero({ name, role, colorKey, profileKey, photoVer, chips, contex
   const RoleIcon = TYPE_META[role]?.icon || UserRound;
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="relative h-20 sm:h-24 overflow-hidden"
+      <div className="relative h-20 @md:h-24 overflow-hidden"
            style={{ background: `color-mix(in srgb, ${hue} 16%, var(--bg-card))` }}>
         {/* Clear of the ⋮ on its right and, on the narrowest phone, of the photo. */}
         <RoleIcon aria-hidden="true" size={104} strokeWidth={1.5}
@@ -274,7 +275,7 @@ function ProfileHero({ name, role, colorKey, profileKey, photoVer, chips, contex
         {menu && <div className="absolute top-2 right-2">{menu}</div>}
       </div>
       <div className="px-3 sm:px-6 pb-4 sm:pb-6">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-5 min-w-0">
+        <div className="flex flex-col @md:flex-row @md:items-start gap-3 @md:gap-5 min-w-0">
           {/* Half on the band, half on the card; the ring is the card's colour. */}
           <div className="relative -mt-12 w-24 h-24 flex-shrink-0 rounded-full"
                style={{ boxShadow: "0 0 0 4px var(--bg-card)", background: "var(--bg-card)" }}>
@@ -282,8 +283,8 @@ function ProfileHero({ name, role, colorKey, profileKey, photoVer, chips, contex
                            photoVer={photoVer} size={96} />
             {avatarBadge}
           </div>
-          <div className="min-w-0 flex-1 sm:pt-3">
-            <h1 className="text-xl sm:text-2xl font-bold leading-tight break-words" style={{ color: "var(--text-1)" }}>
+          <div className="min-w-0 flex-1 @md:pt-3">
+            <h1 className="text-xl @md:text-2xl font-bold leading-tight break-words" style={{ color: "var(--text-1)" }}>
               {name}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">{chips}</div>
@@ -292,7 +293,7 @@ function ProfileHero({ name, role, colorKey, profileKey, photoVer, chips, contex
             )}
           </div>
         </div>
-        {facts && <div className="mt-4 sm:mt-5 grid grid-cols-1 sm:grid-cols-3 gap-2">{facts}</div>}
+        {facts && <div className="mt-4 @md:mt-5 grid grid-cols-1 @2xl:grid-cols-3 gap-2">{facts}</div>}
       </div>
     </div>
   );
@@ -307,7 +308,7 @@ function NamesBlock({ canonical, names }) {
       <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
         {t("profile.names")}
       </div>
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2">
+      <div className="mt-2 grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-2">
         {["uz", ...NAME_LANGS].map((l) => {
           const v = l === "uz" ? canonical : names?.[l];
           return (
@@ -583,7 +584,7 @@ function MyProfile() {
       <Card icon={IdCard} color={HUE.details} title={t("profile.details")}>
         <div className="space-y-5">
           {hasDetails && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
+            <div className="grid grid-cols-2 @xl:grid-cols-4 gap-x-5 gap-y-4">
               {me?.shift != null && <Detail label={t("profile.shift")}>{me.shift}</Detail>}
               {me?.unit && <Detail label={t("profile.unit")}>{tl(me.unit)}</Detail>}
               {factory && <Detail label={t("profile.factory")}>{factory}</Detail>}
@@ -672,7 +673,7 @@ function MyProfile() {
 function ProfileSkeleton() {
   return (
     <div className="space-y-4">
-      <SkeletonBlock className="h-[300px] sm:h-[264px] w-full rounded-2xl" />
+      <SkeletonBlock className="h-[380px] @2xl:h-[264px] w-full rounded-2xl" />
       <SkeletonBlock className="h-52 w-full rounded-2xl" />
       <SkeletonBlock className="h-52 w-full rounded-2xl" />
       <SkeletonBlock className="h-28 w-full rounded-2xl" />
@@ -1084,9 +1085,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   // form, so it must not read as a different page.
   return (
     <Card icon={IdCard} color={HUE.details} title={t("profile.details")}>
-      {/* Two fields a row from sm up. Every field is `alignTop`: only some
-          carry a hint, and the controls of a row must stay on one line. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+      {/* Two fields a row once the card is wide enough. Every field is
+          `alignTop`: only some carry a hint, and the controls of a row must
+          stay on one line. */}
+      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-4">
         {/* Role — switching moves only the name; other values are asked fresh */}
         <FormField alignTop label={t("admin.profiles.roleLabel")}>
           <StyledSelect
@@ -1299,7 +1301,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* Per-language display names — the uz canonical name lives in its own
             field above, so the tabs cover only the three override languages. */}
         {!roleChanged && (
-          <div className="sm:col-span-2">
+          <div className="@xl:col-span-2">
           <FormField label={t("admin.profiles.langNames")} hint={t("admin.profiles.langNamesHint")}>
             <LangTextInput
               className="mt-1"
@@ -1330,7 +1332,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* No save button here — the page has ONE, the bar at the bottom, and
             it commits this form together with the web-login username. Failures
             still surface next to the fields that caused them. */}
-        {formError && <p className="sm:col-span-2 text-xs font-medium text-red-400">{formError}</p>}
+        {formError && <p className="@xl:col-span-2 text-xs font-medium text-red-400">{formError}</p>}
       </div>
 
       {/* Inline cell creation (leader flow) */}
@@ -1628,8 +1630,8 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
           </div>
         )}
 
-        {/* Login beside password from sm up — the pair that is read together. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+        {/* Login beside password on a wide card — the pair read together. */}
+        <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-4">
         <FormField
           alignTop
           label={t("weblogin.username")}
@@ -1893,7 +1895,7 @@ function DangerCard({ ptype, item, onDone }) {
   });
 
   const busy = deleteMut.isPending || archiveMut.isPending || loginDeleteMut.isPending;
-  const rowCls = "flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-5";
+  const rowCls = "flex flex-col @xl:flex-row @xl:items-center justify-between gap-3 @xl:gap-5";
 
   return (
     <Card icon={AlertTriangle} color={HUE.danger} danger title={t("profile.dangerZone")}>
@@ -2202,8 +2204,11 @@ export default function Profile() {
 
   return (
     <Layout title={t("profile.title")}>
-      {/* One centered column of full-width cards. */}
-      <div className="mx-auto w-full max-w-4xl">
+      {/* One centered column of full-width cards. It is a CONTAINER: every
+          «two columns from here up» inside asks the column's own width (`@xl:`),
+          never the viewport's — the sidebar takes 256px of a tablet, and a
+          viewport breakpoint would split a 460px column in two. */}
+      <div className="@container mx-auto w-full max-w-4xl">
         {fromRegister
           ? <AdminProfile ptype={ptype} pid={pid} fromRegister />
           : canManage ? <AdminProfile /> : <MyProfile />}
