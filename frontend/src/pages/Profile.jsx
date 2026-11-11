@@ -244,17 +244,16 @@ function factoryLabel(f, lang) {
   return f[`name_${lang}`] || f.name_ru || f.name_uz || f.code;
 }
 
-// Timestamps follow the UI language, not the browser default — an uz page
-// showing "8/8/2026, 8:05:47 AM" reads as someone else's software.
-const DT_LOCALE = { uz: "uz-Latn-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
-function fmtDateTime(iso, lang) {
+// Timestamps are numeric — «26.09.2026, 14:07», the plant's own date order —
+// in every language. The spelled-out month depended on the browser knowing the
+// locale: Chromium has no Uzbek month names and printed «2026 M09 26».
+function fmtDateTime(iso) {
   if (!iso) return null;
   const d = new Date(iso);
-  try {
-    return d.toLocaleString(DT_LOCALE[lang] || "ru-RU", { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return d.toLocaleString();
-  }
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 }
 
 // The identity header every viewer gets: a band in the ROLE's hue (with the
