@@ -49,6 +49,7 @@ they — or an admin — may move it. ``_due`` is the one answer to «when does 
 run out»; deadlines creators typed before this keep counting from entry_date.
 Access is gated by the ``concerns`` page in the access matrix.
 """
+import logging
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
@@ -1497,6 +1498,18 @@ def create_concern(
             author, dmed, subject=("concern", c.id)
         )
 
+    # The all-concerns watchers (Umarbek Karimov), unless already told above.
+    sent |= tell_watchers(
+        db, c, {
+            "concern_no": _no(c),
+            "leader_name": c.leader_name or (rec[2] if rec else "") or "",
+            "owner": c.concern_owner,
+            "date": entry,
+            "concern": snippet,
+            "concern_level": _level(c),
+        }, author, dmed,
+        already=tuple(k for _, k in created if k) + ((rec[1],) if rec else ()))
+
     if sent:
         db.commit()
 
@@ -1778,6 +1791,51 @@ def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
             sent = True
     return sent
 
+
+
+# ── every new concern, to the people who asked for all of them (2026-11-11) ──
+# The operator (2026-11-11): Umarbek Karimov (shift manager) gets EVERY concern
+# in Telegram the moment it is filed — /concerns and the shop floor's
+# /cell-concerns alike, whatever its department — and nothing about it after
+# that. Only concerns filed from the deploy on: nothing is back-filled. A
+# watcher is named by the words of their profile name (any order, Latin or
+# Cyrillic, patronymic allowed) among shift- and top-manager profiles, so a
+# re-typed profile still matches and no id from production is hard-coded.
+ALL_CONCERNS_WATCHERS = (frozenset({"umarbek", "karimov"}),)
+_WATCHER_ROLES = ("shift-manager", "top-manager")
+
+
+def _name_words(name: Optional[str]) -> set:
+    from app.translit import transliterate
+    latin = (transliterate(name or "", "uz") or "").lower()
+    return set(re.findall(r"[a-z]+", latin.replace("ʻ", "").replace("'", "").replace("`", "")))
+
+
+def _watcher_keys(db: Session) -> list:
+    out = []
+    for role, pid, name in (db.query(RoleProfile.role, RoleProfile.id, RoleProfile.name)
+                            .filter(RoleProfile.role.in_(_WATCHER_ROLES))
+                            .order_by(RoleProfile.id).all()):
+        words = _name_words(name)
+        if any(w <= words for w in ALL_CONCERNS_WATCHERS):
+            out.append(_profile_key(role, pid))
+    return out
+
+
+def tell_watchers(db: Session, c, params: dict, author: int, dmed: set,
+                  already: tuple = ()) -> bool:
+    """«Yangi xavotir qo'shildi» to every all-concerns watcher who was not
+    already addressed about this concern (``already`` = profile keys told by
+    the caller). Never raises — a notice must not undo a filed concern."""
+    try:
+        keys = [k for k in _watcher_keys(db) if k and k not in set(already)]
+        if not keys:
+            return False
+        return _notify_recipients(db, [(None, k) for k in keys], "concern_created",
+                                  params, author, dmed, subject=("concern", c.id))
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("concern %s: watcher notice failed", c.id)
+        return False
 
 def _interested(db: Session, c: LeaderConcern) -> list[tuple[Optional[int], Optional[str]]]:
     """Everyone who tracks a concern, deduped by profile: whoever HOLDS it at
