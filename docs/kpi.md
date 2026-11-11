@@ -63,14 +63,17 @@ tasks 40/41 name it.
     answer was built never gets it, however young (`leader_register
     .last_write`) — a month closed, a read started or a Quality refresh from
     this page's own buttons shows at once. Others may read an answer up to
-    5 min old.
+    5 min old. (From 2026-11-11 a «Qayta hisoblash» run also drops every kept
+    answer when it ends — see that section below.)
   - **While a read runs the page polls only its STATE**:
     `GET /api/category-compliance/read` every 4 s (`read` = the journals,
     `directory` = the turnover read — one request for both), and asks for the
     board ONCE, the moment neither runs (`LeadersKpi.jsx`, `readsQ`; only an
     answer newer than the board's counts, and never over a board request
     already in flight). The read's result is on screen within ~4 s of its end
-    plus one build.
+    plus one build. **From 2026-11-11 the state polled is
+    `GET /api/leaders-kpi/recalc`** («Qayta hisoblash» below), which names
+    the run and both reads; the rule — state only, the board once — is the same.
   - The Excel export builds its own board (uncached), as before.
 - **The total is out of 5.0** (the operator's ruling) — Σ score × weight over
   the five HR KPIs (concerns 0.25 · turnover 0.20 · foreign objects 0.25 ·
@@ -119,6 +122,8 @@ tasks 40/41 name it.
     source's read time («Verifix: 19.10 11:51», «Sifat reyestri: …»), and a
     failed or stale read in amber (`Warn`). At the right edge, «Qanday
     hisoblanadi?» (`RulesButton`) and the admin's read / refresh / close.
+    (From 2026-11-11 the read / refresh / compute buttons are gone — the
+    page's one «Qayta hisoblash» below; an admin's close / reopen stay.)
   - **ONE card whose header IS the view switch** (`KpiBits.ViewHead`,
     `asTabs`; the card's title is gone — it repeated the switch's selected
     word), the rows' count on its right.
@@ -289,6 +294,59 @@ tasks 40/41 name it.
 
 The three sections below describe the KPIs' figures and rules, which did not
 change; where they speak of their own PAGE, read «a tab of /leaders-kpi».
+
+## «Qayta hisoblash» — ONE button brings every KPI up to date (`/leaders-kpi`, 2026-11-11)
+
+The operator, 2026-11-11: «Everything should be automatically calculated when
+the page is open … The HR won't have any idea if they have to press these
+buttons», asked «every time it opens», chose «the old figures + a small note»
+while it runs, and then: «Add one re-calculate button which reloads everything
+and shows up-to-date calculation. Until [then] show the old data». The page
+had FOUR admin-only buttons on three tabs, each fetching one source —
+«Verifix'dan yangilash» / «Hisoblash» / «Yangilash» (turnover), «Verifix'dan
+o'qish» (compliance), «Reyestrni yangilash» (foreign objects) — and nothing
+told a reader which one a figure was waiting on. All four are gone (their
+empty-state twins too); one button sits on the page bar, left of «Excel».
+
+- **`services/kpi_recalc.py` is THE run.** In the order the sources depend on
+  each other: the Quality register from its Google Sheet (on its own thread,
+  seconds — the Quality page has NO scheduled sync, so the foreign-objects KPI
+  used to move only when someone pressed a refresh) beside the Verifix
+  directory (turnover, minutes; on a PAST month the same read computes and
+  saves the month, as «Hisoblash» did), then the Verifix HR journals
+  (compliance) after the directory that places their people — the nightly
+  23:40 → 23:55 order. Concerns and the technologists' audit read the database
+  as it stands: nothing to fetch. A read somebody else started (the nightly
+  one, the other worker during a swap) is WAITED FOR, never doubled. When the
+  run ends it drops the board's kept answers (`_KEPT.forget`), so the next
+  request builds from the new data.
+- **Doors** (`routers/leaders_kpi.py`, gated on the page key — whoever sees
+  the figures may bring them up to date; the four buttons were admin-only):
+  `POST /recalc` (the button; «Jurnal» `sync.kpi_recalc`), `POST /recalc/auto`
+  (the page itself; in `action_log._SKIP` — it fires on every open), `GET
+  /recalc` (`running` = this run OR either Verifix read, `run`, `last` with
+  each step's `{ok, error | joined}`). The old doors (`/api/turnover/read |
+  compute`, `/api/category-compliance/read`, `/api/foreign-objects/refresh`)
+  stay for a tab on an older bundle.
+- **Every open starts a run** (and every month change): `/recalc/auto` skips
+  only a run already under way (joined) and the case where every source
+  finished a GOOD read in the last 5 min (`AUTO_FRESH` — a re-mount a minute
+  after a run would read Verifix again for nothing; a source that FAILED is
+  tried again on the next open). A never-computed past month is computed on
+  open; a SAVED one only on the button.
+- **The old figures stay until it has finished** (`LeadersKpi.jsx`): the
+  button turns into «Hisoblanmoqda…» with a spinning icon and is disabled;
+  the page polls only `GET /recalc` every 4 s and asks for the board ONCE when
+  nothing runs (invalidating `leaders-kpi`, `cc-people`, `quality`). Each tab's
+  muted line still names its source's read time and a failed read in amber.
+  The button's own press ends in ONE toast — «Hisob yangilandi», or which
+  source could not be read («… o'qilmadi — u bo'yicha oldingi ma'lumot»);
+  the automatic run on open ends silently (the per-tab «Verifix o'qildi»
+  toast is gone — it fired on every open).
+- **Not changed**: the turnover month's close / reopen (admin, its own
+  buttons), «Sabablar», the rules dialogs and «Excel». The month-closing day
+  (the 5th at 09:00) was questioned the same day and is still open — see
+  «Month life» in the turnover section.
 
 ## «Ishchi havotirlari» reads the CELL CONCERNS (`/worker-concerns` — MERGED into `/leaders-kpi`, 2026-10-19)
 
@@ -594,7 +652,8 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
 - **Verifix keeps only TODAY's placement** (and a re-hire erases the earlier
   dismissal from its directory), so the platform keeps its own history: a
   nightly read at **23:40** (+ a boot catch-up when the last good read is
-  > 6 h old, + the admin's «Verifix'dan yangilash») replaces `turnover_people`
+  > 6 h old, + the admin's «Verifix'dan yangilash» — from 2026-11-11 the page's
+  «Qayta hisoblash», on every open and on the button) replaces `turnover_people`
   (the directory: name, status, dates, unit, job — nothing else) and records
   every ended employment from the start in `turnover_leavers` (keyed by the
   cycle id; the same cycle working again = cancelled). Reasons come from the
@@ -603,13 +662,16 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   provisional); the first complete read at or after **23:00 on the last day**
   TAKES the month's working list + the cell → owner map (`turnover_months`,
   `turnover_month_people` kind roster) — the exact denominator; the month stays
-  open for late dismissal orders until the **5th at 09:00**, then closes by
+  open for late dismissal orders until the **5th at 09:00** (a default the
+  building session chose on 4 Oct — no ruling names it; the operator asked
+  «who decided the 5th 9:00?» on 2026-11-11 and has not set another day yet), then closes by
   itself (`auto_close`, daily 09:05) and its leavers freeze too. A dismissal
   typed in later is listed as late, never counted. An admin may close earlier
   or reopen; a month reopened by hand is closed by hand.
 - **Past months** (the operator, same day: "a button, saved, then it says
   update"): from **January 2025** to September 2026 a month is computed on an
-  admin's «Hisoblash» and SAVED; the button then reads «Yangilash» and recomputes
+  admin's «Hisoblash» and SAVED (from 2026-11-11: by itself the first time the
+  month is opened, «Qayta hisoblash» recomputing it); the button then reads «Yangilash» and recomputes
   on a fresh read (`POST /compute` → `save_past`). Built from today's directory:
   leavers by dismissal date, re-hired ones from the dismissal journal (`approx`,
   placed by today's unit, marked ≈); working people by their CURRENT unit,
@@ -649,7 +711,8 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
   so for one month the three KPI pages name the same owners and cells. An
   owned cell with no complaint scores 5; a cell with no owner is a notice.
 - **Nothing is frozen.** A month is re-read from the register as it stands
-  (the sync time is printed; the admin's «Reyestrni yangilash» is the Quality
+  (the sync time is printed; from 2026-11-11 the page's «Qayta hisoblash»
+  pulls the register — before, the admin's «Reyestrni yangilash» was the Quality
   page's own refresh). Before `LINKS_FROM` (2026-10-12, the dated cell links)
   owners have no history, so an older month says it is credited by the
   earliest owners known (`approx_owners`). The rule is admin-editable
@@ -719,7 +782,8 @@ migrate).
   (`verifix_live._side_by_side`), replaced whole in one transaction, kept in
   memory per read (`events_by_person`). Nightly at **23:55** (after the
   directory's 23:40), a boot catch-up ~200 s in when the last complete read
-  is older than six hours, the admin's `POST /read`. Logged as
+  is older than six hours, the admin's `POST /read` (from 2026-11-11: the
+  page's «Qayta hisoblash», on every open and on the button). Logged as
   `sync.category_read`.
 - **Endpoints**: `GET` the month payload (`?month=YYYY-MM&factory&shift&managers`
   → `totals`, `ranking`, `cells`, `notices` {no_ladder jobs, ambiguous jobs,

@@ -1,29 +1,24 @@
 // «Liderlar KPI» — the foreign-objects tab: the month's at-fault complaints as
-// the one summary (the Quality register's last sync and the admin's refresh on
-// its muted line), then the ranking (one row per owned cell, most complaints
-// first) or the complaints themselves behind the card's own view switch, and
+// the one summary (the Quality register's last sync on its muted line), then
+// the ranking (one row per owned cell, most complaints first) or the complaints themselves behind the card's own view switch, and
 // folded under the ranking whatever counted toward nobody. Its words are the
 // foreign-objects page's own bundle (TF) beside the page's (TK); every figure
 // is the board payload's `foreign` half, which IS `foreign_objects.month_payload`.
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Microscope, RefreshCw } from "lucide-react";
-import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
 import EmptyState from "../ui/EmptyState";
 import TableCard, { Th } from "../ui/DataTable";
-import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fill } from "../../pages/foreignObjectsText";
 import ForeignRules from "../foreign/ForeignRules";
 import { kindsText, wordOf } from "../foreign/foreignUtil";
 import { Count, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead, Warn, EmptyRow } from "./KpiBits";
-import { dmHm, dmy, errText, n0, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
+import { dmHm, dmy, n0, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
 
 const LINKS_FROM = "12.10.2026";   // the dated cell links begin here (cell_links)
 
-export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, isAdmin, toast, refetch, onExplain }) {
-  const qc = useQueryClient();
+export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, onExplain }) {
   const fo = data?.foreign || {};
   const state = fo.state;
   const tot = fo.totals;
@@ -33,16 +28,8 @@ export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, is
   const [sortP, onSortP] = useSort("lkpi.sortFC", { key: "date", dir: "desc" });
   const [rulesOpen, setRulesOpen] = useState(false);
 
-  // An admin re-pulls the Quality register — the Quality page's own refresh.
-  const refreshM = useMutation({
-    mutationFn: () => api.post("/api/foreign-objects/refresh").then((r) => r.data),
-    onSuccess: () => {
-      toast.success(TF.tRefreshDone);
-      qc.invalidateQueries({ queryKey: ["quality"] });
-      refetch();
-    },
-    onError: async (e) => toast.error(fill(TF.tRefreshFail, { e: await errText(e) })),
-  });
+  // The Quality register is pulled from its sheet by the page's one «Qayta
+  // hisoblash» (LeadersKpi.jsx), which the page starts itself when it opens.
 
   const has = (...vals) => !needle || vals.some((v) => v && String(v).toLowerCase().includes(needle));
   const nameBoth = (v) => [v, v ? tl(v) : null];
@@ -93,22 +80,10 @@ export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, is
       label={tot ? `${TK.sumForeign} · ${fill(TK.sumForeignOf, { n: n0(tot.complaints) })}` : TK.sumForeign}
       meta={[
         state === "open" && TK.notOver,
-        refreshM.isPending
-          ? <span className="inline-flex items-center gap-1"><RefreshCw size={11} className="animate-spin" aria-hidden />{fo.sync?.at ? fill(TF.syncAt, { at: dmHm(fo.sync.at) }) : TF.syncNever}</span>
-          : fo.sync?.at ? fill(TF.syncAt, { at: dmHm(fo.sync.at) }) : TF.syncNever,
+        fo.sync?.at ? fill(TF.syncAt, { at: dmHm(fo.sync.at) }) : TF.syncNever,
         syncBroken && <Warn>{fill(TF.syncFailed, { e: fo.sync.message || "?" })}</Warn>,
       ]}
-      actions={(
-        <>
-          <RulesButton label={TF.rulesBtn} onClick={() => setRulesOpen(true)} />
-          {isAdmin && (
-            <Button size="md" variant="secondary" icon={<RefreshCw size={13} className={refreshM.isPending ? "animate-spin" : ""} />}
-              loading={refreshM.isPending} onClick={() => refreshM.mutate()}>
-              {TF.refresh}
-            </Button>
-          )}
-        </>
-      )} />
+      actions={<RulesButton label={TF.rulesBtn} onClick={() => setRulesOpen(true)} />} />
   );
 
   const head = (right) => (
@@ -232,10 +207,7 @@ export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, is
   } else if (!fo.sync?.at) {
     body = (
       <>
-        <EmptyState icon={RefreshCw} title={TF.noSyncTitle} message={TF.noSyncMsg} showUploadLink={false}
-          action={isAdmin ? (
-            <Button icon={<RefreshCw size={14} />} loading={refreshM.isPending} onClick={() => refreshM.mutate()}>{TF.refresh}</Button>
-          ) : null} />
+        <EmptyState icon={RefreshCw} title={TF.noSyncTitle} message={TF.noSyncMsg} showUploadLink={false} />
       </>
     );
   } else {

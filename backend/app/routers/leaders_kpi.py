@@ -16,6 +16,15 @@ everything the answer depends on: the month, the plant's date, the scope
 inside it) and the state of the two Verifix reads, so a read that starts or
 finishes is a new key and is never answered from before it. A viewer who
 changed something since the kept answer was built always gets a new one.
+
+«Qayta hisoblash» (2026-11-11, `services/kpi_recalc.py`): `POST /recalc` (the
+page's one button) and `POST /recalc/auto` (the page itself, every time it
+opens) bring every source up to date — the Quality register, the Verifix
+directory, the Verifix HR journals — and `GET /recalc` is what the page polls
+meanwhile. Gated on this page key: whoever can see the figures can bring them
+up to date. The four admin buttons it replaced kept their doors
+(`/api/turnover/read|compute`, `/api/category-compliance/read`,
+`/api/foreign-objects/refresh`) for a tab still open on an older bundle.
 """
 from __future__ import annotations
 
@@ -27,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.services import action_log, category_compliance as cc, leaders_kpi, turnover
+from app.services import action_log, category_compliance as cc, kpi_recalc, leaders_kpi, turnover
 from app.services.factory_scope import scoped_manager_ids
 from app.services.kept_answer import KeptAnswers
 from app.services.leaders_kpi_export import build_leaders_kpi_workbook
@@ -113,6 +122,44 @@ def month(
     scope = _scope(factory, shift, managers)
     key = _board_key(db, payload, m, scope)
     return _KEPT.get(db, payload, key, lambda s: leaders_kpi.board(s, payload, m, scope))
+
+
+class RecalcIn(BaseModel):
+    month: Optional[str] = None
+
+
+def _who(payload: dict) -> str:
+    return (payload.get("full_name") or payload.get("sub") or "viewer")[:120]
+
+
+def _recalc(db: Session, payload: dict, body: RecalcIn, auto: bool) -> dict:
+    m = _month(body.month)
+    return kpi_recalc.start(db, month=m, by=_who(payload), auto=auto, on_done=_KEPT.forget)
+
+
+@router.get("/recalc")
+def recalc_status(db: Session = Depends(get_db), _: dict = Depends(require_page(PAGE))):
+    """Is anything bringing the sources up to date, and how did the last run end."""
+    return kpi_recalc.status(db)
+
+
+@router.post("/recalc")
+def recalc(body: RecalcIn, db: Session = Depends(get_db), payload: dict = Depends(require_page(PAGE))):
+    """«Qayta hisoblash»: fetch every source again and recompute. Returns at
+    once; the page keeps the old figures until `GET /recalc` says it is done."""
+    out = _recalc(db, payload, body, auto=False)
+    ym = turnover.ym(_month(body.month))
+    action_log.enrich(target_kind="month", target_id=ym, target_name=ym,
+                      details=[("started", out.get("started")), ("reason", out.get("reason") or "—")])
+    return out
+
+
+@router.post("/recalc/auto")
+def recalc_auto(body: RecalcIn, db: Session = Depends(get_db), payload: dict = Depends(require_page(PAGE))):
+    """The same run, started by the page itself when it opens — skipped when
+    one is under way or every source read well in the last few minutes. Not in
+    the «Jurnal» (`action_log._SKIP`): it happens on every open."""
+    return _recalc(db, payload, body, auto=True)
 
 
 class ExportIn(BaseModel):

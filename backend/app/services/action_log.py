@@ -448,6 +448,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/turnover/exclusions",                  "config", "config.turnover_exclusions_saved"),
     (("POST",),   "/api/foreign-objects/refresh",              "sync_export", "sync.foreign_refresh"),
     (("POST",),   "/api/leaders-kpi/export.xlsx",              "sync_export", "export.leaders_kpi"),
+    (("POST",),   "/api/leaders-kpi/recalc",                   "sync_export", "sync.kpi_recalc"),
     (("POST",),   "/api/brigadirs-kpi/export.xlsx",            "sync_export", "export.brigadirs_kpi"),
     (("POST",),   "/api/audit-table/export.xlsx",              "sync_export", "export.audit_table"),
     # «Hisobotlar» — the period report as a document. One route, whichever
@@ -559,6 +560,9 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
 # real actor, which the envelope cannot know.
 _SKIP = (
     "/api/activity/ping",
+    # «Liderlar KPI» starts a recalculation itself every time it opens; the
+    # button («Qayta hisoblash», `/api/leaders-kpi/recalc`) is the act.
+    "/api/leaders-kpi/recalc/auto",
     "/api/ui-prefs/",
     "/api/boot-report",
     "/api/crash-report",

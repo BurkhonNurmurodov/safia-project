@@ -1,13 +1,14 @@
 // «Liderlar KPI» — the turnover tab: the month's rate as the one summary (its
-// state, its Verifix read and the admin's actions on one muted line), then the
+// state and its Verifix read on one muted line, an admin's close / reopen
+// beside it), then the
 // ranking (one row per owned cell, worst rate first) or the leavers behind the
 // card's own view switch, and folded under the ranking whatever counted
 // toward nobody. Its words are the turnover page's own bundle (TT) beside the
 // page's (TK); every figure is the board payload's `turnover` half, which IS
 // `turnover.month_payload`.
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { AlertTriangle, Archive, Calculator, Lock, LockOpen, RefreshCw, UserMinus } from "lucide-react";
+import { AlertTriangle, Archive, Lock, LockOpen, RefreshCw, UserMinus } from "lucide-react";
 import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -35,29 +36,9 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   const [confirm, setConfirm] = useState(null);
   const [confirmErr, setConfirmErr] = useState(null);
 
-  // A read finishing is news: say how it ended, once.
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (!tv.read) return;
-    if (wasRunning.current && !running) {
-      const trig = tv.read.last?.trigger || "";
-      if (!tv.read.last?.ok) toast.error(fill(TT.tReadFailed, { e: tv.read.last?.error || "?" }));
-      else if (trig.startsWith("compute:")) toast.success(fill(TT.tComputed, { month: mLabel }));
-      else toast.success(TT.tReadDone);
-    }
-    wasRunning.current = running;
-  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const readM = useMutation({
-    mutationFn: () => api.post("/api/turnover/read").then((r) => r.data),
-    onSuccess: (r) => { if (r.started) toast.info(TT.tReadStarted); else toast.warning(TT.tReadBusy); refetch(); },
-    onError: async (e) => toast.error(fill(TT.tReadFailed, { e: await errText(e) })),
-  });
-  const computeM = useMutation({
-    mutationFn: () => api.post("/api/turnover/compute", { month: ym }).then((r) => r.data),
-    onSuccess: (r) => { if (r.started) toast.info(fill(TT.tComputeStarted, { month: mLabel })); else toast.warning(TT.tReadBusy); refetch(); },
-    onError: async (e) => toast.error(fill(TT.tFailed, { e: await errText(e) })),
-  });
+  // Reading Verifix and computing a past month are the page's one
+  // «Qayta hisoblash» (LeadersKpi.jsx, services/kpi_recalc.py) — started by
+  // the page itself when it opens; this tab only says what state they are in.
   const computing = running && (tv.read?.last?.trigger || "").startsWith(`compute:${ym}`);
   const computeFailed = !running && tv.read?.last?.ok === false && (tv.read.last.trigger || "").startsWith(`compute:${ym}`);
   const stateM = useMutation({
@@ -132,16 +113,6 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   const actions = (
     <>
       <RulesButton label={TT.rulesBtn} onClick={() => setRulesOpen(true)} />
-      {isAdmin && state === "saved" && (
-        <Button size="md" variant="secondary" icon={<RefreshCw size={13} className={computing ? "animate-spin" : ""} />}
-          loading={computeM.isPending} disabled={running || !tv.configured} onClick={() => computeM.mutate()}>
-          {computing ? TT.computing : TT.update}
-        </Button>
-      )}
-      {isAdmin && state !== "saved" && (
-        <Button size="md" variant="secondary" icon={<RefreshCw size={13} className={running ? "animate-spin" : ""} />}
-          loading={readM.isPending} disabled={running || !tv.configured} onClick={() => readM.mutate()}>{TT.refresh}</Button>
-      )}
       {isAdmin && state === "closing" && (
         <Button size="md" variant="secondary" icon={<Lock size={13} />} onClick={() => { setConfirmErr(null); setConfirm("close"); }}>{TT.close}</Button>
       )}
@@ -273,14 +244,10 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
     body = (
       <>
         {computeFailed && <p className="mb-3 text-sm text-center" style={{ color: "var(--status-bad)" }}>{fill(TT.readFailed, { e: tv.read.last.error || "?" })}</p>}
-        <EmptyState icon={Archive} height="h-auto py-12" title={fill(TT.pastTitle, { month: mLabel })}
-          message={!tv.configured ? `${TT.pastMsg} ${TT.notConfMsg}` : isAdmin ? TT.pastMsg : `${TT.pastMsg} ${TT.pastNoAdmin}`}
-          showUploadLink={false}
-          action={isAdmin && tv.configured ? (
-            <Button icon={<Calculator size={14} />} loading={computeM.isPending || computing} disabled={running} onClick={() => computeM.mutate()}>
-              {computing ? TT.computing : TT.compute}
-            </Button>
-          ) : null} />
+        <EmptyState icon={computing ? RefreshCw : Archive} height="h-auto py-12"
+          title={computing ? TT.computing : fill(TT.pastTitle, { month: mLabel })}
+          message={!tv.configured ? `${TT.pastMsg} ${TT.notConfMsg}` : TT.pastMsg}
+          showUploadLink={false} />
       </>
     );
   } else if (state !== "saved" && !tv.configured && !tv.read?.ok) {
@@ -288,8 +255,7 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   } else if (state !== "saved" && !tv.read?.ok) {
     body = (
       <>
-        <EmptyState icon={RefreshCw} title={running ? TT.readRunning : TT.noReadTitle} message={TT.noReadMsg} showUploadLink={false}
-          action={isAdmin && !running ? <Button icon={<RefreshCw size={14} />} loading={readM.isPending} onClick={() => readM.mutate()}>{TT.readNow}</Button> : null} />
+        <EmptyState icon={RefreshCw} title={running ? TT.readRunning : TT.noReadTitle} message={TT.noReadMsg} showUploadLink={false} />
       </>
     );
   } else {

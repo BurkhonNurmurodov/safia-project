@@ -15,9 +15,9 @@
 // shared by every tab. `services/leaders_kpi.py` computes; this page never
 // re-derives a figure, only filters what it shows.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, FileSpreadsheet, Layers, Trophy, UserCog } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Layers, RefreshCw, Trophy, UserCog } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -73,6 +73,7 @@ export default function LeadersKpi() {
   const { auth } = useAuth();
   const isAdmin = auth?.role === "admin";
   const toast = useToast();
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const { access } = usePageAccess();
   const { capPages, deniedPages } = useCapabilities();
@@ -120,26 +121,54 @@ export default function LeadersKpi() {
   const data = dataQ.data;
   const refetch = () => dataQ.refetch();
 
-  // A Verifix read the turnover or the compliance tab started runs for
-  // minutes in the background. While it does, only its STATE is asked —
-  // `/api/category-compliance/read` names both reads (`read` = the journals,
-  // `directory` = the turnover read) — and the board is asked again ONCE, the
-  // moment neither runs. Polling the board itself rebuilt every KPI of the
-  // month 15 times a minute. Only an answer newer than the board's counts, so
-  // a state left over from an earlier read never fires the refetch.
-  const reading = !!(data?.turnover?.read?.running || data?.compliance?.read?.running);
-  const readsQ = useQuery({
-    queryKey: ["leaders-kpi-reads"],
-    queryFn: () => api.get("/api/category-compliance/read").then((r) => r.data),
-    enabled: reading,
+  // «Qayta hisoblash» (2026-11-11, `services/kpi_recalc.py`) — the ONE way
+  // the figures are brought up to date: the Quality register, the Verifix
+  // directory (and, on a past month, its computation) and the Verifix HR
+  // journals, fetched again and every KPI recomputed. The page starts it
+  // itself every time it opens or changes month (`/recalc/auto` — the server
+  // skips it while one runs or when every source read well minutes ago), and
+  // the toolbar button starts it on demand. Until it has finished the page
+  // keeps showing the figures it has; then it asks for the board ONCE.
+  // While anything runs — this run, or a nightly read the board reports —
+  // only the run's STATE is polled: polling the board itself rebuilt every
+  // KPI of the month 15 times a minute.
+  const [watch, setWatch] = useState(null);   // {manual, since}: a run this tab is waiting on
+  const recalcM = useMutation({
+    mutationFn: ({ auto }) => api.post(`/api/leaders-kpi/recalc${auto ? "/auto" : ""}`, { month: ym }).then((r) => r.data),
+    onSuccess: (r, { auto }) => {
+      if (r?.running) setWatch((w) => ({ manual: !auto || !!w?.manual, since: w?.since ?? Date.now() }));
+    },
+    onError: async (e, { auto }) => { if (!auto) toast.error(fill(T.tRecalcFail, { e: await errText(e) })); },
+  });
+  useEffect(() => { recalcM.mutate({ auto: true }); }, [ym]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const boardReading = !!(data?.turnover?.read?.running || data?.compliance?.read?.running);
+  const recalcQ = useQuery({
+    queryKey: ["leaders-kpi-recalc"],
+    queryFn: () => api.get("/api/leaders-kpi/recalc").then((r) => r.data),
+    enabled: !!watch || boardReading,
     refetchInterval: 4000,
     staleTime: 0,
   });
+  const recalcing = !!watch || boardReading || recalcM.isPending;
   useEffect(() => {
-    const r = readsQ.data;
-    if (!reading || !r || dataQ.isFetching || readsQ.dataUpdatedAt <= dataQ.dataUpdatedAt) return;
-    if (!r.read?.running && !r.directory?.running) dataQ.refetch();
-  }, [readsQ.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+    const r = recalcQ.data;
+    if (!r || r.running || (!watch && !boardReading)) return;
+    // Only an answer newer than what it is compared with counts, so a state
+    // left over from an earlier run never ends this one.
+    if (recalcQ.dataUpdatedAt <= (watch?.since ?? dataQ.dataUpdatedAt)) return;
+    const manual = !!watch?.manual;
+    setWatch(null);
+    qc.invalidateQueries({ queryKey: ["leaders-kpi"] });
+    qc.invalidateQueries({ queryKey: ["cc-people"] });
+    qc.invalidateQueries({ queryKey: ["quality"] });
+    if (!manual) return;
+    const steps = r.last?.steps || {};
+    const failed = Object.entries(steps).filter(([, v]) => v && v.ok === false).map(([k]) => T.recalcSrc[k] || k);
+    if (!failed.length) toast.success(T.tRecalcDone);
+    else if (failed.length === Object.keys(steps).length) toast.error(fill(T.tRecalcFail, { e: failed.join(", ") }));
+    else toast.warning(fill(T.tRecalcPartial, { src: failed.join(", ") }));
+  }, [recalcQ.dataUpdatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The board compares with the month before only from the month after the
   // platform began computing every month (START_MONTH): earlier months are not
@@ -297,7 +326,12 @@ export default function LeadersKpi() {
         min={`${PAST_FROM}-01`} max={todayISO()} triggerClassName="px-3 py-2 text-sm" />
       <FilterPanel sections={sections} />
       <SearchInput value={q} onChange={setQ} placeholder={T.search} className="flex-1 min-w-[160px] max-w-xs" />
-      <Button size="lg" variant="secondary" className="ml-auto" icon={<FileSpreadsheet size={15} />}
+      <Button size="lg" variant="secondary" className="ml-auto" title={T.recalcHint} aria-label={T.recalc}
+        icon={<RefreshCw size={15} className={recalcing ? "animate-spin" : ""} />}
+        disabled={recalcing} onClick={() => recalcM.mutate({ auto: false })}>
+        <span className="max-sm:hidden">{recalcing ? T.recalcRunning : T.recalc}</span>
+      </Button>
+      <Button size="lg" variant="secondary" icon={<FileSpreadsheet size={15} />}
         loading={exporting} disabled={!showMonth} onClick={runExport}>
         <span className="max-sm:hidden">{T.excel}</span>
       </Button>
@@ -339,14 +373,12 @@ export default function LeadersKpi() {
         break;
       case "foreign":
         body = (
-          <ForeignTab T={TF} TK={T} tl={tl} tx={tx} data={data} mLabel={mLabel} needle={needle}
-            isAdmin={isAdmin} toast={toast} refetch={refetch} onExplain={openExplain} />
+          <ForeignTab T={TF} TK={T} tl={tl} tx={tx} data={data} mLabel={mLabel} needle={needle} onExplain={openExplain} />
         );
         break;
       case "compliance":
         body = (
-          <ComplianceTab T={T} tl={tl} tx={tx} data={data} ym={ym} mLabel={mLabel} needle={needle}
-            isAdmin={isAdmin} toast={toast} refetch={refetch} onExplain={openExplain} />
+          <ComplianceTab T={T} tl={tl} tx={tx} data={data} ym={ym} mLabel={mLabel} needle={needle} onExplain={openExplain} />
         );
         break;
       case "audit":

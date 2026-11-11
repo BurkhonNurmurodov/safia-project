@@ -33,7 +33,7 @@ loaded by themselves:
 - `docs/workers-and-attendance.md` — a worker's cell and the «Yacheykalar» placement, the three «Odam soni» pages, «Tarkib», attendance charts on the original brigadir, «Davomat» reading Verifix.
 - `docs/staff-live.md` — the live day engine (`live_staff`, `verifix_live`), /staff reading today live (`live_day.LIVE_FROM`), the close and its copy into `attendance`, the close clock.
 - `docs/tasks-and-concerns.md` — the /tasks board, a concern's deadline and date, the weekly Concerns deck.
-- `docs/kpi.md` — «Liderlar KPI» and its KPIs (worker concerns, turnover, foreign objects, category compliance, the technologists' audit), who answers for a Quality record, «Brigadirlar KPI», «Brigadirlar reytingi».
+- `docs/kpi.md` — «Liderlar KPI» and its KPIs (worker concerns, turnover, foreign objects, category compliance, the technologists' audit), **one «Qayta hisoblash» brings every source up to date — on every open and on the button** (`kpi_recalc`), who answers for a Quality record, «Brigadirlar KPI», «Brigadirlar reytingi».
 - `docs/checklist.md` — the checklist config page, a checklist on the other shift, temporary task hours, the brigadir's day digest, one checklist per cell, per-task submission.
 - `docs/checklist-auto-checks.md` — the tasks the platform answers itself (`leader_auto`).
 - `docs/checklist-camera.md` — in-app camera proofs (`/proof/camera`, `proof_kind`).

@@ -45,7 +45,7 @@ const uz = {
   beforeTitle: "Bu oy hisoblanmaydi", before: "Eng erta hisoblanadigan oy — 2025-yil yanvar.",
   future: "Bu oy hali boshlanmagan.",
   noSyncTitle: "Sifat reyestri hali yuklanmagan",
-  noSyncMsg: "Shikoyatlar «Sifat» sahifasining Google Sheets reyestridan o'qiladi. Admin «Reyestrni yangilash» bilan yuklaydi.",
+  noSyncMsg: "Shikoyatlar «Sifat» sahifasining Google Sheets reyestridan o'qiladi — sahifa ochilganda o'zi yuklanadi.",
   tRefreshDone: "Sifat reyestri yangilandi", tRefreshFail: "Yangilash bo'lmadi: {e}",
 
   kFault: "Aybli shikoyatlar", kFaultSub: "{n} tasi yacheyka egalariga hisoblandi",
@@ -139,7 +139,7 @@ const uz_cyrl = {
   beforeTitle: "Бу ой ҳисобланмайди", before: "Энг эрта ҳисобланадиган ой — 2025 йил январь.",
   future: "Бу ой ҳали бошланмаган.",
   noSyncTitle: "Сифат реестри ҳали юкланмаган",
-  noSyncMsg: "Шикоятлар «Сифат» саҳифасининг Google Sheets реестридан ўқилади. Админ «Реестрни янгилаш» билан юклайди.",
+  noSyncMsg: "Шикоятлар «Сифат» саҳифасининг Google Sheets реестридан ўқилади — саҳифа очилганда ўзи юкланади.",
   tRefreshDone: "Сифат реестри янгиланди", tRefreshFail: "Янгилаш бўлмади: {e}",
 
   kFault: "Айбли шикоятлар", kFaultSub: "{n} таси ячейка эгаларига ҳисобланди",
@@ -233,7 +233,7 @@ const ru = {
   beforeTitle: "Этот месяц не считается", before: "Самый ранний месяц расчёта — январь 2025.",
   future: "Этот месяц ещё не начался.",
   noSyncTitle: "Реестр качества ещё не загружен",
-  noSyncMsg: "Жалобы читаются из Google-реестра страницы «Качество». Админ загружает его кнопкой «Обновить реестр».",
+  noSyncMsg: "Жалобы читаются из Google-реестра страницы «Качество» — он загружается сам при открытии страницы.",
   tRefreshDone: "Реестр качества обновлён", tRefreshFail: "Не удалось обновить: {e}",
 
   kFault: "Жалобы по вине цеха", kFaultSub: "{n} зачтено владельцам ячеек",
@@ -327,7 +327,7 @@ const en = {
   beforeTitle: "This month is not calculated", before: "The earliest month calculated is January 2025.",
   future: "This month has not started yet.",
   noSyncTitle: "The Quality register has not been loaded yet",
-  noSyncMsg: "Complaints are read from the Google Sheets register of the «Quality» page. An admin loads it with «Refresh the register».",
+  noSyncMsg: "Complaints are read from the Google Sheets register of the «Quality» page — it loads by itself when the page opens.",
   tRefreshDone: "Quality register refreshed", tRefreshFail: "Refresh failed: {e}",
 
   kFault: "Complaints at the cell's fault", kFaultSub: "{n} credited to cell owners",

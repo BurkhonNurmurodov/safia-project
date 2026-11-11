@@ -1,29 +1,28 @@
 // «Liderlar KPI» — the compliance tab («Muvofiqlik»): the month's compliance
-// rate as the one summary (when Verifix's HR journals were read, and the
-// admin's read, on its muted line), then the ranking (one row per owned cell,
+// rate as the one summary (when Verifix's HR journals were read, on its muted
+// line), then the ranking (one row per owned cell,
 // worst rate first) or every judged person behind the card's own view switch,
 // and folded under the ranking whatever counted toward nobody. Every figure is
 // the board payload's `compliance` half, which IS
 // `category_compliance.month_payload`; the people are asked only when that
 // view opens (`GET /api/category-compliance/people`), never computed here.
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, RefreshCw, Users } from "lucide-react";
 import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
 import EmptyState from "../ui/EmptyState";
 import TableCard, { Th } from "../ui/DataTable";
-import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fill } from "../../pages/leadersKpiText";
 import ComplianceRules from "./ComplianceRules";
 import { Count, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead, Warn, EmptyRow, VerdictChip } from "./KpiBits";
-import { VERDICT_RANK, dmHm, dmy, errText, fetchPeople, n0, pct1, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
+import { VERDICT_RANK, dmHm, dmy, fetchPeople, n0, pct1, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
 import { PersonLink } from "../people/peopleUtil";
 
 const LINKS_FROM = "12.10.2026";   // the dated cell links begin here (cell_links)
 
-export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isAdmin, toast, refetch, onExplain }) {
+export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, onExplain }) {
   const cp = data?.compliance || {};
   const state = cp.state;
   const tot = cp.totals;
@@ -37,17 +36,10 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
   const [sortP, onSortP] = useSort("lkpi.sortCpP", { key: "verdict", dir: "asc" });
   const [rulesOpen, setRulesOpen] = useState(false);
 
-  // An admin starts a read of the three HR journals; while it runs
-  // (`read.running`) the page polls the read's state alone and asks for the
-  // board again once it has finished, so the figures follow.
-  const readM = useMutation({
-    mutationFn: () => api.post("/api/category-compliance/read").then((r) => r.data),
-    onSuccess: (r) => {
-      if (r?.started) toast.success(T.cpReadStarted); else toast.info(T.cpReadBusy);
-      refetch();
-    },
-    onError: async (e) => toast.error(fill(T.cpReadFail, { e: await errText(e) })),
-  });
+  // The read of the three HR journals is part of the page's one «Qayta
+  // hisoblash» (LeadersKpi.jsx), started when the page opens; while it runs
+  // (`read.running`) the page polls its state and asks for the board again
+  // once it has finished, so the figures follow.
 
   const has = (...vals) => !needle || vals.some((v) => v && String(v).toLowerCase().includes(needle));
   const nameBoth = (v) => [v, v ? tl(v) : null];
@@ -108,13 +100,6 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
     if (nt.no_cell) notices.push(fill(T.cpNNoCell, { n: n0(nt.no_cell) }));
   }
 
-  const readBtn = (label) => isAdmin && (
-    <Button size="md" variant="secondary" icon={<RefreshCw size={13} className={running || readM.isPending ? "animate-spin" : ""} />}
-      loading={readM.isPending} disabled={running} onClick={() => readM.mutate()}>
-      {label}
-    </Button>
-  );
-
   // The two Verifix reads behind the month: the HR journals (this KPI's own)
   // and the directory (who works where, the turnover tab's). One time is
   // printed — the journals'; the directory speaks only when it is missing.
@@ -129,12 +114,7 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
     <Summary value={tot.rate == null ? "—" : pct1(tot.rate)}
       label={`${T.sumCompliance} · ${fill(T.sumCompOf, { ok: n0(tot.compliant), n: n0(tot.counted) })}`}
       meta={[state === "open" && T.notOver, readMeta, warnMeta]}
-      actions={(
-        <>
-          <RulesButton label={T.rulesBtn} onClick={() => setRulesOpen(true)} />
-          {readBtn(T.cpRead)}
-        </>
-      )} />
+      actions={<RulesButton label={T.rulesBtn} onClick={() => setRulesOpen(true)} />} />
   );
 
   const head = (right) => (
@@ -265,10 +245,7 @@ export default function ComplianceTab({ T, tl, tx, data, ym, mLabel, needle, isA
   } else if (!read?.ok) {
     body = (
       <>
-        <EmptyState icon={RefreshCw} title={T.cpNoReadTitle} message={T.cpNoReadMsg} showUploadLink={false}
-          action={isAdmin ? (
-            <Button icon={<RefreshCw size={14} />} loading={readM.isPending || running} onClick={() => readM.mutate()}>{T.cpRead}</Button>
-          ) : null} />
+        <EmptyState icon={RefreshCw} title={running ? T.cpReadRunning : T.cpNoReadTitle} message={T.cpNoReadMsg} showUploadLink={false} />
       </>
     );
   } else if (!dir?.ok) {
