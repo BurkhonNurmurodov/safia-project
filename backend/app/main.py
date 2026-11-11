@@ -266,6 +266,9 @@ async def lifespan(app: FastAPI):
     # (docs/registration.md); sets the bot's Telegram description that once.
     from app.startup import seed_hr_contact
     later(seed_hr_contact)
+    # public.audit's older full-copy loads go, once (docs/data-fixes.md).
+    from app.startup import clean_audit_reloads
+    later(clean_audit_reloads)
     # The operator's list of cells NOT counted in the загрузка (once).
     later(untick_cells_in_load)
     run(add_attendance_upload_source)

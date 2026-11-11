@@ -121,6 +121,36 @@ def _probe(db: Session) -> dict:
     return {"present": bool(rows and rows.present), "readable": bool(rows and rows.readable)}
 
 
+_COLS = "date, type_name, factory_id, division_name, division_group_name, foreman, avg_rating"
+# shortcut: loads are told apart by xmin read as a plain number — right until
+# the server's transaction counter wraps (4 billion; it stood at 5 million).
+_LOAD = "xmin::text::bigint"
+_MISSING = f"""
+    WITH n AS (SELECT max({_LOAD}) AS m FROM public.audit),
+    old AS (SELECT {_COLS}, {_LOAD} AS x, count(*) AS c FROM public.audit, n
+            WHERE {_LOAD} < n.m GROUP BY {_COLS}, {_LOAD}),
+    new AS (SELECT {_COLS}, count(*) AS c FROM public.audit, n
+            WHERE {_LOAD} = n.m GROUP BY {_COLS}),
+    missing AS (SELECT count(*) AS k FROM old o WHERE NOT EXISTS (
+        SELECT 1 FROM new w WHERE w.c >= o.c AND ({", ".join("w." + c for c in _COLS.split(", "))})
+            IS NOT DISTINCT FROM ({", ".join("o." + c for c in _COLS.split(", "))})))
+"""
+
+
+def drop_older_loads(db: Session) -> tuple[int, int]:
+    """(rows deleted, older rows the newest load lacks). The outside writer
+    appends a FULL copy of the history on every load; this keeps the newest
+    load and deletes the older ones — and deletes NOTHING unless every older
+    row has an identical twin in the newest load (all seven columns, as many
+    times as it stands in its own load). One statement, so the check and the
+    delete see the same rows. The caller commits."""
+    missing = int(db.execute(sql(_MISSING + "SELECT k FROM missing")).scalar() or 0)
+    done = db.execute(sql(
+        _MISSING + f"DELETE FROM public.audit a USING n, missing "
+                   f"WHERE a.{_LOAD} < n.m AND missing.k = 0"))
+    return int(done.rowcount or 0), missing
+
+
 def read_month(db: Session, m: date) -> tuple[dict, list[dict]]:
     """(source, the month's technical audits as stored). Never raises: a table
     that cannot be read returns `source.ok` False and no rows."""

@@ -10089,3 +10089,36 @@ def drop_duplicate_indexes() -> None:
                 print(f"[startup] duplicate index {drop} kept: {exc}")
     finally:
         db.close()
+
+
+AUDIT_RELOADS_FLAG = "audit_reloads_cleaned_nov11"
+
+
+def clean_audit_reloads() -> None:
+    """`public.audit` stood three times over on 2026-11-11 — its outside
+    writer had appended the whole history at each of three loads (25,171 rows,
+    8,452 in the newest). Once: keep the newest load, delete the older two
+    (`tech_audit.drop_older_loads`, which deletes nothing if an older row has
+    no identical twin in the newest load — then the flag stays unset and the
+    next start tries again). docs/data-fixes.md. Never raises."""
+    from app.services import tech_audit
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=AUDIT_RELOADS_FLAG).first():
+            return
+        if not tech_audit._probe(db)["present"]:
+            return
+        deleted, missing = tech_audit.drop_older_loads(db)
+        if missing:
+            db.rollback()
+            print(f"[startup] audit reloads NOT cleaned: {missing} older rows are not in the newest load")
+            return
+        db.add(AppSetting(key=AUDIT_RELOADS_FLAG, value=str(deleted)))
+        db.commit()
+        print(f"[startup] audit reloads cleaned: {deleted} rows of older loads deleted")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] audit reloads clean failed: {exc}")
+    finally:
+        db.close()
