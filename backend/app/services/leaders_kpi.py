@@ -352,7 +352,7 @@ def concerns_register(db: Session, payload: dict, m: date, scope: Optional[dict]
     query = wc._apply_scope_and_filters(
         db, payload, date_from=m, date_to=d, factory=scope.get("factory"),
         manager_id=managers, leader_id=[], cell=[], status=[], units=units)
-    items = (query.with_entities(LeaderConcern, wc.BUCKET, wc._owner(db, d))
+    items = (query.with_entities(LeaderConcern, wc._bucket(d), wc._owner(db, d))
              .order_by(*wc._ORDER["date_desc"]).limit(limit).all())
     rows = wc._register_rows(db, items)
     if scope.get("shift") is not None:

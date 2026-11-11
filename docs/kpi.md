@@ -309,6 +309,22 @@ structure changed the same day — see the redesign bullets below).
   `done` = resolved at the leader step · `doing` / `todo` («Yangi»,
   /cell-concerns' word) at the leader step. «deferred», the sheet era's key, is
   read as `uplifted`.
+- **A month that has ENDED counts a concern resolved only if it was closed BY
+  the month's last day** (the operator, 2026-11-11: «consider the concern
+  closed only if it's closed by the end of the month»; a past month's % used
+  to keep rising as late closures came in — on the 9 Nov copy October read
+  82% that way and 68% by this rule). `_bucket(end)` is BUCKET with that
+  cutoff and what `_agg_cols`, the status filter, `/list` and the board's
+  register read; a period still running (`end >= today`) is plain BUCKET, so
+  the current month and exam tasks 40/41 are unchanged. The closing day is the
+  server's `done_at` on the plant clock (`completion_date` can be typed), then
+  `completion_date`, then the filing day for a row with no stamp. A concern
+  closed later reads «Jarayonda» for that month — it was open at its end —
+  and earns nothing in the next month either (it belongs to the month it was
+  filed in). Its row keeps `status: "done"`, so the register adds «oy tugagach
+  hal qilingan» beside the chip (`ConcernStatus`, `cLateDone`). The 5th of the
+  next month was offered as a grace day and declined. NOT cut the same way:
+  «Ko'tarilgan» still reads the concern's level as it stands today.
 - **An uplifted concern is out of the leader's rating** (the operator,
   2026-10-04 — it was counted until then, a brigadir's resolution crediting the
   leader). Every % — leader, unit, headline, the change line (`_previous`), the
