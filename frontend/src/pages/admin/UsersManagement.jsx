@@ -12,7 +12,7 @@ import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import ActionMenu from "../../components/ui/ActionMenu";
 import ProfileAvatar from "../../components/ui/ProfileAvatar";
-import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
+import { FOLD_COLOR, ROLE_COLORS } from "../../utils/chartPalette";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import SearchInput from "../../components/ui/SearchInput";
@@ -54,17 +54,6 @@ const ink = (c) => `color-mix(in srgb, ${c} 60%, var(--text-1))`;
 const wash = (c) => `color-mix(in srgb, ${c} 14%, transparent)`;
 
 const STATUS_COLOR = { approved: "#22c55e", pending: "#eab308", rejected: "#ef4444" };
-// A role is a category: one fixed hue each, none of them a traffic-light
-// colour — the status chip sits right beside it.
-const ROLE_COLOR = {
-  "top-manager":   CATEGORY_COLORS[5],  // purple
-  "shift-manager": CATEGORY_COLORS[2],  // blue
-  supervisor:      CATEGORY_COLORS[6],  // teal
-  leader:          CATEGORY_COLORS[4],  // orange
-  "idle-owner":    CATEGORY_COLORS[7],  // pink
-  guest:           FOLD_COLOR,
-};
-
 // The row menu's door to /tg-user/:tid — worded here like that page's own TXT.
 const TG_PROFILE = { uz: "Telegram profili", uz_cyrl: "Telegram профили", ru: "Профиль в Telegram", en: "Telegram profile" };
 
@@ -87,7 +76,7 @@ function StatusBadge({ status }) {
 
 function RoleChip({ role }) {
   const { t } = useLang();
-  return <Chip color={ROLE_COLOR[role] ?? FOLD_COLOR}>{t(ROLE_LABEL_KEYS[role]) || role}</Chip>;
+  return <Chip color={ROLE_COLORS[role] ?? FOLD_COLOR}>{t(ROLE_LABEL_KEYS[role]) || role}</Chip>;
 }
 
 /**

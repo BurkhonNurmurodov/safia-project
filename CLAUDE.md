@@ -58,7 +58,7 @@ loaded by themselves:
 - `docs/assistant-and-ai.md` — «Yordamchi» and the «AI kalitlari» tab (every AI caller asks `ai_features`).
 - `docs/server-operations.md` — freezes and slow requests (**never sync DB / HTTP / file work in an `async def` handler**; never a literal `IN` over a big list), the supervisor and zero-downtime swaps (**a startup step is `run` when a request needs it, else `later`**; migrations stay additive), blue-green.
 - `docs/cloud-sessions.md` — **read it when working in a claude.ai/code cloud session**: the gitea wiring, the Setup script, a cloud turn deploys like a laptop turn, what does not come along, asking production for data.
-- `docs/ext-api.md` — the external read API `/api/ext/v1` (cells · production · attendance per date; its own key, digests in `ext_api.KEYS`).
+- `docs/ext-api.md` — the external read API `/api/ext/v1` (cells · production · attendance per date) and the «API» page `/tokens`: personal tokens (page key `api`, `services/api_tokens.py`) and the manual as PDF / Markdown in four languages (`ext_api_manual`).
 - `docs/report-door.md` — **read it before you need data only production has**: `scripts/ask-prod.py`, one SELECT or GET a person allows in Telegram; ask WHO gets it (Burkhon or Abbos), never both.
 
 ## UI element templates (mandatory)

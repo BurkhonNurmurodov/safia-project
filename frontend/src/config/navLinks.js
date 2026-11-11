@@ -7,7 +7,7 @@ import {
   Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, BriefcaseBusiness, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
-  GraduationCap, Grid3x3, IdCard, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
+  GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
@@ -113,6 +113,9 @@ export const ALL_LINKS = [
   // «Pechlar» — the Revent ovens: live board, bakes, utilisation, alarms and
   // door (services/revent_analytics.py). Laboratory, admin-only until opened.
   { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab" },
+  // «API» — a person's own tokens for the external read API and its manual
+  // (routers/api_tokens.py). Admin-only until opened on the Access tab.
+  { to: "/tokens", page: "api", key: "nav.api", icon: KeyRound, group: "lab" },
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.

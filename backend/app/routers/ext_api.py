@@ -1,10 +1,10 @@
 """The external read API (`/api/ext/v1`, 2026-11-11) — another system asks for
 the cells, a day's plan and SKUs per cell, and a day's clock-in/out per cell.
 
-Read-only, three GETs, no session: the caller presents its own key
-(``X-Api-Key`` or ``Authorization: Bearer``), checked against `KEYS` —
-SHA-256 digests in code, the oven collector's pattern, so the key itself is
-never in git or the DB. A new consumer is a new digest; removing one revokes it.
+Read-only, three GETs, no session: the caller presents a personal TOKEN
+(``Authorization: Bearer`` or ``X-Api-Key``) its owner made on the «API» page
+(services/api_tokens.py) — kept as a digest, named, expiring, and dead the
+moment its owner loses the page.
 
 Every figure is the platform's own: the cells of the day are `cell_lookup`'s,
 a cell's SKUs are the «Zagruzka fayli» rows of its unit cut to the cell as a
@@ -13,7 +13,6 @@ leader's page cuts them (`wc_group.in_scope`), its minutes are
 """
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 import re
@@ -25,37 +24,44 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Attendance, Manager
+from app.models import ApiToken, Attendance, Manager
 from app.routers.ovens import _ip, _refuse
-from app.services import (cell_lookup, live_day, live_staff, ops_door, verifix_live,
+from app.services import (api_tokens, cell_lookup, live_day, live_staff, ops_door, verifix_live,
                           wc_group, zagruzka_source)
 from app.services.cell_lookup import norm_code
 
 log = logging.getLogger(__name__)
 
-# digest → the consumer's name (the log line).
+# The first key, from before tokens existed (v4.460.0): digest → name. Honoured
+# only while NOBODY has made a token — the first one made retires it.
 KEYS = {
     "53eb2fe1fd283b8e1624ca4700e2bda5b25026cb16f53587f52baca34e4abbcb": "ext-1",
 }
 
 
-def _client(request: Request) -> str:
-    """The consumer's name, or 401 / 429 — wrong keys share the report door's
-    per-address throttle."""
+def _client(request: Request, db: Session = Depends(get_db)) -> str:
+    """Who is calling, or 401 / 429: a personal token (services/api_tokens.py)
+    in ``Authorization: Bearer`` or ``X-Api-Key``. Wrong ones share the report
+    door's per-address throttle."""
     ip = _ip(request)
     if ops_door.throttled(ip):
-        raise _refuse("throttled", "Too many wrong keys from this address — wait ten minutes.", 429)
-    v = (request.headers.get("x-api-key") or "").strip()
-    if not v:
-        scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
-        v = token.strip() if scheme.lower() == "bearer" else ""
-    digest = hashlib.sha256(v.encode()).hexdigest() if v else ""
-    for known, name in KEYS.items():
-        if hmac.compare_digest(digest, known):
-            return name
-    ops_door.note_bad(ip)
-    log.warning("[EXT] key refused from %s", ip)
-    raise _refuse("bad_key", "Not an API key.", 401)
+        raise _refuse("throttled", "Too many wrong tokens from this address — wait ten minutes.", 429)
+    scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
+    v = token.strip() if scheme.lower() == "bearer" else ""
+    v = v or (request.headers.get("x-api-key") or "").strip()
+    if v:
+        row = api_tokens.use(db, v)
+        if row is not None:
+            who = f"{row.owner_name or row.owner_tid} · {row.name}"
+            log.info("[EXT] %s by %s", request.url.path, who)
+            return who
+        if db.query(ApiToken.id).first() is None:
+            for known, name in KEYS.items():
+                if hmac.compare_digest(api_tokens.digest_of(v), known):
+                    return name
+        ops_door.note_bad(ip)
+    log.warning("[EXT] token refused from %s", ip)
+    raise _refuse("bad_token", "Missing, wrong, expired or revoked token.", 401)
 
 
 router = APIRouter(prefix="/api/ext/v1", tags=["ext"], dependencies=[Depends(_client)])

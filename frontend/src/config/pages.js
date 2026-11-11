@@ -46,6 +46,7 @@ export const PAGES = [
   { tier: "test", key: "assessment", route: "/assessment", labelKey: "nav.assessment" },
   { tier: "test", key: "people", route: "/people", labelKey: "nav.people" },
   { tier: "test", key: "ovens", route: "/ovens", labelKey: "nav.ovens" },
+  { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -97,6 +98,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Pechlar» — the Revent ovens, read off the logs a collector on the factory
   // LAN posts (Laboratory). Admin-only until the operator opens it.
   ovens: [],
+  // «API» — personal tokens for the external read API. Admin-only until the
+  // operator opens it: a token reads every cell's plan and people.
+  api: [],
   leaders: [], // pilot: admin-only until enabled from the Access tab
   cells: ["supervisor"], // Cell registry — supervisors read their OWN unit's
   //            cells, read-only (narrowed server-side); admins and per-person

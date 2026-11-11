@@ -62,6 +62,7 @@ const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 // «Hisobotlar» — the platform's period report (Laboratory, admin-only).
 const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Ovens = lazyWithReload(() => import("./pages/Ovens"));
+const ApiAccess = lazyWithReload(() => import("./pages/ApiAccess"));
 const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
 const People = lazyWithReload(() => import("./pages/People"));
@@ -137,7 +138,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime, "idle-solutions": IdleSolutions,
-  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, ovens: Ovens,
+  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, ovens: Ovens, tokens: ApiAccess,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi, "brigadirs-kpi": BrigadirsKpi,
@@ -637,6 +638,7 @@ function AppWithLang() {
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
             <Route path="/ovens" element={<AuthGate><RequirePage page="ovens"><Ovens /></RequirePage></AuthGate>} />
+            <Route path="/tokens" element={<AuthGate><RequirePage page="api"><ApiAccess /></RequirePage></AuthGate>} />
             {/* «Nomzodlarni baholash» — the supervisor-candidate panel. Page key
                 `assessment`: admin-only until the operator opens it to judges. */}
             <Route path="/assessment" element={<AuthGate><RequirePage page="assessment"><Assessment /></RequirePage></AuthGate>} />
