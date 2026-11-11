@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Users, Check, X, RefreshCw, Trash2, Plus, UserCog,
+  Users, Check, X, RefreshCw, Trash2, Plus, UserCog, Send,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -12,7 +12,7 @@ import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import ActionMenu from "../../components/ui/ActionMenu";
 import ProfileAvatar from "../../components/ui/ProfileAvatar";
-import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
+import { FOLD_COLOR, ROLE_COLORS } from "../../utils/chartPalette";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import SearchInput from "../../components/ui/SearchInput";
@@ -20,6 +20,7 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
+import { useAuth } from "../../context/AuthContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import HrContactButton from "../../components/admin/HrContactButton";
@@ -53,16 +54,8 @@ const ink = (c) => `color-mix(in srgb, ${c} 60%, var(--text-1))`;
 const wash = (c) => `color-mix(in srgb, ${c} 14%, transparent)`;
 
 const STATUS_COLOR = { approved: "#22c55e", pending: "#eab308", rejected: "#ef4444" };
-// A role is a category: one fixed hue each, none of them a traffic-light
-// colour — the status chip sits right beside it.
-const ROLE_COLOR = {
-  "top-manager":   CATEGORY_COLORS[5],  // purple
-  "shift-manager": CATEGORY_COLORS[2],  // blue
-  supervisor:      CATEGORY_COLORS[6],  // teal
-  leader:          CATEGORY_COLORS[4],  // orange
-  "idle-owner":    CATEGORY_COLORS[7],  // pink
-  guest:           FOLD_COLOR,
-};
+// The row menu's door to /tg-user/:tid — worded here like that page's own TXT.
+const TG_PROFILE = { uz: "Telegram profili", uz_cyrl: "Telegram профили", ru: "Профиль в Telegram", en: "Telegram profile" };
 
 function Chip({ color, dot = false, children }) {
   return (
@@ -83,7 +76,7 @@ function StatusBadge({ status }) {
 
 function RoleChip({ role }) {
   const { t } = useLang();
-  return <Chip color={ROLE_COLOR[role] ?? FOLD_COLOR}>{t(ROLE_LABEL_KEYS[role]) || role}</Chip>;
+  return <Chip color={ROLE_COLORS[role] ?? FOLD_COLOR}>{t(ROLE_LABEL_KEYS[role]) || role}</Chip>;
 }
 
 /**
@@ -97,13 +90,17 @@ function Decide({ row, t, pending, disabled, onApprove, onReject, block = false 
   const cls = block ? "flex-1" : "";
   return (
     <div className={`flex items-center gap-1.5 ${block ? "w-full" : ""}`}>
+      {/* In the table the two are bare icons — the words were wider than the
+          column they sit in; a phone card has the room and keeps them. */}
       <Button size={size} variant="success" tint className={cls} icon={<Check size={11} />}
+        title={t("admin.users.approve")} aria-label={t("admin.users.approve")}
         loading={pending} disabled={disabled} onClick={() => onApprove(row)}>
-        {t("admin.users.approve")}
+        {block && t("admin.users.approve")}
       </Button>
       <Button size={size} variant="danger" tint className={cls} icon={<X size={11} />}
+        title={t("admin.users.reject")} aria-label={t("admin.users.reject")}
         loading={pending} disabled={disabled} onClick={() => onReject(row)}>
-        {t("admin.users.reject")}
+        {block && t("admin.users.reject")}
       </Button>
     </div>
   );
@@ -115,6 +112,8 @@ export default function UsersManagement() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { auth } = useAuth();
   // ?status=pending deep-links a filter (used by the bot's notification button).
   // The last-used filter is remembered otherwise; an explicit ?status= beats it.
   const [searchParams] = useSearchParams();
@@ -256,6 +255,8 @@ export default function UsersManagement() {
   const rowMenu = (row) => {
     const { role } = row;
     return [
+      // The page behind it is admin-only; a grantee of this tab gets no dead link.
+      auth?.role === "admin" && { key: "tg", label: TG_PROFILE[lang] || TG_PROFILE.uz, icon: Send, onSelect: () => navigate(`/tg-user/${row.user.telegram_id}`) },
       role.status === "rejected" && { key: "approve", label: t("admin.users.approve"), icon: Check, disabled: busy, onSelect: () => approve(row) },
       // A guest registration is not convertible: converting only re-points
       // role/role_id, which would take a CONTENDED guest profile without
@@ -276,10 +277,23 @@ export default function UsersManagement() {
       <TableCard
         icon={Users}
         title={t("admin.users.title")}
+        /* The page's own actions sit in the card's head; the row under it is
+           search + filter only. Three buttons in that row wrapped onto a line
+           of their own on every laptop. */
         right={
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
-            {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-[11px] tabular-nums whitespace-nowrap mr-1" style={{ color: "var(--text-3)" }}>
+              {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
+            </span>
+            <Button variant="secondary" onClick={() => refetch()}
+              title={t("admin.refresh")} aria-label={t("admin.refresh")}
+              icon={<RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />} />
+            <HrContactButton />
+            <Button icon={<Plus size={13} />} onClick={openAdd}
+              title={t("admin.users.addRole")} aria-label={t("admin.users.addRole")}>
+              <span className="hidden sm:inline">{t("admin.users.addRole")}</span>
+            </Button>
+          </div>
         }
         toolbar={
           <>
@@ -317,13 +331,6 @@ export default function UsersManagement() {
                 ),
               }))}
             />
-            <div className="ml-auto flex items-center gap-2">
-              <HrContactButton />
-              <Button variant="secondary" size="lg" onClick={() => refetch()}
-                title={t("admin.refresh")} aria-label={t("admin.refresh")}
-                icon={<RefreshCw size={15} className={isFetching ? "animate-spin" : ""} />} />
-              <Button size="lg" icon={<Plus size={14} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
-            </div>
           </>
         }
         mobile={

@@ -646,7 +646,7 @@ describe what one may read or act on.
   /people, «Liderlar KPI» / «Brigadirlar KPI», the bell's «Sizdan kutilmoqda»
   queue, `capabilities.profile_unit_ids` (so a shift-manager's «own» grant
   scope is every unit too).
-- **Every shift-manager is NOTIFIED about every unit** (the operator, the same
+- **Every shift-manager is NOTIFIED about every unit** — only of what waits on them from 2026-11-11 (`docs/notifications-and-telegram.md` «What a shift-manager is told») (the operator, the same
   day: «notify all of them»). `role_ids_for_unit` returns every shift-manager
   profile for any existing unit, so it is the inverse of `covers` again:
   every unit's request DMs and bell rows (`staff._notify`), the live-day

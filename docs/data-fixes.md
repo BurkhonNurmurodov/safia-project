@@ -247,3 +247,47 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
 - **Left to the admin, named in the DM**: Erkanboyev's account also holds
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
+
+## A role switch carries the profile's keyed rows (`_rekey_profile`, 2026-11-10)
+
+Adi Ro'ziyev (profile #360) was hand-tied to Verifix 2501 on 5 Nov as a
+Top-menejer, and his Verifix photo came with the tie. An admin later switched
+him to shift-manager and the photo vanished. The switch keeps the
+`role_profiles` row, so the tie (`vfx_employee_id`, `verifix_ties` kind
+`profile`) stayed. But everything stored BY KEY (`_PROFILE_KEY_REFS`: photo,
+browser login, capabilities, page permissions, ui prefs) stayed under
+`top-manager:360` while the profile became `shift-manager:360`. The sync then
+never fetched the photo again, because `vfx_meta.photo_set` said it was
+already stored.
+
+- `admin_switch_role` now moves those rows to the new key (`_rekey_profile`)
+  on every switch, supervisor ends included. A row already under the new key
+  is an orphan, since no live profile held that key, so it is dropped first.
+- `startup.heal_switched_profile_keys` (`later`, both entrypoints) moves rows
+  that earlier switches stranded to the profile's current key, unless that
+  key already holds one. It is idempotent. TEMPORARY: delete it and both calls
+  once it has run on prod.
+
+## `public.audit` stood three times over (`clean_audit_reloads`, 2026-11-11)
+
+`public.audit` is written by something outside this codebase (owner
+`safia_prod_rw`), and that writer APPENDS the whole history on every load
+instead of replacing it. On 11 Nov the table was three insert transactions —
+8,346 rows (audits to 3 Nov), 8,373 (to 4 Nov), 8,452 (to 8 Nov) = 25,171,
+8,450 of them distinct. October's audit counts read ×3 and November's
+averages were skewed (its days stood ×3, ×2 and ×1).
+
+Checked on production before anything was deleted: every one of the 16,719
+rows of the two older loads has an identical twin in the newest load — all
+seven columns, and as many times as it stands in its own load (two old audits
+are a real identical pair inside each load, and both of each pair stay).
+
+- `tech_audit.drop_older_loads` keeps the newest load and deletes the older
+  ones, in ONE statement that repeats that check and deletes nothing when an
+  older row is missing from the newest load.
+- `startup.clean_audit_reloads` runs it once (`app_settings`
+  `audit_reloads_cleaned_nov11` = the rows deleted); a refused run leaves the
+  flag unset and says why in the log.
+- **The copies come back at the writer's next load** — the fix that lasts is
+  upstream (replace, not append). The operator approved this one deletion, not
+  a standing one; cleaning again is deleting that flag's row, or a new ruling.

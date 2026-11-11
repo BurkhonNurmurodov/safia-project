@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -173,6 +173,10 @@ DEFAULT_PAGE_ACCESS = {
     # read off the logs a collector on the factory LAN posts. Laboratory,
     # ADMIN-ONLY until the operator opens it on the Access tab.
     "ovens": [],
+    # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
+    # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
+    # operator opens it: a token reads every cell's plan and people.
+    "api": [],
     # «Kelish ro'yxati» — the T11 staff list (routers/kelish.py): per cell, who is
     # coming today and tomorrow. Opened 2026-10-05 with checklist task #11's
     # automatic check (`startup.open_kelish_page` added the same roles to a

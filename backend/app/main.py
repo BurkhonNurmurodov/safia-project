@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, idle_solutions, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, brigadirs_kpi, ontime, reports, ops_door, assessment, people, trello, notion_tasks, ovens, audit_table
+from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, idle_solutions, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, brigadirs_kpi, ontime, reports, ops_door, assessment, people, trello, notion_tasks, ovens, audit_table, ext_api, api_tokens
 from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -149,6 +149,7 @@ async def lifespan(app: FastAPI):
         preview_leader_rules_sep19,
         patch_task10_description_sep19,
         patch_task11_description_nov09,
+        heal_switched_profile_keys,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
         register_leader_temp_hours,
@@ -175,6 +176,7 @@ async def lifespan(app: FastAPI):
         reorder_positions_plan_before_fact,
         latin_twin_codes,
         seed_snabjenets_english_label,
+        drop_duplicate_indexes,
         fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
@@ -264,6 +266,9 @@ async def lifespan(app: FastAPI):
     # (docs/registration.md); sets the bot's Telegram description that once.
     from app.startup import seed_hr_contact
     later(seed_hr_contact)
+    # public.audit's older full-copy loads go, once (docs/data-fixes.md).
+    from app.startup import clean_audit_reloads
+    later(clean_audit_reloads)
     # The operator's list of cells NOT counted in the загрузка (once).
     later(untick_cells_in_load)
     run(add_attendance_upload_source)
@@ -329,6 +334,7 @@ async def lifespan(app: FastAPI):
     later(reorder_positions_plan_before_fact)
     later(latin_twin_codes)
     later(seed_snabjenets_english_label)
+    later(drop_duplicate_indexes)
     later(fix_orazov_schedule_2026_09_01)
     later(map_arc_brigadas_db)
     run(add_concern_profile_columns)
@@ -778,6 +784,9 @@ async def lifespan(app: FastAPI):
     later(patch_task10_description_sep19)
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     later(patch_task11_description_nov09)
+    # A role switch left a profile's photo / login / grants under its old key
+    # (2026-11-10). Idempotent; remove once it has run on prod.
+    later(heal_switched_profile_keys)
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     later(move_sanjarbek_checklist_shift)
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
@@ -1305,6 +1314,9 @@ app.include_router(audit_table.router)
 # «Pechlar» (/ovens): the Revent ovens — the page (page-gated), the register
 # (/api/admin/ovens, admin-only) and the collector's door (its own key).
 app.include_router(ovens.collector_router)
+# The external read API (/api/ext/v1): another system, its own key.
+app.include_router(ext_api.router)
+app.include_router(api_tokens.router)
 app.include_router(ovens.router)
 app.include_router(ovens.admin_router)
 # «Notion vazifalari» (/notion-tasks): the Notion task list (page key

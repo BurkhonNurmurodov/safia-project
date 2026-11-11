@@ -71,7 +71,7 @@ from app.services import action_log, cell_archive
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
     _comment_counts, _due, _no, _notify_recipients, _owner_names, _scope_query,
-    _serialize, _shift_unit_ids, _sm_names, _snippet, _viewer_ctx,
+    _serialize, _shift_unit_ids, _sm_names, _snippet, _viewer_ctx, tell_watchers,
 )
 
 router = APIRouter(prefix="/api/cell-concerns", tags=["cell-concerns"])
@@ -285,6 +285,8 @@ def file_cell_concern(
     # it is. _notify_recipients skips a profile whose only holder is the caller,
     # so a leader filing on a worker's behalf is not DMed their own typing.
     rec = _cell_leader_recipient(db, cell_code)
+    dmed: set = set()
+    sent = False
     if rec is not None:
         sent = _notify_recipients(
             db, [(None, rec[1])], "concern_assigned",
@@ -295,10 +297,15 @@ def file_cell_concern(
                 "date": today,
                 "concern": _snippet(text),
             },
-            int(payload["sub"]), set(), subject=("concern", c.id)
+            int(payload["sub"]), dmed, subject=("concern", c.id)
         )
-        if sent:
-            db.commit()
+    # …and the all-concerns watchers (concerns.tell_watchers, 2026-11-11).
+    sent |= tell_watchers(
+        db, c, {"concern_no": _no(c), "leader_name": leader_name or "", "owner": worker,
+                "date": today, "concern": _snippet(text), "concern_level": "leader"},
+        int(payload["sub"]), dmed, already=(rec[1],) if rec else ())
+    if sent:
+        db.commit()
 
     action_log.enrich(
         target_kind="concern", target_id=c.id, target_name=_snippet(text),

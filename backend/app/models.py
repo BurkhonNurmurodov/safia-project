@@ -4043,7 +4043,6 @@ class LeaderDayExclusion(Base):
     __table_args__ = (
         Index("uq_leader_day_exclusion", "leader_key", "date",
               func.coalesce(cell_id, 0), unique=True),
-        Index("ix_leader_day_excl_date", "date"),
     )
 
 
@@ -4083,7 +4082,6 @@ class LeaderCutoff(Base):
     __tablename__ = "leader_cutoffs"
     __table_args__ = (
         UniqueConstraint("leader_key", name="uq_leader_cutoff"),
-        Index("ix_leader_cutoff_from", "from_date"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -5776,3 +5774,25 @@ class ReventCollector(Base):
     remote_ip  = Column(String(64), nullable=True)    # as IMS saw it (the factory's way out)
     user_agent = Column(String(120), nullable=True)
     info       = Column(JSONB, nullable=True)         # firmware, Wi-Fi, uptime, memory — as sent
+
+
+class ApiToken(Base):
+    """A personal token for the external read API (/api/ext/v1) — made by its
+    owner on /api-access, shown once, kept as a SHA-256 digest
+    (services/api_tokens.py). `payload` is the owner's session as it stood when
+    the token was made: who to ask the page gate about on every call, so the
+    token stops the moment its owner loses the page or the profile."""
+    __tablename__ = "api_tokens"
+
+    id           = Column(Integer, primary_key=True)
+    name         = Column(String(80), nullable=False)
+    prefix       = Column(String(16), nullable=False)
+    digest       = Column(String(64), nullable=False, unique=True, index=True)
+    owner_tid    = Column(BigInteger, nullable=False, index=True)
+    owner_key    = Column(String, nullable=True)
+    owner_name   = Column(String, nullable=True)
+    payload      = Column(JSONB, nullable=False)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at   = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at   = Column(DateTime(timezone=True), nullable=True)

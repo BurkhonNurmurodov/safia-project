@@ -529,6 +529,19 @@ def _purge_profile_key(db: Session, ptype: str, pid: int) -> None:
         db.execute(text(f"DELETE FROM {table} WHERE profile_key = :k"), {"k": key})
 
 
+def _rekey_profile(db: Session, old: Optional[str], new: Optional[str]) -> None:
+    """A role switch changes the profile's KEY ("top-manager:360" →
+    "shift-manager:360"), so everything it owns by key moves with it — its
+    photo, browser login, grants and layouts. Rows already under the new key
+    belong to no live profile (the key was not this profile's until now)."""
+    if not old or not new or old == new:
+        return
+    for table in _PROFILE_KEY_REFS:
+        db.execute(text(f"DELETE FROM {table} WHERE profile_key = :n"), {"n": new})
+        db.execute(text(f"UPDATE {table} SET profile_key = :n WHERE profile_key = :o"),
+                   {"n": new, "o": old})
+
+
 def _manager_has_data(db: Session, manager_id: int) -> bool:
     for table, col in _MANAGER_ID_REFS:
         if table == "role_profiles":
@@ -2509,11 +2522,12 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
         if ptype == "leader":
             _purge_leader_profile(db, p.id)   # or the FKs below hold the row down
         # NOT _purge_profile_key: this is the same PERSON continuing under a new
-        # role, so their browser login is re-pointed by the admin, not revoked
-        # from under them by a switch nobody said would sign them out.
+        # role, so their browser login moves to the new key (`_rekey_profile`
+        # below), not revoked by a switch nobody said would sign them out.
         db.delete(p)  # the identity now lives in the managers row
 
     new_id = target_role_id if new_role == "supervisor" else target_profile.id
+    _rekey_profile(db, profile_key(ptype, payload.pid), profile_key(new_role, new_id))
     db.commit()
     _links_changed()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.role_switched",

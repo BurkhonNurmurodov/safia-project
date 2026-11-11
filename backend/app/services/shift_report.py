@@ -23,6 +23,7 @@ A figure that cannot be stated is None with a REASON, never 0 — the platform's
 «the blank IS the warning» rule. A 0% load for a unit nobody typed people for
 would read as an idle unit; «odam soni kiritilmagan» reads as what it is.
 """
+import re
 from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
@@ -158,7 +159,49 @@ def start_load(plan_min: Optional[float], people: Optional[float],
     return round(float(plan_min) / (float(people) * float(shift_min)), 4)
 
 
-def compl_cell(totals: Optional[dict]) -> dict:
+_CLOCK = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})")
+
+
+def fold_clock(rows: Iterable[tuple], shift: Optional[int]) -> Optional[dict]:
+    """The day's ACTUAL clock for one unit, off Verifix's stored «Kelgan-ketgan»
+    strings (`attendance.clock_in_out`, "08:02-17:10 (9.13)"): the MEDIAN
+    arrival and departure of the people who clocked both, and the mean hours
+    they worked. Median, so one late leaver does not move the unit's day.
+    `rows` is (clock_in_out, hours_worked). A night shift's small hours belong
+    after midnight, so they are lifted by 24 h before the median and folded
+    back for display. None when nobody has a clock."""
+    ins, outs, hrs = [], [], []
+    for raw, hours in rows:
+        m = _CLOCK.search(raw or "")
+        if not m:
+            continue
+        a = int(m.group(1)) * 60 + int(m.group(2))
+        b = int(m.group(3)) * 60 + int(m.group(4))
+        if shift == 2 and a < 600:
+            a += 1440
+        if b <= a:
+            b += 1440
+        ins.append(a)
+        outs.append(b)
+        if hours is not None and float(hours) > 0:
+            hrs.append(float(hours))
+    if not ins:
+        return None
+
+    def med(v):
+        v = sorted(v)
+        n = len(v)
+        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+    def hhmm(x):
+        x = int(round(x)) % 1440
+        return f"{x // 60:02d}:{x % 60:02d}"
+
+    return {"start": hhmm(med(ins)), "end": hhmm(med(outs)), "n": len(ins),
+            "avg_min": round(sum(hrs) / len(hrs) * 60, 1) if hrs else None}
+
+
+def compl_cell(totals: Optional[dict], clock: Optional[dict] = None) -> dict:
     """«Bajarilish %» — `totals.completion` = F1 ÷ I1.
 
     No plan minutes means there was nothing to complete. Plan minutes with no
@@ -181,6 +224,8 @@ def compl_cell(totals: Optional[dict]) -> dict:
         "people": totals.get("total_people") or None,
         "cap_min": (round(float(totals["total_plan_labor"]) / float(totals["avg_load"]), 1)
                     if totals.get("avg_load") else None),
+        # when they ACTUALLY started and finished, off Verifix (None: no clocks)
+        "clock": clock,
         "reason": None,
     }
 

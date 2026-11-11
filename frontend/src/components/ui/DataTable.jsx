@@ -33,7 +33,7 @@ const STICK_TO_MAIN = { top: "calc(var(--main-pad, 0px) * -1)" };
 // `size="lg"` titles a whole card rather than labelling a table — a sentence-
 // case title with the subtitle under it (the chat card on the appeal page, the
 // «Muhokama» design). The default is the small uppercase label every table has.
-export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm" }) {
+export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", color }) {
   const lg = size === "lg";
   return (
     <div className={`flex items-center justify-between gap-2 flex-wrap ${lg ? "px-3 sm:px-6 py-3.5 sm:py-4" : "px-4 py-2.5"}`}
@@ -41,8 +41,17 @@ export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm" })
       {/* The icon sits on the TITLE's line, whatever the subtitle under it
           does — centred on the whole block, a subtitle that wraps left it
           beside the subtitle instead. */}
-      <div className={`flex items-start min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
-        {Icon && <Icon size={lg ? 22 : 14} strokeWidth={lg ? 1.8 : 2} className={`flex-shrink-0 ${lg ? "-mt-0.5" : "mt-px"}`} style={{ color: "var(--brand-text)" }} />}
+      <div className={`flex ${color && !subtitle ? "items-center" : "items-start"} min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
+        {/* `color` (a hex) seats the icon in a soft tint chip of that hue — a
+            section with an identity of its own (the profile page's cards). */}
+        {Icon && (color ? (
+          <span className={`grid place-items-center flex-shrink-0 ${lg ? "w-9 h-9 rounded-xl" : "w-6 h-6 rounded-md"}`}
+                style={{ background: `${color}1f`, color }}>
+            <Icon size={lg ? 18 : 13} strokeWidth={2} />
+          </span>
+        ) : (
+          <Icon size={lg ? 22 : 14} strokeWidth={lg ? 1.8 : 2} className={`flex-shrink-0 ${lg ? "-mt-0.5" : "mt-px"}`} style={{ color: "var(--brand-text)" }} />
+        ))}
         <div className="min-w-0">
           <div className={lg ? "text-[15px] font-semibold leading-tight" : "text-xs font-semibold uppercase tracking-wider"}
             style={{ color: lg ? "var(--text-1)" : "var(--text-3)" }}>{title}</div>

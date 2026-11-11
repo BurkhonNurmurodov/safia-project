@@ -166,6 +166,48 @@ def by_sap(db: Session, with_leader: bool = False,
     the cell that carried that letter then. No letter event after `day` = the
     column, as before.
     """
+    cells, units_on, leaders_on, leaders = _cells_on(db, with_leader, manager_ids, day)
+    out: dict[tuple[int, str], dict] = {}
+    for c in cells:
+        key = _norm(c.sap_code)
+        if key:
+            mid = units_on.get(c.id, c.manager_id)
+            lid = leaders_on.get(c.id, c.leader_id)
+            d = _cell_dict(c, leaders.get(lid))
+            out.setdefault((int(mid), key), d)
+            # …and, for a LETTERED cell, under (unit, code, group) as well — the
+            # one key that names exactly this cell of a shared work centre
+            # (services/wc_group.py). `resolve_sap(..., group=)` reads it.
+            if getattr(c, "wc_group", None):
+                out.setdefault((int(mid), key, c.wc_group), d)
+    return out
+
+
+def unit_cells(db: Session, manager_id: int, day=None) -> list[dict]:
+    """EVERY cell standing in this unit (on `day`) that carries a SAP code, as
+    `_cell_dict`s with the leader's name, in verifix-code order.
+
+    :func:`by_sap` keeps the first cell per work centre, which is right for
+    naming a work centre and wrong for listing cells: two unlettered cells at
+    one code would come back as one. This is the list — the «Yacheyka» pick on
+    the /production page bar. Same day rules as :func:`by_sap` (alive that day,
+    the unit, leader and letter of that day)."""
+    cells, units_on, leaders_on, leaders = _cells_on(db, True, [manager_id], day)
+    out = []
+    for c in cells:
+        mid = units_on.get(c.id, c.manager_id)
+        if not _norm(c.sap_code) or mid is None or int(mid) != int(manager_id):
+            continue
+        out.append(_cell_dict(c, leaders.get(leaders_on.get(c.id, c.leader_id))))
+    out.sort(key=lambda d: (d["verifix_code"] or "", d["id"]))
+    return out
+
+
+def _cells_on(db: Session, with_leader: bool, manager_ids: Iterable[int] | None, day):
+    """The cells :func:`by_sap` and :func:`unit_cells` read, with what resolves
+    each one on `day`: (cells, {id → unit on day}, {id → leader on day},
+    {leader id → name}). Only a cell whose link changed after `day` appears in
+    the two maps; every other cell answers by its own columns."""
     moved_m: set = set()
     moved_l: set = set()
     if day is not None:
@@ -189,7 +231,7 @@ def by_sap(db: Session, with_leader: bool = False,
     if manager_ids is not None:
         ids = sorted({int(m) for m in manager_ids})
         if not ids:
-            return {}
+            return [], {}, {}, {}
         in_ids = Cell.manager_id.in_(ids)
         if moved_m:
             from sqlalchemy import or_
@@ -217,20 +259,7 @@ def by_sap(db: Session, with_leader: bool = False,
         from app.services import cell_links
         cells = cell_links.with_letters_on(cells, day)
     leaders = _leader_names(db) if with_leader else {}
-    out: dict[tuple[int, str], dict] = {}
-    for c in cells:
-        key = _norm(c.sap_code)
-        if key:
-            mid = units_on.get(c.id, c.manager_id)
-            lid = leaders_on.get(c.id, c.leader_id)
-            d = _cell_dict(c, leaders.get(lid))
-            out.setdefault((int(mid), key), d)
-            # …and, for a LETTERED cell, under (unit, code, group) as well — the
-            # one key that names exactly this cell of a shared work centre
-            # (services/wc_group.py). `resolve_sap(..., group=)` reads it.
-            if getattr(c, "wc_group", None):
-                out.setdefault((int(mid), key, c.wc_group), d)
-    return out
+    return cells, units_on, leaders_on, leaders
 
 
 def norm_code(code) -> str:

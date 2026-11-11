@@ -34,6 +34,18 @@ export const CATEGORY_COLORS = [
 // must not compete for an identity hue.
 export const FOLD_COLOR = "#94a3b8";
 
+// A platform ROLE is a category too: one fixed hue each, none of them a
+// traffic-light colour (a status chip usually sits right beside the role).
+// The Users register's chips and the profile page's header share this map.
+export const ROLE_COLORS = {
+  "top-manager":   CATEGORY_COLORS[5],  // purple
+  "shift-manager": CATEGORY_COLORS[2],  // blue
+  supervisor:      CATEGORY_COLORS[6],  // teal
+  leader:          CATEGORY_COLORS[4],  // orange
+  "idle-owner":    CATEGORY_COLORS[7],  // pink
+  guest:           FOLD_COLOR,
+};
+
 export const categoryColor = (i) => CATEGORY_COLORS[i % CATEGORY_COLORS.length];
 
 // Stable category→color map from an ordered key list (order = share size or

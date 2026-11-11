@@ -2,9 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive, ArchiveRestore, ArrowLeft, Award, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
-  Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
-  LayoutGrid, Link2, LogIn, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
+  AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Award, Ban, BellOff, Camera, Check, Clock, Copy,
+  Eye, EyeOff, Flag, Globe, IdCard, KeyRound, Languages, Loader2,
+  LogIn, LogOut, Pencil, Plus, RotateCcw, Send, Shield, Star, Trash2,
   UserCog, UserRound, Users, X, ShieldQuestion,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -12,6 +12,7 @@ import api from "../utils/api";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
+import ActionMenu from "../components/ui/ActionMenu";
 import FormField from "../components/ui/FormField";
 import StyledSelect from "../components/ui/StyledSelect";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -32,11 +33,18 @@ import { useExam } from "../context/ExamContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../config/pages";
+import { CATEGORY_COLORS, ROLE_COLORS } from "../utils/chartPalette";
 
 /**
  * ONE profile page for both routes — /profile (own) and /profile/:ptype/:pid
  * (opened from the admin Profiles register). The layout is the same for every
- * viewer: hero, details, site login, Telegram accounts. What differs is
+ * viewer: an identity header that answers «can this person get in» at a
+ * glance (Telegram · site login · last sign-in), then ONE column of full-width
+ * cards — details, site login, Telegram accounts. Cards never sit side by
+ * side: their heights follow their content, and two of those in a row end at
+ * different heights. Each card splits into two columns INSIDE instead. Every
+ * section carries one small hue of its own (an icon chip), the header takes
+ * the role's; gold stays the action colour. What differs is
  * ACCESS, not structure — a viewer who may manage profiles (admin, or the
  * `admin.profiles.manage` grantee the register route already admits) gets the
  * details card as a live form, login management, holder unassign and the
@@ -86,29 +94,39 @@ const inputStyle = {
 
 // ── shared building blocks ────────────────────────────────────────────────────
 
-function Card({ icon, title, subtitle, right, children, className = "", bodyClassName = "px-4 py-4" }) {
+// One hue per section, worn only by its icon chip — enough to tell the cards
+// apart at a glance, never enough to colour the page. None is a status colour
+// except the danger zone's red, which is one.
+const HUE = {
+  details: CATEGORY_COLORS[2],   // blue
+  web:     CATEGORY_COLORS[5],   // purple
+  tg:      CATEGORY_COLORS[12],  // sky — Telegram's own
+  last:    CATEGORY_COLORS[6],   // teal
+  danger:  "#ef4444",
+};
+// The register gives admins no hue of their own; the header needs one.
+const roleHue = (role) => ROLE_COLORS[role] ?? CATEGORY_COLORS[8];
+
+const CARD_PAD = "px-3 sm:px-6 py-4 sm:py-5";   // SectionHead lg's own gutters
+
+function Card({ icon, color, title, subtitle, right, children, className = "", bodyClassName = CARD_PAD, danger = false }) {
   return (
     <div
       className={`rounded-2xl overflow-hidden ${className}`}
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+      style={{ background: "var(--bg-card)", border: `1px solid ${danger ? "rgba(239,68,68,0.3)" : "var(--border)"}` }}
     >
-      <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />
+      <SectionHead size="lg" icon={icon} color={color} title={title} subtitle={subtitle} right={right} />
       <div className={bodyClassName}>{children}</div>
     </div>
   );
 }
 
-function InfoRow({ icon: Icon, label, children, top = false }) {
+// A read-only value under its label — the own view's details grid.
+function Detail({ label, children, className = "" }) {
   return (
-    <div className={`flex ${top ? "items-start" : "items-center"} justify-between gap-3 py-2 border-b last:border-b-0`}
-         style={{ borderColor: "var(--border)" }}>
-      <span className={`flex ${top ? "items-start" : "items-center"} gap-2 flex-shrink-0`}>
-        {Icon && <Icon size={13} className={top ? "mt-0.5" : ""} style={{ color: "var(--text-4)" }} />}
-        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-          {label}
-        </span>
-      </span>
-      <span className="min-w-0 text-right text-[13px]" style={{ color: "var(--text-1)" }}>{children}</span>
+    <div className={`min-w-0 ${className}`}>
+      <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-1 text-sm font-medium break-words" style={{ color: "var(--text-1)" }}>{children}</div>
     </div>
   );
 }
@@ -117,10 +135,11 @@ function RoleChip({ role }) {
   const { t } = useLang();
   const Icon = TYPE_META[role]?.icon || UserRound;
   const tkey = ROLE_LABEL_KEYS[role];
+  const c = roleHue(role);
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
-          style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--border)" }}>
-      <Icon size={11} />
+    <span className="chat-ink inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+          style={{ "--ink": c, background: `${c}1f`, border: `1px solid ${c}40` }}>
+      <Icon size={12} />
       {tkey ? t(tkey) : role}
     </span>
   );
@@ -128,11 +147,65 @@ function RoleChip({ role }) {
 
 function StatusTag({ color, children }) {
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap"
           style={{ background: `${color}1f`, color, border: `1px solid ${color}40` }}>
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
       {children}
     </span>
+  );
+}
+
+// One fact of the header's strip: a hue chip, its label, the value. `dot` is
+// a status colour beside a value that is ALSO worded — never colour alone.
+function Fact({ icon: Icon, color, label, dot, children }) {
+  return (
+    <div className="flex items-center gap-3 min-w-0 rounded-xl px-3 py-2.5"
+         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+      <span className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0"
+            style={{ background: `${color}1f`, color }}>
+        <Icon size={17} />
+      </span>
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
+        {/* Wraps, never cuts: the login or the date is the whole tile. */}
+        <div className="mt-0.5 flex items-start gap-1.5 min-w-0 text-[13px] font-semibold leading-[18px]"
+             style={{ color: "var(--text-1)" }}>
+          {dot && <span className="mt-[5px] w-2 h-2 rounded-full flex-shrink-0" style={{ background: dot }} />}
+          <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const GREEN = "#22c55e", AMBER = "#eab308", GREY = "#94a3b8";
+
+// «Can this person get in?» — the three answers, the same for both views:
+// is a Telegram account linked, is there a working site login, when was it
+// last used. `bind` is "bound" | "pending" | "none"; `holders` their count.
+function ProfileFacts({ bind, holders = 0, web }) {
+  const { t, lang } = useLang();
+  const bindMap = {
+    bound:   { dot: GREEN, label: t("admin.profiles.bindBound") },
+    pending: { dot: AMBER, label: t("admin.users.status.pending") },
+    none:    { dot: GREY,  label: t("admin.profiles.noHolders") },
+  }[bind];
+  const webNote = !web ? null
+    : !web.enabled ? t("weblogin.disabledTag")
+    : web.locked ? t("weblogin.lockedTag") : null;
+  return (
+    <>
+      <Fact icon={Send} color={HUE.tg} label="Telegram" dot={bindMap.dot}>
+        {bindMap.label}{holders > 1 ? ` · ${holders}` : ""}
+      </Fact>
+      <Fact icon={Globe} color={HUE.web} label={t("weblogin.section")}
+            dot={!web || !web.enabled ? GREY : web.locked ? AMBER : GREEN}>
+        {web ? <><span className="font-mono">{web.username}</span>{webNote ? ` · ${webNote}` : ""}</> : t("weblogin.none")}
+      </Fact>
+      <Fact icon={Clock} color={HUE.last} label={t("weblogin.lastLogin")}>
+        {web ? (fmtDateTime(web.last_login_at, lang) || t("weblogin.never")) : "—"}
+      </Fact>
+    </>
   );
 }
 
@@ -143,7 +216,7 @@ function HolderChip({ b, meLabel, onUnassign, disabled, dmTip }) {
   const unreachable = !pending && b.dm_ok === false;
   return (
     <span
-      className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-medium max-w-full"
       style={pending
         ? { background: "rgba(234,179,8,0.12)", color: "#eab308", border: "1px solid rgba(234,179,8,0.25)" }
         : unreachable
@@ -151,14 +224,15 @@ function HolderChip({ b, meLabel, onUnassign, disabled, dmTip }) {
           : { background: "rgba(34,197,94,0.10)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
       title={unreachable && dmTip ? dmTip : (b.username ? `@${b.username}` : String(b.telegram_id))}
     >
-      {unreachable && <BellOff size={10} className="flex-shrink-0" />}
-      {label}
+      {unreachable && <BellOff size={12} className="flex-shrink-0" />}
+      <span className="truncate">{label}</span>
       {b.is_me && meLabel && <span className="opacity-75">· {meLabel}</span>}
       {pending && meLabel === undefined && <span className="opacity-80">…</span>}
       {onUnassign && !pending && (
-        <button onClick={onUnassign} disabled={disabled}
-                className="rounded-full p-0.5 hover:bg-[var(--bg-accent)] transition-colors">
-          <X size={10} />
+        <button type="button" onClick={onUnassign} disabled={disabled}
+                className="relative flex-shrink-0 rounded-full p-0.5 hover:bg-[var(--bg-accent)] transition-colors
+                           after:absolute after:-inset-2.5 after:content-['']">
+          <X size={12} />
         </button>
       )}
     </span>
@@ -170,67 +244,79 @@ function factoryLabel(f, lang) {
   return f[`name_${lang}`] || f.name_ru || f.name_uz || f.code;
 }
 
-// Timestamps follow the UI language, not the browser default — an uz page
-// showing "8/8/2026, 8:05:47 AM" reads as someone else's software.
-const DT_LOCALE = { uz: "uz-Latn-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
-function fmtDateTime(iso, lang) {
+// Timestamps are numeric — «26.09.2026, 14:07», the plant's own date order —
+// in every language. The spelled-out month depended on the browser knowing the
+// locale: Chromium has no Uzbek month names and printed «2026 M09 26».
+function fmtDateTime(iso) {
   if (!iso) return null;
   const d = new Date(iso);
-  try {
-    return d.toLocaleString(DT_LOCALE[lang] || "ru-RU", { dateStyle: "medium", timeStyle: "short" });
-  } catch {
-    return d.toLocaleString();
-  }
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 }
 
-// The hero every viewer gets: avatar, name, chips, one context line — plus an
-// `actions` slot (photo controls) and a `right` slot (the page save) at manage
-// access. One component so the two access levels cannot drift apart.
-function ProfileHero({ name, colorKey, profileKey, photoVer, chips, context, actions, right }) {
+// The identity header every viewer gets: a band in the ROLE's hue (with the
+// role's own icon faint in it), the photo standing on its edge, the name, the
+// chips, one context line, then the three facts. At manage access the photo
+// carries a camera badge (`avatarBadge`) and the band a ⋮ (`menu`). One
+// component so the two access levels cannot drift apart.
+function ProfileHero({ name, role, colorKey, profileKey, photoVer, chips, context, facts, avatarBadge, menu }) {
+  const hue = roleHue(role);
+  const RoleIcon = TYPE_META[role]?.icon || UserRound;
   return (
-    <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
-        <ProfileAvatar name={name} colorKey={colorKey} profileKey={profileKey}
-                       photoVer={photoVer} size={84} />
-        <div className="min-w-0 flex-1">
-          <div className="text-xl font-semibold leading-tight break-words" style={{ color: "var(--text-1)" }}>
-            {name}
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="relative h-20 @md:h-24 overflow-hidden"
+           style={{ background: `color-mix(in srgb, ${hue} 16%, var(--bg-card))` }}>
+        {/* Clear of the ⋮ on its right and, on the narrowest phone, of the photo. */}
+        <RoleIcon aria-hidden="true" size={104} strokeWidth={1.5}
+                  className="absolute -bottom-6 right-14" style={{ color: hue, opacity: 0.16 }} />
+        {menu && <div className="absolute top-2 right-2">{menu}</div>}
+      </div>
+      <div className="px-3 sm:px-6 pb-4 sm:pb-6">
+        <div className="flex flex-col @md:flex-row @md:items-start gap-3 @md:gap-5 min-w-0">
+          {/* Half on the band, half on the card; the ring is the card's colour. */}
+          <div className="relative -mt-12 w-24 h-24 flex-shrink-0 rounded-full"
+               style={{ boxShadow: "0 0 0 4px var(--bg-card)", background: "var(--bg-card)" }}>
+            <ProfileAvatar name={name} colorKey={colorKey} profileKey={profileKey}
+                           photoVer={photoVer} size={96} />
+            {avatarBadge}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">{chips}</div>
-          {context && (
-            <div className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>{context}</div>
-          )}
-          {actions && <div className="mt-3">{actions}</div>}
+          <div className="min-w-0 flex-1 @md:pt-3">
+            <h1 className="text-xl @md:text-2xl font-bold leading-tight break-words" style={{ color: "var(--text-1)" }}>
+              {name}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">{chips}</div>
+            {context && (
+              <div className="mt-2 text-[13px] break-words" style={{ color: "var(--text-2)" }}>{context}</div>
+            )}
+          </div>
         </div>
-        {right && <div className="flex-shrink-0 sm:self-start">{right}</div>}
+        {facts && <div className="mt-4 @md:mt-5 grid grid-cols-1 @2xl:grid-cols-3 gap-2">{facts}</div>}
       </div>
     </div>
   );
 }
 
-// Name as colleagues see it, per language — stacked and left-aligned. The old
-// right-aligned key-value row broke exactly here: four ragged lines floating
-// far from their label, at 9px.
+// Name as colleagues see it, per language — a tag and the name, two columns
+// on a wide card.
 function NamesBlock({ canonical, names }) {
   const { t } = useLang();
   return (
-    <div className="py-2">
-      <span className="flex items-center gap-2">
-        <Languages size={13} style={{ color: "var(--text-4)" }} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-          {t("profile.names")}
-        </span>
-      </span>
-      <div className="mt-2 space-y-1.5">
+    <div className="min-w-0">
+      <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {t("profile.names")}
+      </div>
+      <div className="mt-2 grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-2">
         {["uz", ...NAME_LANGS].map((l) => {
           const v = l === "uz" ? canonical : names?.[l];
           return (
             <div key={l} className="flex items-center gap-2.5 min-w-0">
-              <span className="w-14 flex-shrink-0 text-center text-[9px] font-mono uppercase tracking-wide px-1 py-0.5 rounded-md"
+              <span className="w-14 flex-shrink-0 text-center text-[10px] font-mono uppercase tracking-wide px-1 py-0.5 rounded-md"
                     style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
                 {l}
               </span>
-              <span className="text-[13px] truncate" style={{ color: v ? "var(--text-1)" : "var(--text-4)" }}>
+              <span className="text-sm truncate" style={{ color: v ? "var(--text-1)" : "var(--text-3)" }}>
                 {v || transliterate(canonical, l)}
               </span>
             </div>
@@ -243,8 +329,10 @@ function NamesBlock({ canonical, names }) {
 
 // ── page-level save ───────────────────────────────────────────────────────────
 /**
- * The identity header owns the page's ONE save action, and it commits every
- * DEFERRED edit on the page at once — the profile form AND the web-login
+ * The page has ONE save action — a bar that rises from the bottom edge the
+ * moment something is unsaved and leaves once it is saved (a button that sat
+ * disabled in the header was the loudest thing on a page with nothing to
+ * save) — and it commits every DEFERRED edit on the page at once — the profile form AND the web-login
  * username. Cards no longer carry their own save buttons: two "save" controls
  * on one screen means the operator has to work out which of them their change
  * belongs to, and the one inside a card is invisible from anywhere else.
@@ -306,21 +394,21 @@ function useSaveTarget(key, { dirty, busy, save }) {
   useEffect(() => () => bus?.unregister(key), [bus, key]);
 }
 
-function PageSave({ dirty, busy, onSave }) {
+function SaveBar({ busy, onSave }) {
   const { t } = useLang();
   return (
-    <div className="flex items-center gap-2.5">
-      {dirty && !busy && (
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap"
-              style={{ color: "#eab308" }}>
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />
-          {t("profile.unsaved")}
+    <div className="sticky z-30 savebar-in" style={{ bottom: "var(--tg-safe-bottom, 0px)" }}>
+      <div className="flex items-center justify-between gap-3 rounded-2xl pl-4 pr-2 py-2 shadow-lg"
+           style={{ background: "var(--bg-card)", border: "1px solid var(--brand-border)" }}>
+        <span className="flex items-center gap-2 min-w-0 text-[13px] font-medium" style={{ color: "var(--text-1)" }}>
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: AMBER }} />
+          <span className="truncate">{t("profile.unsaved")}</span>
         </span>
-      )}
-      <Button size="lg" icon={<Check size={14} />} loading={busy} disabled={!dirty}
-              title={t("profile.saveAllHint")} onClick={onSave}>
-        {t("admin.profiles.save")}
-      </Button>
+        <Button size="lg" className="flex-shrink-0" icon={<Check size={14} />} loading={busy}
+                title={t("profile.saveAllHint")} onClick={onSave}>
+          {t("admin.profiles.save")}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -431,22 +519,10 @@ function WebLoginStatus({ web }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       {web.enabled
-        ? <StatusTag color="#22c55e">{t("profile.loginEnabled")}</StatusTag>
-        : <StatusTag color="#94a3b8">{t("weblogin.disabledTag")}</StatusTag>}
-      {web.locked && <StatusTag color="#eab308">{t("weblogin.lockedTag")}</StatusTag>}
+        ? <StatusTag color={GREEN}>{t("profile.loginEnabled")}</StatusTag>
+        : <StatusTag color={GREY}>{t("weblogin.disabledTag")}</StatusTag>}
+      {web.locked && <StatusTag color={AMBER}>{t("weblogin.lockedTag")}</StatusTag>}
     </span>
-  );
-}
-
-function LastLogin({ web }) {
-  const { t, lang } = useLang();
-  return (
-    <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-      <Clock size={12} style={{ color: "var(--text-4)" }} />
-      <span>
-        {t("weblogin.lastLogin")}: {fmtDateTime(web.last_login_at, lang) || t("weblogin.never")}
-      </span>
-    </div>
   );
 }
 
@@ -473,25 +549,16 @@ function MyProfile() {
     factory,
   ].filter(Boolean).join(" · ");
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-4">
-            <SkeletonBlock className="w-[84px] h-[84px] rounded-full" />
-            <div className="flex-1"><SkeletonBlock className="h-5 w-1/2 mb-2" /><SkeletonBlock className="h-4 w-1/3" /></div>
-          </div>
-        </div>
-        <SkeletonBlock className="h-48 w-full rounded-2xl" />
-        <SkeletonBlock className="h-32 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  if (isLoading) return <ProfileSkeleton />;
+
+  const holders = me?.holders ?? [];
+  const hasDetails = me?.shift != null || me?.unit || factory || me?.verifix_id != null;
 
   return (
     <div className="space-y-4">
       <ProfileHero
         name={name}
+        role={me?.role || auth?.role}
         colorKey={canonical}
         profileKey={me?.profile_key}
         photoVer={me?.photo_ver}
@@ -500,7 +567,7 @@ function MyProfile() {
             <RoleChip role={me?.role || auth?.role} />
             {examBadge && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                    style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)" }}
+                    style={{ background: "rgba(34,197,94,0.12)", color: GREEN, border: "1px solid rgba(34,197,94,0.3)" }}
                     title={examBadge.date || ""}>
                 <Award size={11} />
                 {t("exam.badge")}{examBadge.date ? ` · ${examBadge.date}` : ""}
@@ -509,101 +576,87 @@ function MyProfile() {
           </>
         )}
         context={context}
+        facts={<ProfileFacts bind={holders.length ? "bound" : "none"} holders={holders.length} web={me?.web} />}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        {/* Details */}
-        <Card icon={IdCard} title={t("profile.details")}>
-          <div className="-my-2">
-            {me?.shift != null && (
-              <InfoRow icon={Clock} label={t("profile.shift")}>{me.shift}</InfoRow>
-            )}
-            {me?.unit && (
-              <InfoRow icon={Users} label={t("profile.unit")}>{tl(me.unit)}</InfoRow>
-            )}
-            {factory && (
-              <InfoRow icon={FactoryIcon} label={t("profile.factory")}>{factory}</InfoRow>
-            )}
-            {me?.verifix_id != null && (
-              <InfoRow icon={Hash} label={t("admin.profiles.colVerifix")}>
-                <span className="font-mono tabular-nums">{me.verifix_id}</span>
-              </InfoRow>
-            )}
-            {(me?.cells?.length ?? 0) > 0 && (
-              <InfoRow icon={LayoutGrid} label={t("profile.cells")} top>
-                <span className="inline-flex flex-wrap gap-1 justify-end">
-                  {me.cells.map((c) => (
-                    <span key={c.verifix_code} className="inline-flex items-center gap-1">
-                      <CellLink id={c.id}
-                            className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-                            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                        {c.verifix_code}
-                      </CellLink>
-                      {/* A cell sharing its work centre carries a group letter. */}
-                      <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
-                    </span>
-                  ))}
-                </span>
-              </InfoRow>
-            )}
-            <NamesBlock canonical={canonical} names={me?.names} />
-          </div>
-        </Card>
-
-        <div className="space-y-4">
-          {/* Website login + password */}
-          <Card icon={Globe} title={t("weblogin.section")}
-                right={<WebLoginStatus web={me?.web} />}>
-            {me?.web ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 min-w-0">
-                    <KeyRound size={13} style={{ color: "var(--text-4)" }} className="flex-shrink-0" />
-                    <span className="text-sm font-mono truncate" style={{ color: "var(--text-1)" }}>
-                      {me.web.username}
-                    </span>
+      {/* Details */}
+      <Card icon={IdCard} color={HUE.details} title={t("profile.details")}>
+        <div className="space-y-5">
+          {hasDetails && (
+            <div className="grid grid-cols-2 @xl:grid-cols-4 gap-x-5 gap-y-4">
+              {me?.shift != null && <Detail label={t("profile.shift")}>{me.shift}</Detail>}
+              {me?.unit && <Detail label={t("profile.unit")}>{tl(me.unit)}</Detail>}
+              {factory && <Detail label={t("profile.factory")}>{factory}</Detail>}
+              {me?.verifix_id != null && (
+                <Detail label={t("admin.profiles.colVerifix")}>
+                  <span className="font-mono tabular-nums">{me.verifix_id}</span>
+                </Detail>
+              )}
+            </div>
+          )}
+          {(me?.cells?.length ?? 0) > 0 && (
+            <Detail label={t("profile.cells")}>
+              <span className="flex flex-wrap gap-1.5">
+                {me.cells.map((c) => (
+                  <span key={c.verifix_code} className="inline-flex items-center gap-1">
+                    <CellLink id={c.id}
+                          className="text-xs font-mono px-2 py-0.5 rounded-full"
+                          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                      {c.verifix_code}
+                    </CellLink>
+                    {/* A cell sharing its work centre carries a group letter. */}
+                    <GroupBadge group={c.wc_group} title={wcGroupLabel(c.sap_code, c.wc_group)} />
                   </span>
-                  {/* The one thing a non-admin comes to this page to do. */}
-                  <Button size="sm" icon={<Pencil size={12} />}
-                          onClick={() => setPwOpen(true)} disabled={!me.web.enabled}>
-                    {t("weblogin.changeTitle")}
-                  </Button>
-                </div>
-                <LastLogin web={me.web} />
-                <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
-                  {t("profile.webHint")}
-                </p>
-                {!me.web.enabled && (
-                  <p className="text-[11px] leading-snug" style={{ color: "#94a3b8" }}>
-                    {t("profile.loginDisabled")}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs leading-snug" style={{ color: "var(--text-4)" }}>
-                {t("profile.noWebLogin")}
+                ))}
+              </span>
+            </Detail>
+          )}
+          <NamesBlock canonical={canonical} names={me?.names} />
+        </div>
+      </Card>
+
+      {/* Website login + password */}
+      <Card icon={Globe} color={HUE.web} title={t("weblogin.section")}
+            subtitle={me?.web ? t("profile.webHint") : undefined}
+            right={<WebLoginStatus web={me?.web} />}>
+        {me?.web ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Detail label={t("weblogin.username")}>
+                <span className="font-mono">{me.web.username}</span>
+              </Detail>
+              {/* The one thing a non-admin comes to this page to do. */}
+              <Button size="lg" icon={<Pencil size={14} />}
+                      onClick={() => setPwOpen(true)} disabled={!me.web.enabled}>
+                {t("weblogin.changeTitle")}
+              </Button>
+            </div>
+            {!me.web.enabled && (
+              <p className="text-xs leading-snug" style={{ color: "var(--text-3)" }}>
+                {t("profile.loginDisabled")}
               </p>
             )}
-          </Card>
+          </div>
+        ) : (
+          <p className="text-[13px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {t("profile.noWebLogin")}
+          </p>
+        )}
+      </Card>
 
-          {/* Linked Telegram accounts */}
-          <Card icon={Link2} title={t("profile.holders")}>
-            {(me?.holders?.length ?? 0) > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {me.holders.map((b) => (
-                  <HolderChip key={b.telegram_id} b={b} meLabel={t("profile.you")}
-                              dmTip={t("admin.profiles.dmBlockedTip")} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.profiles.noHolders")}</p>
-            )}
-            <p className="mt-3 text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
-              {t("profile.holdersHint")}
-            </p>
-          </Card>
-        </div>
-      </div>
+      {/* Linked Telegram accounts */}
+      <Card icon={Send} color={HUE.tg} title={t("profile.holders")} subtitle={t("profile.holdersHint")}>
+        {holders.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {holders.map((b) => (
+              <HolderChip key={b.telegram_id} b={b} meLabel={t("profile.you")}
+                          dmTip={t("admin.profiles.dmBlockedTip")} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px]" style={{ color: "var(--text-3)" }}>{t("admin.profiles.noHolders")}</p>
+        )}
+      </Card>
 
       <ChangePasswordModal
         open={pwOpen}
@@ -615,9 +668,25 @@ function MyProfile() {
   );
 }
 
+// The page while it loads, in the shape it is about to take.
+function ProfileSkeleton() {
+  return (
+    <div className="space-y-4">
+      <SkeletonBlock className="h-[380px] @2xl:h-[264px] w-full rounded-2xl" />
+      <SkeletonBlock className="h-52 w-full rounded-2xl" />
+      <SkeletonBlock className="h-52 w-full rounded-2xl" />
+      <SkeletonBlock className="h-28 w-full rounded-2xl" />
+    </div>
+  );
+}
+
 // ── ADMIN: photo actions ──────────────────────────────────────────────────────
 
-function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
+// The photo's two actions, offered where the eye already is: a camera badge
+// on the photo itself (pick a file — the common one) and, once there is a
+// photo, a ⋮ on the header with «replace» and «delete». One picker and one
+// confirm dialog behind both.
+function usePhotoActions({ profileKey, hasPhoto, notify, onDone }) {
   const { t } = useLang();
   const fileRef = useRef(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -653,23 +722,37 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
     uploadMut.mutate(file);
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
+  const pick = () => fileRef.current?.click();
+  const pickLabel = t(hasPhoto ? "profile.photoReplace" : "profile.photoUpload");
+
+  const badge = (
+    <button type="button" onClick={pick} disabled={uploadMut.isPending}
+            aria-label={pickLabel} title={`${pickLabel} — ${t("profile.photoHint")}`}
+            className="absolute -bottom-0.5 -right-0.5 grid place-items-center w-8 h-8 rounded-full transition-colors outline-none
+                       hover:text-[var(--brand-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]
+                       after:absolute after:-inset-1.5 after:content-['']"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
+      {uploadMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+    </button>
+  );
+
+  const menu = hasPhoto ? (
+    <ActionMenu
+      label={t("admin.profiles.colActions")}
+      items={[
+        { key: "replace", label: pickLabel, icon: Camera, onSelect: pick, disabled: uploadMut.isPending },
+        { key: "remove", label: t("profile.photoRemove"), icon: Trash2, tone: "danger",
+          disabled: uploadMut.isPending,
+          onSelect: () => { setRemoveError(""); setConfirmRemove(true); } },
+      ]}
+    />
+  ) : null;
+
+  const node = (
+    <>
       <input ref={fileRef} type="file" className="hidden"
              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
              onChange={onPick} />
-      <Button size="sm" tint variant="primary" icon={<Camera size={11} />}
-              loading={uploadMut.isPending}
-              onClick={() => fileRef.current?.click()}>
-        {t(hasPhoto ? "profile.photoReplace" : "profile.photoUpload")}
-      </Button>
-      {hasPhoto && (
-        <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
-                disabled={uploadMut.isPending}
-                onClick={() => { setRemoveError(""); setConfirmRemove(true); }}>
-          {t("profile.photoRemove")}
-        </Button>
-      )}
       <ConfirmDialog
         open={confirmRemove}
         tone="danger"
@@ -681,8 +764,10 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
         onCancel={() => setConfirmRemove(false)}
         onConfirm={() => removeMut.mutate()}
       />
-    </div>
+    </>
   );
+
+  return { badge, menu, node };
 }
 
 // ── ADMIN: «Lider / Lider o'rnida» — what stands behind the saved answer ──────
@@ -998,10 +1083,13 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   // Same card, same title as the read view — access is what turned it into a
   // form, so it must not read as a different page.
   return (
-    <Card icon={IdCard} title={t("profile.details")}>
-      <div className="space-y-3">
+    <Card icon={IdCard} color={HUE.details} title={t("profile.details")}>
+      {/* Two fields a row once the card is wide enough. Every field is
+          `alignTop`: only some carry a hint, and the controls of a row must
+          stay on one line. */}
+      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-4">
         {/* Role — switching moves only the name; other values are asked fresh */}
-        <FormField label={t("admin.profiles.roleLabel")}>
+        <FormField alignTop label={t("admin.profiles.roleLabel")}>
           <StyledSelect
             value={form.role}
             onChange={(v) => {
@@ -1020,13 +1108,13 @@ function EditCard({ ptype, item, data, notify, onDone }) {
             }))}
           />
           {roleChanged && (
-            <p className="mt-1 text-[10px] leading-snug text-yellow-500">
+            <p className="mt-1 text-[11px] leading-snug text-yellow-500">
               {t("admin.profiles.switchRoleHint")}
             </p>
           )}
         </FormField>
 
-        <FormField label={t("admin.profiles.nameLabel")}>
+        <FormField alignTop label={t("admin.profiles.nameLabel")}>
           <input
             type="text"
             value={form.name || ""}
@@ -1037,14 +1125,14 @@ function EditCard({ ptype, item, data, notify, onDone }) {
             placeholder={t("admin.profiles.namePlaceholder")}
           />
           {!roleChanged && ptype === "supervisor" && (form.name || "").trim() !== item.name && (
-            <p className="mt-1 text-[10px] leading-snug text-yellow-500">
+            <p className="mt-1 text-[11px] leading-snug text-yellow-500">
               {t("admin.profiles.renameWarnSupervisor")}
             </p>
           )}
         </FormField>
 
         {(effType === "shift-manager" || effType === "supervisor") && (
-          <FormField label={t("admin.profiles.shiftLabel")}>
+          <FormField alignTop label={t("admin.profiles.shiftLabel")}>
             <StyledSelect
               value={String(form.shift ?? "")}
               onChange={(v) => setForm((f) => ({ ...f, shift: v }))}
@@ -1055,7 +1143,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         )}
 
         {effType === "leader" && (
-          <FormField label={t("admin.profiles.supervisorLabel")}>
+          <FormField alignTop label={t("admin.profiles.supervisorLabel")}>
             <StyledSelect
               value={String(form.manager_id ?? "")}
               onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
@@ -1068,7 +1156,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         )}
 
         {effType === "leader" && (
-          <FormField label={t("admin.profiles.cellLabel")}>
+          <FormField alignTop label={t("admin.profiles.cellLabel")}>
             <StyledSelect
               multiple
               searchable
@@ -1091,7 +1179,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
                   const from = item.cells_waiting?.[c];
                   const d = from ? `${from.slice(8, 10)}.${from.slice(5, 7)}` : null;
                   return (
-                  <span key={c} className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded-full"
+                  <span key={c} className="inline-flex items-center gap-1 text-xs font-mono px-2 py-1 rounded-full"
                         title={d ? t("admin.profiles.cellWaitingHint").replace("{d}", d) : undefined}
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
                     {c}
@@ -1117,7 +1205,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         )}
 
         {effType === "leader" && !roleChanged && (
-          <FormField label={t("profile.leaderKind.label")}
+          <FormField alignTop label={t("profile.leaderKind.label")}
                      hint={<LeaderKindNote info={item.leader_kind_info} />}>
             <SegmentedToggle
               fill
@@ -1137,7 +1225,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* The shift this leader's CHECKLIST runs on — their brigade's, or the
             other one (services/leader_shift). Takes effect from tomorrow. */}
         {effType === "leader" && !roleChanged && item.checklist_shift && (
-          <FormField label={t("profile.clShift.label")}
+          <FormField alignTop label={t("profile.clShift.label")}
                      hint={<ClShiftNote cs={item.checklist_shift}
                                         draft={form.checklist_shift !== base?.checklist_shift} />}>
             <SegmentedToggle
@@ -1154,7 +1242,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         )}
 
         {effType === "supervisor" && (
-          <FormField label={t("admin.profiles.verifixLabel")}>
+          <FormField alignTop label={t("admin.profiles.verifixLabel")}>
             <input
               type="number"
               value={form.verifix_id ?? ""}
@@ -1163,7 +1251,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               style={inputStyle}
             />
             {!roleChanged && ptype === "supervisor" && Number(form.verifix_id) !== item.id && (
-              <p className="mt-1 text-[10px] leading-snug text-yellow-500">
+              <p className="mt-1 text-[11px] leading-snug text-yellow-500">
                 {t("admin.profiles.verifixWarn")}
               </p>
             )}
@@ -1173,7 +1261,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* «Brigadir / Brigadir o'rnida» — the leaders' switch, for the unit's
             brigadir (services/supervisor_kind.py). */}
         {effType === "supervisor" && !roleChanged && (
-          <FormField label={t("profile.supKind.label")}
+          <FormField alignTop label={t("profile.supKind.label")}
                      hint={<LeaderKindNote info={item.supervisor_kind_info}
                                            unsetKey="profile.supKind.unset" />}>
             <SegmentedToggle
@@ -1194,7 +1282,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* Is this unit's загрузка calculated at all (managers.zagruzka_on)?
             OFF takes it out of every загрузка table, card and average. */}
         {effType === "supervisor" && !roleChanged && form.zagruzka_on != null && (
-          <FormField label={t("profile.zagruzka.label")}
+          <FormField alignTop label={t("profile.zagruzka.label")}
                      hint={t(form.zagruzka_on ? "profile.zagruzka.onHint" : "profile.zagruzka.offHint")}>
             <SegmentedToggle
               fill
@@ -1212,6 +1300,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
         {/* Per-language display names — the uz canonical name lives in its own
             field above, so the tabs cover only the three override languages. */}
         {!roleChanged && (
+          <div className="@xl:col-span-2">
           <FormField label={t("admin.profiles.langNames")} hint={t("admin.profiles.langNamesHint")}>
             <LangTextInput
               className="mt-1"
@@ -1236,12 +1325,13 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               )}
             />
           </FormField>
+          </div>
         )}
 
-        {/* No save button here — the page has ONE, in the identity header, and
+        {/* No save button here — the page has ONE, the bar at the bottom, and
             it commits this form together with the web-login username. Failures
             still surface next to the fields that caused them. */}
-        {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
+        {formError && <p className="@xl:col-span-2 text-xs font-medium text-red-400">{formError}</p>}
       </div>
 
       {/* Inline cell creation (leader flow) */}
@@ -1529,17 +1619,20 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
   });
 
   return (
-    <Card icon={Globe} title={t("weblogin.formTitle")} right={<WebLoginStatus web={web} />}>
-      <div className="space-y-3">
+    <Card icon={Globe} color={HUE.web} title={t("weblogin.formTitle")} right={<WebLoginStatus web={web} />}>
+      <div className="space-y-4">
         {!deliverable && (
-          <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[11px] leading-snug"
-               style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "#eab308" }}>
-            <Ban size={13} className="flex-shrink-0 mt-px" />
+          <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs leading-snug"
+               style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.25)", color: "var(--text-1)" }}>
+            <Ban size={14} className="flex-shrink-0 mt-px" style={{ color: AMBER }} />
             <span>{t("weblogin.noHolder")}</span>
           </div>
         )}
 
+        {/* Login beside password on a wide card — the pair read together. */}
+        <div className="grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-4">
         <FormField
+          alignTop
           label={t("weblogin.username")}
           hint={web && renamed ? t("weblogin.renamePending") : web ? undefined : t("weblogin.usernameHint")}
           error={error || undefined}
@@ -1569,6 +1662,7 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
             copyable without ever being displayed. */}
         {web && canReveal && (
           <FormField
+            alignTop
             label={t("weblogin.password")}
             hint={web.has_password ? t("weblogin.revealHint") : t("weblogin.pwUnknownHint")}
             error={pwError || undefined}
@@ -1600,8 +1694,7 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
         )}
 
         {!web && (
-          <>
-            <FormField label={t("weblogin.password")} hint={t("weblogin.passwordHint")}>
+            <FormField alignTop label={t("weblogin.password")} hint={t("weblogin.passwordHint")}>
               <input
                 type="text"
                 value={password}
@@ -1611,24 +1704,26 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
               />
             </FormField>
-            <div className="flex justify-end">
-              <Button icon={<Plus size={12} />} onClick={() => createMut.mutate()}
-                      loading={createMut.isPending} disabled={busy || !deliverable}>
-                {t("weblogin.create")}
-              </Button>
-            </div>
-          </>
+        )}
+        </div>
+
+        {!web && (
+          <div className="flex justify-end">
+            <Button size="lg" icon={<Plus size={14} />} onClick={() => createMut.mutate()}
+                    loading={createMut.isPending} disabled={busy || !deliverable}>
+              {t("weblogin.create")}
+            </Button>
+          </div>
         )}
 
         {web && (
           <>
-            <LastLogin web={web} />
             {/* Recoverable operations only — deleting the login lives in the
                 page's danger zone, away from these daily controls. On the
                 manager's OWN profile the self password change joins them. */}
-            <div className="pt-1 flex flex-wrap gap-1.5">
+            <div className="pt-4 flex flex-wrap gap-2" style={{ borderTop: "1px solid var(--border)" }}>
               {own && (
-                <Button size="sm" tint variant="primary" icon={<Pencil size={11} />}
+                <Button tint variant="primary" icon={<Pencil size={13} />}
                         disabled={busy || !web.enabled} onClick={onChangePassword}>
                   {t("weblogin.changeTitle")}
                 </Button>
@@ -1637,24 +1732,24 @@ function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, no
                   not be entered from a browser; this must not be the way round
                   it, so the button goes with it. */}
               {canOpenAs && (
-                <Button size="sm" tint variant="primary" icon={<LogIn size={11} />}
+                <Button tint variant="primary" icon={<LogIn size={13} />}
                         loading={openAsBusy} disabled={busy || !web.enabled}
                         onClick={() => { setOpenAsError(""); setConfirmOpenAs(true); }}>
                   {t("weblogin.impersonate")}
                 </Button>
               )}
-              <Button size="sm" tint variant={own || canOpenAs ? "secondary" : "primary"}
-                      icon={<RotateCcw size={11} />}
+              <Button tint variant={own || canOpenAs ? "secondary" : "primary"}
+                      icon={<RotateCcw size={13} />}
                       disabled={busy} onClick={() => setConfirmReset(true)}>
                 {t("weblogin.reset")}
               </Button>
-              <Button size="sm" tint variant="secondary" icon={<LogOut size={11} />}
+              <Button tint variant="secondary" icon={<LogOut size={13} />}
                       loading={revokeMut.isPending} disabled={busy}
                       onClick={() => revokeMut.mutate()}>
                 {t("weblogin.revoke")}
               </Button>
-              <Button size="sm" tint variant={web.enabled ? "secondary" : "success"}
-                      icon={web.enabled ? <Ban size={11} /> : <Check size={11} />}
+              <Button tint variant={web.enabled ? "secondary" : "success"}
+                      icon={web.enabled ? <Ban size={13} /> : <Check size={13} />}
                       loading={toggleMut.isPending} disabled={busy}
                       onClick={() => toggleMut.mutate()}>
                 {t(web.enabled ? "weblogin.disable" : "weblogin.enable")}
@@ -1712,9 +1807,9 @@ function HoldersCard({ ptype, item, onDone }) {
   });
 
   return (
-    <Card icon={Link2} title={t("profile.holders")}>
+    <Card icon={Send} color={HUE.tg} title={t("profile.holders")} subtitle={t("profile.holdersHint")}>
       {(item.bindings?.length ?? 0) > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {item.bindings.map((b, i) => (
             <HolderChip key={i} b={b}
                         dmTip={t("admin.profiles.dmBlockedTip")}
@@ -1725,11 +1820,8 @@ function HoldersCard({ ptype, item, onDone }) {
           ))}
         </div>
       ) : (
-        <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.profiles.noHolders")}</p>
+        <p className="text-[13px]" style={{ color: "var(--text-3)" }}>{t("admin.profiles.noHolders")}</p>
       )}
-      <p className="mt-3 text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
-        {t("profile.holdersHint")}
-      </p>
 
       <ConfirmDialog
         open={!!confirmUnassign}
@@ -1802,19 +1894,19 @@ function DangerCard({ ptype, item, onDone }) {
   });
 
   const busy = deleteMut.isPending || archiveMut.isPending || loginDeleteMut.isPending;
-  const rowCls = "flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4";
+  const rowCls = "flex flex-col @xl:flex-row @xl:items-center justify-between gap-3 @xl:gap-5";
 
   return (
-    <Card icon={Shield} title={t("profile.dangerZone")}>
+    <Card icon={AlertTriangle} color={HUE.danger} danger title={t("profile.dangerZone")}>
       {/* One row per irreversible action: the consequence on the left, the
           single button that causes it on the right. */}
       {web && (
-        <div className={`${rowCls} pb-3 border-b`} style={{ borderColor: "var(--border)" }}>
-          <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+        <div className={`${rowCls} pb-4 border-b`} style={{ borderColor: "var(--border)" }}>
+          <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
             {t("weblogin.deleteBody")}
           </p>
           <div className="flex-shrink-0">
-            <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
+            <Button tint variant="danger" icon={<Trash2 size={13} />}
                     disabled={busy}
                     onClick={() => { setActionError(""); setConfirm("login"); }}>
               {t("weblogin.delete")}
@@ -1822,25 +1914,25 @@ function DangerCard({ ptype, item, onDone }) {
           </div>
         </div>
       )}
-      <div className={`${rowCls}${web ? " pt-3" : ""}`}>
-        <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+      <div className={`${rowCls}${web ? " pt-4" : ""}`}>
+        <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
           {t(archivable ? "admin.profiles.archiveMsg" : "profile.dangerHint").replace("{name}", tl(item.name) || "")}
         </p>
         <div className="flex-shrink-0">
           {ptype === "supervisor" && item.archived ? (
-            <Button size="sm" tint variant="success" icon={<ArchiveRestore size={11} />}
+            <Button tint variant="success" icon={<ArchiveRestore size={13} />}
                     loading={archiveMut.isPending} disabled={busy && !archiveMut.isPending}
                     onClick={() => archiveMut.mutate(false)}>
               {t("admin.profiles.unarchive")}
             </Button>
           ) : archivable ? (
-            <Button size="sm" tint variant="secondary" icon={<Archive size={11} />}
+            <Button tint variant="secondary" icon={<Archive size={13} />}
                     disabled={busy}
                     onClick={() => { setActionError(""); setConfirm("profile"); }}>
               {t("admin.profiles.archive")}
             </Button>
           ) : (
-            <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
+            <Button tint variant="danger" icon={<Trash2 size={13} />}
                     disabled={busy}
                     onClick={() => { setActionError(""); setConfirm("profile"); }}>
               {t("admin.profiles.delete")}
@@ -1916,23 +2008,6 @@ function bindState(item) {
   return bs.length ? "bound" : "none";
 }
 
-// Is the header's save button still on screen? The page is taller than a phone,
-// so the one button has to follow the operator down to the field they are
-// editing — but only ever ONE of the two is visible at a time.
-// Callback ref, not useRef: the node arrives only after the profile has loaded,
-// and an effect keyed on a ref object would never re-run to observe it.
-function useOnScreen() {
-  const [node, setNode] = useState(null);
-  const [seen, setSeen] = useState(true);
-  useEffect(() => {
-    if (!node || typeof IntersectionObserver === "undefined") return undefined;
-    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { threshold: 0 });
-    io.observe(node);
-    return () => io.disconnect();
-  }, [node]);
-  return [seen, setNode];
-}
-
 function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
   const navigate = useNavigate();
   const { auth } = useAuth();
@@ -1941,7 +2016,6 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
   const qc = useQueryClient();
   const toast = useToast();
   const { bus, dirty, busy } = useSaveHub();
-  const [saveOnScreen, saveRef] = useOnScreen();
   const [pwOpen, setPwOpen] = useState(false);
   const [pwEpoch, setPwEpoch] = useState(0);
 
@@ -2008,14 +2082,7 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
     );
   }
 
-  if (isLoading || (!fromRegister && !me)) {
-    return (
-      <div className="space-y-4">
-        <SkeletonBlock className="h-28 w-full rounded-2xl" />
-        <SkeletonBlock className="h-64 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  if (isLoading || (!fromRegister && !me)) return <ProfileSkeleton />;
 
   if (!item) {
     // A register URL that matches nothing is a dead end; an own view whose
@@ -2029,13 +2096,6 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
     );
   }
 
-  const bs = bindState(item);
-  const bsMap = {
-    bound:   { color: "#22c55e", label: t("admin.profiles.bindBound") },
-    pending: { color: "#eab308", label: t("admin.users.status.pending") },
-    none:    { color: "#94a3b8", label: t("admin.profiles.noHolders") },
-  };
-
   const context = [
     ptype === "leader" && item.supervisor ? tl(item.supervisor) : null,
     shift != null ? `${t("profile.shift")} ${shift}` : null,
@@ -2044,76 +2104,11 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
 
   return (
     <SaveBusCtx.Provider value={bus}>
-    <div className="space-y-4">
-      {back && <div>{back}</div>}
-
-      {/* Identity + photo. The page's single save action sits top-right of this
-          card: the first thing in view, and the only one on the page. */}
-      <ProfileHero
-        name={tl(item.name)}
-        colorKey={item.name}
-        profileKey={item.profile_key}
-        photoVer={item.photo_ver}
-        chips={
-          <>
-            <RoleChip role={ptype} />
-            <StatusTag color={bsMap[bs].color}>{bsMap[bs].label}</StatusTag>
-            {ptype === "supervisor" && item.archived && (
-              <StatusTag color="#94a3b8">{t("admin.profiles.archived")}</StatusTag>
-            )}
-            {ptype === "leader" && item.leader_kind === "acting" && (
-              <StatusTag color="#94a3b8">{t("profile.leaderKind.acting")}</StatusTag>
-            )}
-            {ptype === "supervisor" && item.supervisor_kind === "acting" && (
-              <StatusTag color="#94a3b8">{t("profile.supKind.acting")}</StatusTag>
-            )}
-            {ptype === "supervisor" && item.zagruzka_on === false && (
-              <StatusTag color="#94a3b8">{t("profile.zagruzka.offChip")}</StatusTag>
-            )}
-          </>
-        }
-        context={context}
-        actions={
-          <>
-            <PhotoActions profileKey={item.profile_key} hasPhoto={Boolean(item.photo_ver)}
-                          notify={notify} onDone={onDone} />
-            <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>
-              {t("profile.photoHint")}
-            </p>
-          </>
-        }
-        right={
-          <div ref={saveRef}>
-            <PageSave dirty={dirty} busy={busy} onSave={bus.run} />
-          </div>
-        }
+      <AdminProfileBody
+        ptype={ptype} item={item} data={data} own={own} back={back} context={context}
+        dirty={dirty} busy={busy} onSave={bus.run} notify={notify} onDone={onDone}
+        onChangePassword={() => setPwOpen(true)} pwEpoch={pwEpoch}
       />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <EditCard ptype={ptype} item={item} data={data} notify={notify} onDone={onDone} />
-        <div className="space-y-4">
-          <WebLoginCard item={item} own={own} onChangePassword={() => setPwOpen(true)}
-                        resetSignal={pwEpoch} notify={notify} onDone={onDone} />
-          <HoldersCard ptype={ptype} item={item} onDone={onDone} />
-        </div>
-      </div>
-
-      {/* Every irreversible action for this profile lives in ONE full-width
-          zone at the very end — never beside the daily controls. */}
-      <DangerCard ptype={ptype} item={item} onDone={onDone} />
-
-      {/* Same action, followed down. Appears only while there ARE unsaved
-          changes and the header button has scrolled away, so the page never
-          shows two save buttons at once. */}
-      {(dirty || busy) && !saveOnScreen && (
-        <div className="sticky z-30 flex justify-end savebar-in"
-             style={{ bottom: "var(--tg-safe-bottom, 0px)" }}>
-          <div className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
-               style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <PageSave dirty={dirty} busy={busy} onSave={bus.run} />
-          </div>
-        </div>
-      )}
 
       {/* Managers hold logins too — the self password change works from the
           same page that manages everyone else's. */}
@@ -2126,8 +2121,69 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
       )}
 
       {toast.node}
-    </div>
     </SaveBusCtx.Provider>
+  );
+}
+
+// The resolved profile at manage access. Its own component because the photo
+// hook needs the profile to exist, and hooks cannot follow an early return.
+function AdminProfileBody({
+  ptype, item, data, own, back, context, dirty, busy, onSave, notify, onDone, onChangePassword, pwEpoch,
+}) {
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  const photo = usePhotoActions({
+    profileKey: item.profile_key, hasPhoto: Boolean(item.photo_ver), notify, onDone,
+  });
+
+  return (
+    <div className="space-y-4">
+      {back && <div>{back}</div>}
+
+      <ProfileHero
+        name={tl(item.name)}
+        role={ptype}
+        colorKey={item.name}
+        profileKey={item.profile_key}
+        photoVer={item.photo_ver}
+        avatarBadge={photo.badge}
+        menu={photo.menu}
+        chips={
+          <>
+            <RoleChip role={ptype} />
+            {ptype === "supervisor" && item.archived && (
+              <StatusTag color={GREY}>{t("admin.profiles.archived")}</StatusTag>
+            )}
+            {ptype === "leader" && item.leader_kind === "acting" && (
+              <StatusTag color={GREY}>{t("profile.leaderKind.acting")}</StatusTag>
+            )}
+            {ptype === "supervisor" && item.supervisor_kind === "acting" && (
+              <StatusTag color={GREY}>{t("profile.supKind.acting")}</StatusTag>
+            )}
+            {ptype === "supervisor" && item.zagruzka_on === false && (
+              <StatusTag color={GREY}>{t("profile.zagruzka.offChip")}</StatusTag>
+            )}
+          </>
+        }
+        context={context}
+        facts={<ProfileFacts bind={bindState(item)} holders={item.bindings?.length ?? 0} web={item.web} />}
+      />
+      {photo.node}
+
+      {/* One column, in the order the questions come: who they are, how they
+          get in from a browser, which Telegram accounts are theirs. */}
+      <EditCard ptype={ptype} item={item} data={data} notify={notify} onDone={onDone} />
+      <WebLoginCard item={item} own={own} onChangePassword={onChangePassword}
+                    resetSignal={pwEpoch} notify={notify} onDone={onDone} />
+      <HoldersCard ptype={ptype} item={item} onDone={onDone} />
+
+      {/* Every irreversible action for this profile lives in ONE full-width
+          zone at the very end — never beside the daily controls. */}
+      <DangerCard ptype={ptype} item={item} onDone={onDone} />
+
+      {/* The page's one save action: here only while something is unsaved. */}
+      {(dirty || busy) && <SaveBar busy={busy} onSave={onSave} />}
+    </div>
   );
 }
 
@@ -2147,9 +2203,11 @@ export default function Profile() {
 
   return (
     <Layout title={t("profile.title")}>
-      {/* One centered column. Two half-width cards stretched across a desktop
-          left the page reading as mostly void. */}
-      <div className="mx-auto w-full max-w-4xl">
+      {/* One centered column of full-width cards. It is a CONTAINER: every
+          «two columns from here up» inside asks the column's own width (`@xl:`),
+          never the viewport's — the sidebar takes 256px of a tablet, and a
+          viewport breakpoint would split a 460px column in two. */}
+      <div className="@container mx-auto w-full max-w-4xl">
         {fromRegister
           ? <AdminProfile ptype={ptype} pid={pid} fromRegister />
           : canManage ? <AdminProfile /> : <MyProfile />}

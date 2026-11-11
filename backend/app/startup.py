@@ -3160,8 +3160,6 @@ def migrate_attendance_batches() -> None:
             "ALTER TABLE attendance_batch_cells ADD COLUMN IF NOT EXISTS prev_manager_id INTEGER",
             "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS upload_id INTEGER",
             "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS file_values JSONB",
-            "CREATE INDEX IF NOT EXISTS ix_att_batch_cells_upload ON attendance_batch_cells (upload_id)",
-            "CREATE INDEX IF NOT EXISTS ix_att_batch_rows_upload ON attendance_batch_rows (upload_id)",
         ):
             db.execute(text(stmt))
         db.commit()
@@ -5592,10 +5590,8 @@ def create_action_log() -> None:
             "CREATE INDEX IF NOT EXISTS ix_action_logs_action ON action_logs (action)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_outcome ON action_logs (outcome)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_source ON action_logs (source)",
-            "CREATE INDEX IF NOT EXISTS ix_action_logs_unit ON action_logs (unit_id)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_day ON action_logs (day)",
             "CREATE INDEX IF NOT EXISTS ix_action_logs_target ON action_logs (target_kind, target_id)",
-            "CREATE INDEX IF NOT EXISTS ix_action_logs_tid ON action_logs (actor_telegram_id)",
         ):
             db.execute(text(stmt))
         db.commit()
@@ -8563,6 +8559,42 @@ def patch_task11_description_nov09() -> None:
         db.close()
 
 
+def heal_switched_profile_keys() -> None:
+    """2026-11-10: a role switch kept the profile row but left what it owns BY
+    KEY under the old role ("top-manager:360" while the row became a
+    shift-manager — Adi Ro'ziyev's Verifix photo vanished that way). Each such
+    row moves to the profile's current key, unless that key already holds one.
+    Idempotent: a second run finds nothing. `_rekey_profile` stops new cases."""
+    from app.routers.profiles import _PROFILE_KEY_REFS
+    db = SessionLocal()
+    try:
+        moved = {}
+        for table in _PROFILE_KEY_REFS:
+            try:
+                with db.begin_nested():  # two stale keys of one profile → skip the table, log it
+                    n = db.execute(text(
+                        f"UPDATE {table} x SET profile_key = rp.role || ':' || rp.id "
+                        f"FROM role_profiles rp "
+                        f"WHERE split_part(x.profile_key, ':', 1) <> 'supervisor' "
+                        f"AND split_part(x.profile_key, ':', 2) ~ '^[0-9]+$' "
+                        f"AND rp.id = split_part(x.profile_key, ':', 2)::int "
+                        f"AND rp.role <> split_part(x.profile_key, ':', 1) "
+                        f"AND NOT EXISTS (SELECT 1 FROM {table} y "
+                        f"WHERE y.profile_key = rp.role || ':' || rp.id)")).rowcount
+                if n:
+                    moved[table] = n
+            except Exception as exc:
+                print(f"[startup] profile-key heal: {table} skipped: {exc}")
+        db.commit()
+        if moved:
+            print(f"[startup] profile-key heal moved {moved}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] profile-key heal failed: {exc}")
+    finally:
+        db.close()
+
+
 def _rules_in_shift(shift: int, now) -> bool:
     """Is that shift working RIGHT NOW? Tashkent wall clock, the same hours
     `leader_ai.SHIFT_WINDOW` carries: shift 1 is a daytime range, shift 2
@@ -8660,9 +8692,6 @@ def add_leader_auto_checks() -> None:
             entry_id    INTEGER
         )"""])
     for stmt in (
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_leader ON leader_auto_checks (leader_id)",
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_date ON leader_auto_checks (date)",
-        "CREATE INDEX IF NOT EXISTS ix_ltask_auto_manager ON leader_auto_checks (manager_id)",
         # 2026-09-30: every surface printing an auto task's reason reads its
         # result by ENTRY (`leader_auto.results_for`) — the register included.
         "CREATE INDEX IF NOT EXISTS ix_ltask_auto_entry ON leader_auto_checks (entry_id)",
@@ -10023,3 +10052,73 @@ def seed_hr_contact() -> None:
             log.warning("[startup] bot description not updated — save «HR kontakti» to retry")
     except Exception:
         log.warning("[startup] bot description update failed", exc_info=True)
+
+
+# (the index dropped, the identical index on the same column that stays).
+# Each pair was one column indexed twice: by the model's `index=True`
+# (create_all) and again under a second name — every write paid for both.
+_DUP_INDEXES = (
+    ("ix_att_batch_cells_upload", "ix_attendance_batch_cells_upload_id"),
+    ("ix_att_batch_rows_upload", "ix_attendance_batch_rows_upload_id"),
+    ("ix_action_logs_unit", "ix_action_logs_unit_id"),
+    ("ix_action_logs_tid", "ix_action_logs_actor_telegram_id"),
+    ("ix_ltask_auto_leader", "ix_leader_auto_checks_leader_id"),
+    ("ix_ltask_auto_date", "ix_leader_auto_checks_date"),
+    ("ix_ltask_auto_manager", "ix_leader_auto_checks_manager_id"),
+    ("ix_leader_day_excl_date", "ix_leader_day_exclusions_date"),
+    ("ix_leader_cutoff_from", "ix_leader_cutoffs_from_date"),
+)
+
+
+def drop_duplicate_indexes() -> None:
+    """2026-11-10: drop nine indexes that duplicate another one exactly.
+
+    An index goes only while its twin EXISTS, so a column is never left
+    unindexed. One transaction per index: a busy table (boot_ddl's lock
+    timeout) skips that one until the next boot and the rest still go.
+    """
+    db = SessionLocal()
+    try:
+        for drop, keep in _DUP_INDEXES:
+            try:
+                if db.execute(text("SELECT to_regclass(:k) IS NOT NULL"), {"k": keep}).scalar():
+                    db.execute(text(f"DROP INDEX IF EXISTS {drop}"))
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                db.rollback()
+                print(f"[startup] duplicate index {drop} kept: {exc}")
+    finally:
+        db.close()
+
+
+AUDIT_RELOADS_FLAG = "audit_reloads_cleaned_nov11"
+
+
+def clean_audit_reloads() -> None:
+    """`public.audit` stood three times over on 2026-11-11 — its outside
+    writer had appended the whole history at each of three loads (25,171 rows,
+    8,452 in the newest). Once: keep the newest load, delete the older two
+    (`tech_audit.drop_older_loads`, which deletes nothing if an older row has
+    no identical twin in the newest load — then the flag stays unset and the
+    next start tries again). docs/data-fixes.md. Never raises."""
+    from app.services import tech_audit
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=AUDIT_RELOADS_FLAG).first():
+            return
+        if not tech_audit._probe(db)["present"]:
+            return
+        deleted, missing = tech_audit.drop_older_loads(db)
+        if missing:
+            db.rollback()
+            print(f"[startup] audit reloads NOT cleaned: {missing} older rows are not in the newest load")
+            return
+        db.add(AppSetting(key=AUDIT_RELOADS_FLAG, value=str(deleted)))
+        db.commit()
+        print(f"[startup] audit reloads cleaned: {deleted} rows of older loads deleted")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] audit reloads clean failed: {exc}")
+    finally:
+        db.close()

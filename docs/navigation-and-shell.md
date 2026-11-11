@@ -273,3 +273,36 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   no count. `/admin/users` and `/api/admin/verifix-sync` return whole registers
   — never poll them for a number. A third count is one more key in the
   endpoint and one more line in `BADGES`.
+
+## The profile page is one column (`/profile`, `/profile/:ptype/:pid`, 2026-11-11)
+
+The operator, 2026-11-11: the page «lacks a life» — clean, nothing overlapping
+on any screen, several colours with none of them taking the page over.
+`pages/Profile.jsx`, both views (own and manage):
+
+- **The identity header** (`ProfileHero`): a band in the ROLE's hue with the
+  role's icon faint in it, the photo standing on its edge, the name, the role
+  chip, one context line. The hue is `ROLE_COLORS` in `utils/chartPalette.js`
+  — the Users register's chips read the same map (admins have none there; the
+  header gives them indigo).
+- **Three facts under the name** (`ProfileFacts`) answer «can this person get
+  in»: Telegram linked · the site login · the last sign-in. So the «bound»
+  chip and the cards' «last login» line are gone — said once, at the top. A
+  fact's value WRAPS, never cuts: the login or the date is the whole tile.
+- **The photo's actions sit on the photo**: a camera badge picks a file; once
+  there is a photo, a ⋮ on the band offers replace / delete (`usePhotoActions`
+  — one picker, one confirm dialog). The two buttons and the format hint left
+  the header (the hint is the badge's tooltip; a refused file says why).
+- **One column of full-width cards**, never two side by side — their heights
+  follow their content. A card splits in two INSIDE (`@xl:grid-cols-2`), and
+  that asks the COLUMN's width, not the viewport's: the page column is a
+  `@container`, because the sidebar takes 256px of a tablet and a viewport
+  breakpoint would split a 460px column. A new two-column block on this page
+  uses `@xl:` / `@2xl:`, never `sm:` / `lg:`.
+- **One hue per section**, worn only by its icon chip (`SectionHead`'s `color`):
+  details blue, site login purple, Telegram sky, danger red. Gold stays the
+  action colour.
+- **Save is a bar at the bottom, there only while something is unsaved**
+  (`SaveBar`). The header's always-present disabled button is gone, and with
+  it the «is the header button on screen» observer. Still ONE save for the
+  form and the login rename (`useSaveTarget`).

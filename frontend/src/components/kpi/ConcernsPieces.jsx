@@ -49,9 +49,16 @@ export function StChip({ st, label, hint }) {
 export function ConcernStatus({ T, c, inline = false }) {
   const up = c.st === "uplifted";
   const doneAbove = up && c.status === "done";
+  // Closed after the month it was filed in: counted open for that month.
+  const late = !up && c.status === "done" && c.st !== "done";
   return (
     <>
       <StChip st={c.st} label={T.statuses[c.st] || c.st} hint={up ? T.cUpHint : undefined} />
+      {late && (
+        <span className={`${inline ? "inline-flex" : "flex mt-1"} items-center gap-1 text-[11px]`} style={{ color: "var(--text-3)" }}>
+          <CheckCheck size={12} strokeWidth={2.4} aria-hidden className="flex-shrink-0" />{T.cLateDone}
+        </span>
+      )}
       {doneAbove && (
         <span className={`${inline ? "inline-flex" : "flex mt-1"} items-center gap-1 text-[11px]`} style={{ color: "var(--status-ok)" }}>
           <CheckCheck size={12} strokeWidth={2.4} aria-hidden className="flex-shrink-0" />{T.cUpDone}

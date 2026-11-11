@@ -33,7 +33,8 @@ rating»). So the statuses are read off two columns:
 
 ``BUCKET`` is that rule as SQL and its only spelling: the filter, every
 aggregate, the register and the board read the same expression, so «resolved»
-can never mean two things. Every percentage is done ÷ rated, rated = total −
+can never mean two things. A period that has ENDED reads it through
+``_bucket(end)``: resolved only if closed by the period's last day. Every percentage is done ÷ rated, rated = total −
 uplifted (``_rated``), computed here as the WHOLE percent printed
 (``whole_pct``); «open» is what still waits on the leader (doing + todo). The
 concerns KPI's 1–5 score over that % is `services/leaders_kpi.concerns_score`
@@ -65,7 +66,7 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import (Integer, String, case, cast, column, false, func, null, or_,
+from sqlalchemy import (Date, Integer, String, and_, case, cast, column, false, func, null, or_,
                         select, values)
 from sqlalchemy.orm import Session
 
@@ -120,6 +121,28 @@ BUCKET = case(
     (LeaderConcern.status == "doing", "doing"),
     else_="todo",
 )
+
+
+def _bucket(end: date_cls):
+    """BUCKET as a period ending on `end` counts it: «done» only if the concern
+    was closed BY that day (the operator, 2026-11-11 — a past month's % used to
+    keep rising as late closures came in). Closed later = it was still open at
+    the period's end, read as «doing»; the row's own `status` stays "done", so
+    the register can say so. The day is the server's `done_at` on the plant
+    clock — `completion_date` can be typed — then the typed day, then the
+    filing day for a row with no stamp at all. A period still running is the
+    plain rule."""
+    if end >= _today():
+        return BUCKET
+    closed_on = func.coalesce(
+        cast(func.timezone(PLANT_TZ, LeaderConcern.done_at), Date),
+        LeaderConcern.completion_date, LeaderConcern.entry_date)
+    return case(
+        (_LEVEL != "leader", UPLIFTED),
+        (and_(LeaderConcern.status == "done", closed_on <= end), "done"),
+        (LeaderConcern.status.in_(("done", "doing")), "doing"),
+        else_="todo",
+    )
 # ── who a concern counts for: its cell's owner on the period's last day ──────
 _CELLS_KEY = "worker_concerns.cells"
 _OWNER_KEY = "worker_concerns.owner"
@@ -284,7 +307,7 @@ def _apply_scope_and_filters(
     wanted = [s for s in (UPLIFTED if s == "deferred" else s for s in status)
               if s in STATUSES]
     if status:
-        query = query.filter(BUCKET.in_(wanted) if wanted else false())
+        query = query.filter(_bucket(end).in_(wanted) if wanted else false())
     if date_from:
         query = query.filter(LeaderConcern.entry_date >= date_from)
     if date_to:
@@ -358,7 +381,7 @@ def _agg_cols(db: Session, end: date_cls) -> tuple:
     """The columns one aggregation pass reads — the leader is the cell's OWNER
     on the period's last day (`_owner`); whom it was filed to rides along only
     for the name snapshot of an owner whose profile is gone."""
-    return (LeaderConcern.entry_date, BUCKET, LeaderConcern.worker_name,
+    return (LeaderConcern.entry_date, _bucket(end), LeaderConcern.worker_name,
             LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
             LeaderConcern.cell_code, _owner(db, end), LeaderConcern.leader_profile_id,
             LeaderConcern.leader_name)
@@ -575,7 +598,7 @@ def get_list(
     if open_only:
         query = query.filter(func.coalesce(LeaderConcern.status, "") != "done")
     total = query.count()
-    items = (query.with_entities(LeaderConcern, BUCKET, _owner(db, end))
+    items = (query.with_entities(LeaderConcern, _bucket(end), _owner(db, end))
              .order_by(*(_ORDER.get(sort) or _ORDER["date_desc"]))
              .offset((page - 1) * page_size).limit(page_size).all())
     return {"total": total, "page": page, "page_size": page_size,

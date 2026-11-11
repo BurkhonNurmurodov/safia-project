@@ -77,7 +77,8 @@ from app.services.pp_calc import (compute_dashboard, daily_key, is_local_key, li
                                    sap_counts as pp_sap_counts,
                                    DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN)
 from app.services.cell_lookup import (by_sap, resolve_sap, norm_code, sap_codes_for_leader,
-                                      sap_groups_for_leader, cells_units_for_leader)
+                                      sap_groups_for_leader, cells_units_for_leader,
+                                      unit_cells, leader_cells_on)
 from app.services.latin_code import latin_code
 from app.services.name_map import sheet_alias_map
 from app.xlsx_delivery import deliver_xlsx
@@ -372,6 +373,46 @@ def _leader_group_scope(db: Session, payload: Optional[dict],
     if not pid:
         raise HTTPException(status_code=403, detail="No leader profile resolved for this account")
     return sap_groups_for_leader(db, pid, day, unit=_leader_cut(db, pid, day, mid))
+
+
+def _pick_cells(db: Session, payload: dict, day: Optional[date], mid: int) -> list[dict]:
+    """The cells the page bar's «Yacheyka» pick offers: every cell standing in
+    the unit that day with a SAP code (`cell_lookup.unit_cells` — a cell with
+    none names no work centre, so it has nothing on this page). A LEADER pinned
+    to their own cells is offered those alone — the pick narrows a page, it
+    never widens one."""
+    cells = unit_cells(db, mid, day)
+    if payload.get("role") == "leader" and not page_scope_is_all(db, payload, PAGE):
+        pid = viewer_leader_profile_id(db, payload)
+        own = {c.id for c in leader_cells_on(db, pid, day or cell_archive.today())} if pid else set()
+        cells = [c for c in cells if c["id"] in own]
+    return cells
+
+
+def _cell_pick(db: Session, payload: dict, day: Optional[date], mid: int,
+               cell_ids, offered: Optional[list[dict]] = None) -> Optional[tuple[set[str], set]]:
+    """The «Yacheyka» pick (2026-11-10) as the scope a leader's page is read
+    by: (work-centre codes, {(code, group|None)}) of the picked cells, handed
+    to `_build_dashboard` as `wc_scope` / `group_scope`. So a picked cell's
+    page is exactly its leader's page: the engine runs over the cell's work
+    centres and the output loses the other groups' lines, every figure kept
+    stays the brigadir's.
+
+    `None` = no pick. A picked id that is not one of `_pick_cells` that day (a
+    pick carried over from another unit or day, or another leader's cell) is
+    dropped, and a pick left with nothing is no pick — the whole page, never an
+    empty one. `offered` = `_pick_cells` already read by the caller."""
+    # A handler called directly (the tests) hands over its unresolved Query default.
+    ids = {int(i) for i in cell_ids if i} if isinstance(cell_ids, (list, tuple, set)) else set()
+    if not ids:
+        return None
+    if offered is None:
+        offered = _pick_cells(db, payload, day, mid)
+    cells = [c for c in offered if c["id"] in ids]
+    if not cells:
+        return None
+    return ({norm_code(c["sap_code"]) for c in cells},
+            {(norm_code(c["sap_code"]), c.get("wc_group") or None) for c in cells})
 
 
 def _group_or_400(value) -> Optional[str]:
@@ -1146,13 +1187,29 @@ def staffing_proof(
 def get_dashboard(
     date: Optional[str] = Query(None),
     manager_id: Optional[int] = Query(None),
+    cell: list[int] = Query(default=[]),
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
     # The day first: a leader's unit and cells are the ones of THAT day.
     day = _parse_date(date)
     mid = _resolve_manager_id(payload, manager_id, db, day)
-    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day, mid), payload)
+    # The page bar's «Yacheyka» pick (`cell` = cells.id) reads the unit the way
+    # that cell's leader reads it (`_cell_pick`); no pick, the caller's own
+    # scope — the whole unit, or a leader's cells.
+    offered = _pick_cells(db, payload, day, mid)
+    pick = _cell_pick(db, payload, day, mid, cell, offered)
+    if pick is not None:
+        dash = _build_dashboard(db, mid, day, pick[0], payload, group_scope=pick[1])
+        dash["scope"]["kind"] = "pick"
+    else:
+        dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day, mid), payload)
+    # What the pick offers — computed whether or not one is in force, so the
+    # list never shrinks to the cell already picked.
+    dash["unit_cells"] = [
+        {"id": c["id"], "code": c["verifix_code"], "sap": c["sap_code"],
+         "group": c.get("wc_group"), "leader": c.get("leader")}
+        for c in offered]
     # A leader whose cells stand in two or more units that day (one cell moved
     # to another brigadir and took its positions, one stayed): the units the
     # page's switch offers. `manager_id` above is the one being read.
@@ -1188,6 +1245,8 @@ class PositionsExportBody(BaseModel):
     # PPProduct ids in the EXACT on-screen order (post search/team-filter/sort)
     # at the moment the button was pressed. Empty → full default SAP order.
     order: list[int] = []
+    # The page bar's «Yacheyka» pick (cells.id); empty = the caller's own scope.
+    cell: list[int] = []
     # Kept for wire compatibility (a tab from before 4.339 sends the visible keys
     # alone, and gets the form with no inserted columns).
     columns: list[str] = []
@@ -1251,9 +1310,14 @@ def export_positions(
     lang = body.lang
     day = _parse_date(body.date)
     mid = _resolve_manager_id(payload, body.manager_id, db, day)
-    # A leader exports exactly what their page shows — their own cells.
-    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day, mid),
-                            group_scope=_leader_group_scope(db, payload, day, mid))
+    # A leader exports exactly what their page shows — their own cells — and so
+    # does a page narrowed by its «Yacheyka» pick: that cell's leader's file.
+    pick = _cell_pick(db, payload, day, mid, body.cell)
+    if pick is not None:
+        dash = _build_dashboard(db, mid, day, pick[0], group_scope=pick[1])
+    else:
+        dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload, day, mid),
+                                group_scope=_leader_group_scope(db, payload, day, mid))
     rows = dash["rows"]
     if body.order:
         by_id = {r.get("id"): r for r in rows}
@@ -2294,6 +2358,7 @@ class StaffingBody(BaseModel):
 def save_staffing(
     body: StaffingBody,
     manager_id: Optional[int] = Query(None),
+    cell: list[int] = Query(default=[]),
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
@@ -2341,6 +2406,15 @@ def save_staffing(
     mid = _resolve_manager_id(payload, manager_id, db, day)
     scope = _leader_wc_scope(db, payload, day, mid)
     gscope = _leader_group_scope(db, payload, day, mid) if scope is not None else None
+    # A page narrowed by its «Yacheyka» pick was SHOWN that cell's groups only,
+    # so «a group pin the body does not list is deleted» and the echoed Σ are
+    # judged against those — exactly a leader's rule — or an admin saving one
+    # cell's people would wipe the sibling letter's number. Groups only: the
+    # efficiency and the PPDaySetting block stay governed by `scope`, so a
+    # brigadir or an admin keeps the unit's pin they always owned.
+    pick = _cell_pick(db, payload, day, mid, cell)
+    if pick is not None:
+        gscope = pick[1]
     # (work centre, group, row) in body order; a blank work centre is skipped,
     # as it always was.
     parsed: list[tuple[str, Optional[str], StaffingRow]] = []

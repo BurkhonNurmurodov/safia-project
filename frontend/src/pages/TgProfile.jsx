@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Copy, Gift, Loader2, Pause, Play, SearchX, Shield, Star } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Copy, Gift, Loader2, Pause, Play, SearchX, Shield, Star } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import Lightbox from "../components/ui/Lightbox";
@@ -370,6 +370,14 @@ export default function TgProfile() {
   return (
     <Layout title={T.title} subtitle={name}>
       <div className="mx-auto w-full max-w-2xl space-y-4 pb-6">
+        {/* Back to wherever it was opened from; a tab opened straight on this
+            URL (the bot's «Profilni ko'rish» button) has no page behind it. */}
+        <button
+          onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/panel/users", { replace: true }))}
+          className="flex items-center gap-2 text-[var(--text-2)] hover:text-[var(--text-1)] text-sm transition-colors min-h-[38px]"
+        >
+          <ArrowLeft size={16} /> {t("profile.back")}
+        </button>
         {isLoading || !data ? (
           <>
             <SkeletonBlock className="h-[260px] w-full rounded-3xl" />

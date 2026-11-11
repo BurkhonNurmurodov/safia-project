@@ -136,6 +136,7 @@ try:
         move_sanjarbek_checklist_shift,
         land_waiting_leader_links,
         patch_task11_description_nov09,
+        heal_switched_profile_keys,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -159,6 +160,7 @@ try:
         reorder_positions_plan_before_fact,
         latin_twin_codes,
         seed_snabjenets_english_label,
+        drop_duplicate_indexes,
         fix_orazov_schedule_2026_09_01,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
@@ -246,6 +248,9 @@ try:
     # Job seekers' HR contact starts as @safiahrrecruiting when none is saved.
     from app.startup import seed_hr_contact
     seed_hr_contact()
+    # public.audit's older full-copy loads go, once (docs/data-fixes.md).
+    from app.startup import clean_audit_reloads
+    clean_audit_reloads()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
     add_attendance_upload_source()
@@ -307,6 +312,7 @@ try:
     reorder_positions_plan_before_fact()
     latin_twin_codes()
     seed_snabjenets_english_label()
+    drop_duplicate_indexes()
     fix_orazov_schedule_2026_09_01()
     add_concern_profile_columns()
     add_concern_done_at()
@@ -642,6 +648,7 @@ try:
     land_waiting_leader_links()
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     patch_task11_description_nov09()
+    heal_switched_profile_keys()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

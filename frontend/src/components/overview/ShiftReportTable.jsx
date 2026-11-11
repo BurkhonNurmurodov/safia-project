@@ -418,8 +418,14 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const loadTitle = (c) => (isNum(c?.plan_min) && c.people
     ? hm(c.plan_min / c.people) : undefined);
   // Plan fulfilment's twin: the actual minutes per person, the day before.
-  const complTitle = (c) => (isNum(c?.actual_min) && c.people
-    ? hm(c.actual_min / c.people) : undefined);
+  // Plan fulfilment: when the people ACTUALLY started and finished the day
+  // before (Verifix) and the hours they worked — never the plan minutes ÷ heads.
+  const complTitle = (c) => {
+    const k = c?.clock;
+    if (!k) return undefined;
+    const line = fill(t("overview.sr.clock"), { a: k.start, b: k.end });
+    return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
+  };
 
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;

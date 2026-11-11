@@ -33,7 +33,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import LeaderConcern, Manager
+from app.models import Attendance, LeaderConcern, Manager
 from app.permissions import require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
@@ -305,6 +305,30 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
         log.exception("shift-report: the Davomat column could not be read")
         att = {}
 
+    # ── the day before's actual clock, Verifix's own times as the close stored
+    # them. A failure costs the clock line of the tooltip, never the board.
+    clocks: dict = {}
+    try:
+        with db.begin_nested():
+            ydays = {days[s][1] for s in order}
+            rows = (db.query(Attendance.manager_id, Attendance.date,
+                             Attendance.clock_in_out, Attendance.hours_worked)
+                    .filter(Attendance.manager_id.in_(unit_ids),
+                            Attendance.date.in_(ydays),
+                            Attendance.is_supervisor.is_(False))
+                    .all())
+            by: dict = {}
+            for mid, d, raw, h in rows:
+                by.setdefault((mid, d), []).append((raw, h))
+            for m in units:
+                for s in order:
+                    if m in groups[s]:
+                        clocks[m.id] = shift_report.fold_clock(
+                            by.get((m.id, days[s][1]), ()), s)
+    except Exception:  # noqa: BLE001
+        log.exception("shift-report: the actual clock could not be read")
+        clocks = {}
+
     for s in order:
         today, yesterday = days[s]
         out["shifts"].append({
@@ -315,7 +339,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                 shift_report.row(
                     m,
                     shift_report.load_cell(totals(m.id, today)),
-                    shift_report.compl_cell(totals(m.id, yesterday)),
+                    shift_report.compl_cell(totals(m.id, yesterday), clocks.get(m.id)),
                     shift_report.quality_cell(quality.get(m.id)),
                     concerns.get(m.id, 0),
                     shift_report.att_cell(att.get(m.id),

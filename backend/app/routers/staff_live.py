@@ -215,7 +215,8 @@ def _notify(db: Session, nkey: str, params: dict, *, units: tuple = (), admins: 
             admin_keys = {identity.profile_key("admin", a.profile_id)
                           for a in db.query(Admin).all() if a.profile_id}
             keys |= admin_keys
-        for u in units:
+        # Only notices that wait on them (`shift_scope.sm_told`, 2026-11-11).
+        for u in (units if shift_scope.sm_told(nkey, params) else ()):
             keys |= {identity.profile_key("shift-manager", rid)
                      for rid in shift_scope.role_ids_for_unit(db, u)}
         keys |= {identity.profile_key("supervisor", s) for s in supervisors if s}
