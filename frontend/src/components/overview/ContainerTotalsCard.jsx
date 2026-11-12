@@ -77,6 +77,10 @@ export default function ContainerTotalsCard({ day, params, enabled = true }) {
 // hours readable at a glance). On today's page the CURRENT hour is outlined,
 // the NEXT one gold with «tayyorlang» in its head, hours over dimmed, and the
 // table scrolls itself to them; the clock is re-read every minute.
+const toMin = (hhmm) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm ?? ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
 const heat = (n, max) => (n > 0 && max > 0 ? `rgba(200,151,63,${(0.06 + 0.34 * (n / max)).toFixed(3)})` : "transparent");
 
 function HourlyTable({ day, params, enabled, t }) {
@@ -134,10 +138,45 @@ function HourlyTable({ day, params, enabled, t }) {
   if (!hours.length || !keys.length) {
     return <>{head}<div className="text-[12px]" style={{ color: "var(--text-3)" }}>{t("production.hourly.none")}</div></>;
   }
-  const lo = hours[0].h, hi = hours[hours.length - 1].h;
+  // ONE production day (the operator): from shift 1's start to the same clock
+  // next morning — or, with a shift picked on the page, that shift alone —
+  // split at the shift change by a line. Hours a team works outside it (a plan
+  // that overruns, a cell starting early) fold into «Oldin» / «Keyin».
+  const shifts = (data.shifts ?? []).map((x) => {
+    const st = toMin(x.start);
+    let en = toMin(x.end);
+    if (st != null && en != null && en <= st) en += DAY;
+    return { n: x.shift, st, en };
+  }).filter((x) => x.st != null && x.en != null);
+  const pick = shifts.find((x) => x.n === Number(params?.shift));
+  const s1 = shifts.find((x) => x.n === 1);
+  const wStart = pick ? pick.st : (s1 ? s1.st : 8 * 60);
+  const wEnd = pick ? pick.en : wStart + DAY;
+  const lo = Math.floor(wStart / 60), hi = Math.ceil(wEnd / 60) - 1;
   const byH = Object.fromEntries(hours.map((x) => [x.h, x.counts || {}]));
   const cols = [];
   for (let h = lo; h <= hi; h++) cols.push(h);
+  const outside = (cmp) => {
+    const o = {};
+    for (const x of hours) if (cmp(x.h)) for (const [k, n] of Object.entries(x.counts || {})) o[k] = (o[k] ?? 0) + n;
+    return o;
+  };
+  const before = outside((h) => h < lo), after = outside((h) => h > hi);
+  const hasBefore = keys.some((k) => before[k]), hasAfter = keys.some((k) => after[k]);
+  // Which shift an hour belongs to (by its start), and where the line goes.
+  const shiftOf = (h) => {
+    const m = h * 60;
+    const x = shifts.find((sh) => [m, m + DAY, m - DAY].some((v) => v >= sh.st && v < sh.en));
+    return x ? x.n : null;
+  };
+  const isBoundary = (h) => h > lo && shiftOf(h) !== shiftOf(h - 1);
+  const divL = (h) => (isBoundary(h) ? { borderLeft: "2px solid var(--text-3)" } : {});
+  const groups = [];
+  for (const h of cols) {
+    const n = shiftOf(h);
+    const g = groups[groups.length - 1];
+    if (g && g.n === n) g.span += 1; else groups.push({ n, span: 1, h });
+  }
   const hasUntimed = keys.some((k) => untimed[k]);
   const val = (k, h) => byH[h]?.[k] ?? 0;
   const sumH = (h) => keys.reduce((s, k) => s + val(k, h), 0);
@@ -152,7 +191,7 @@ function HourlyTable({ day, params, enabled, t }) {
   const lastKey = "__sum";
   const cell = (k, h, n, max, bold) => (
     <td key={h} className="px-2 py-2 text-center"
-      style={{ ...cellBorder, ...ring(h, false, k === lastKey),
+      style={{ ...cellBorder, ...divL(h), ...ring(h, false, k === lastKey),
         background: heat(n, max),
         opacity: past(h) ? 0.55 : 1,
         color: n ? "var(--text-1)" : "var(--text-4)",
@@ -166,14 +205,35 @@ function HourlyTable({ day, params, enabled, t }) {
       <div ref={scrollRef} className="overflow-x-auto rounded-xl" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
         <table className="text-xs tabular-nums border-collapse w-full">
           <thead>
+            {groups.some((g) => g.n != null) && (
+              <tr>
+                <th className="sticky left-0 z-[2]" style={{ background: "var(--bg-inner)" }} />
+                {hasBefore && <th />}
+                {groups.map((g) => (
+                  <th key={g.h} colSpan={g.span}
+                    className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-left whitespace-nowrap"
+                    style={{ color: "var(--text-2)", ...divL(g.h) }}>
+                    {g.n != null ? t("production.contTotals.shiftN").replace("{n}", String(g.n)) : ""}
+                  </th>
+                ))}
+                {hasAfter && <th />}
+                {hasUntimed && <th />}
+                <th />
+              </tr>
+            )}
             <tr>
               <th ref={firstRef} className="sticky left-0 z-[2] text-left font-medium px-3 py-2 whitespace-nowrap"
                 style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>{t("production.hourly.container")}</th>
+              {hasBefore && (
+                <th className="px-2 py-2 font-medium text-center whitespace-nowrap align-bottom"
+                  title={t("production.contTotals.beforeHint")}
+                  style={{ borderLeft: "1px solid var(--border)", color: "var(--text-3)" }}>{t("production.contTotals.before")}</th>
+              )}
               {cols.map((h) => (
                 <th key={h} ref={h === nowHour || (nowHour != null && nowHour < lo && h === lo) ? nowRef : undefined}
                   className="px-2 py-1.5 font-medium text-center whitespace-nowrap align-bottom"
                   title={h === prepHour ? t("production.hourly.prepHint") : h === nowHour ? t("production.contTotals.nowHint") : undefined}
-                  style={{ borderLeft: "1px solid var(--border)", ...ring(h, true, false),
+                  style={{ borderLeft: "1px solid var(--border)", ...divL(h), ...ring(h, true, false),
                     background: h === prepHour ? "var(--brand)" : "transparent",
                     color: h === prepHour ? "var(--on-brand)" : h === nowHour ? "var(--brand-text)" : past(h) ? "var(--text-4)" : "var(--text-2)",
                     fontWeight: h === prepHour || h === nowHour ? 700 : 500 }}>
@@ -182,6 +242,11 @@ function HourlyTable({ day, params, enabled, t }) {
                   {hourLabel(h)}–{hourLabel(h + 1)}
                 </th>
               ))}
+              {hasAfter && (
+                <th className="px-2 py-2 font-medium text-center whitespace-nowrap align-bottom"
+                  title={t("production.contTotals.afterHint")}
+                  style={{ borderLeft: "2px solid var(--text-3)", color: "#ef4444" }}>{t("production.contTotals.after")}</th>
+              )}
               {hasUntimed && (
                 <th className="px-2 py-2 font-medium text-center whitespace-nowrap align-bottom" title={t("production.hourly.untimedHint")}
                   style={{ borderLeft: "1px solid var(--border)", color: "#eab308" }}>{t("production.hourly.untimed")}</th>
@@ -192,7 +257,8 @@ function HourlyTable({ day, params, enabled, t }) {
           </thead>
           <tbody>
             {keys.map((k) => {
-              const total = cols.reduce((s, h) => s + val(k, h), 0) + (untimed[k] ?? 0);
+              const total = cols.reduce((s, h) => s + val(k, h), 0) + (untimed[k] ?? 0)
+                + (before[k] ?? 0) + (after[k] ?? 0);
               return (
                 <tr key={k}>
                   <td className="sticky left-0 z-[1] px-3 py-2 whitespace-nowrap max-w-[200px] truncate"
@@ -200,7 +266,17 @@ function HourlyTable({ day, params, enabled, t }) {
                     style={{ background: "var(--bg-inner)", color: "var(--text-1)", borderTop: "1px solid var(--border)" }}>
                     {t(`production.cont.${k}`)}
                   </td>
+                  {hasBefore && (
+                    <td className="px-2 py-2 text-center" style={{ ...cellBorder, color: before[k] ? "var(--text-2)" : "var(--text-4)" }}>
+                      {before[k] ? fmt(before[k]) : "·"}
+                    </td>
+                  )}
                   {cols.map((h) => cell(k, h, val(k, h), rowMax[k], false))}
+                  {hasAfter && (
+                    <td className="px-2 py-2 text-center" style={{ ...cellBorder, borderLeft: "2px solid var(--text-3)", color: after[k] ? "#ef4444" : "var(--text-4)" }}>
+                      {after[k] ? fmt(after[k]) : "·"}
+                    </td>
+                  )}
                   {hasUntimed && (
                     <td className="px-2 py-2 text-center"
                       style={{ ...cellBorder, color: untimed[k] ? "#eab308" : "var(--text-4)" }}>
@@ -217,17 +293,29 @@ function HourlyTable({ day, params, enabled, t }) {
                 style={{ background: "var(--bg-card)", color: "var(--text-1)", borderTop: "2px solid var(--border)" }}>
                 {t("production.contTotals.sumRow")}
               </td>
+              {hasBefore && (
+                <td className="px-2 py-2 text-center font-bold"
+                  style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", color: "var(--text-2)" }}>
+                  {fmt(keys.reduce((s, k) => s + (before[k] ?? 0), 0))}
+                </td>
+              )}
               {cols.map((h) => {
                 const n = sumH(h);
                 return (
                   <td key={h} className="px-2 py-2 text-center"
-                    style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", ...ring(h, false, true),
+                    style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", ...divL(h), ...ring(h, false, true),
                       background: heat(n, sumMax), opacity: past(h) ? 0.55 : 1,
                       color: n ? "var(--text-1)" : "var(--text-4)", fontWeight: 700 }}>
                     {n ? fmt(n) : "·"}
                   </td>
                 );
               })}
+              {hasAfter && (
+                <td className="px-2 py-2 text-center font-bold"
+                  style={{ borderTop: "2px solid var(--border)", borderLeft: "2px solid var(--text-3)", color: "#ef4444" }}>
+                  {fmt(keys.reduce((s, k) => s + (after[k] ?? 0), 0))}
+                </td>
+              )}
               {hasUntimed && (
                 <td className="px-2 py-2 text-center font-bold"
                   style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", color: "#eab308" }}>
@@ -236,7 +324,8 @@ function HourlyTable({ day, params, enabled, t }) {
               )}
               <td className="px-3 py-2 text-right font-bold"
                 style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", color: "var(--text-1)" }}>
-                {fmt(keys.reduce((s, k) => s + cols.reduce((a, h) => a + val(k, h), 0) + (untimed[k] ?? 0), 0))}
+                {fmt(keys.reduce((s, k) => s + cols.reduce((a, h) => a + val(k, h), 0) + (untimed[k] ?? 0)
+                  + (before[k] ?? 0) + (after[k] ?? 0), 0))}
               </td>
             </tr>
           </tbody>

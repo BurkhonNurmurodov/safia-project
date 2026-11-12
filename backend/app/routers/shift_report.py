@@ -497,7 +497,12 @@ def get_containers_hourly(
         raise HTTPException(status_code=403, detail="admins and shift managers only")
     from app.services import hourly_containers
     keys = hourly_containers.KEYS
-    empty = {"day": day.isoformat(), "hours": [], "untimed": {}, "keys": keys, "units": 0}
+    # The two shifts' clocks (the platform defaults, `cell_hours`), so the
+    # table can show ONE production day split at the shift change.
+    shifts = [{"shift": n, "start": a, "end": b}
+              for n, (a, b) in sorted(cell_hours.defaults(db).items())]
+    empty = {"day": day.isoformat(), "hours": [], "untimed": {}, "keys": keys, "units": 0,
+             "shifts": shifts}
     ids, _note = _scope(db, payload, factory, manager_id)
     if empty_scope(ids):
         return empty
@@ -532,6 +537,7 @@ def get_containers_hourly(
         for k, n in u_map.items():
             untimed[k] = untimed.get(k, 0) + n
     out = {"day": day.isoformat(), "keys": keys, "units": units, "untimed": untimed,
+           "shifts": shifts,
            "hours": [{"h": h, "counts": hours[h]} for h in sorted(hours)]}
     _cache_put(key, started, out)
     return out

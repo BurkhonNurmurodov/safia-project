@@ -686,6 +686,14 @@ above, hours already over dimmed, the clock re-read every minute.
   («tayyorlang»), past hours fade, and the table scrolls itself so the current
   hour sits just right of the sticky first column. Another day says «Bugungi
   kun emas — joriy soat belgilanmaydi» instead of the prepare line.
+- **ONE production day, split by shift** (the operator, same day): the hour
+  columns run from shift 1's start to the same clock next morning (the two
+  shift defaults, `cell_hours.defaults`, served as `shifts` on the answer) —
+  or, with a shift picked on the page, that shift's window alone. A header row
+  names «1-smena» / «2-smena» over their hours and a thick line divides them.
+  Hours a team works outside the window fold into «Oldin» (an early cell) and
+  a red «Keyin» (a plan that overruns), so every row's «Jami» still holds all
+  of it.
 - **Admins and shift managers only** — `HOURLY_ROLES` in the card AND in
   `routers/shift_report.py`; the endpoint answers anyone else 403.
 - **Follows the page's filters** (plant, shift, units) exactly as `/containers`
