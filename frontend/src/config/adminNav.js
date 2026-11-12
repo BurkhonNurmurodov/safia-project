@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
+  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -100,6 +100,10 @@ export const ADMIN_NAV = [
   // each form returns. No capKey: this login reads every employee's
   // attendance, so it is admin-only and never grantable.
   { id: "verifix",      group: "tools",  Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifix" },
+  // The Tasker («Задачник (фабрика)») API: a sealed integration token and a
+  // connection test (docs/tasker.md). No capKey — the token reads every
+  // factory department's inspections, so admin-only like Verifix.
+  { id: "tasker",       group: "tools",  Icon: ScanSearch,     labelKey: "admin.tabTasker",       descKey: "admin.desc.tasker" },
   // «Verifix sinxron» — cells, leaders and brigadirs FOLLOW Verifix through a
   // stored Verifix id (docs/plan-verifix-live-sync.md): the sync's mode and
   // caps, the queue of what it will not write by itself, the hand ties and the

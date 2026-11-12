@@ -29,6 +29,7 @@ export const ADMIN_PAGES = {
   docaudit:      lazyWithReload(() => import("./DocAudit")),
   verifix:       lazyWithReload(() => import("./VerifixSettings")),
   verifixsync:   lazyWithReload(() => import("./VerifixSync")),
+  tasker:        lazyWithReload(() => import("./TaskerSettings")),
   aikeys:        lazyWithReload(() => import("./AiKeys")),
   trello:        lazyWithReload(() => import("./TrelloSettings")),
   ovens:         lazyWithReload(() => import("./OvensSettings")),
