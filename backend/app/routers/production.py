@@ -845,6 +845,12 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         for g in wc.get("groups") or []:
             g["cell"] = resolve_sap(sap_tbl, wc.get("work_center"), manager_id, g["group"])
 
+    # The working clock each team starts from, for the «Konteynerlar · soatlik»
+    # timeline (2026-11-12, CLAUDE.md «Hourly containers»): a cell's own
+    # shift_start/shift_end, else its unit's shift default (`cell_hours`). Display
+    # only — no figure, KPI or загрузка reads these clocks.
+    _attach_team_clocks(db, mgr, result)
+
     # The day's lock rides on every dashboard, so the page can state it once at
     # the top instead of leaving the reader to notice that saving stopped
     # working. Same shape and same source as /idle-cell's banner — one ladder
@@ -914,6 +920,33 @@ def _leader_cell_notes(db: Session, payload: Optional[dict]) -> dict:
                        "at": at.astimezone(LINK_TZ).strftime("%H:%M")}
                       for code, eff, at in rows]
     return out
+
+
+def _attach_team_clocks(db: Session, mgr, result: dict) -> None:
+    """Put `shift_hours` ({start, end, src}) on every resolved team cell and the
+    unit's own default on `constants.shift_hours`. Read by the hourly containers
+    timeline only (`HourlyContainers.jsx`)."""
+    from app.services import cell_hours
+    defs = cell_hours.defaults(db)
+    shift = getattr(mgr, "shift", None) if mgr else None
+    a, b, src = cell_hours.resolve(None, None, shift, defs)
+    result.setdefault("constants", {})["shift_hours"] = (
+        {"start": a, "end": b, "src": src} if a else None)
+    cells = []
+    for wc in result.get("work_centers") or []:
+        cells.append(wc.get("cell"))
+        cells.extend(g.get("cell") for g in wc.get("groups") or [])
+    ids = {c["id"] for c in cells if isinstance(c, dict) and c.get("id")}
+    if not ids:
+        return
+    clocks = {cid: (s, e) for cid, s, e in db.query(
+        Cell.id, Cell.shift_start, Cell.shift_end).filter(Cell.id.in_(ids)).all()}
+    for c in cells:
+        if not isinstance(c, dict) or c.get("id") not in clocks:
+            continue
+        s, e = clocks[c["id"]]
+        a, b, src = cell_hours.resolve(s, e, shift, defs)
+        c["shift_hours"] = {"start": a, "end": b, "src": src} if a else None
 
 
 def _verifix_staffing(db: Session, manager_id: int, day: date,

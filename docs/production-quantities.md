@@ -624,6 +624,45 @@ last columns, after «Pareto» (the operator's call, same day), and
   The «Excel» button inserts the eight as values (capacities green, as typed
   inputs).
 
+### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
+
+The operator: «we want to see the containers every hour — for using from 9–10
+we have to see the result at 8», per TEAM. A third view on the «Jamoalar»
+card (`production_teams_view` = `hourly`), `components/production/HourlyContainers.jsx`.
+**It shows ONE hour, never the day** (the operator, same day, after a first cut
+drew a whole-shift matrix per team: «I don't need all day or one shift, just
+show hourly and one hour before»): by default the NEXT clock hour — at 08:xx the
+09–10 hour, headed «08:00 da tayyorlang — 09:00–10:00 uchun kerak» — laid out
+like the «Konteynerlar» view (one card per container, the teams needing it in
+that hour, «Jami» in the head). A `SegmentedToggle` of the hours that need any
+container steps to another one; the page re-reads the clock every minute, so
+it moves on by itself at the top of the hour.
+
+- **The timeline is DERIVED from what the page already has, nothing typed**:
+  a team makes its positions ONE AFTER ANOTHER in the table's order (`seq`, «№»)
+  from its shift start. A line takes `total_labor ÷ N ÷ (productive_min ÷
+  shift_min)` clock minutes — the team's N people at the unit's productive pace
+  (the 85% the загрузка file uses; a pinned efficiency moves it with the page).
+  Its containers are needed AS it is made: an hour gets the share of the line
+  made inside it.
+- **The hours add up to the daily count exactly**: an hour's count is
+  `ROUNDUP(made by the hour's end ÷ cap) − ROUNDUP(made by its start ÷ cap)`,
+  so Σ hours = `containerCount` for that line, never one more per hour.
+- **The clock**: a team's cell `shift_start`/`shift_end` (`cells-and-org.md`
+  «Cell shift times»), else its unit's shift default — served as
+  `cell.shift_hours` on every team cell and `constants.shift_hours` for the unit
+  (`_attach_team_clocks` in `routers/production.py`). Neither → 08:00. The
+  view is the first reader of those clocks; it is DISPLAY ONLY —
+  no figure, KPI or загрузка moves with it, which is what that register's
+  «ask before making these hours move a number» guards.
+- «Now» is today's page, or yesterday's while a night shift runs past
+  midnight; any other date opens on its first hour. A plan that does not fit
+  the shift keeps going past its end, so those hours are still offered.
+- Lines with no Трудоемкость, or a team with no people, have no hour and are
+  left out of this view (they still count on «Konteynerlar»).
+- Not built (ask first): a typed start hour per line, a Telegram message per
+  hour, a lead time other than one hour.
+
 ### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19 — REMOVED from the table 2026-10-30)
 
 The column is gone from «Pozitsiyalar»; the stored values, the column and the
@@ -883,3 +922,16 @@ alone, and a leader gets it only when they run two or more cells.
   empties when the pick changes.
 - The raw «Фаза» / «Заголовок» tabs ignore it, as they ignore the brigadir
   pick: they are a view of the file.
+
+## «№» restarts at 1 inside each Команда (2026-11-12)
+
+The operator: «by choosing a team it should start from 1 for everyone for
+every team». The «Pozitsiyalar» table's «№» is the line's catalog number
+(`pp_calc` `seq`) — until now it stayed so under a Команда filter, which left
+a filtered table reading 4, 9, 17…. **With a Команда filter on, «№» is the
+line's place among its OWN Команда's lines in catalog order** (`teamSeq` in
+`Production.jsx`): every team reads 1…n, and with two teams picked each
+starts at 1. Like the catalog number it belongs to the line, not to the
+screen — a search or a sort never renumbers it, and sorting on «№» still
+gives catalog order. No filter → the catalog number, as before. The ABC
+Excel has no «№» column (Excel's own row numbers), so the file is unchanged.

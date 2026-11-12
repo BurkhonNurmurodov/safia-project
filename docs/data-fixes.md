@@ -248,6 +248,52 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
 
+## A unit that changed brigadir keeps its sheet history (`SHEET_NAME_ERAS`, 2026-11-12)
+
+The operator (2026-11-12), on the /zagruzka «Full calculation» table for
+26–31 Aug: the units whose brigadir changed lost their history, «coz they
+don't download for the unit, they download for the supervisor». The sheet
+tables (`production_data`, `headcount_data`, `downtime_data`,
+`leader_checklists`) store the PERSON's spelling, and every reader resolves it
+to the unit that carries that name TODAY. After the 24 Oct change
+(«Four units change brigadir» above) «Рахимова Камола» resolved to unit 9 and
+«Сувонов Элшод» to unit 5, so unit 9 showed Kamola's unit-10 days (Munira's
+were overwritten) and unit 5 Suvonov's unit-6 days, while units 6 and 10 read
+empty. That broke ruling 2 (past scores follow the unit).
+
+- `name_map.SHEET_NAME_ERAS` — (the sheet's EXACT spelling, the new
+  brigadir's first day, unit id): a row under that spelling dated before the
+  day is that unit's. The four Oct 24 units are in it.
+- `name_map.rekey_sheet_eras` re-files such rows under the unit's name as it
+  is NOW. The three wipe-and-reload syncs (source, shift report, leaders) run
+  it before they commit, and `startup.rekey_sheet_eras_boot` (`later`, both
+  entrypoints, permanent, idempotent) runs it on every boot. Readers are
+  unchanged.
+- **A future brigadir change that hands a person's name to another unit adds
+  its rows to `SHEET_NAME_ERAS`**; the next deploy re-files what is stored.
+- Exact spellings, never the folded name: a re-filed row carries a unit's
+  Latin name, which folds to the same skeleton as the Cyrillic spelling
+  («Raximova Kamola» / «Рахимова Камола»), and a folded match would move
+  Munira's re-filed rows on to unit 10 on the next pass.
+- **The Quality register too** (the operator, the same day: «apply the same
+  date rule to quality and concerns»). A record goes to its cell's unit on its
+  date first, which already followed the unit; only the «Отв. бригадир»
+  fallback matched by name. `name_map.era_unit(name, day)` matches the
+  register's passport form against the same `SHEET_NAME_ERAS` persons (an exact
+  folded name wins; on a tie the plain name beats one with a unit tag, so
+  «SUVONOV ELSHOD VALIJON O'G'LI» is unit 6, not the OF unit) and
+  `quality_attribution.Resolver` uses it before today's match. This narrows
+  ruling 6 to records from 24 Oct on; «XAYRULLO O'G'LI ХABIBULLO» stays
+  unit 5's. On the 9 Nov copy 4 of 7,837 records moved: Munira's 3 blank-code
+  records from nobody to unit 9, and 1 Suvonov record from unit 5 to unit 6.
+- **Concerns needed nothing.** Every concern stores its unit id
+  (`brigadir_manager_id`) when it is filed, and every reader counts by that id.
+  On the copy, unit 10 keeps Kamola's 317 earlier concerns and unit 6 keeps
+  Suvonov's 383. `brigadir_name` is the person who answered at the time, and
+  it stays that way.
+- Not covered: ARC also matches by name, and nobody asked for it.
+  `cell_perenaladka` is stored per cell, so nothing moved there.
+
 ## A role switch carries the profile's keyed rows (`_rekey_profile`, 2026-11-10)
 
 Adi Ro'ziyev (profile #360) was hand-tied to Verifix 2501 on 5 Nov as a

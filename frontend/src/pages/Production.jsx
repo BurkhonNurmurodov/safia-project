@@ -46,6 +46,7 @@ import { exportXlsx } from "../utils/exportXlsx";
 import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
 import StaffingProofModal from "../components/production/StaffingProofModal";
+import HourlyContainers from "../components/production/HourlyContainers";
 import { ddmm, hhmm } from "../components/production/staffingClock";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -2600,6 +2601,28 @@ export default function Production() {
     return out;
   }, [rows, search, wcSel, sort]);
 
+  // «№» inside a Команда (2026-11-12, the operator: «by choosing a team it
+  // should start from 1 for every team»). Each line's place among its OWN
+  // Команда's lines in catalog order — 1…n per team. It belongs to the line,
+  // not to the screen, so a search or a sort never renumbers it; the table
+  // prints it while a Команда filter is on, the catalog number otherwise.
+  const teamSeq = useMemo(() => {
+    const byWc = new Map();
+    for (const r of rows) {
+      if (r.seq == null) continue;
+      const k = r.work_center ?? "";
+      if (!byWc.has(k)) byWc.set(k, []);
+      byWc.get(k).push(r);
+    }
+    const out = new Map();
+    for (const list of byWc.values()) {
+      list.sort((a, b) => a.seq - b.seq);
+      list.forEach((r, i) => out.set(r, i + 1));
+    }
+    return out;
+  }, [rows]);
+  const shownSeq = (r) => (wcSel.length ? teamSeq.get(r) : r.seq) ?? null;
+
   // ── bulk selection over the catalog ───────────────────────────────────────
   const pickSet = useMemo(() => new Set(catPick), [catPick]);
   // Only a row with an id is a CATALOG line — an unknown SKU the SAP file
@@ -2768,12 +2791,13 @@ export default function Production() {
       case "seq":
         // The catalog's own number for this line, served with the row — NOT a
         // counter over what is on screen. It stays with the position through a
-        // search, a Команда filter or a sort by Парето, which is what lets two
-        // people name the same row; sorting on this column puts the table back
-        // in catalog order.
+        // search or a sort by Парето, which is what lets two people name the
+        // same row; sorting on this column puts the table back in catalog
+        // order. With a Команда filter on it is the line's number WITHIN its
+        // Команда (`teamSeq`), so every team reads 1…n.
         return (
           <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>
-            {r.seq ?? "—"}
+            {shownSeq(r) ?? "—"}
           </td>
         );
       case "sap_code":
@@ -3011,7 +3035,7 @@ export default function Production() {
     const num = (v, d) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v))
       ? XL_DASH : { v: Number(v), d });
     switch (key) {
-      case "seq": return r.seq == null ? XL_DASH : { v: r.seq, d: 0, fg: XL_SOFT };
+      case "seq": return shownSeq(r) == null ? XL_DASH : { v: shownSeq(r), d: 0, fg: XL_SOFT };
       case "sap_code": return r.sap_code ? { t: String(r.sap_code), fg: XL_SOFT } : XL_DASH;
       case "op": return r.op != null && r.op !== "" ? { t: String(r.op), fg: XL_SOFT } : XL_DASH;
       case "name": return { t: r.name ?? "" };
@@ -3756,9 +3780,30 @@ export default function Production() {
           <span className="flex items-center gap-3">
             <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
             <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
-              options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")]]} />
+              options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")], ["hourly", t("production.teams.hourly")]]} />
           </span>
         } />
+        {!loading && teamsView === "hourly" ? (
+          <div className="p-3">
+            <HourlyContainers
+              teams={containerTeams.filter(({ g }) => !g?.orphan)}
+              rows={rows} constants={data?.constants} date={data?.date ?? date}
+              containers={CONTAINERS} t={t} fmt={fmt}
+              renderTeam={({ w, g, rest }) => {
+                const wcg = wcColor(w.work_center);
+                return (
+                  <>
+                    <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-xs font-bold px-1.5 py-0.5 rounded-md"
+                      title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
+                      style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                    {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
+                    {rest && <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}
+                      title={t("production.cont.noGroupHint")}>{t("production.cont.noGroup")}</span>}
+                  </>
+                );
+              }} />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {loading && Array.from({ length: 6 }).map((_, i) => (
             <div key={`wc-sk-${i}`} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
@@ -3805,7 +3850,7 @@ export default function Production() {
               )}
             </div>
           ))}
-          {!loading && teamsView !== "containers" && teamCards.map(({ w, g }) => {
+          {!loading && teamsView === "load" && teamCards.map(({ w, g }) => {
             if (g) {
               // One group of a work centre typed per group: its own load, its own
               // people (a typed pin gold, an untyped share muted and starred) and
@@ -3952,7 +3997,20 @@ export default function Production() {
           {!loading && wcs.length === 0 && (
             <div className="col-span-full text-center py-6 text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</div>
           )}
+          {!loading && teamsView === "containers" && (() => {
+            // Every container type's total added up — the overall count, bottom-right.
+            const typed = containerCards.filter((x) => x.total != null);
+            const all = typed.length ? typed.reduce((s, x) => s + x.total, 0) : null;
+            return (
+              <div className="col-span-full flex items-baseline justify-end gap-2 px-1 pt-1">
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{t("production.cont.grandTotal")}</span>
+                <span className="text-2xl font-bold tabular-nums"
+                  style={{ color: all == null ? "var(--text-4)" : "var(--brand-text)" }}>{all == null ? "—" : fmt(all, 0)}</span>
+              </div>
+            );
+          })()}
         </div>
+        )}
       </div>
 
       {/* main table */}

@@ -25,7 +25,7 @@ loaded by themselves:
 
 - `docs/navigation-and-shell.md` — the header search «Qidiruv», the app launcher «Ilovalar» (admins and top-managers), the admin app at `/panel/<id>` (`ADMIN_NAV` in `config/adminNav.js` is the ONE list), the profile page `/profile` (one column, the header's three facts, the save bar).
 - `docs/cells-and-org.md` — **a cell is printed by its verifix CODE, never the workshop name** (`cellLabel`); «Egasi» and «Boshqaruvchi»; `in_load`; archived cells; one-process cells; **a typed code is stored in Latin** (`latin_code`); **the plant hangs on `managers.factory_id` only** (`factory_scope`); a shift-manager's reach; cell shift times; leader and brigadir kinds; a leader follows the cells they run.
-- `docs/data-fixes.md` — the one-shot data fixes and what they changed: unit «Turdimurodov Nodirjon» into Aripova's, Elnora's profile, cell 9123's 5 October, the four units that changed brigadir on 24 Oct, 7331's two leaders handed to Majidov Ozodjon (9 Nov).
+- `docs/data-fixes.md` — the one-shot data fixes and what they changed: unit «Turdimurodov Nodirjon» into Aripova's, Elnora's profile, cell 9123's 5 October, the four units that changed brigadir on 24 Oct, **a unit that changed brigadir keeps its sheet history** (`name_map.SHEET_NAME_ERAS` — a swap adds its rows there), 7331's two leaders handed to Majidov Ozodjon (9 Nov).
 - `docs/verifix.md` — the Verifix connection, the live sync of cells, leaders and brigadirs (`verifix_sync`, dated cell links in `cell_links`), the 4–8 Oct one-shots, the «Verifix (test)» pages.
 - `docs/work-centres.md` — a work centre is NOT unique (`cell_lookup.by_sap` is keyed by unit), and its group letters (`wc_group.share` is THE split).
 - `docs/zagruzka.md` — where the загрузка's inputs come from (`zagruzka_source`, the typed «Bugungi fakt», `ZAGRUZKA_FROM`), the kept trudoyomkost, the comparison tables and heatmaps on `/zagruzka` (`utils/formulas.js` is THE definition), their bands and Excel, «Odam soni» only where the day has a plan.
@@ -42,7 +42,7 @@ loaded by themselves:
 - `docs/appeals.md` — late proofs, the appeal chat, objections and their three stages, every judge that can be objected to, `APPEALS_FROM`.
 - `docs/leaders-page.md` — the /leaders page: its tabs, the kept register, «Mening o'rnim», empty days, photos, the phone layout, the «Lider nazorati — admin» grant.
 - `docs/production-catalog.md` — **a catalog edit counts from now on** (`pp_catalog.freeze` before every write), a cell's positions follow the cell (`catalog_follow`), archived lines, «O'lchov birligi», the SAP-codes grant.
-- `docs/production-quantities.md` — typed ПЛАН/ФАКТ and the SAP columns, per-line quantities, who a SAP upload fills, ШТАТКА, «Plan Bajarish», the call forecast, a closed day locking «Zagruzka fayli».
+- `docs/production-quantities.md` — typed ПЛАН/ФАКТ and the SAP columns, per-line quantities, hourly containers per team («Soatlik»), who a SAP upload fills, ШТАТКА, «Plan Bajarish», the call forecast, a closed day locking «Zagruzka fayli».
 - `docs/shift-report.md` — «Smena hisoboti» on the shift dashboard, and that page on a phone.
 - `docs/kelish.md` — «Ish grafigi» (`/kelish`) and task #11 checked on it.
 - `docs/laboratory.md` — candidate assessment, «Xodim kartasi», Trello, the audit table, Notion tasks, the live monitor, the goal board.

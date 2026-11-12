@@ -137,6 +137,7 @@ try:
         land_waiting_leader_links,
         patch_task11_description_nov09,
         heal_switched_profile_keys,
+        rekey_sheet_eras_boot,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -649,6 +650,7 @@ try:
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     patch_task11_description_nov09()
     heal_switched_profile_keys()
+    rekey_sheet_eras_boot()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

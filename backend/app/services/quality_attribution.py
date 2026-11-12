@@ -12,8 +12,10 @@ names, and the cell's people answer for it.
             hers). When the code names no cell on /cells, the code is blank, or
             the cell had no brigadir that day, the record falls back to the unit
             «Отв. бригадир» names (`name_map.supervisor_match` over every live
-            unit, `register_brigadir`'s per-site blanking) — and to nobody when
-            that names no unit either (technologists, IT, stores).
+            unit, `register_brigadir`'s per-site blanking; dated before a
+            brigadir change, the unit that person ran THEN — `name_map.era_unit`,
+            2026-11-12) — and to nobody when that names no unit either
+            (technologists, IT, stores).
   LEADER    the cell's «Egasi» (`cells.owner_id`) on the record's date; a cell
             nobody owned that day gives the record no leader. A record with no
             cell has no leader.
@@ -37,7 +39,7 @@ from sqlalchemy.orm import Session
 from app.models import Cell, Manager, RoleProfile
 from app.services import cell_links
 from app.services.cell_lookup import by_verifix, resolve_verifix
-from app.services.name_map import register_brigadir, supervisor_match
+from app.services.name_map import era_unit, register_brigadir, supervisor_match
 
 
 class Who(NamedTuple):
@@ -89,6 +91,8 @@ class Resolver:
                     return Who(unit, cid, leader, "cell")
         name = register_brigadir(place, brigadir)
         hit = self.match.get(name) if name else None
+        # Before a brigadir change the name meant the unit its person ran THEN.
+        hit = self.live.get(era_unit(name, day)) or hit
         if hit:
             return Who(hit, cid, leader, "name")
         return Who(None, cid, leader, "none")
