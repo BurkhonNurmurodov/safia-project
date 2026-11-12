@@ -45,5 +45,21 @@ class SheetNameEras(unittest.TestCase):
             db.close()
 
 
+class EraUnit(unittest.TestCase):
+    """The Quality register's «Отв. бригадир» before and after the 24 Oct change."""
+
+    def test_register_names(self):
+        from app.services.name_map import era_unit
+        self.assertEqual(era_unit("RAXIMOVA KAMOLA XIKMAT QIZI", "2026-10-23"), 10)
+        self.assertIsNone(era_unit("RAXIMOVA KAMOLA XIKMAT QIZI", "2026-10-24"))
+        self.assertEqual(era_unit("MIRMAXMUDOVA MUNIRA TEMIRBEKOVNA", "2026-08-01"), 9)
+        # the plain name is his own unit 6, not the OF unit
+        self.assertEqual(era_unit("SUVONOV ELSHOD VALIJON O'G'LI", "2026-08-01"), 6)
+        self.assertEqual(era_unit("Сувонов Элшод ОФ", "2026-08-01"), 5)
+        self.assertIsNone(era_unit("XAYRULLO O'G'LI ХABIBULLO", "2026-08-01"))
+        self.assertIsNone(era_unit("ABDURAXIMOV ABDURAXMON ABDUXALIL O'G'LI", "2026-08-01"))
+        self.assertIsNone(era_unit(None, "2026-08-01"))
+
+
 if __name__ == "__main__":
     unittest.main()

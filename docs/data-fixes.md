@@ -275,8 +275,23 @@ empty. That broke ruling 2 (past scores follow the unit).
   Latin name, which folds to the same skeleton as the Cyrillic spelling
   («Raximova Kamola» / «Рахимова Камола»), and a folded match would move
   Munira's re-filed rows on to unit 10 on the next pass.
-- Not covered (they match by person, with their own rulings): the QA register
-  (ruling 6 sends every Suvonov row to unit 5), the concerns registers, ARC.
+- **The Quality register too** (the operator, the same day: «apply the same
+  date rule to quality and concerns»). A record goes to its cell's unit on its
+  date first, which already followed the unit; only the «Отв. бригадир»
+  fallback matched by name. `name_map.era_unit(name, day)` matches the
+  register's passport form against the same `SHEET_NAME_ERAS` persons (an exact
+  folded name wins; on a tie the plain name beats one with a unit tag, so
+  «SUVONOV ELSHOD VALIJON O'G'LI» is unit 6, not the OF unit) and
+  `quality_attribution.Resolver` uses it before today's match. This narrows
+  ruling 6 to records from 24 Oct on; «XAYRULLO O'G'LI ХABIBULLO» stays
+  unit 5's. On the 9 Nov copy 4 of 7,837 records moved: Munira's 3 blank-code
+  records from nobody to unit 9, and 1 Suvonov record from unit 5 to unit 6.
+- **Concerns needed nothing.** Every concern stores its unit id
+  (`brigadir_manager_id`) when it is filed, and every reader counts by that id.
+  On the copy, unit 10 keeps Kamola's 317 earlier concerns and unit 6 keeps
+  Suvonov's 383. `brigadir_name` is the person who answered at the time, and
+  it stays that way.
+- Not covered: ARC also matches by name, and nobody asked for it.
   `cell_perenaladka` is stored per cell, so nothing moved there.
 
 ## A role switch carries the profile's keyed rows (`_rekey_profile`, 2026-11-10)

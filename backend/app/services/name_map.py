@@ -120,6 +120,30 @@ def rekey_sheet_eras(db: Session) -> dict[str, int]:
     return out
 
 
+@lru_cache(maxsize=1024)
+def _era_of(name: str) -> tuple | None:
+    """(first day, unit id) of the `SHEET_NAME_ERAS` person a REGISTER name
+    («SUVONOV ELSHOD VALIJON O'G'LI») names, matched like `supervisor_match`
+    scores. An exact folded name wins outright; on a tie the plain name beats
+    one carrying a unit tag («Сувонов Элшод» over «Сувонов Элшод ОФ»)."""
+    toks = _name_tokens(name)
+    best, key = None, (0.0, 0)
+    for spelling, until, unit in SHEET_NAME_ERAS:
+        et = _name_tokens(spelling)
+        score = 2.0 if et == toks else _pair_score(toks, et)
+        if score and (score, -len(et)) > key:
+            best, key = (until, unit), (score, -len(et))
+    return best
+
+
+def era_unit(name: str | None, day) -> int | None:
+    """The unit a person's name meant on `day` (ISO) when a brigadir change has
+    since handed that name to another unit, else None — the date rule for the
+    registers matched by name (the Quality register's «Отв. бригадир»)."""
+    era = _era_of(name or "")
+    return era[1] if era and str(day or "")[:10] < era[0] else None
+
+
 # ─── Passport-style names → supervisor units ─────────────────────────────────
 #
 # The quality register names the responsible person in full passport form
@@ -212,9 +236,10 @@ def _norm(name: str) -> str:
 #     decide the winner — "SUVONOV ELSHOD VALIJON O'G'LI" scored 1.0 for BOTH
 #     "Suvonov Elshod" and "Suvonov Elshod OF". Since the brigadir change of
 #     2026-10-24 (docs/plan-brigadir-change-oct24.md) unit 5 is «Suvonov
-#     Elshod» and unit 6 is «Erkanboyev Zafarjon»: every row naming Suvonov,
-#     past and future, is unit 5's (the operator's ruling 6), so both Suvonov
-#     pins name that unit;
+#     Elshod» and unit 6 is «Erkanboyev Zafarjon»: every row naming Suvonov
+#     is unit 5's (the operator's ruling 6), so both Suvonov pins name that
+#     unit — except, from 2026-11-12, a record dated before 24 Oct, which
+#     `era_unit` hands to the unit he ran then (6; «XAYRULLO» stays 5's);
 #   • the register attributes a whole unit's complaints to an entirely different
 #     person's name — "FAYZULLAYEVA MALIKA ABDUMANNOB QIZI" is the unit shown as
 #     "Murodali Ochilov" (shares no tokens, so the scorer can never reach it).
