@@ -127,7 +127,8 @@ tasks 40/41 name it.
     failed or stale read in amber (`Warn`). At the right edge, «Qanday
     hisoblanadi?» (`RulesButton`) and the admin's read / refresh / close.
     (From 2026-11-11 the read / refresh / compute buttons are gone — the
-    page's one «Qayta hisoblash» below; an admin's close / reopen stay.)
+    page's one «Qayta hisoblash» below; from 2026-11-12 the close / reopen
+    buttons are gone too — see «Month life».)
   - **ONE card whose header IS the view switch** (`KpiBits.ViewHead`,
     `asTabs`; the card's title is gone — it repeated the switch's selected
     word), the rows' count on its right.
@@ -347,8 +348,18 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   source could not be read («… o'qilmadi — u bo'yicha oldingi ma'lumot»);
   the automatic run on open ends silently (the per-tab «Verifix o'qildi»
   toast is gone — it fired on every open).
-- **Not changed**: the turnover month's close / reopen (admin, its own
-  buttons), «Sabablar», the rules dialogs and «Excel». The month-closing day
+- **A CLOSED month is re-read by the button** (2026-11-12, the operator: «remove
+  the buttons and read when the qayta hisoblash is pressed»). The turnover
+  month's «Qayta ochish» / «Oyni yopish» are gone from the tab; pressing
+  «Qayta hisoblash» on a closed month runs the Verifix read and then
+  `turnover.refreeze` — reopen + close in one transaction, so its leavers are
+  read again and its rule (the excluded reasons with it) is the one in force
+  now. Only the button, never the automatic run on open (`_refreeze_month`),
+  and only after a good read; a failed one leaves the month as it was frozen.
+  Whoever may press the button may do it (the page key) — the two buttons were
+  admin-only; the figures it re-freezes follow the admin's own «Sabablar».
+  `/api/turnover/close | reopen` stay for a tab on an older bundle.
+- **Not changed**: «Sabablar», the rules dialogs and «Excel». The month-closing day
   (the 5th at 09:00) was questioned the same day and is still open — see
   «Month life» in the turnover section.
 
@@ -602,7 +613,9 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
     `save_past()` already froze `rule(db)` into `turnover_months.rule`, so the
     list rides that freeze and a later change never moves a closed or saved
     month; a month closed before this reads no exclusions. To change a closed
-    month an admin reopens it (`reopen` drops its frozen rule). An open or
+    month press «Qayta hisoblash» on it (from 2026-11-12; before, an admin
+    reopened and closed it — «Учёба» was switched off on 11 Nov after October
+    had closed, so October still counted it). An open or
     closing month reads the live list. `brigadirs_kpi` and «Hisobotlar» read
     the same month payload, so they follow it.
   - **The rule's two halves are independent now** (`rule()`): a malformed
@@ -670,8 +683,10 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   building session chose on 4 Oct — no ruling names it; the operator asked
   «who decided the 5th 9:00?» on 2026-11-11 and has not set another day yet), then closes by
   itself (`auto_close`, daily 09:05) and its leavers freeze too. A dismissal
-  typed in later is listed as late, never counted. An admin may close earlier
-  or reopen; a month reopened by hand is closed by hand.
+  typed in later is listed as late, never counted — until «Qayta hisoblash»
+  is pressed on that month, which reads it again (see «Qayta hisoblash»). The
+  close / reopen buttons are gone (2026-11-12); a month an older tab reopens is
+  closed by the next 09:05 run.
 - **Past months** (the operator, same day: "a button, saved, then it says
   update"): from **January 2025** to September 2026 a month is computed on an
   admin's «Hisoblash» and SAVED (from 2026-11-11: by itself the first time the

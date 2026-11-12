@@ -16,7 +16,10 @@ Now one run fetches all of them, in the order they depend on each other:
      pressed a refresh;
   2. the Verifix directory (turnover) — minutes. For a PAST month
      (`turnover.PAST_FROM` ≤ m < `START_MONTH`) the same read also computes the
-     month and saves it, as «Hisoblash» did;
+     month and saves it, as «Hisoblash» did; for a CLOSED month the button
+     (never the automatic run) closes it again over that read, with the
+     reasons list in force now — the reopen / close buttons are gone
+     (2026-11-12);
   3. then the Verifix HR journals (category compliance), after the directory
      that places their people — the nightly order, 23:40 then 23:55.
 
@@ -120,6 +123,30 @@ def _past_compute(db, m: Optional[date], auto: bool) -> Optional[date]:
     return None
 
 
+def _refreeze_month(db, m: Optional[date], auto: bool) -> Optional[date]:
+    """A CLOSED month the button brings up to date — read again and closed
+    again with the reasons list in force now (`turnover.refreeze`). Never on
+    `auto`: a closed month moves only when somebody presses the button."""
+    if m is None or auto or m >= turnover.month_start(turnover.local(turnover.now_aware()).date()):
+        return None      # only an ended month can be closed
+    state, _row = turnover.month_state(db, m)
+    return m if state == "closed" else None
+
+
+def _refreeze(m: date, by: str) -> dict:
+    db = SessionLocal()
+    try:
+        turnover.refreeze(db, m, by)
+        db.commit()
+        return {"refrozen": turnover.ym(m)}
+    except Exception as exc:  # noqa: BLE001 — a background step reports, never dies silently
+        db.rollback()
+        log.exception("kpi-recalc: re-closing %s failed", m)
+        return {"ok": False, "error": str(exc)[:300]}
+    finally:
+        db.close()
+
+
 def start(db, *, month: Optional[date], by: str, auto: bool,
           on_done: Optional[Callable[[], None]] = None) -> dict:
     """Start a run on a thread of its own and return at once. `started` is
@@ -127,6 +154,7 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
     on `auto`, when every source is already fresh."""
     global _run
     compute = _past_compute(db, month, auto)
+    refreeze = _refreeze_month(db, month, auto)
     with _lock:
         busy = _run is not None
     if busy:
@@ -146,7 +174,7 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
             }
     if lost:
         return {"started": False, "reason": "running", **status(db)}
-    threading.Thread(target=_work, args=(compute, by, auto, on_done),
+    threading.Thread(target=_work, args=(compute, refreeze, by, auto, on_done),
                      name="kpi-recalc", daemon=True).start()
     return {"started": True, "reason": None, **status(db)}
 
@@ -219,7 +247,7 @@ def _read(run_fn, running_fn, *args) -> dict:
     return {"ok": bool(res.get("ok")), "error": res.get("error")}
 
 
-def _work(compute: Optional[date], by: str, auto: bool, on_done) -> None:
+def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool, on_done) -> None:
     global _run, _last
     trigger = f"{'auto' if auto else 'recalc'}:{by}"[:120]
     try:
@@ -229,7 +257,10 @@ def _work(compute: Optional[date], by: str, auto: bool, on_done) -> None:
             tv_args = (f"compute:{turnover.ym(compute)}", compute, by)
         else:
             tv_args = (trigger, None, None)
-        _set("turnover", _read(turnover_sync.run_read, turnover_sync.running, *tv_args))
+        tv = _read(turnover_sync.run_read, turnover_sync.running, *tv_args)
+        if refreeze is not None and tv.get("ok"):
+            tv = {**tv, **_refreeze(refreeze, by)}
+        _set("turnover", tv)
         _set("compliance", _read(category_sync.run_read, category_sync.running, trigger))
         q.join()
     except Exception:  # noqa: BLE001

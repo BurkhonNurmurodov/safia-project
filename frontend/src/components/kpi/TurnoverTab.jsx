@@ -1,27 +1,24 @@
 // «Liderlar KPI» — the turnover tab: the month's rate as the one summary (its
-// state and its Verifix read on one muted line, an admin's close / reopen
-// beside it), then the
+// state and its Verifix read on one muted line — a closed month is brought up
+// to date by the page's «Qayta hisoblash», there is no close / reopen), then the
 // ranking (one row per owned cell, worst rate first) or the leavers behind the
 // card's own view switch, and folded under the ranking whatever counted
 // toward nobody. Its words are the turnover page's own bundle (TT) beside the
 // page's (TK); every figure is the board payload's `turnover` half, which IS
 // `turnover.month_payload`.
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { AlertTriangle, Archive, Lock, LockOpen, RefreshCw, UserMinus } from "lucide-react";
+import { AlertTriangle, Archive, RefreshCw, UserMinus } from "lucide-react";
 import Button from "../ui/Button";
 import CellLink from "../ui/CellLink";
-import ConfirmDialog from "../ui/ConfirmDialog";
 import EmptyState from "../ui/EmptyState";
 import TableCard, { Th } from "../ui/DataTable";
-import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fill } from "../../pages/turnoverText";
 import TurnoverReasons from "../turnover/TurnoverReasons";
 import TurnoverRules from "../turnover/TurnoverRules";
 import { tenure } from "../turnover/turnoverUtil";
 import { Count, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead, Warn, EmptyRow } from "./KpiBits";
-import { dm, dmHm, dmy, errText, n0, pct1, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
+import { dm, dmHm, dmy, n0, pct1, pts, scoreTone, sortRows, toneInk, useSort } from "./kpiUtil";
 
 export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needle, isAdmin, toast, refetch, onExplain }) {
   const tv = data?.turnover || {};
@@ -33,22 +30,12 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   const [sortP, onSortP] = useSort("lkpi.sortTL", { key: "leftOn", dir: "desc" });
   const [rulesOpen, setRulesOpen] = useState(false);
   const [reasonsOpen, setReasonsOpen] = useState(false);
-  const [confirm, setConfirm] = useState(null);
-  const [confirmErr, setConfirmErr] = useState(null);
 
   // Reading Verifix and computing a past month are the page's one
   // «Qayta hisoblash» (LeadersKpi.jsx, services/kpi_recalc.py) — started by
   // the page itself when it opens; this tab only says what state they are in.
   const computing = running && (tv.read?.last?.trigger || "").startsWith(`compute:${ym}`);
   const computeFailed = !running && tv.read?.last?.ok === false && (tv.read.last.trigger || "").startsWith(`compute:${ym}`);
-  const stateM = useMutation({
-    mutationFn: (kind) => api.post(`/api/turnover/${kind}`, { month: ym }).then((r) => r.data),
-    onSuccess: (_r, kind) => {
-      toast.success(fill(kind === "close" ? TT.tClosed : TT.tReopened, { month: mLabel }));
-      setConfirm(null); setConfirmErr(null); refetch();
-    },
-    onError: async (e) => setConfirmErr(await errText(e)),
-  });
 
   const has = (...vals) => !needle || vals.some((v) => v && String(v).toLowerCase().includes(needle));
   const nameBoth = (v) => [v, v ? tl(v) : null];
@@ -113,12 +100,6 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   const actions = (
     <>
       <RulesButton label={TT.rulesBtn} onClick={() => setRulesOpen(true)} />
-      {isAdmin && state === "closing" && (
-        <Button size="md" variant="secondary" icon={<Lock size={13} />} onClick={() => { setConfirmErr(null); setConfirm("close"); }}>{TT.close}</Button>
-      )}
-      {isAdmin && state === "closed" && (
-        <Button size="md" variant="secondary" icon={<LockOpen size={13} />} onClick={() => { setConfirmErr(null); setConfirm("reopen"); }}>{TT.reopen}</Button>
-      )}
     </>
   );
   const summary = (
@@ -273,13 +254,6 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
       {rulesOpen && rule && <TurnoverRules open onClose={() => setRulesOpen(false)} rule={rule} T={TT} tx={tx} />}
       {reasonsOpen && isAdmin && (
         <TurnoverReasons open onClose={() => setReasonsOpen(false)} T={TT} tx={tx} ym={ym} mLabel={mLabel} toast={toast} onSaved={refetch} />
-      )}
-      {confirm && (
-        <ConfirmDialog open onCancel={() => { setConfirm(null); setConfirmErr(null); }} onConfirm={() => stateM.mutate(confirm)}
-          title={fill(confirm === "close" ? TT.closeTitle : TT.reopenTitle, { month: mLabel })}
-          message={confirm === "close" ? TT.closeMsg : TT.reopenMsg}
-          confirmLabel={confirm === "close" ? TT.close : TT.reopen} cancelLabel={TT.cancel}
-          loading={stateM.isPending} error={confirmErr} />
       )}
     </>
   );

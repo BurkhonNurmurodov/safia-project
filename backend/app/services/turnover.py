@@ -611,6 +611,15 @@ def reopen(db: Session, m: date, by: str, at: Optional[datetime] = None) -> dict
     return {"month": ym(m)}
 
 
+def refreeze(db: Session, m: date, by: str, at: Optional[datetime] = None) -> dict:
+    """Read a CLOSED month again and close it again: its leavers as the last
+    read has them, the rule (and its excluded reasons) in force now. The
+    «Qayta hisoblash» button does it (`kpi_recalc`) — it replaced the reopen /
+    close buttons, the operator, 2026-11-12."""
+    reopen(db, m, by, at)
+    return close(db, m, by, at)
+
+
 def save_past(db: Session, m: date, journal: Optional[list[dict]], by: str,
               at: Optional[datetime] = None) -> dict:
     """Compute a PAST month from the directory as just read and save it frozen,
@@ -678,8 +687,8 @@ def save_past(db: Session, m: date, journal: Optional[list[dict]], by: str,
 
 
 def auto_close(db: Session, at: Optional[datetime] = None) -> list[str]:
-    """Close every ended month whose closing hour has passed — except one an
-    admin reopened by hand, which an admin closes again."""
+    """Close every ended month whose closing hour has passed — one reopened
+    by an older tab's button too: there is no close button any more."""
     at = at or now_aware()
     now = local(at)
     out: list[str] = []
@@ -688,7 +697,7 @@ def auto_close(db: Session, at: Optional[datetime] = None) -> list[str]:
     while m < cur:
         if now >= close_at(m):
             state, row = month_state(db, m, now)
-            if state == "closing" and not (row and row.reopened_at):
+            if state == "closing":
                 close(db, m, "system", at)
                 out.append(ym(m))
         m = next_month(m)

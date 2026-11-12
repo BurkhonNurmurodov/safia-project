@@ -176,7 +176,7 @@ class ExclusionsIn(BaseModel):
 def save_exclusions(body: ExclusionsIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
     """Set the reasons whose leavers are not counted. It reaches the open month
     and the ones after it; a month that is already closed (or saved) keeps the
-    list it was closed with until an admin reopens it."""
+    list it was closed with until «Qayta hisoblash» is pressed on it."""
     if len(body.reasons) > turnover.MAX_EXCLUDED:
         raise HTTPException(status_code=400, detail={"code": "too_many",
                                                      "message": f"at most {turnover.MAX_EXCLUDED} reasons"})

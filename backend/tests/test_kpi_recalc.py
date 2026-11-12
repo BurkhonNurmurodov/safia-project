@@ -120,7 +120,7 @@ class WorkTest(unittest.TestCase):
         forgot = []
         with mock.patch.object(kr, "_quality", return_value={"ok": True}), \
                 mock.patch.object(kr, "_read", side_effect=[{"ok": True}, {"ok": False, "error": "x"}]):
-            kr._work(None, "hr", False, lambda: forgot.append(1))
+            kr._work(None, None, "hr", False, lambda: forgot.append(1))
         self.assertIsNone(kr._run)
         self.assertEqual(kr._last["steps"], {"quality": {"ok": True}, "turnover": {"ok": True},
                                              "compliance": {"ok": False, "error": "x"}})
