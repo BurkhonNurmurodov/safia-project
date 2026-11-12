@@ -1,0 +1,96 @@
+// «Oshxona» (/kitchen) — the page's words in the four platform languages,
+// beside the page (the /ovens pattern). `fill(s, {n: 3})` puts the numbers in.
+// Department names stay as Verifix writes them (transliterated by `tx`).
+
+export const fill = (s, vars) =>
+  String(s ?? "").replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? `{${k}}`));
+
+const uz = {
+  title: "Ishdagilar soni",
+  nowLabel: "Hozir ishda", people: "kishi",
+  cameLine: "Bugun {came} kishi keldi, {left} kishi ketdi.",
+  nightLine: "{n} kishi kechagi tungi smenadan qolgan.",
+  asOf: "{t} holatiga · har daqiqada yangilanadi",
+  stale: "Verifix javob bermayapti — sonlar {t} dagi.",
+  kCame: "Bugun keldi", kCameSub: "kirish belgisi bor",
+  kLeft: "Ketdi", kLeftSub: "bugun kelib, ketganlar",
+  kNotYet: "Hali kelmagan", kNotYetSub: "smenasi keyinroq boshlanadi",
+  kAbsent: "Kelmadi", kAbsentSub: "smenasi boshlangan, belgisi yo'q",
+  dayTitle: "Kun davomida ishda", daySub: "har soat boshida binoda bo'lganlar",
+  peak: "Eng ko'pi {t} da · {n} kishi", at: "{t} · {n} kishi",
+  depTitle: "Bo'limlar bo'yicha",
+  cDep: "Bo'lim", cInside: "Hozir ishda", cCame: "Keldi", cLeft: "Ketdi", cNotYet: "Hali kelmagan", cAbsent: "Kelmadi",
+  cameShort: "keldi {n}",
+  noDep: "Bo'limi ko'rsatilmagan",
+  depEmpty: "Bugun hali hech kim kelmagan.",
+  errTitle: "Sonlar olinmadi", errText: "Verifix javob bermadi. Birozdan keyin qayta urinib ko'ring.", retry: "Qayta urinish",
+  offTitle: "Verifix ulanmagan", offText: "Sonlar Verifix'dan o'qiladi. Ulanishni administrator sozlaydi.", offOpen: "Ulanishni ochish",
+};
+
+const uz_cyrl = {
+  title: "Ишдагилар сони",
+  nowLabel: "Ҳозир ишда", people: "киши",
+  cameLine: "Бугун {came} киши келди, {left} киши кетди.",
+  nightLine: "{n} киши кечаги тунги сменадан қолган.",
+  asOf: "{t} ҳолатига · ҳар дақиқада янгиланади",
+  stale: "Verifix жавоб бермаяпти — сонлар {t} даги.",
+  kCame: "Бугун келди", kCameSub: "кириш белгиси бор",
+  kLeft: "Кетди", kLeftSub: "бугун келиб, кетганлар",
+  kNotYet: "Ҳали келмаган", kNotYetSub: "сменаси кейинроқ бошланади",
+  kAbsent: "Келмади", kAbsentSub: "сменаси бошланган, белгиси йўқ",
+  dayTitle: "Кун давомида ишда", daySub: "ҳар соат бошида бинода бўлганлар",
+  peak: "Энг кўпи {t} да · {n} киши", at: "{t} · {n} киши",
+  depTitle: "Бўлимлар бўйича",
+  cDep: "Бўлим", cInside: "Ҳозир ишда", cCame: "Келди", cLeft: "Кетди", cNotYet: "Ҳали келмаган", cAbsent: "Келмади",
+  cameShort: "келди {n}",
+  noDep: "Бўлими кўрсатилмаган",
+  depEmpty: "Бугун ҳали ҳеч ким келмаган.",
+  errTitle: "Сонлар олинмади", errText: "Verifix жавоб бермади. Бироздан кейин қайта уриниб кўринг.", retry: "Қайта уриниш",
+  offTitle: "Verifix уланмаган", offText: "Сонлар Verifix'дан ўқилади. Уланишни администратор созлайди.", offOpen: "Уланишни очиш",
+};
+
+const ru = {
+  title: "Людей на работе",
+  nowLabel: "Сейчас на работе", people: "чел.",
+  cameLine: "Сегодня пришли {came} чел., ушли {left} чел.",
+  nightLine: "{n} чел. остались со вчерашней ночной смены.",
+  asOf: "на {t} · обновляется каждую минуту",
+  stale: "Verifix не отвечает — цифры на {t}.",
+  kCame: "Пришли сегодня", kCameSub: "есть отметка входа",
+  kLeft: "Ушли", kLeftSub: "пришли сегодня и ушли",
+  kNotYet: "Ещё не пришли", kNotYetSub: "смена начнётся позже",
+  kAbsent: "Не пришли", kAbsentSub: "смена началась, отметки нет",
+  dayTitle: "На работе в течение дня", daySub: "сколько людей было в здании в начале каждого часа",
+  peak: "Больше всего в {t} · {n} чел.", at: "{t} · {n} чел.",
+  depTitle: "По отделам",
+  cDep: "Отдел", cInside: "Сейчас на работе", cCame: "Пришли", cLeft: "Ушли", cNotYet: "Ещё не пришли", cAbsent: "Не пришли",
+  cameShort: "пришли {n}",
+  noDep: "Отдел не указан",
+  depEmpty: "Сегодня ещё никто не пришёл.",
+  errTitle: "Цифры не получены", errText: "Verifix не ответил. Попробуйте ещё раз чуть позже.", retry: "Повторить",
+  offTitle: "Verifix не подключён", offText: "Цифры читаются из Verifix. Подключение настраивает администратор.", offOpen: "Открыть подключение",
+};
+
+const en = {
+  title: "People at work",
+  nowLabel: "At work now", people: "people",
+  cameLine: "{came} people came today, {left} have left.",
+  nightLine: "{n} are still here from last night's shift.",
+  asOf: "as of {t} · updates every minute",
+  stale: "Verifix is not answering — these numbers are from {t}.",
+  kCame: "Came today", kCameSub: "have a clock-in",
+  kLeft: "Left", kLeftSub: "came today and went home",
+  kNotYet: "Not in yet", kNotYetSub: "their shift starts later",
+  kAbsent: "Did not come", kAbsentSub: "shift started, no clock-in",
+  dayTitle: "At work through the day", daySub: "people in the building at the start of each hour",
+  peak: "Most at {t} · {n} people", at: "{t} · {n} people",
+  depTitle: "By department",
+  cDep: "Department", cInside: "At work now", cCame: "Came", cLeft: "Left", cNotYet: "Not in yet", cAbsent: "Did not come",
+  cameShort: "came {n}",
+  noDep: "No department given",
+  depEmpty: "Nobody has come in yet today.",
+  errTitle: "Could not get the numbers", errText: "Verifix did not answer. Try again in a moment.", retry: "Try again",
+  offTitle: "Verifix is not connected", offText: "The numbers are read from Verifix. An administrator sets the connection up.", offOpen: "Open the connection",
+};
+
+export const TXT = { uz, uz_cyrl, ru, en };

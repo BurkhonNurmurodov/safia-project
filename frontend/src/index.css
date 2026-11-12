@@ -1219,6 +1219,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-app-hue="lime"]    { --hue: 163,230,53;  --glow: 132,204,22; --rim: 101,163,13; }
 [data-app-hue="fuchsia"] { --hue: 232,121,249; --glow: 217,70,239; --rim: 192,38,211; }
 [data-app-hue="amber"]   { --hue: 251,191,36;  --glow: 245,158,11; --rim: 217,119,6; }
+[data-app-hue="red"]     { --hue: 248,113,113; --glow: 239,68,68; --rim: 220,38,38; }
 [data-app-hue="slate"]   { --hue: 148,163,184; --glow: 100,116,139; --cloud: 160,174,192; --rim: 71,85,105; }
 [data-theme="light"] [data-app-hue="gold"]    { --hue: 176,120,40; --glow: 184,128,40; --rim: 138,92,30; } /* deeper by day: the ground is gold */
 [data-theme="light"] [data-app-hue="blue"]    { --hue: 29,78,216; --rim: 30,64,175; }
@@ -1234,6 +1235,7 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 [data-theme="light"] [data-app-hue="lime"]    { --hue: 77,124,15; --rim: 63,98,18; }
 [data-theme="light"] [data-app-hue="fuchsia"] { --hue: 162,28,175; --rim: 134,25,143; }
 [data-theme="light"] [data-app-hue="amber"]   { --hue: 180,83,9; --rim: 146,64,14; }
+[data-theme="light"] [data-app-hue="red"]     { --hue: 185,28,28; --rim: 153,27,27; }
 [data-theme="light"] [data-app-hue="slate"]   { --hue: 71,85,105; --rim: 30,41,59; }
 
 /* The backdrop (Layout's `backdrop`, under the header;

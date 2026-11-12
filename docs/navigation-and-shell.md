@@ -84,11 +84,14 @@ untouched.
   Laboratory) holds «Pechlar», moved out of the Laboratory app by its
   `app: "automation"` — page access unchanged, so the tile shows to admins
   only until `ovens` is opened on the Access tab, and for everybody else the
-  page stays in the Laboratory group; the `admin` app's pages are `ADMIN_PAGE_LINKS`,
+  page stays in the Laboratory group; «Oshxona» (2026-11-12 — `kitchen`,
+  `ChefHat`, hue `red`, after automation) holds «Ishdagilar soni»
+  (docs/kitchen.md; for everybody else the row sits in the People group);
+  the `admin` app's pages are `ADMIN_PAGE_LINKS`,
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Fifteen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Sixteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. **A tile's name is ONE short word where it can be**: a
   name wider than a phone's tile (~96px at 360px) breaks mid-word, so the

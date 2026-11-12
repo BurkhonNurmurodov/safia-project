@@ -5,7 +5,7 @@
 // each section and link stay beside the sidebar code that reads them.
 import {
   Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
-  Briefcase, BriefcaseBusiness, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
+  Briefcase, BriefcaseBusiness, CalendarCheck, ChefHat, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
@@ -116,6 +116,11 @@ export const ALL_LINKS = [
   // (2026-11-12, the operator), not a Laboratory page; its page access is
   // unchanged, and for anybody else it stays in the Laboratory group.
   { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab", app: "automation" },
+  // «Ishdagilar soni» — how many people are at work in the factory right now,
+  // read from Verifix (services/kitchen.py): counts only, for the kitchen that
+  // cooks for them. Admin-only until opened on the Access tab. On the launcher
+  // it is the «Oshxona» app; for anybody else it sits with the People pages.
+  { to: "/kitchen", page: "kitchen", key: "nav.kitchen", icon: ChefHat, group: "people", app: "kitchen" },
   // «API» — a person's own tokens for the external read API and its manual
   // (routers/api_tokens.py). Admin-only until opened on the Access tab.
   { to: "/tokens", page: "api", key: "nav.api", icon: KeyRound, group: "lab" },
@@ -164,7 +169,8 @@ export const NAV_GROUPS = [
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
 // pages. An app is a nav group by default; ARC, the overview, the reports,
-// the activity page, HR and automation are apps of their own (a link's `app`).
+// the activity page, HR, automation and the kitchen are apps of their own (a
+// link's `app`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
 export const APPS = [
@@ -187,6 +193,9 @@ export const APPS = [
   // «Avtomatika» / «Автоматика», not the longer verbal noun: that one breaks
   // mid-word on a phone's tile (the reason `apps.activity` is one word).
   { id: "automation", labelKey: "apps.automation",  icon: Cpu,             hue: "amber" },
+  // «Oshxona» — the kitchen's app (2026-11-12, the operator): the people at
+  // work in the factory now. Its tile shows to whoever may open `kitchen`.
+  { id: "kitchen",   labelKey: "apps.kitchen",      icon: ChefHat,         hue: "red" },
   // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
   // phone's tile; the tile says it in one word.
   { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },

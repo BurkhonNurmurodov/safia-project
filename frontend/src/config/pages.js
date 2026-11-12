@@ -47,6 +47,7 @@ export const PAGES = [
   { tier: "test", key: "people", route: "/people", labelKey: "nav.people" },
   { tier: "test", key: "ovens", route: "/ovens", labelKey: "nav.ovens" },
   { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
+  { tier: "test", key: "kitchen", route: "/kitchen", labelKey: "nav.kitchen" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -98,6 +99,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Pechlar» — the Revent ovens, read off the logs a collector on the factory
   // LAN posts (Laboratory). Admin-only until the operator opens it.
   ovens: [],
+  // «Oshxona» — the people at work in the factory now (Verifix): counts only.
+  // Admin-only until the operator opens it.
+  kitchen: [],
   // «API» — personal tokens for the external read API. Admin-only until the
   // operator opens it: a token reads every cell's plan and people.
   api: [],
