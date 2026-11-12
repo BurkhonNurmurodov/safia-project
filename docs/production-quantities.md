@@ -883,3 +883,16 @@ alone, and a leader gets it only when they run two or more cells.
   empties when the pick changes.
 - The raw «Фаза» / «Заголовок» tabs ignore it, as they ignore the brigadir
   pick: they are a view of the file.
+
+## «№» restarts at 1 inside each Команда (2026-11-12)
+
+The operator: «by choosing a team it should start from 1 for everyone for
+every team». The «Pozitsiyalar» table's «№» is the line's catalog number
+(`pp_calc` `seq`) — until now it stayed so under a Команда filter, which left
+a filtered table reading 4, 9, 17…. **With a Команда filter on, «№» is the
+line's place among its OWN Команда's lines in catalog order** (`teamSeq` in
+`Production.jsx`): every team reads 1…n, and with two teams picked each
+starts at 1. Like the catalog number it belongs to the line, not to the
+screen — a search or a sort never renumbers it, and sorting on «№» still
+gives catalog order. No filter → the catalog number, as before. The ABC
+Excel has no «№» column (Excel's own row numbers), so the file is unchanged.
