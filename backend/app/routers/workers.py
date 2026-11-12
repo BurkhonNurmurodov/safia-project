@@ -243,6 +243,15 @@ def get_headcount(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("workers")),
 ):
+    return headcount(db, payload, date_from, date_to, shift, manager_id, factory)
+
+
+def headcount(db: Session, payload: dict, date_from, date_to, shift, manager_id, factory,
+              daily_only: bool = False):
+    """The /workers headcount rows. `daily_only` is for a caller that reads
+    nothing but each unit's `daily` roster cells (the board, /reports): the
+    same units and the same cells, without the three attendance scans and the
+    official-HC read behind the other fields — those come back empty."""
     if not date_to:
         date_to = date.today()
     if not date_from:
@@ -423,7 +432,7 @@ def get_headcount(
         all_q = all_q.filter(Manager.shift == shift)
     if manager_id:
         all_q = all_q.filter(Attendance.manager_id.in_(manager_id))
-    total_all = dict(all_q.group_by(Attendance.manager_id).all())
+    total_all = {} if daily_only else dict(all_q.group_by(Attendance.manager_id).all())
     for mgr_id, names in ex_all.items():
         total_all[mgr_id] = total_all.get(mgr_id, 0) + len(names)
 
@@ -450,7 +459,8 @@ def get_headcount(
     if manager_id:
         daily_q = daily_q.filter(Attendance.manager_id.in_(manager_id))
     daily_hc: dict[int, dict[date, int]] = {}
-    for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
+    for mgr_id, d, hc in ([] if daily_only else
+                          daily_q.group_by(Attendance.manager_id, Attendance.date).all()):
         daily_hc.setdefault(mgr_id, {})[d] = hc
     for mgr_id, days in ex_hc.items():
         slot = daily_hc.setdefault(mgr_id, {})
@@ -556,8 +566,8 @@ def get_headcount(
     # Divided below by the SAME day count as avg_roster/avg_came so the role
     # numbers add back up to the pair instead of drifting away from it.
     role_sums: dict[int, dict[str, dict[str, int]]] = {}
-    for mgr_id, _d, job_title, r_cnt, came_cnt in role_q.group_by(
-            Attendance.manager_id, Attendance.date, Attendance.job_title).all():
+    for mgr_id, _d, job_title, r_cnt, came_cnt in ([] if daily_only else role_q.group_by(
+            Attendance.manager_id, Attendance.date, Attendance.job_title).all()):
         role = normalize_role(job_title or "")
         slot = role_sums.setdefault(mgr_id, {}).setdefault(role, {"roster": 0, "came": 0})
         slot["roster"] += r_cnt
@@ -588,7 +598,7 @@ def get_headcount(
     # not read.
     alias = sheet_alias_map(db, (m["name"] for m in agg.values()))
     sheet_names = set(alias.keys())
-    all_days = {d for days in daily_hc.values() for d in days}
+    all_days = set() if daily_only else {d for days in daily_hc.values() for d in days}
     date_strs = {d.strftime("%d.%m.%Y"): d for d in all_days
                  if not zagruzka_source.uses_production(d)}
     official: dict[str, dict[date, float]] = {}

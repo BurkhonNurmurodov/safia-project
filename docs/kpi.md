@@ -1099,6 +1099,11 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
   Ranked: non-archived units with `zagruzka_on`, in the viewer's scope (plant
   lock, `useFactorySection`, shift), that have any figure in the period;
   places are dense 1..n per period among units with a score then.
+- The attendance figure is `workers.headcount(…, daily_only=True)` (2026-11-12,
+  /reports too): the /workers page's own rows and cells, minus the three
+  scans and the official-HC read behind fields neither reader uses — a cold
+  build is ~10 s of загрузка + attendance + checklist pool, with no single
+  hot spot, so the lever on a slow-server report is fewer builds, not this.
 - One answer per (grain, period, scope) is kept 120 s, shared by viewers
   asking together (`SharedBuild`). The Excel is the board as drawn (the
   browser sends its rows; `build_workbook` lays them out, the page's 80 / 65
