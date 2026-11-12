@@ -669,6 +669,78 @@ it moves on by itself at the top of the hour.
 - Not built (ask first): a typed start hour per line, a Telegram message per
   hour, a lead time other than one hour.
 
+### …and a line's «Navbat» — the team's order for the day (`pp_line_daily.priority`, 2026-11-12)
+
+The operator: supervisors put which product a team makes first, second…, the
+team finishes the plan of one and moves to the next, and the containers follow
+that order. A «Pozitsiyalar» column right after «№» and before the SAP code
+(ru «Очерёдность», en «Order»), a whole number 1–999 per LINE per DAY.
+
+- **Who**: supervisors AND leaders (the operator) — the ПЛАН/ФАКТ audience,
+  scope and closed-day lock, a leader on their own cells / group only.
+- **Counted inside ONE team** (work centre + group letter): two cells may each
+  hold a 1 (the operator: two yacheykas make separate products at the same
+  time). The same number on two lines of ONE team is allowed and printed RED
+  with a hint — the timeline reads them as made together.
+- **Its own door, never /override**: `POST /api/production/priority`
+  (`{date, sap_code, work_center, line_key, value}`, Jurnal action
+  `production.priority_set`). The ПЛАН/ФАКТ door refuses `field: "priority"`,
+  because every reader of `production.override_set` (`auto_check_report`,
+  `auto_check_restore`, `auto_check_timing`, `filling_times_report`,
+  `admin_objections_report`) takes any change on it for a typed ПЛАН or ФАКТ —
+  an order typed there would have counted as a leader filling ФАКТ in.
+- **«Kechagi tartib»** (`POST /api/production/priority/copy {date}`, Jurnal
+  `production.priority_copied`): on a PRESS only — nothing copies itself, the
+  order is put by people. Today's order (over the lines the caller may edit)
+  becomes the last earlier day's within 14 days that has one; a line that day
+  did not order is cleared. Asks first (`ConfirmDialog`) when today already has
+  an order.
+- **Stored like «Kontiner krishka»**: `pp_line_daily.priority` (INTEGER, NULL =
+  not ordered, `startup.add_pp_line_priority`, both entrypoints). A SAP upload
+  KEEPS it (the file says nothing about the order of work); a catalog edit and
+  a cell follow (`catalog_follow._LINE_COLS`) carry it with the line.
+- **Read by**: the hourly containers timeline only (`HourlyContainers.jsx`):
+  «Navbat» first, then № for unordered lines; lines sharing a number are made
+  together — the step lasts their summed minutes, each spread over all of it.
+  No load, minutes, KPI or Excel figure moves with it; the «Excel» button
+  carries the column as an inserted value like any other visible one.
+
+### …and a line's «Navbat» — the team's order for the day (`pp_line_daily.priority`, 2026-11-12)
+
+The operator: supervisors put which product a team makes first, second…, the
+team finishes the plan of one and moves to the next, and the containers follow
+that order. A «Pozitsiyalar» column right after «№» and before the SAP code
+(ru «Очерёдность», en «Order»), a whole number 1–999 per LINE per DAY.
+
+- **Who**: supervisors AND leaders (the operator) — the ПЛАН/ФАКТ audience,
+  scope and closed-day lock, a leader on their own cells / group only.
+- **Counted inside ONE team** (work centre + group letter): two cells may each
+  hold a 1 (the operator: two yacheykas make separate products at the same
+  time). The same number on two lines of ONE team is allowed and printed RED
+  with a hint — the timeline reads them as made together.
+- **Its own door, never /override**: `POST /api/production/priority`
+  (`{date, sap_code, work_center, line_key, value}`, Jurnal action
+  `production.priority_set`). The ПЛАН/ФАКТ door refuses `field: "priority"`,
+  because every reader of `production.override_set` (`auto_check_report`,
+  `auto_check_restore`, `auto_check_timing`, `filling_times_report`,
+  `admin_objections_report`) takes any change on it for a typed ПЛАН or ФАКТ —
+  an order typed there would have counted as a leader filling ФАКТ in.
+- **«Kechagi tartib»** (`POST /api/production/priority/copy {date}`, Jurnal
+  `production.priority_copied`): on a PRESS only — nothing copies itself, the
+  order is put by people. Today's order (over the lines the caller may edit)
+  becomes the last earlier day's within 14 days that has one; a line that day
+  did not order is cleared. Asks first (`ConfirmDialog`) when today already has
+  an order.
+- **Stored like «Kontiner krishka»**: `pp_line_daily.priority` (INTEGER, NULL =
+  not ordered, `startup.add_pp_line_priority`, both entrypoints). A SAP upload
+  KEEPS it (the file says nothing about the order of work); a catalog edit and
+  a cell follow (`catalog_follow._LINE_COLS`) carry it with the line.
+- **Read by**: the hourly containers timeline only (`HourlyContainers.jsx`):
+  «Navbat» first, then № for unordered lines; lines sharing a number are made
+  together — the step lasts their summed minutes, each spread over all of it.
+  No load, minutes or KPI figure moves with it; the «Excel» button carries the
+  column as an inserted value like any other visible one.
+
 ### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19 — REMOVED from the table 2026-10-30)
 
 The column is gone from «Pozitsiyalar»; the stored values, the column and the

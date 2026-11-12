@@ -3,8 +3,8 @@
 // shows what 09–10 needs (the operator, same day: «I don't need all day or one
 // shift, just show hourly and one hour before»). An hour picker steps to others. See docs/production-quantities.md «Hourly containers».
 //
-// The timeline is DERIVED, never typed: a team works through its positions in
-// the table's order (№), one after another, from its cell's shift start. A line
+// The timeline is DERIVED: a team works through its positions in «Navbat»
+// order (then №), one after another — equal «Navbat» lines together — from its cell's shift start. A line
 // takes  total_labor ÷ N ÷ (productive_min ÷ shift_min)  clock minutes — its
 // standard minutes shared by the team's N people at the unit's productive pace
 // (the 85% the загрузка file uses). Its containers are needed as it is made, so
@@ -60,17 +60,32 @@ export function teamTimeline({ rows, people, startHHMM, endHHMM, eff, containers
   };
   let cur = start;
   const N = Number(people) || 0;
-  for (const r of [...rows].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))) {
-    const plan = Number(r.plan_qty);
-    if (!(plan > 0)) continue;
-    const caps = containers.filter((c) => Number(r[c.field]) > 0);
-    const dur = N > 0 && Number(r.total_labor) > 0 ? Number(r.total_labor) / N / eff : null;
-    if (dur == null) {
+  // «Navbat» first (the team's typed order for the day), then № for the lines
+  // nobody ordered. Lines sharing one «Navbat» are made AT THE SAME TIME: the
+  // team splits over them so they finish together, i.e. the step lasts their
+  // summed minutes and each line is spread over the whole step.
+  const ordered = [...rows].sort((a, b) =>
+    (a.priority ?? Infinity) - (b.priority ?? Infinity) || (a.seq ?? 0) - (b.seq ?? 0));
+  const steps = [];
+  for (const r of ordered) {
+    const last = steps[steps.length - 1];
+    if (r.priority != null && last && last.prio === r.priority) last.rows.push(r);
+    else steps.push({ prio: r.priority ?? null, rows: [r] });
+  }
+  for (const step of steps) {
+    const timed = [];
+    for (const r of step.rows) {
+      const plan = Number(r.plan_qty);
+      if (!(plan > 0)) continue;
+      const caps = containers.filter((c) => Number(r[c.field]) > 0);
+      if (N > 0 && Number(r.total_labor) > 0) { timed.push({ r, plan, caps }); continue; }
       for (const c of caps) untimed[c.id] = (untimed[c.id] ?? 0) + ceil6(plan / Number(r[c.field]));
-      continue;
     }
+    if (!timed.length) continue;
+    const dur = timed.reduce((sum, x) => sum + Number(x.r.total_labor), 0) / N / eff;
     const t0 = cur, t1 = cur + dur;
-    if (caps.length) {
+    for (const { r, plan, caps } of timed) {
+      if (!caps.length) continue;
       for (let h = Math.floor(t0 / 60); h * 60 < t1; h++) {
         const a = Math.max(t0, h * 60), b = Math.min(t1, (h + 1) * 60);
         const qa = plan * (a - t0) / dur, qb = plan * (b - t0) / dur;

@@ -659,6 +659,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
             "actual": (float(lo.actual_override) if lo.actual_override is not None else None),
             # «Kontiner krishka» — typed for this line on this day, else None
             "container_cap": (float(lo.container_cap) if lo.container_cap is not None else None),
+            # «Navbat» — the team's order for this line on this day, else None
+            "priority": (int(lo.priority) if lo.priority is not None else None),
         }
 
     quantities: dict[tuple[str, str], dict] = {}
@@ -1837,7 +1839,12 @@ OVERRIDE_COLS = {
     "plan": "plan_override",
     "actual": "actual_override",
     "container_cap": "container_cap",
+    # «Navbat» (2026-11-12): a line's place in its team's order for the day.
+    "priority": "priority",
 }
+# The fields that belong to ONE line and have no group level (pp_daily).
+LINE_ONLY_FIELDS = ("container_cap", "priority")
+PRIORITY_MAX = 999
 
 
 class OverrideBody(BaseModel):
@@ -1863,9 +1870,135 @@ def set_override(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    if body.field not in OVERRIDE_COLS:
+    # «Navbat» has its own door (/api/production/priority) so its Jurnal rows
+    # carry their own action: every reader of `production.override_set` (the
+    # leader auto-checks, the filling-times report, the objections report)
+    # reads a change as a typed ПЛАН or ФАКТ.
+    if body.field not in OVERRIDE_COLS or body.field == "priority":
         raise HTTPException(status_code=400,
                             detail="field must be 'plan', 'actual' or 'container_cap'")
+    return _apply_override(body, manager_id, payload, db)
+
+
+class PriorityBody(BaseModel):
+    date: str
+    sap_code: str           # the row's `qty_key`
+    work_center: str
+    line_key: str           # «Navbat» is always ONE line's
+    value: Optional[float]  # 1…PRIORITY_MAX, null clears
+
+
+@router.post("/api/production/priority")
+def set_priority(
+    body: PriorityBody,
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """«Navbat» (2026-11-12): which product a team makes first, second… on a
+    day. Same audience, scope, closed-day lock and line check as ПЛАН/ФАКТ;
+    a number shared by two lines of one team is allowed (the page marks it)."""
+    v = body.value
+    if v is not None:
+        if v != int(v) or not (1 <= v <= PRIORITY_MAX):
+            raise HTTPException(status_code=400,
+                                detail=f"priority must be a whole number 1–{PRIORITY_MAX}")
+        v = int(v)
+    if not (body.line_key or "").strip():
+        raise HTTPException(status_code=400, detail="line_key is required for priority")
+    ob = OverrideBody(date=body.date, sap_code=body.sap_code, work_center=body.work_center,
+                      field="priority", value=v, line_key=body.line_key)
+    return _apply_override(ob, manager_id, payload, db)
+
+
+class PriorityCopyBody(BaseModel):
+    date: str
+
+
+@router.post("/api/production/priority/copy")
+def copy_priority(
+    body: PriorityCopyBody,
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """«Kechagi tartib»: today's «Navbat» becomes the order of the LAST earlier
+    day that has one (yesterday, or Saturday after a Sunday off), for every line
+    of today's catalog the caller may edit. Lines that day did not order are
+    cleared, so today reads exactly as that day did. Only on a button press —
+    nothing copies by itself (the operator: the order is set by people)."""
+    day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
+    scope = _leader_wc_scope(db, payload, day, mid)
+    gscope = _leader_group_scope(db, payload, day, mid) if scope is not None else None
+    idle_lock.require_open(db, mid, day)
+
+    src_day = (db.query(func.max(PPLineDaily.date))
+               .filter(PPLineDaily.manager_id == mid, PPLineDaily.date < day,
+                       PPLineDaily.date >= day - timedelta(days=14),
+                       PPLineDaily.priority.isnot(None))
+               .scalar())
+    if src_day is None:
+        raise HTTPException(status_code=404, detail="no earlier day in the last 14 has an order")
+
+    lines = pp_catalog.at(db, mid, day).lines
+    keys = line_keys(lines)
+    groups = wc_group.line_groups(lines)
+    mine = set()
+    for p in lines:
+        lk = keys.get(p.id)
+        if not lk:
+            continue
+        k = (daily_key(p.sap_code, p.name), p.work_center or "", lk)
+        if scope is not None:
+            if not _in_scope(scope, k[1]):
+                continue
+            if not wc_group.in_scope(gscope, k[1], groups.get((k[1], k[0], lk))):
+                continue
+        mine.add(k)
+
+    src = {(r.qty_key, r.work_center or "", r.line_key): r.priority
+           for r in db.query(PPLineDaily).filter(
+               PPLineDaily.manager_id == mid, PPLineDaily.date == src_day,
+               PPLineDaily.priority.isnot(None)).all()}
+    have = {(r.qty_key, r.work_center or "", r.line_key): r
+            for r in db.query(PPLineDaily).filter(
+                PPLineDaily.manager_id == mid, PPLineDaily.date == day).all()}
+    set_n = cleared = 0
+    for k in mine:
+        want = src.get(k)
+        r = have.get(k)
+        if r is None:
+            if want is None:
+                continue
+            r = PPLineDaily(manager_id=mid, date=day, qty_key=k[0],
+                            work_center=k[1], line_key=k[2])
+            db.add(r)
+        if r.priority != want:
+            if want is None:
+                cleared += 1
+            else:
+                set_n += 1
+            r.priority = want
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="another save touched these lines — try again")
+
+    action_log.enrich(
+        target_kind="priority_copy", target_id=f"{mid}:{day}",
+        target_name=str(day), unit_id=mid, day=day,
+        details=[("date", str(day)), ("from", str(src_day)),
+                 ("set", set_n), ("cleared", cleared)],
+    )
+    out = _build_dashboard(db, mid, day, scope, payload)
+    out["priority_copied"] = {"from": src_day.isoformat(), "set": set_n, "cleared": cleared}
+    return out
+
+
+def _apply_override(body: "OverrideBody", manager_id, payload: dict, db: Session):
     # The client sends the row's `qty_key`, which is the SAP code for a coded line
     # and a name-derived token for a code-less one — never blank. A blank would
     # write a row the dashboard then looks for under a different key, i.e. an edit
@@ -1922,9 +2055,9 @@ def set_override(
     # no such column, so the whole-group path below — what a bundle older than
     # v4.32.0 asks for, and one that never sends this field — has nowhere to
     # write it. Refused rather than written somewhere no reader looks.
-    if body.field == "container_cap" and line is None:
+    if body.field in LINE_ONLY_FIELDS and line is None:
         raise HTTPException(status_code=400,
-                            detail="line_key is required for container_cap")
+                            detail=f"line_key is required for {body.field}")
 
     # ONE writer either way, and the retry is what makes it safe to run twice.
     # Every first edit of a line on a day is an INSERT against
@@ -2912,7 +3045,8 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                 # «Kontiner krishka» is not a figure the file restates — nothing
                 # in SAP says how many lids a line used — so a row carrying one
                 # loses its ПЛАН/ФАКТ exactly as before and KEEPS the lid count.
-                if lo.container_cap is not None:
+                # «Navbat» likewise: SAP says nothing about the order of work.
+                if lo.container_cap is not None or lo.priority is not None:
                     lo.plan_override = lo.actual_override = None
                     continue
                 db.delete(lo)
@@ -4373,6 +4507,8 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
             slot["actual"] = r.actual_override
         if r.container_cap is not None:
             slot["container_cap"] = r.container_cap
+        if r.priority is not None:
+            slot["priority"] = r.priority
         have.pop((r.qty_key, r.work_center or "", r.line_key, r.date), None)
         db.delete(r)
 
@@ -4438,6 +4574,9 @@ def _carry_manual_quantities(db, mid: int, before: list[dict],
             carried += 1
         if "container_cap" in vals:
             dest.container_cap = vals["container_cap"]
+            carried += 1
+        if "priority" in vals:
+            dest.priority = vals["priority"]
             carried += 1
     return carried
 
