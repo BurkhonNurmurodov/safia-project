@@ -1104,7 +1104,8 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
   scans and the official-HC read behind fields neither reader uses — a cold
   build is ~10 s of загрузка + attendance + checklist pool, with no single
   hot spot, so the lever on a slow-server report is fewer builds, not this.
-- One answer per (grain, period, scope) is kept 120 s, shared by viewers
+- One answer per (grain, period, scope) is kept 10 minutes (120 s until
+  2026-11-12 — the operator's call on that day's slow-server report), shared by viewers
   asking together (`SharedBuild`). The Excel is the board as drawn (the
   browser sends its rows; `build_workbook` lays them out, the page's 80 / 65
   bands as cell tints), logged as `export.leaderboard`.

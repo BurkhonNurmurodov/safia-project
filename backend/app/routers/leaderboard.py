@@ -35,8 +35,9 @@ PAGE = "leaderboard"
 # One answer per (grain, period, scope) is kept this long. A build reads the
 # загрузка and the attendance of every unit over the whole history (8 weeks,
 # 8 months, up to 4 years), so it is the price of one /zagruzka of that span;
-# a ranking that moves once a day can be a couple of minutes old.
-_TTL = 120.0
+# a ranking that moves once a day can be ten minutes old (two until 2026-11-12,
+# when repeat builds of one view led a slow-server report).
+_TTL = 600.0
 _cache: dict = {}
 _cache_lock = threading.Lock()
 _SHARED = SharedBuild()
