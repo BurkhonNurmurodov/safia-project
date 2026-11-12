@@ -248,6 +248,37 @@ one-shot) are recorded whole in `docs/plan-brigadir-change-oct24.md`.
   unit 5 since 12 Sep; two pending claims on unit 10; browser logins for
   units 6 and 10.
 
+## A unit that changed brigadir keeps its sheet history (`SHEET_NAME_ERAS`, 2026-11-12)
+
+The operator (2026-11-12), on the /zagruzka «Full calculation» table for
+26–31 Aug: the units whose brigadir changed lost their history, «coz they
+don't download for the unit, they download for the supervisor». The sheet
+tables (`production_data`, `headcount_data`, `downtime_data`,
+`leader_checklists`) store the PERSON's spelling, and every reader resolves it
+to the unit that carries that name TODAY. After the 24 Oct change
+(«Four units change brigadir» above) «Рахимова Камола» resolved to unit 9 and
+«Сувонов Элшод» to unit 5, so unit 9 showed Kamola's unit-10 days (Munira's
+were overwritten) and unit 5 Suvonov's unit-6 days, while units 6 and 10 read
+empty. That broke ruling 2 (past scores follow the unit).
+
+- `name_map.SHEET_NAME_ERAS` — (the sheet's EXACT spelling, the new
+  brigadir's first day, unit id): a row under that spelling dated before the
+  day is that unit's. The four Oct 24 units are in it.
+- `name_map.rekey_sheet_eras` re-files such rows under the unit's name as it
+  is NOW. The three wipe-and-reload syncs (source, shift report, leaders) run
+  it before they commit, and `startup.rekey_sheet_eras_boot` (`later`, both
+  entrypoints, permanent, idempotent) runs it on every boot. Readers are
+  unchanged.
+- **A future brigadir change that hands a person's name to another unit adds
+  its rows to `SHEET_NAME_ERAS`**; the next deploy re-files what is stored.
+- Exact spellings, never the folded name: a re-filed row carries a unit's
+  Latin name, which folds to the same skeleton as the Cyrillic spelling
+  («Raximova Kamola» / «Рахимова Камола»), and a folded match would move
+  Munira's re-filed rows on to unit 10 on the next pass.
+- Not covered (they match by person, with their own rulings): the QA register
+  (ruling 6 sends every Suvonov row to unit 5), the concerns registers, ARC.
+  `cell_perenaladka` is stored per cell, so nothing moved there.
+
 ## A role switch carries the profile's keyed rows (`_rekey_profile`, 2026-11-10)
 
 Adi Ro'ziyev (profile #360) was hand-tied to Verifix 2501 on 5 Nov as a

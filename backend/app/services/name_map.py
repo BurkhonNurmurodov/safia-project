@@ -74,6 +74,52 @@ def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
     return alias
 
 
+# ─── A unit that changed brigadir keeps its sheet history ────────────────────
+# The source sheets name the PERSON on every row («Рахимова Камола»), while a
+# brigadir change renames the unit in place and the person's spellings follow
+# them (docs/plan-brigadir-change-oct24.md, ruling 2: past scores follow the
+# unit). Matched by name alone, Kamola's unit-10 rows went to unit 9 and
+# Suvonov's unit-6 rows to unit 5, so units 6 and 10 read empty before 24 Oct.
+# A row under one of these EXACT spellings dated before the day is re-filed
+# under that unit's name as it is now. A brigadir change that hands a person's
+# name to another unit adds its rows here (the next boot re-files them).
+SHEET_NAME_ERAS = (
+    # (the sheet's exact spelling, the new brigadir's first day, unit id)
+    ("Мирмахмудова Мунира", "2026-10-24", 9),
+    ("Рахимова Камола", "2026-10-24", 10),
+    ("Сувонов Элшод", "2026-10-24", 6),
+    ("Сувонов Элшод ОФ", "2026-10-24", 5),
+)
+
+
+def rekey_sheet_eras(db: Session) -> dict[str, int]:
+    """Re-file the stored sheet rows `SHEET_NAME_ERAS` names under their unit's
+    current name; the caller commits. Idempotent: a re-filed row carries a
+    unit's name, which an era spelling never is, so a second pass finds
+    nothing. Run after every wipe-and-reload of these sheets and at boot."""
+    from datetime import date, datetime
+    from app.models import (DowntimeData, HeadcountData, LeaderChecklist, Manager,
+                            ProductionData)
+    db.flush()
+    names = dict(db.query(Manager.id, Manager.name).all())
+    eras = {s: (date.fromisoformat(d), names[u]) for s, d, u in SHEET_NAME_ERAS
+            if u in names and s not in names.values()}
+    out: dict[str, int] = {}
+    for col, fmt in ((ProductionData.manager_name, "%d.%m.%Y"),
+                     (HeadcountData.manager_name, "%d.%m.%Y"),
+                     (DowntimeData.manager_name, "%d.%m.%Y"),
+                     (LeaderChecklist.supervisor, "%Y-%m-%d")):
+        n = 0
+        for r in db.query(col.class_).filter(col.in_(list(eras))).all():
+            until, owner = eras[getattr(r, col.key)]
+            if datetime.strptime(r.date, fmt).date() < until:
+                setattr(r, col.key, owner)
+                n += 1
+        if n:
+            out[col.class_.__tablename__] = n
+    return out
+
+
 # ─── Passport-style names → supervisor units ─────────────────────────────────
 #
 # The quality register names the responsible person in full passport form

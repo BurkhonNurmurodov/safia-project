@@ -8559,6 +8559,25 @@ def patch_task11_description_nov09() -> None:
         db.close()
 
 
+def rekey_sheet_eras_boot() -> None:
+    """2026-11-12: re-file the stored sheet rows (Минут, Одам сони, the shift
+    report, the leaders sheet) a brigadir change took from their unit
+    (`name_map.SHEET_NAME_ERAS`). Idempotent; the syncs re-file their own
+    reloads, so this only ever moves what was stored before an era was added."""
+    from app.services.name_map import rekey_sheet_eras
+    db = SessionLocal()
+    try:
+        moved = rekey_sheet_eras(db)
+        db.commit()
+        if moved:
+            print(f"[startup] sheet rows re-filed to their unit: {moved}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] sheet-era re-file failed: {exc}")
+    finally:
+        db.close()
+
+
 def heal_switched_profile_keys() -> None:
     """2026-11-10: a role switch kept the profile row but left what it owns BY
     KEY under the old role ("top-manager:360" while the row became a

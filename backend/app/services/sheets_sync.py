@@ -8,7 +8,7 @@ from app.models import (
 )
 from app.services.leader_tasks import filed_date
 from app.services.name_map import (
-    relabel_supervisor, sheet_alias_map, supervisor_match,
+    rekey_sheet_eras, relabel_supervisor, sheet_alias_map, supervisor_match,
 )
 from app.services.sheets_reader import (
     read_production_data, read_headcount_data, read_downtime_data, read_leader_data,
@@ -48,6 +48,7 @@ def sync_source_sheet(sheet_id: str, db: Session) -> dict:
             ))
             hc_count += 1
 
+    rekey_sheet_eras(db)   # a unit's old brigadir's rows stay the unit's
     db.commit()
     return {"dates_synced": len(dates), "production_rows": prod_count, "headcount_rows": hc_count}
 
@@ -81,6 +82,7 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
             ))
             count += 1
 
+    rekey_sheet_eras(db)   # a unit's old brigadir's rows stay the unit's
     db.commit()
     # `resubmitted` = form rows the parser DISCARDED because a later filing for
     # the same (brigadir, date) replaced them. Reported so a refiled day showing
@@ -241,6 +243,10 @@ def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
         ))
         count += 1
 
+    # shortcut: the night re-date above read the shift of the unit the name
+    # holds TODAY; every era so far is shift 1 on both sides — re-file before
+    # matching if an era ever crosses shifts.
+    rekey_sheet_eras(db)   # a unit's old brigadir's rows stay the unit's
     db.commit()
     if moved:
         log.info("leaders sync: %s night row(s) re-dated to the shift they "
