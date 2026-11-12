@@ -546,6 +546,10 @@ async def lifespan(app: FastAPI):
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
     run(register_staff_live_jobs)
+    # «Oshxona» history: a year of the factory's attendance as counts, read
+    # from Verifix a week at a time, then each new day (mirrored).
+    from app.services.kitchen_history import register_jobs as register_kitchen_history_jobs
+    run(register_kitchen_history_jobs)
     # The Verifix live sync (2026-10-12): the org read + pass, and the dated
     # cell links landing at each unit's shift opening.
     from app.services.verifix_sync import register_jobs as register_verifix_sync_jobs

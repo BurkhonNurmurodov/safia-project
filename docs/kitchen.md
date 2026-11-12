@@ -64,3 +64,40 @@ names change.
 - **Not built:** a split by plant (only brigadirs hang on a plant), meal times
   or portions, names, past days, an export, sortable columns, arrivals and
   departures per hour, a forecast past midnight.
+
+## A year of attendance, as counts (`kitchen_history`, 2026-11-12)
+
+The operator, on the forecast: «based on the work schedule we can only
+forecast the current shift's workers per hour, and we don't know how many of
+the other shift's workers will come. So for the other shifts we need to use
+the historical data … get the reports of the workers' coming and leaving
+hours for 12 months from the verifix and analyze it, find the trends and find
+the best way to forecast them». A session cannot reach Verifix (the login is
+on the server), so the year is COLLECTED on production first and analysed
+after, through the report door.
+
+- **`services/kitchen_history.py` + table `kitchen_history`**: one row per
+  past day and SHIFT WINDOW (`starts` / `ends`, the day's own planned begin /
+  end, else the schedule's name — `_person`'s reading) with `planned`
+  (scheduled to work), `came` (clocked in), `no_out` (no clock-out) and two
+  10-minute histograms, `arr` and `dep`, keyed by the minutes since that
+  day's 00:00 (past 1440 = the next morning: a night shift's exits). The row
+  with both windows "" holds the people with no window — a day off somebody
+  came on, a schedule without hours — and is written for EVERY day read, so
+  «a day with a row» is «a day that was read». **Counts only: no person, no
+  name, no department.**
+- **The job** (`kitchen-history`, every 10 minutes, registered in both
+  entrypoints): reads «Отчёт по посещениям» for the whole factory a WEEK at
+  a time (~30 pages of 100 people), newest first, up to 4 minutes a run,
+  until the last 365 days are stored — about 52 reads, a couple of hours
+  after the deploy that ships it — then one new day a day, once it is 2 days
+  old (a night ends the next morning; Verifix fills check-outs in late). A
+  week's days are replaced whole in one transaction, so a re-read never
+  doubles a count. A failed read parks the job for an hour. With the year
+  stored a tick is one query.
+- **What it is for — NOT built yet**: the analysis (turnout per shift window
+  by weekday / month / season, how early people clock in and how late they
+  leave) and, from it, the forecast of the shifts that have not started. Ask
+  production for the table through the report door (`scripts/ask-prod.py
+  sql`, aggregated in the SELECT — a year is more than its 5,000 rows).
+  Until then «Soatlar bo'yicha» keeps assuming everybody scheduled comes.

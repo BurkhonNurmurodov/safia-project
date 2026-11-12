@@ -5796,3 +5796,30 @@ class ApiToken(Base):
     expires_at   = Column(DateTime(timezone=True), nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at   = Column(DateTime(timezone=True), nullable=True)
+
+
+class KitchenHistory(Base):
+    """«Oshxona» history — one PAST day of the whole factory's attendance, per
+    shift window, as COUNTS (services/kitchen_history.py, read from Verifix's
+    «Отчёт по посещениям»). What the kitchen's forecast learns from: how many
+    of a shift's people usually come, when they clock in and when they leave.
+    Never a person, a name or a department.
+
+    One row per (day, shift window). `starts` / `ends` are the shift's PLANNED
+    clock («08:00» – «17:00»; a night's end is the next morning's); both "" is
+    the day's people with no window — a day off somebody came on, or a schedule
+    without hours — and that row is written for EVERY day read, so a day with a
+    row is a day that was read. `arr` / `dep` count clock-ins / clock-outs per
+    10 minutes, keyed by the minutes since the day's 00:00 (past 1440 = the
+    next day)."""
+    __tablename__ = "kitchen_history"
+
+    day     = Column(Date, primary_key=True)
+    starts  = Column(String(5), primary_key=True)
+    ends    = Column(String(5), primary_key=True)
+    planned = Column(Integer, nullable=False)     # scheduled to work that day
+    came    = Column(Integer, nullable=False)     # …of them (or, without a window, of anybody) clocked in
+    no_out  = Column(Integer, nullable=False)     # …of those, with no clock-out
+    arr     = Column(JSONB, nullable=False)
+    dep     = Column(JSONB, nullable=False)
+    read_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -722,6 +722,9 @@ try:
     # store it, tell a brigadir once everybody who came has left (mirrored).
     from app.services.verifix_live import register_jobs as register_staff_live_jobs
     register_staff_live_jobs()
+    # «Oshxona» history: a year of attendance counts from Verifix (mirrors main.py).
+    from app.services.kitchen_history import register_jobs as register_kitchen_history_jobs
+    register_kitchen_history_jobs()
     from app.services.verifix_sync import register_jobs as register_verifix_sync_jobs
     register_verifix_sync_jobs()
     from app.services.cell_links import register_jobs as register_cell_link_jobs
