@@ -126,9 +126,8 @@ def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) 
         metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
         eff = bb.efficiency(metrics, ids, pers)
         plan = bb.fulfillment(metrics, ids, pers)
-        from app.routers.workers import get_headcount   # the page's own figure
-        head = get_headcount(date_from=d_from, date_to=d_to, shift=None, manager_id=sorted(ids),
-                             factory=None, db=db, payload=payload)
+        from app.routers.workers import headcount       # the page's own figure
+        head = headcount(db, payload, d_from, d_to, None, sorted(ids), None, daily_only=True)
         att = bb.attendance(head, ids, pers)
         xav = bb.concerns(db, ids, pers)
         qrows = _quality_rows(db, d_from, d_to)

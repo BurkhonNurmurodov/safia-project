@@ -10,6 +10,15 @@ laptop on the production block first, find an always-on device later. Page key
 **`ovens`**, Laboratory, **ADMIN-ONLY until opened on the Access tab**; the
 register is `/panel/ovens` (tools group, no capKey).
 
+**On the launcher it is the «Avtomatika» app's page, not a Laboratory one**
+(2026-11-12, the operator: «add one app also called automation, and put the
+Ovens screen in there, visibility for that screen should stay visible only to
+admin»). Only where the row sits changed — `app: "automation"` on its link in
+`config/navLinks.js`; the page key, its admin-only default and the register
+are as above, so the tile shows to admins alone, and a non-launcher role
+granted the page still finds it in the Laboratory group. See
+`docs/navigation-and-shell.md`, «Ilovalar».
+
 - **The server never reaches an oven.** The ovens are on the factory LAN; a
   COLLECTOR there (`tools/revent-oven/collector.py`, stdlib only) reads each
   oven and posts to `/api/ovens/collector/*` (`routers/ovens.py`

@@ -340,15 +340,14 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
     turn = {m0["ym"]: None for m0 in months}
     if ids:
         from app.routers.brigadirs import build_metrics_list
-        from app.routers.workers import get_headcount
+        from app.routers.workers import headcount
 
         with clock("zagruzka"):
             metrics = build_metrics_list(db, d_from, d_to, None, sorted(ids), require_closed=True)
             eff = bb.efficiency(metrics, ids, months)
             sload = bb.shift_load(metrics, ids, months)
         with clock("attendance"):
-            head = get_headcount(date_from=d_from, date_to=d_to, shift=None,
-                                 manager_id=sorted(ids), factory=None, db=db, payload=payload)
+            head = headcount(db, payload, d_from, d_to, None, sorted(ids), None, daily_only=True)
             att = bb.attendance(head, ids, months)
         # Verifix's overtime («Сверхурочные», direct / indirect), STORED by a
         # background read (`services/verifix_month_kinds.py`); a month never

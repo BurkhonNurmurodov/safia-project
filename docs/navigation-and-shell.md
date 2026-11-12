@@ -78,13 +78,25 @@ untouched.
   page are one-page apps; «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
   hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
   moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
-  for everybody else both stay in the Liderlar group); the `admin` app's pages are `ADMIN_PAGE_LINKS`,
+  for everybody else both stay in the Liderlar group); «Avtomatika»
+  (2026-11-12, the operator: «add one app also called automation, and put the
+  Ovens screen in there» — `automation`, `Cpu`, hue `amber`, after the
+  Laboratory) holds «Pechlar», moved out of the Laboratory app by its
+  `app: "automation"` — page access unchanged, so the tile shows to admins
+  only until `ovens` is opened on the Access tab, and for everybody else the
+  page stays in the Laboratory group; the `admin` app's pages are `ADMIN_PAGE_LINKS`,
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Fourteen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Fifteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
-  count sits evenly. ARC is the repair department: its icon (tile and sidebar
+  count sits evenly. **A tile's name is ONE short word where it can be**: a
+  name wider than a phone's tile (~96px at 360px) breaks mid-word, so the
+  automation app is «Avtomatika» / «Автоматика», never «Avtomatlashtirish» /
+  «Автоматизация» (the second fits at 375px and breaks at 360px). Amber is
+  the hue because its look-alikes — the overview's gold by night,
+  Production's orange by day — sit a row away; red, green and purple each
+  had a twin NEXT to the tile. ARC is the repair department: its icon (tile and sidebar
   row) is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn
   on lucide's grid with `createLucideIcon` — plain `Wrench` is «Perenaladka».
 - **The overview answers at `/overview`** for a launcher role (`adminPath`); the
