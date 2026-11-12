@@ -34,9 +34,14 @@ class TaskerTest(unittest.TestCase):
             with self.assertRaises(ValueError, msg=raw):
                 tasker.norm_base(raw)
 
-    def test_token_shape(self):
+    def test_a_pasted_token_is_cleaned_not_refused(self):
+        # what a copy from a chat or a code block brings along
+        for raw in (TOKEN, f" {TOKEN}\n", f"`{TOKEN}`", f'"{TOKEN}"', f"«{TOKEN}»",
+                    f"​{TOKEN}﻿"):
+            self.assertEqual(tasker.clean_token(raw), TOKEN, repr(raw))
         self.assertTrue(tasker.valid_token(TOKEN))
-        for bad in ("", "abc", "tsk_short", TOKEN + " ", "Bearer " + TOKEN):
+        self.assertTrue(tasker.valid_token("not_tsk_prefixed+/="))   # Tasker judges it, not us
+        for bad in ("", "short", "Bearer " + TOKEN, "tsk_абвгдежзий"):
             self.assertFalse(tasker.valid_token(bad), bad)
 
     def test_reading_values_and_names(self):

@@ -7,7 +7,6 @@ import { useTranslit } from "../../utils/transliterate";
 import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
-import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import TableCard, { SectionHead, Th } from "../../components/ui/DataTable";
 import CellLink from "../../components/ui/CellLink";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
@@ -20,8 +19,9 @@ import { fill, fmtAt } from "./VerifixParity";
  * the API returns for yesterday and suggests which of its departments name one
  * of our cells. Nothing here scores anything — task 4 stays a screenshot.
  *
- * The token goes in and never comes out (sealed server-side). Admin-only and
- * never grantable (no capKey in ADMIN_NAV), like the Verifix card.
+ * The token is stored sealed and SHOWN here in plain text — the operator's call
+ * (2026-11-12): a masked token can't be checked against the one Tasker issued.
+ * Admin-only and never grantable (no capKey in ADMIN_NAV), like the Verifix card.
  */
 
 const QK = ["admin-tasker"];
@@ -97,21 +97,21 @@ export default function TaskerSettings() {
     queryFn: () => api.get("/api/admin/tasker").then((r) => r.data),
   });
 
-  // The address shows what is stored until it is edited (null = untouched).
+  // Both fields show what is stored until edited (null = untouched).
   const [baseDraft, setBase] = useState(null);
   const base = baseDraft ?? (data?.base || data?.default_base || "");
-  const [token, setToken] = useState("");
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [clearErr, setClearErr] = useState(null);
+  const [tokenDraft, setToken] = useState(null);
+  const token = tokenDraft ?? (data?.token || "");
   const [result, setResult] = useState(null);
 
-  const dirty = !!data && ((base.trim() || data.default_base) !== (data.base || data.default_base) || token.length > 0);
+  const tokenEdited = !!data && token.trim() !== (data.token || "");
+  const dirty = !!data && ((base.trim() || data.default_base) !== (data.base || data.default_base) || tokenEdited);
   useLeaveGuard(dirty);
 
   const err = (e) => e?.response?.data?.detail || String(e?.message || e);
   const afterSave = (res, msg) => {
     setBase(null);
-    setToken("");
+    setToken(null);
     setResult(null);
     qc.setQueryData(QK, res);
     toast(msg, "success");
@@ -120,11 +120,6 @@ export default function TaskerSettings() {
     mutationFn: (body) => api.put("/api/admin/tasker", body).then((r) => r.data),
     onSuccess: (res) => afterSave(res, t("tasker.saved")),
     onError: (e) => toast(err(e), "error"),
-  });
-  const clear = useMutation({
-    mutationFn: () => api.put("/api/admin/tasker", { clear_token: true }).then((r) => r.data),
-    onSuccess: (res) => { setConfirmClear(false); afterSave(res, t("tasker.cleared")); },
-    onError: (e) => setClearErr(err(e)),
   });
   const test = useMutation({
     mutationFn: () => api.post("/api/admin/tasker/test").then((r) => r.data),
@@ -167,9 +162,8 @@ export default function TaskerSettings() {
             <FormField label={t("tasker.token")} required
               hint={data.token_readable === false ? undefined : t("tasker.tokenHint")}
               error={data.token_readable === false ? t("tasker.tokenUnreadable") : undefined}>
-              <input type="password" value={token} onChange={(e) => setToken(e.target.value)}
-                autoComplete="new-password" spellCheck={false}
-                placeholder={data.token_set ? t("tasker.tokenKeep") : "tsk_…"}
+              <input value={token} onChange={(e) => setToken(e.target.value)}
+                autoComplete="off" spellCheck={false} placeholder="tsk_…"
                 className={`${inputCls} font-mono`} style={inputStyle} />
             </FormField>
             <FormField label={t("tasker.base")} hint={t("tasker.baseHint")}>
@@ -180,14 +174,13 @@ export default function TaskerSettings() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="lg" variant="primary" loading={save.isPending} disabled={!dirty}
-              onClick={() => save.mutate({ base: base.trim(), ...(token ? { token: token.trim() } : {}) })}>
+              onClick={() => save.mutate({
+                base: base.trim(),
+                // An emptied field removes the stored token.
+                ...(tokenEdited ? (token.trim() ? { token: token.trim() } : { clear_token: true }) : {}),
+              })}>
               {t("tasker.save")}
             </Button>
-            {data.token_set && (
-              <Button size="lg" variant="ghost" onClick={() => setConfirmClear(true)}>
-                {t("tasker.clearToken")}
-              </Button>
-            )}
           </div>
         </div>
       </div>
@@ -262,17 +255,6 @@ export default function TaskerSettings() {
         </TableCard>
       )}
 
-      <ConfirmDialog
-        open={confirmClear}
-        tone="danger"
-        title={t("tasker.clearConfirmTitle")}
-        message={t("tasker.clearConfirmBody")}
-        confirmLabel={t("tasker.clearToken")}
-        loading={clear.isPending}
-        error={clearErr}
-        onCancel={() => { setConfirmClear(false); setClearErr(null); }}
-        onConfirm={() => { setClearErr(null); clear.mutate(); }}
-      />
       {toastNode}
     </div>
   );

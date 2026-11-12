@@ -17,9 +17,18 @@ Tasker yet.**
   `app_settings` helpers. `routers/tasker.py` is the door: `GET` / `PUT
   /api/admin/tasker`, `POST /api/admin/tasker/test`. Admin-only, not grantable
   (no `capKey`) — the token reads every factory department's inspections.
-- **The token is SEALED in `app_settings`** (`tasker_token`,
-  `web_auth.seal_password`), never returned, never logged; the action register
-  records that it changed and its length. The doc's localhost token is a TEST
+- **The token is SEALED at rest in `app_settings`** (`tasker_token`,
+  `web_auth.seal_password`) and **SHOWN in plain text on the card** — the
+  operator's ruling, 2026-11-12 («who hides the token?»): a masked field hid
+  what was actually pasted, and the token cannot be checked against the one
+  Tasker issued. Never logged; the action register records that it changed and
+  its length. An emptied field + Save removes it.
+- **A pasted token is CLEANED, not judged** (`clean_token`): zero-width
+  characters and surrounding quotes / backticks / «» are dropped, and the only
+  refusal is a space or a non-ASCII character (it could not be sent in a
+  header). Whether it is the RIGHT token is Tasker's answer to «Tekshirish».
+  The first version demanded `tsk_` + 20–200 URL-safe characters and refused a
+  real token pasted with extra characters around it, hidden by the mask. The doc's localhost token is a TEST
   value for Tasker's local setup; production gets its own token once Tasker
   deploys there. Neither ever goes into git.
 - **The address is an allow-list** (`norm_base`): Tasker's production origin

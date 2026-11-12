@@ -4,8 +4,8 @@ Three doors over ``app.services.tasker``: read what is stored, store it, run
 the connection test. ADMIN-ONLY and not grantable, like the Verifix card: the
 token reads every factory department's inspections.
 
-The token goes in and never comes out: the GET says only whether one is stored
-and whether it still opens, the PUT keeps it on a blank field, and the action
+The GET shows the stored token to the admin (the operator's call, 2026-11-12 —
+a masked token can't be checked against the one Tasker issued); the action
 register records that it changed and its length — never the value.
 """
 import logging
@@ -37,7 +37,7 @@ def get_tasker(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 class TaskerIn(BaseModel):
     base: Optional[str] = Field(default=None, max_length=200)
-    # Blank = keep the stored token; the form never holds it.
+    # Sent only when edited; an emptied field sends `clear_token` instead.
     token: Optional[str] = Field(default=None, max_length=300)
     clear_token: bool = False
 

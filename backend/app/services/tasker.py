@@ -7,10 +7,11 @@ in counts, what the API hands back and which of its departments name one of our
 cells. Nothing here writes to Tasker and nothing here moves a number on the
 platform — task 4 stays a screenshot until the data can answer it.
 
-**The token lives in ``app_settings``, SEALED** (``web_auth.seal_password``,
-the Verifix password's rule): never returned by an endpoint, never logged,
-never in the action register. It travels in the ``X-Integration-Token`` header
-only — never in a URL.
+**The token is stored SEALED in ``app_settings``** (``web_auth.seal_password``)
+and SHOWN to the admins on the card (the operator, 2026-11-12: a masked token
+cannot be checked against the one Tasker issued). Never logged, never in the
+action register. It travels in the ``X-Integration-Token`` header only — never
+in a URL.
 
 **The address is an allow-list**, because it decides where the token is sent:
 Tasker's production origin, or ``localhost`` / ``127.0.0.1`` with a port for
@@ -43,7 +44,11 @@ K_BASE = "tasker_base"
 K_TOKEN = "tasker_token"            # SEALED — web_auth.seal_password
 K_LAST_TEST = "tasker_last_test"    # JSON: counts and department names only
 
-_TOKEN_RE = re.compile(r"^tsk_[A-Za-z0-9_-]{20,200}$")
+# What a copy from a chat, a doc or a code block brings along that is no part of
+# any token: zero-width characters, and the quotes or backticks around it.
+_INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
+_WRAP = "`'\"«»“”‘’"
+_SENDABLE = re.compile(r"[\x21-\x7e]{8,300}")
 
 # Inside Cloudflare's 100 s, the Verifix test's arithmetic.
 BUDGET_S = 70.0
@@ -86,11 +91,18 @@ def norm_base(raw: Optional[str]) -> str:
     raise ValueError(f"the address must be {PROD_BASE} or localhost with a port")
 
 
+def clean_token(raw: Optional[str]) -> str:
+    """The token as pasted, minus what the copy brought along."""
+    return str(raw or "").translate(_INVISIBLE).strip().strip(_WRAP).strip()
+
+
 def valid_token(token: str) -> bool:
-    return bool(_TOKEN_RE.match(token or ""))
+    """Sendable in a header: printable ASCII, no spaces. Whether it is the
+    RIGHT token is Tasker's to say — the Test button asks it."""
+    return bool(_SENDABLE.fullmatch(token or ""))
 
 
-def config(db: Session, *, with_token: bool = False) -> dict:
+def config(db: Session) -> dict:
     from app.web_auth import open_password
 
     sealed = _get(db, K_TOKEN)
@@ -105,16 +117,14 @@ def config(db: Session, *, with_token: bool = False) -> dict:
         # A sealed value that no longer opens must be re-entered — say so
         # rather than let the test fail as «rejected».
         "token_readable": (token is not None) if sealed else None,
+        "token": token,
     }
-    if with_token:
-        out["token"] = token
     return out
 
 
 def save(db: Session, *, base: Optional[str] = None, token: Optional[str] = None,
          clear_token: bool = False) -> dict:
-    """Write what was sent; ``None`` leaves a field alone, a blank token keeps
-    the stored one. Returns what changed, for the action register — the
+    """Write what was sent; ``None`` leaves a field alone. Returns what changed, for the action register — the
     token's LENGTH, never the token."""
     from app.web_auth import seal_password
 
@@ -133,9 +143,9 @@ def save(db: Session, *, base: Optional[str] = None, token: Optional[str] = None
             _put(db, K_TOKEN, None)
             changed["token"] = "cleared"
     elif token:
-        token = token.strip()
+        token = clean_token(token)
         if not valid_token(token):
-            raise ValueError("a Tasker token starts with tsk_")
+            raise ValueError("the token holds a space or a character that cannot be sent — paste it again")
         _put(db, K_TOKEN, seal_password(token))
         changed["token"] = len(token)
     if changed:
@@ -249,7 +259,7 @@ def run_test(db: Session, actor: str = "") -> dict:
 
     started = time.monotonic()
     deadline = started + BUDGET_S
-    cfg = config(db, with_token=True)
+    cfg = config(db)
     day = (datetime.now(TZ).date() - timedelta(days=1)).isoformat()
     result: dict[str, Any] = {"at": datetime.now(TZ).isoformat(timespec="seconds"),
                               "by": actor, "base": cfg["base"], "day": day, "steps": []}
