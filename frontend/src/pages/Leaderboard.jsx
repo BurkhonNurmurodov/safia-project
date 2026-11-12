@@ -335,12 +335,18 @@ const sparkTone = (st, raw) => {
 };
 
 /* Floating hover tip for the SVG chart — the one surface here that Apex does
- * not draw, so it carries the same tokens the Apex tooltips use. */
+ * not draw, so it carries the same tokens the Apex tooltips use. `sub` may be
+ * a node: the rank chart's is two lines (the period, then place · score).
+ * Near the right edge it opens to the LEFT of the pointer where there is room
+ * (the chart's names stand there, and a tip pushed back over them hid the very
+ * rows being pointed at); a phone has room on neither side and keeps the clamp. */
 function FloatTip({ tip }) {
   if (!tip) return null;
+  const vw = window.innerWidth;
+  const flip = tip.x + 14 + 240 > vw - 8 && tip.x - 14 - 240 >= 8;
   return (
     <div className="fixed z-50 pointer-events-none rounded-lg px-2.5 py-2"
-      style={{ left: Math.min(tip.x + 14, window.innerWidth - 250), top: Math.max(8, tip.y - 56), background: "var(--bg-accent)", border: "1px solid var(--border-md)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)", maxWidth: 240 }}>
+      style={{ ...(flip ? { right: vw - tip.x + 14 } : { left: Math.min(tip.x + 14, vw - 250) }), top: Math.max(8, tip.y - 74), background: "var(--bg-accent)", border: "1px solid var(--border-md)", boxShadow: "0 6px 20px rgba(0,0,0,0.25)", maxWidth: 240 }}>
       <div className="text-xs font-bold" style={{ color: "var(--text-1)" }}>{tip.title}</div>
       <div className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{tip.sub}</div>
     </div>
@@ -991,73 +997,204 @@ function MobileRow({ s, isSel, isExp, onClick, catMeta, teamAvg, st, medal, t, n
 }
 
 /* ═══════════════════════ rank-trajectory chart ═══════════════════════
- * A bump chart: every brigadir's place period by period. Measured to its card
- * (never a fixed width that scrolls on a phone), one neutral line per person,
- * the selected one in brand gold, and every line NAMED at its end — final
- * places are unique, so the names can never collide and no legend is needed.
- * The end dots of the top three carry their medal. A period a brigadir had no
- * score in breaks their line rather than drawing a place they never held. */
-function BumpChart({ sups, labels, selectedId, onSelect, onTip, nm, medal, t }) {
-  const [ref, width] = useElementWidth();
-  const [hoverId, setHoverId] = useState(null);
+ * A bump chart: every brigadir's place period by period, measured to its card
+ * (never a fixed width that scrolls on a phone). Redrawn 2026-11-12 on the
+ * operator's references. A line HOLDS its place across a period and S-curves
+ * to the next, thick and neutral, cased in the card's own surface so a
+ * crossing reads as over / under and never as a knot. The selected brigadir
+ * is the gold line and the one under the pointer the dark one, and both carry
+ * their place as a NUMBER at every period — a trajectory is read off the line
+ * itself, with no trip to the axis. A line begins and ends at the brigadir's
+ * photo: on the left where they enter the board (mid-chart for one who joined
+ * later), on the right at the picked period's place beside the place and the
+ * name. Final places are unique, so that column is the legend and can never
+ * collide. A period a brigadir had no score in breaks their line rather than
+ * drawing a place they never held.
+ *
+ * The lines are SVG; the photos and names are HTML laid over it at the same
+ * pixel coordinates (the SVG is never scaled): ProfileAvatar fetches a photo
+ * as a blob, and a name is a real button — focusable, pressable, cut with «…»
+ * where the column is narrow. The highlighted lines are drawn AGAIN in a layer
+ * of their own on top with pointer events off, so the lines underneath never
+ * change order under the pointer. */
+const BUMP_LINE = "color-mix(in srgb, var(--text-3) 30%, var(--bg-card))";
+const BUMP_RING = [
+  "0 0 0 2px var(--bg-card)",
+  "0 0 0 2px var(--bg-card), 0 0 0 3.5px var(--text-2)",
+  "0 0 0 2px var(--bg-card), 0 0 0 4px var(--brand)",
+];
+function BumpChart({ sups, labels, tips, selectedId, onSelect, onTip, nm, medal, t }) {
+  const [ref, W] = useElementWidth();
+  // The line under the pointer and the period the pointer is over.
+  const [hover, setHover] = useState(null);
   const last = labels.length - 1;
   const n = Math.max(1, ...sups.flatMap((s) => s.rankHist.filter((r) => r != null)));
-  const W = Math.max(360, width);
-  const H = Math.max(200, 24 * n + 44);
-  const padL = 28, padR = clamp(Math.round(W * 0.22), 96, 150), padT = 14, padB = 26;
-  const x = (w) => (last < 1 ? padL + (W - padL - padR) / 2 : padL + (w / last) * (W - padL - padR));
-  const y = (rk) => (n < 2 ? padT + (H - padT - padB) / 2 : padT + ((rk - 1) / (n - 1)) * (H - padT - padB));
-  const state = (s) => (s.id === selectedId ? 2 : s.id === hoverId ? 1 : 0);
-  const order = [...sups].sort((a, b) => state(a) - state(b));
-  // One polyline per unbroken run of places.
-  const runs = (rh) => {
-    const out = [];
-    let cur = [];
-    rh.forEach((rk, w) => {
-      if (rk == null) { if (cur.length) out.push(cur); cur = []; return; }
-      cur.push(`${x(w).toFixed(1)},${y(rk).toFixed(1)}`);
+  // A phone keeps every period and gives up the furniture instead: no photo
+  // where a line starts, no place beside the name (the axis on the left has it).
+  const narrow = W < 520;
+  const av = narrow ? 20 : 24;
+  const pitch = clamp(Math.round(260 / Math.max(1, n - 1)), narrow ? 24 : 30, 44);
+  const names = new Map(sups.map((s) => [s.id, shortPerson(nm(s.name))]));
+  const nameW = Math.min(Math.ceil(Math.max(0, ...[...names.values()].map((v) => textWidth(v, 12, 700))) * 1.05), narrow ? 84 : 150);
+  const rankW = narrow ? 0 : 18;
+  const padL = narrow ? 28 : 24 + av / 2;
+  const padR = av / 2 + 6 + (rankW ? rankW + 6 : 0) + nameW + 2;
+  const padT = av / 2 + 6, padB = av / 2 + 28;
+  const plotW = Math.max(0, W - padL - padR);
+  const step = last < 1 ? plotW : plotW / last;
+  const H = padT + (n - 1) * pitch + padB;
+  const x = (w) => (last < 1 ? padL + plotW / 2 : padL + w * step);
+  const y = (rk) => padT + (rk - 1) * pitch;
+  const lw = Math.round(clamp(step * 0.07, 2.5, Math.min(6, pitch * 0.2)) * 2) / 2;
+  // How far a line runs level on either side of a period before it turns.
+  const flat = Math.min(step * 0.14, 20);
+  // A place fits inside its node while the periods stand far enough apart.
+  const nodeR = step >= 44 && pitch >= 28 ? 9.5 : step >= 22 ? 8 : 0;
+  // The period axis thins to the room it has, counted back from the picked
+  // period so that one is always named.
+  const every = Math.max(1, Math.ceil((Math.max(0, ...labels.map((l) => textWidth(l, 10.5, 600))) + 10) / Math.max(1, step)));
+
+  // One path per unbroken run of places.
+  const series = sups.map((s) => {
+    const runs = [];
+    let cur = null;
+    s.rankHist.forEach((rk, w) => {
+      if (rk == null) { cur = null; return; }
+      if (!cur) { cur = { a: w, b: w, pts: [] }; runs.push(cur); }
+      cur.b = w;
+      cur.pts.push([x(w), y(rk)]);
     });
-    if (cur.length) out.push(cur);
-    return out;
+    runs.forEach((run) => {
+      let d = `M${px1(run.pts[0][0])},${px1(run.pts[0][1])}`;
+      for (let i = 1; i < run.pts.length; i++) {
+        const [x0, y0] = run.pts[i - 1], [x1, y1] = run.pts[i];
+        if (y0 === y1) { d += `H${px1(x1)}`; continue; }
+        const m = px1((x0 + x1) / 2);
+        d += `H${px1(x0 + flat)}C${m},${px1(y0)} ${m},${px1(y1)} ${px1(x1 - flat)},${px1(y1)}H${px1(x1)}`;
+      }
+      run.d = d;
+    });
+    return { s, runs };
+  });
+  const lvOf = (s) => (s.id === selectedId ? 2 : hover && s.id === hover.id ? 1 : 0);
+  // Fixed order, the leaders drawn last: nothing here moves under the pointer.
+  const base = [...series].sort((p, q) => q.s.rank - p.s.rank);
+  const lit = [series.find((e) => lvOf(e.s) === 1), series.find((e) => lvOf(e.s) === 2)].filter(Boolean);
+
+  const point = (e, s, col) => {
+    setHover((h) => (h && h.id === s.id && h.col === col ? h : { id: s.id, col }));
+    onTip(e, nm(s.name), <>
+      <span className="block">{tips[col]}</span>
+      <span className="block"><b style={{ color: "var(--text-1)" }}>{t("leaderboard.rank")}: {s.rankHist[col]}</b> · {fmt1(s.hist[col])} /100</span>
+    </>);
   };
-  const firstRank = (s) => s.rankHist.find((r) => r != null);
+  const leave = () => { setHover(null); onTip(null); };
+  // A tip is pinned to the screen, so it must not outlive the scroll that
+  // moves the line away from under it — on a phone a tap leaves it standing.
+  const hovering = hover != null;
+  useEffect(() => {
+    if (!hovering) return undefined;
+    const off = () => { setHover(null); onTip(null); };
+    window.addEventListener("scroll", off, true);
+    return () => window.removeEventListener("scroll", off, true);
+  }, [hovering]); // eslint-disable-line react-hooks/exhaustive-deps
+  const colAt = (e, run) => {
+    if (last < 1) return run.a;
+    const box = e.currentTarget.ownerSVGElement.getBoundingClientRect();
+    return clamp(Math.round((e.clientX - box.left - padL) / step), run.a, run.b);
+  };
+
   return (
-    <div ref={ref} className="w-full">
-      {width > 0 && (
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: "block", maxWidth: "100%" }} role="img" aria-label={t("leaderboard.rankDynamics")}>
+    <div ref={ref} className="relative w-full" style={{ height: W > 0 ? H : undefined }}>
+      {W > 0 && <>
+        <svg width={W} height={H} style={{ display: "block" }} role="img" aria-label={t("leaderboard.rankDynamics")}>
           {Array.from({ length: n }, (_, i) => i + 1).map((rk) => (
-            <g key={rk}>
-              <line x1={padL} y1={y(rk)} x2={W - padR + 6} y2={y(rk)} stroke="var(--border-md)" strokeWidth="1" />
-              <text x={padL - 8} y={y(rk) + 3.5} textAnchor="end" fontSize="10" fill="var(--text-4)" className="tabular-nums">{rk}</text>
+            <text key={rk} x={14} y={y(rk) + 3.7} textAnchor="end" fontSize="10.5" fill="var(--text-3)" className="tabular-nums">{rk}</text>
+          ))}
+          {labels.map((lb, i) => ((last - i) % every === 0 ? (
+            <text key={`${lb}-${i}`} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10.5" className="tabular-nums"
+              fontWeight={hover?.col === i ? 700 : 400} fill={hover?.col === i ? "var(--text-1)" : "var(--text-3)"}>{lb}</text>
+          ) : null))}
+          {base.map(({ s, runs }) => (
+            <g key={s.id} style={{ cursor: "pointer" }} onMouseLeave={leave} onClick={() => onSelect(s.id)}>
+              {runs.map((run) => (run.pts.length > 1 ? (
+                <g key={run.a} onMouseMove={(e) => point(e, s, colAt(e, run))}>
+                  <path d={run.d} fill="none" strokeWidth={lw + 3} strokeLinecap="round" style={{ stroke: "var(--bg-card)" }} />
+                  <path d={run.d} fill="none" strokeWidth={lw} strokeLinecap="round" style={{ stroke: BUMP_LINE }} />
+                  <path d={run.d} fill="none" stroke="transparent" strokeWidth={Math.max(14, lw + 8)} />
+                </g>
+              ) : narrow && run.a < last ? (
+                <circle key={run.a} cx={run.pts[0][0]} cy={run.pts[0][1]} r={lw / 2 + 1.5} style={{ fill: BUMP_LINE }}
+                  onMouseMove={(e) => point(e, s, run.a)} />
+              ) : null))}
             </g>
           ))}
-          {labels.map((wk, i) => (
-            <text key={`${wk}-${i}`} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--text-4)" className="tabular-nums">{wk}</text>
-          ))}
-          {order.map((s) => {
-            const lv = state(s);
-            const stroke = lv === 2 ? "var(--brand)" : lv === 1 ? "var(--text-2)" : "var(--text-4)";
-            const dot = lv === 2 ? "var(--brand)" : medal[s.rank] || stroke;
-            const segs = runs(s.rankHist);
-            return (
-              <g key={s.id} style={{ cursor: "pointer" }}
-                onMouseMove={(e) => { setHoverId(s.id); onTip(e, nm(s.name), `${t("leaderboard.rank")}: ${s.rank} · ${labels[0]}: ${firstRank(s) ?? "—"} · ${fmt1(s.comp)} /100`); }}
-                onMouseLeave={() => { setHoverId(null); onTip(null); }}
-                onClick={() => onSelect(s.id)}>
-                {segs.map((pts, k) => (
-                  pts.length > 1
-                    ? <polyline key={k} points={pts.join(" ")} fill="none" stroke={stroke} strokeWidth={lv === 2 ? 3 : lv === 1 ? 2.2 : 1.4} opacity={lv ? 1 : 0.45} strokeLinecap="round" strokeLinejoin="round" />
-                    : null
-                ))}
-                <circle cx={x(last)} cy={y(s.rank)} r={lv === 2 ? 4.5 : 3.2} fill={dot} stroke="var(--bg-card)" strokeWidth="1.5" />
-                <text x={x(last) + 10} y={y(s.rank) + 3.5} fontSize="11" fontWeight={lv === 2 ? 700 : 500}
-                  fill={lv === 2 ? "var(--brand-text)" : lv === 1 ? "var(--text-1)" : "var(--text-3)"}>{shortPerson(nm(s.name))}</text>
-                {segs.map((pts, k) => <polyline key={`h${k}`} points={pts.join(" ")} fill="none" stroke="transparent" strokeWidth="14" />)}
-              </g>
-            );
-          })}
+          <g style={{ pointerEvents: "none" }}>
+            {lit.map(({ s, runs }) => {
+              const sel = lvOf(s) === 2;
+              const tone = sel ? "var(--brand)" : "var(--text-2)";
+              const w = lw + (sel ? 1.5 : 0.5);
+              return (
+                <g key={s.id}>
+                  {runs.map((run) => (run.pts.length > 1 ? (
+                    <g key={run.a}>
+                      <path d={run.d} fill="none" strokeWidth={w + 3.5} strokeLinecap="round" style={{ stroke: "var(--bg-card)" }} />
+                      <path d={run.d} fill="none" strokeWidth={w} strokeLinecap="round" style={{ stroke: tone }} />
+                    </g>
+                  ) : null))}
+                  {/* the place at every period — except where a photo already sits */}
+                  {s.rankHist.map((rk, i) => {
+                    if (rk == null || i === last || (!narrow && runs.some((run) => run.a === i))) return null;
+                    return nodeR ? (
+                      <g key={i}>
+                        <circle cx={x(i)} cy={y(rk)} r={nodeR} strokeWidth="2" style={{ fill: tone, stroke: "var(--bg-card)" }} />
+                        <text x={x(i)} y={y(rk) + (nodeR > 9 ? 3.7 : 3.2)} textAnchor="middle" fontSize={nodeR > 9 ? 10.5 : 9} fontWeight="700"
+                          className="tabular-nums" fill={sel ? "var(--on-brand)" : "var(--bg-card)"}>{rk}</text>
+                      </g>
+                    ) : (
+                      <circle key={i} cx={x(i)} cy={y(rk)} r={lw / 2 + 2.5} strokeWidth="1.5" style={{ fill: tone, stroke: "var(--bg-card)" }} />
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
         </svg>
-      )}
+
+        {/* where each line starts: the brigadir's photo */}
+        {!narrow && series.flatMap(({ s, runs }) => runs.filter((run) => run.a < last).map((run) => {
+          const size = run.a === 0 ? av : av - 4;
+          const lv = lvOf(s);
+          return (
+            <div key={`${s.id}-${run.a}`} className="absolute" aria-hidden="true"
+              style={{ left: run.pts[0][0] - size / 2, top: run.pts[0][1] - size / 2, zIndex: 1 + lv, cursor: "pointer" }}
+              onMouseMove={(e) => point(e, s, run.a)} onMouseLeave={leave} onClick={() => onSelect(s.id)}>
+              <Avatar sup={s} size={size} style={{ boxShadow: BUMP_RING[lv] }} />
+            </div>
+          );
+        }))}
+
+        {/* where it ends: photo · place · name — the chart's legend */}
+        {sups.map((s) => {
+          const lv = lvOf(s);
+          const tone = medal[s.rank];
+          return (
+            <button key={s.id} type="button" className="absolute flex items-center text-left rounded-full"
+              style={{ left: x(last) - av / 2, top: y(s.rank) - pitch / 2, width: W - x(last) + av / 2, height: pitch, gap: 6, zIndex: 1 + lv, cursor: "pointer" }}
+              aria-pressed={lv === 2} aria-label={`${nm(s.name)} — ${t("leaderboard.rank")}: ${s.rank}`}
+              onMouseMove={(e) => point(e, s, last)} onMouseLeave={leave}
+              onFocus={() => setHover({ id: s.id, col: last })} onBlur={() => setHover(null)}
+              onClick={() => onSelect(s.id)}>
+              <Avatar sup={s} size={av} style={{ boxShadow: BUMP_RING[lv] }} />
+              {rankW > 0 && (
+                <span className="inline-flex items-center justify-center rounded-md tabular-nums flex-shrink-0"
+                  style={{ width: rankW, height: rankW, fontSize: 10.5, fontWeight: 800, ...(tone ? { background: hexA(tone, 0.18), color: tone } : { color: "var(--text-3)" }) }}>{s.rank}</span>
+              )}
+              <span className="truncate min-w-0" style={{ fontSize: 12, fontWeight: lv === 2 ? 700 : 500, color: lv === 2 ? "var(--brand-text)" : lv === 1 ? "var(--text-1)" : "var(--text-2)" }}>{names.get(s.id)}</span>
+            </button>
+          );
+        })}
+      </>}
     </div>
   );
 }
@@ -1200,6 +1337,7 @@ export default function Leaderboard() {
   const muted = { color: "var(--text-4)" };
   const dAvgIcon = kpi && kpi.dAvg != null && (kpi.dAvg > 0.05 ? <ArrowUp size={11} /> : kpi.dAvg < -0.05 ? <ArrowDown size={11} /> : <Minus size={11} />);
   const chartLabels = board.periods.map((p) => periodLabel(p, grain, t, true));
+  const chartTips = board.periods.map((p) => periodLabel(p, grain, t));
   const prevAnchor = cur ? isoAdd(cur.from, -1) : null;
 
   const rowProps = (s) => ({
@@ -1369,7 +1507,7 @@ export default function Leaderboard() {
                   </span>
                 )} />
               <div className="px-3 pb-3 pt-2">
-                <BumpChart sups={sups} labels={chartLabels} selectedId={effSelectedId} onSelect={selectSup} onTip={onTip} nm={nm} medal={medal} t={t} />
+                <BumpChart sups={sups} labels={chartLabels} tips={chartTips} selectedId={effSelectedId} onSelect={selectSup} onTip={onTip} nm={nm} medal={medal} t={t} />
               </div>
             </div>
           )}

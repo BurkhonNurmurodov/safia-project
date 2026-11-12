@@ -1111,6 +1111,24 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
 - The podium shows the brigadir's profile photo as a medallion sized off the
   card's measured width, below the rank column (the mock's cut-out renders
   are gone).
+- **The rank chart is a bump chart with the brigadirs' photos (2026-11-12,
+  v4.476.0** — the operator sent two reference charts and «put the circular
+  images of people»). `BumpChart` in Leaderboard.jsx: a line holds its place
+  across a period and S-curves to the next, thick and neutral, cased in the
+  card's surface so a crossing reads over / under; the selected brigadir is
+  gold, the one under the pointer dark, and both print their PLACE as a number
+  at every period. A line starts and ends at the brigadir's photo
+  (`ProfileAvatar`, initials without one): where it enters the board on the
+  left (mid-chart for one who joined later or came back after a period with no
+  score) and at the picked period on the right, beside the place (a medal chip
+  for 1–3) and the name. The right column is the legend and each row of it is
+  a button, so a brigadir can be selected from the keyboard. The tip names the
+  period under the pointer with that period's place and score, and goes away
+  on scroll. The lines are SVG, the photos and names HTML laid over it at the
+  same pixels, so the SVG is never scaled. Below 520px every period stays and
+  the furniture goes: no start photos, no place beside the name, a thinner
+  line, the period axis thinned to what fits (counted back from the picked
+  period). No figure or rule changed — places and scores are the board's own.
 - **Month and year never loaded on the first build (v4.318.0 → 4.320.8)**: the
   Davomat half calls `get_headcount` over the whole history, and /workers
   filtered its rows by the confirmed (brigadir, day) pairs as a literal
