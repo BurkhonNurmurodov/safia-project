@@ -85,8 +85,9 @@ const CONTAINERS = [
 ];
 const CONTAINER_BY_KEY = Object.fromEntries(CONTAINERS.flatMap((c) =>
   [[`cap_${c.id}`, { ...c, kind: "cap" }], [`cnt_${c.id}`, { ...c, kind: "cnt" }]]));
-// «Jamoalar» → «Soatlik» stays off the page until the operator turns it on.
-const SHOW_HOURLY = false;
+// «Jamoalar» → «Soatlik» is shown to these roles only (the operator,
+// 2026-11-12) while it is being tried out.
+const HOURLY_ROLES = ["admin", "shift-manager"];
 const containerCount = (r, field) => {
   const cap = Number(r[field]);
   const plan = r.plan_qty;
@@ -2438,11 +2439,12 @@ export default function Production() {
   // of the row's own count (`containerCount`, the table's «soni» columns). A
   // whole-centre card sums every line at its Команда; a group card the lines
   // carrying its letter. «—» where no line of the team states a capacity.
-  // «Soatlik» (hourly containers) is built and deployed but HIDDEN until the
-  // operator says to show it (2026-11-12). A tab that saved "hourly" reads as
-  // «Yuklama» meanwhile. Flip SHOW_HOURLY to bring the toggle back.
+  // «Soatlik» (hourly containers) is offered to HOURLY_ROLES only (admins and
+  // shift managers, the operator 2026-11-12); anyone else who had saved
+  // "hourly" reads «Yuklama».
+  const showHourly = HOURLY_ROLES.includes(auth?.role);
   const [teamsViewSaved, setTeamsView] = usePersistentState("production_teams_view", "load");
-  const teamsView = !SHOW_HOURLY && teamsViewSaved === "hourly" ? "load" : teamsViewSaved;
+  const teamsView = !showHourly && teamsViewSaved === "hourly" ? "load" : teamsViewSaved;
   const teamContainers = useMemo(() => {
     const norm = (v) => String(v ?? "").trim().toUpperCase();
     const out = new Map();
@@ -3847,7 +3849,7 @@ export default function Production() {
             <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
             <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
               options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")],
-                ...(SHOW_HOURLY ? [["hourly", t("production.teams.hourly")]] : [])]} />
+                ...(showHourly ? [["hourly", t("production.teams.hourly")]] : [])]} />
           </span>
         } />
         {!loading && teamsView === "hourly" ? (

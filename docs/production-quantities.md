@@ -626,11 +626,12 @@ last columns, after «Pareto» (the operator's call, same day), and
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 
-**HIDDEN for now** (the operator, 2026-11-12, v4.475.0): the code and the
-backend clocks are live, but the toggle is off the page — `SHOW_HOURLY = false`
-in `Production.jsx`, and a tab that had saved `hourly` reads as «Yuklama».
-Flip the constant to show it. The hourly TELEGRAM message is wanted LATER and
-is not built yet.
+**Shown to admins and shift managers only** (the operator, 2026-11-12,
+v4.479.0; hidden from everybody in v4.475.0): `HOURLY_ROLES` in
+`Production.jsx`; anyone else who had saved `hourly` reads «Yuklama». The
+backend serves the shift clocks to every caller — this is a display choice,
+not a permission. The hourly TELEGRAM message is wanted LATER and is not built
+yet.
 
 The operator: «we want to see the containers every hour — for using from 9–10
 we have to see the result at 8», per TEAM. A third view on the «Jamoalar»
