@@ -42,7 +42,7 @@ loaded by themselves:
 - `docs/appeals.md` — late proofs, the appeal chat, objections and their three stages, every judge that can be objected to, `APPEALS_FROM`.
 - `docs/leaders-page.md` — the /leaders page: its tabs, the kept register, «Mening o'rnim», empty days, photos, the phone layout, the «Lider nazorati — admin» grant.
 - `docs/production-catalog.md` — **a catalog edit counts from now on** (`pp_catalog.freeze` before every write), a cell's positions follow the cell (`catalog_follow`), archived lines, «O'lchov birligi», the SAP-codes grant.
-- `docs/production-quantities.md` — typed ПЛАН/ФАКТ and the SAP columns, per-line quantities, who a SAP upload fills, ШТАТКА, «Plan Bajarish», the call forecast, a closed day locking «Zagruzka fayli».
+- `docs/production-quantities.md` — typed ПЛАН/ФАКТ and the SAP columns, per-line quantities, hourly containers per team («Soatlik»), who a SAP upload fills, ШТАТКА, «Plan Bajarish», the call forecast, a closed day locking «Zagruzka fayli».
 - `docs/shift-report.md` — «Smena hisoboti» on the shift dashboard, and that page on a phone.
 - `docs/kelish.md` — «Ish grafigi» (`/kelish`) and task #11 checked on it.
 - `docs/laboratory.md` — candidate assessment, «Xodim kartasi», Trello, the audit table, Notion tasks, the live monitor, the goal board.

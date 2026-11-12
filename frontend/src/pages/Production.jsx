@@ -46,6 +46,7 @@ import { exportXlsx } from "../utils/exportXlsx";
 import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
 import StaffingProofModal from "../components/production/StaffingProofModal";
+import HourlyContainers from "../components/production/HourlyContainers";
 import { ddmm, hhmm } from "../components/production/staffingClock";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -3779,9 +3780,30 @@ export default function Production() {
           <span className="flex items-center gap-3">
             <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
             <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
-              options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")]]} />
+              options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")], ["hourly", t("production.teams.hourly")]]} />
           </span>
         } />
+        {!loading && teamsView === "hourly" ? (
+          <div className="p-3">
+            <HourlyContainers
+              teams={containerTeams.filter(({ g }) => !g?.orphan)}
+              rows={rows} constants={data?.constants} date={data?.date ?? date}
+              containers={CONTAINERS} t={t} fmt={fmt}
+              renderTeam={({ w, g, rest }) => {
+                const wcg = wcColor(w.work_center);
+                return (
+                  <>
+                    <CellLink id={g ? g.cell?.id : w.cell?.id} className="font-mono text-xs font-bold px-1.5 py-0.5 rounded-md"
+                      title={g ? groupTitle(t, g, tl) : wcTitle(w.work_center)}
+                      style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                    {g && <GroupBadge group={g.group} tone="neutral" title={groupTitle(t, g, tl)} />}
+                    {rest && <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}
+                      title={t("production.cont.noGroupHint")}>{t("production.cont.noGroup")}</span>}
+                  </>
+                );
+              }} />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {loading && Array.from({ length: 6 }).map((_, i) => (
             <div key={`wc-sk-${i}`} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
@@ -3828,7 +3850,7 @@ export default function Production() {
               )}
             </div>
           ))}
-          {!loading && teamsView !== "containers" && teamCards.map(({ w, g }) => {
+          {!loading && teamsView === "load" && teamCards.map(({ w, g }) => {
             if (g) {
               // One group of a work centre typed per group: its own load, its own
               // people (a typed pin gold, an untyped share muted and starred) and
@@ -3975,7 +3997,20 @@ export default function Production() {
           {!loading && wcs.length === 0 && (
             <div className="col-span-full text-center py-6 text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</div>
           )}
+          {!loading && teamsView === "containers" && (() => {
+            // Every container type's total added up — the overall count, bottom-right.
+            const typed = containerCards.filter((x) => x.total != null);
+            const all = typed.length ? typed.reduce((s, x) => s + x.total, 0) : null;
+            return (
+              <div className="col-span-full flex items-baseline justify-end gap-2 px-1 pt-1">
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{t("production.cont.grandTotal")}</span>
+                <span className="text-2xl font-bold tabular-nums"
+                  style={{ color: all == null ? "var(--text-4)" : "var(--brand-text)" }}>{all == null ? "—" : fmt(all, 0)}</span>
+              </div>
+            );
+          })()}
         </div>
+        )}
       </div>
 
       {/* main table */}

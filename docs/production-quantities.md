@@ -624,6 +624,43 @@ last columns, after «Pareto» (the operator's call, same day), and
   The «Excel» button inserts the eight as values (capacities green, as typed
   inputs).
 
+### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
+
+The operator: «we want to see the containers every hour — for using from 9–10
+we have to see the result at 8», per TEAM. A third view on the «Jamoalar»
+card (`production_teams_view` = `hourly`), `components/production/HourlyContainers.jsx`:
+one matrix per team (rows = the containers it uses, columns = clock hours,
+«Jami» last), and an «Barcha jamoalar» matrix on top summing every team by
+clock hour for whoever brings the containers.
+
+- **The timeline is DERIVED from what the page already has, nothing typed**:
+  a team makes its positions ONE AFTER ANOTHER in the table's order (`seq`, «№»)
+  from its shift start. A line takes `total_labor ÷ N ÷ (productive_min ÷
+  shift_min)` clock minutes — the team's N people at the unit's productive pace
+  (the 85% the загрузка file uses; a pinned efficiency moves it with the page).
+  Its containers are needed AS it is made: an hour gets the share of the line
+  made inside it.
+- **The hours add up to the daily count exactly**: an hour's count is
+  `ROUNDUP(made by the hour's end ÷ cap) − ROUNDUP(made by its start ÷ cap)`,
+  so Σ hours = `containerCount` for that line, never one more per hour.
+- **The clock**: a team's cell `shift_start`/`shift_end` (`cells-and-org.md`
+  «Cell shift times»), else its unit's shift default — served as
+  `cell.shift_hours` on every team cell and `constants.shift_hours` for the unit
+  (`_attach_team_clocks` in `routers/production.py`). Neither → 08:00, and the
+  card says so. This is the first reader of those clocks; it is DISPLAY ONLY —
+  no figure, KPI or загрузка moves with it, which is what that register's
+  «ask before making these hours move a number» guards.
+- **«tayyorlang»**: on today's page (or yesterday's while a night shift runs
+  past midnight) the column for the NEXT clock hour is gold — at 08:xx the
+  09–10 column; hours already over are dimmed.
+- **A plan that does not fit the shift** keeps going past its end: those hours'
+  headers are red and the team's line reads «smena {end} da tugaydi — reja
+  sig'madi».
+- **«Vaqtsiz»** collects the containers of lines with no Трудоемкость or a team
+  with no people — their hour cannot be placed, but they still count in «Jami».
+- Not built (ask first): a typed start hour per line, a Telegram message per
+  hour, a lead time other than one hour.
+
 ### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19 — REMOVED from the table 2026-10-30)
 
 The column is gone from «Pozitsiyalar»; the stored values, the column and the
