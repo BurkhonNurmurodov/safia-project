@@ -471,3 +471,67 @@ def get_containers(
     zagruzka_source.line_facts(db, unit_ids, day, day, emit)
     return {"day": day.isoformat(), "totals": totals, "lines": lines,
             "units": len(units)}
+
+
+# «Konteynerlar — jami» hour by hour (2026-11-12, the operator): admins and
+# shift managers only while it is tried out — the same audience as «Soatlik»
+# on «Zagruzka fayli» (`HOURLY_ROLES` in Production.jsx).
+HOURLY_ROLES = ("admin", "shift-manager")
+
+
+@router.get("/containers-hourly")
+def get_containers_hourly(
+    day: date = Query(...),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("overview")),
+):
+    """The scope's containers per clock HOUR for one day: Σ over every
+    configured unit of `hourly_containers.unit_hours` off the unit's own
+    «Zagruzka fayli» dashboard — so each team's hours are exactly what its
+    «Soatlik» view shows. Same scope and shift narrowing as `/containers`.
+    Kept like the board (`_cache_*`, 60 s): it runs the engine once per unit."""
+    if payload.get("role") not in HOURLY_ROLES:
+        raise HTTPException(status_code=403, detail="admins and shift managers only")
+    from app.services import hourly_containers
+    keys = hourly_containers.KEYS
+    empty = {"day": day.isoformat(), "hours": [], "untimed": {}, "keys": keys, "units": 0}
+    ids, _note = _scope(db, payload, factory, manager_id)
+    if empty_scope(ids):
+        return empty
+    q = db.query(Manager.id).filter(Manager.archived.is_(False))
+    if ids is not None:
+        q = q.filter(Manager.id.in_(ids))
+    if shift in (1, 2):
+        q = q.filter(Manager.shift == shift)
+    configured = production._configured_manager_ids(db)
+    unit_ids = sorted(r[0] for r in q.all() if r[0] in configured)
+    if not unit_ids:
+        return empty
+    key = ("containers-hourly", day.isoformat(), tuple(unit_ids))
+    got = _cache_get(key)
+    if got is not None and time.monotonic() - got[0] < _CACHE_TTL_S:
+        return got[1]
+    started = time.monotonic()
+    hours: dict = {}
+    untimed: dict = {}
+    units = 0
+    for mid in unit_ids:
+        try:
+            h_map, u_map = hourly_containers.unit_hours(production._build_dashboard(db, mid, day))
+        except HTTPException:
+            continue
+        if h_map or u_map:
+            units += 1
+        for h, e in h_map.items():
+            o = hours.setdefault(h, {})
+            for k, n in e.items():
+                o[k] = o.get(k, 0) + n
+        for k, n in u_map.items():
+            untimed[k] = untimed.get(k, 0) + n
+    out = {"day": day.isoformat(), "keys": keys, "units": units, "untimed": untimed,
+           "hours": [{"h": h, "counts": hours[h]} for h in sorted(hours)]}
+    _cache_put(key, started, out)
+    return out

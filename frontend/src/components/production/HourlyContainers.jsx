@@ -17,27 +17,27 @@ import { useEffect, useMemo, useState } from "react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { Clock } from "lucide-react";
 
-const DAY = 1440;
+export const DAY = 1440;
 const toMin = (hhmm) => {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm ?? ""));
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 };
-const clock = (min) => {
+export const clock = (min) => {
   const m = ((Math.round(min) % DAY) + DAY) % DAY;
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
-const hourLabel = (h) => String(((h % 24) + 24) % 24).padStart(2, "0");
+export const hourLabel = (h) => String(((h % 24) + 24) % 24).padStart(2, "0");
 const ceil6 = (x) => Math.ceil(Math.round(x * 1e6) / 1e6);
 
 // Tashkent wall clock now, as {iso, min}.
-const tashkentNow = () => {
+export const tashkentNow = () => {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date()).map((x) => [x.type, x.value]));
   return { iso: `${p.year}-${p.month}-${p.day}`, min: Number(p.hour) * 60 + Number(p.minute) };
 };
-const prevISO = (iso) => {
+export const prevISO = (iso) => {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d - 1);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;

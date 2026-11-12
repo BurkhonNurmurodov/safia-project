@@ -670,6 +670,29 @@ it moves on by itself at the top of the hour.
 - Not built (ask first): a typed start hour per line, a Telegram message per
   hour, a lead time other than one hour.
 
+### …and the plant's hours on «Smena kunligi» (2026-11-12)
+
+Under «Konteynerlar — jami» (`ContainerTotalsCard.jsx`) a table «Soatlar
+bo'yicha»: the five containers as rows, every clock hour of the day as a column
+(the operator picked the whole day over «next hour only» here), «Vaqtsiz» where
+a line has no hour, «Jami» last; the NEXT hour gold with «… da tayyorlang»
+above, hours already over dimmed, the clock re-read every minute.
+
+- **Admins and shift managers only** — `HOURLY_ROLES` in the card AND in
+  `routers/shift_report.py`; the endpoint answers anyone else 403.
+- **Follows the page's filters** (plant, shift, units) exactly as `/containers`
+  does (`_scope` + `Manager.shift`).
+- `GET /api/shift-report/containers-hourly?day=` runs each configured unit's
+  «Zagruzka fayli» dashboard (`production._build_dashboard`, as the board does)
+  and sums `services/hourly_containers.unit_hours` — the PYTHON TWIN of
+  `HourlyContainers.jsx`' `teamTimeline` (same team split, «Navbat» order,
+  pace, clocks, rounding; checked equal on one input 2026-11-12). **Change
+  one, change both.** Kept 60 s in the board's cache (`_cache_get/_cache_put`).
+- Its «Jami» can differ a little from the tiles above: the tiles read every
+  non-archived unit through `zagruzka_source.line_facts`, the hours only units
+  with production set up (`_configured_manager_ids`), and a line with no
+  people/Трудоемкость lands in «Vaqtsiz».
+
 ### …and a line's «Navbat» — the team's order for the day (`pp_line_daily.priority`, 2026-11-12)
 
 The operator: supervisors put which product a team makes first, second…, the
