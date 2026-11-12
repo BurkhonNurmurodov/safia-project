@@ -95,7 +95,7 @@ export default function Kitchen() {
     body = (
       <div className="space-y-4">
         <SkeletonBlock className="h-64 w-full rounded-2xl" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
         </div>
         <SkeletonTable rows={6} cols={6} />
@@ -126,7 +126,7 @@ export default function Kitchen() {
       <div className="space-y-4">
         {/* Now, and the day that led to it — one card, split inside. */}
         <section
-          className="rounded-2xl p-5 sm:p-7 grid gap-6 lg:grid-cols-[minmax(260px,2fr)_3fr] lg:items-end"
+          className="rounded-2xl p-5 sm:p-7 grid gap-6 lg:grid-cols-[minmax(340px,2fr)_3fr] lg:items-end"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
         >
           <div className="min-w-0">
@@ -155,7 +155,7 @@ export default function Kitchen() {
           <DayBars hours={d.hours || []} T={T} />
         </section>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <KPICard label={T.kCame} value={num(d.came)} sub={T.kCameSub} icon={LogIn} color="#22c55e" valueColor="var(--text-1)" />
           <KPICard label={T.kLeft} value={num(d.left)} sub={T.kLeftSub} icon={LogOut} color="#94a3b8" valueColor="var(--text-1)" />
           <KPICard label={T.kNotYet} value={num(d.not_yet)} sub={T.kNotYetSub} icon={Clock} color="#3b82f6" valueColor="var(--text-1)" />
