@@ -9,6 +9,7 @@ export const ADMIN_PAGES = {
   attendance:    lazyWithReload(() => import("./AttendanceUpload")),
   data:          lazyWithReload(() => import("./DataSources")),
   production:    lazyWithReload(() => import("./ProductionUpload")),
+  orgchart:      lazyWithReload(() => import("./OrgChart")),
   users:         lazyWithReload(() => import("./UsersManagement")),
   profiles:      lazyWithReload(() => import("./ProfilesManagement")),
   factories:     lazyWithReload(() => import("./Factories")),

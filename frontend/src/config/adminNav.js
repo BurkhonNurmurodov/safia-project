@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, RefreshCcwDot, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
+  AlertTriangle, BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, RefreshCcwDot, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -35,6 +35,13 @@ export const ADMIN_NAV = [
   { id: "data",         group: "daily",  Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   { id: "production",   group: "daily",  Icon: Factory,        labelKey: "admin.tabProduction",   descKey: "admin.desc.production" },
 
+  // «Tashkiliy tuzilma» — everybody on the platform as one chart: where they
+  // stand, which pages they open, what was granted to them personally, and
+  // the way to their «Xodim kartasi». Read-only, and first in its section: it
+  // is the map of the registers under it. No capKey — it shows the whole
+  // permission system (the `permissions` model: admin-only, never grantable).
+  // `wide`: a canvas, so AdminPage gives it the full content width.
+  { id: "orgchart",     group: "people", Icon: Network,        labelKey: "admin.tabOrgChart",     descKey: "admin.desc.orgchart", wide: true },
   { id: "users",        group: "people", Icon: Users,          labelKey: "admin.tabUsers",        descKey: "admin.desc.users" },
   { id: "profiles",     group: "people", Icon: IdCard,         labelKey: "admin.tabProfiles",     descKey: "admin.desc.profiles" },
   // Sits with the identity registers, directly after the supervisor profiles it

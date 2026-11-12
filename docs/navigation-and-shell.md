@@ -242,7 +242,10 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   name, ONE content column (`max-w-6xl`, so the column's edge never moves),
   the one-line `admin.desc.<id>` with the red «Xavfli» chip on a danger page,
   and a skeleton while the page's chunk loads. A page renders **no frame of
-  its own** — no `max-w-*`, no `mx-auto`, no outer padding. `AdminHome`
+  its own** — no `max-w-*`, no `mx-auto`, no outer padding. The one
+  exception to the column is a page marked `wide: true` in `ADMIN_NAV`, which
+  gets the full content width — a canvas, not a column of forms (the org
+  chart, `docs/org-chart.md`). `AdminHome`
   (`/panel`): an admin lands where the app was left (`appEntry("admin")`),
   else its first page; a grantee on their first allowed page.
 - **Each page is its own chunk** (the one 649 KB `AdminPanel` chunk is gone).
