@@ -628,10 +628,15 @@ last columns, after «Pareto» (the operator's call, same day), and
 
 The operator: «we want to see the containers every hour — for using from 9–10
 we have to see the result at 8», per TEAM. A third view on the «Jamoalar»
-card (`production_teams_view` = `hourly`), `components/production/HourlyContainers.jsx`:
-one matrix per team (rows = the containers it uses, columns = clock hours,
-«Jami» last), and an «Barcha jamoalar» matrix on top summing every team by
-clock hour for whoever brings the containers.
+card (`production_teams_view` = `hourly`), `components/production/HourlyContainers.jsx`.
+**It shows ONE hour, never the day** (the operator, same day, after a first cut
+drew a whole-shift matrix per team: «I don't need all day or one shift, just
+show hourly and one hour before»): by default the NEXT clock hour — at 08:xx the
+09–10 hour, headed «08:00 da tayyorlang — 09:00–10:00 uchun kerak» — laid out
+like the «Konteynerlar» view (one card per container, the teams needing it in
+that hour, «Jami» in the head). A `SegmentedToggle` of the hours that need any
+container steps to another one; the page re-reads the clock every minute, so
+it moves on by itself at the top of the hour.
 
 - **The timeline is DERIVED from what the page already has, nothing typed**:
   a team makes its positions ONE AFTER ANOTHER in the table's order (`seq`, «№»)
@@ -646,18 +651,15 @@ clock hour for whoever brings the containers.
 - **The clock**: a team's cell `shift_start`/`shift_end` (`cells-and-org.md`
   «Cell shift times»), else its unit's shift default — served as
   `cell.shift_hours` on every team cell and `constants.shift_hours` for the unit
-  (`_attach_team_clocks` in `routers/production.py`). Neither → 08:00, and the
-  card says so. This is the first reader of those clocks; it is DISPLAY ONLY —
+  (`_attach_team_clocks` in `routers/production.py`). Neither → 08:00. The
+  view is the first reader of those clocks; it is DISPLAY ONLY —
   no figure, KPI or загрузка moves with it, which is what that register's
   «ask before making these hours move a number» guards.
-- **«tayyorlang»**: on today's page (or yesterday's while a night shift runs
-  past midnight) the column for the NEXT clock hour is gold — at 08:xx the
-  09–10 column; hours already over are dimmed.
-- **A plan that does not fit the shift** keeps going past its end: those hours'
-  headers are red and the team's line reads «smena {end} da tugaydi — reja
-  sig'madi».
-- **«Vaqtsiz»** collects the containers of lines with no Трудоемкость or a team
-  with no people — their hour cannot be placed, but they still count in «Jami».
+- «Now» is today's page, or yesterday's while a night shift runs past
+  midnight; any other date opens on its first hour. A plan that does not fit
+  the shift keeps going past its end, so those hours are still offered.
+- Lines with no Трудоемкость, or a team with no people, have no hour and are
+  left out of this view (they still count on «Konteynerlar»).
 - Not built (ask first): a typed start hour per line, a Telegram message per
   hour, a lead time other than one hour.
 

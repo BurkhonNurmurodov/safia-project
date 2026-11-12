@@ -1,6 +1,7 @@
 // «Jamoalar» → «Soatlik» (2026-11-12, the operator): how many of each container
-// every team needs IN EACH HOUR of its shift, so the containers for 09–10 can be
-// brought at 08:00. See docs/production-quantities.md «Hourly containers».
+// every team needs in ONE hour — by default the NEXT one, so at 08:00 the page
+// shows what 09–10 needs (the operator, same day: «I don't need all day or one
+// shift, just show hourly and one hour before»). An hour picker steps to others. See docs/production-quantities.md «Hourly containers».
 //
 // The timeline is DERIVED, never typed: a team works through its positions in
 // the table's order (№), one after another, from its cell's shift start. A line
@@ -12,7 +13,8 @@
 // Rounding keeps the day's total: an hour's count is
 //   ROUNDUP(made by the hour's end ÷ capacity) − ROUNDUP(made by its start ÷ capacity)
 // so the hours add up to exactly the line's daily count (`containerCount`).
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { Clock } from "lucide-react";
 
 const DAY = 1440;
@@ -91,6 +93,14 @@ export default function HourlyContainers({ teams, rows, constants, date, contain
     return e > 0 && e <= 1.5 ? e : 0.85;
   })();
   const unitHours = constants?.shift_hours ?? null;
+  const [picked, setPicked] = useState(null);
+  // Re-read the clock every minute, so a page left open moves on to the next
+  // hour by itself at the top of the hour.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const lines = useMemo(() => {
     const norm = (v) => String(v ?? "").trim().toUpperCase();
@@ -102,153 +112,74 @@ export default function HourlyContainers({ teams, rows, constants, date, contain
       const cell = (g ? g.cell : w.cell) ?? w.cell;
       const hrs = cell?.shift_hours ?? unitHours;
       const people = g ? g.people : w.people;
-      const tl = teamTimeline({ rows: mine, people, startHHMM: hrs?.start, endHHMM: hrs?.end, eff, containers });
-      const used = containers.filter((c) => [...tl.hours.values()].some((e) => e[c.id]) || tl.untimed[c.id]);
-      return { team, tl, used, people, clockKnown: !!hrs?.start };
-    }).filter((x) => x.used.length > 0);
+      return { team, tl: teamTimeline({ rows: mine, people, startHHMM: hrs?.start, endHHMM: hrs?.end, eff, containers }) };
+    }).filter(({ tl }) => tl.hours.size > 0);
   }, [teams, rows, unitHours, eff, containers]);
-
-  // «Now» on the day shown, and the hour to get ready: at 08:xx the 09–10 hour.
-  // A night shift's hours run past 24, so a page for yesterday's date seen
-  // after midnight reads now + 24h.
-  const now = tashkentNow();
-  const nowMin = date === now.iso ? now.min : date === prevISO(now.iso) ? now.min + DAY : null;
-  const prepHour = nowMin == null ? null : Math.floor(nowMin / 60) + 1;
 
   if (lines.length === 0) {
     return <p className="text-[12px] px-1 py-2" style={{ color: "var(--text-3)" }}>{t("production.hourly.none")}</p>;
   }
 
-  // The plant-wide strip on top: every team's hours summed by clock hour.
-  const lo = Math.min(...lines.map(({ tl }) => Math.floor(tl.start / 60)));
-  const hi = Math.max(...lines.map(({ tl }) => Math.max(...[...tl.hours.keys(), Math.floor(tl.start / 60)])));
-  const all = new Map();
-  const allUntimed = {};
-  for (const { tl } of lines) {
-    for (const [h, e] of tl.hours) {
-      const o = all.get(h) ?? {};
-      for (const [k, n] of Object.entries(e)) o[k] = (o[k] ?? 0) + n;
-      all.set(h, o);
-    }
-    for (const [k, n] of Object.entries(tl.untimed)) allUntimed[k] = (allUntimed[k] ?? 0) + n;
-  }
-  const allUsed = containers.filter((c) => [...all.values()].some((e) => e[c.id]) || allUntimed[c.id]);
+  // The hour to get ready for: at 08:xx the 09–10 hour. A night shift's hours
+  // run past 24, so yesterday's page seen after midnight reads now + 24h.
+  const now = tashkentNow();
+  const nowMin = date === now.iso ? now.min : date === prevISO(now.iso) ? now.min + DAY : null;
+  const prepHour = nowMin == null ? null : Math.floor(nowMin / 60) + 1;
+  const lo = Math.min(...lines.flatMap(({ tl }) => [...tl.hours.keys()]));
+  const hi = Math.max(...lines.flatMap(({ tl }) => [...tl.hours.keys()]));
+  const clamp = (h) => Math.min(hi, Math.max(lo, h));
+  const hour = picked != null && picked >= lo && picked <= hi ? picked : clamp(prepHour ?? lo);
+  const hourOpts = [];
+  for (let h = lo; h <= hi; h++) hourOpts.push({ value: h, label: `${hourLabel(h)}–${hourLabel(h + 1)}` });
+
+  // One card per container, the teams needing it in this hour — the
+  // «Konteynerlar» view's layout, read for one hour instead of the day.
+  const cards = containers.map((c) => {
+    const list = lines.map(({ team, tl }) => ({ team, n: tl.hours.get(hour)?.[c.id] ?? 0 })).filter((x) => x.n > 0);
+    return { c, list, total: list.reduce((s, x) => s + x.n, 0) };
+  }).filter((x) => x.list.length > 0);
+  const isPrep = hour === prepHour;
 
   return (
     <div className="flex flex-col gap-2.5">
-      <p className="text-[11px] px-1 flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-        <Clock size={12} className="shrink-0" />
-        <span>{t("production.hourly.howto").replace("{pct}", Math.round(eff * 100))}</span>
-      </p>
-      {lines.length > 1 && (
-        <Matrix title={<span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("production.hourly.allTeams")}</span>}
-          lo={lo} hi={hi} hours={all} untimed={allUntimed} used={allUsed} prepHour={prepHour} nowMin={nowMin}
-          t={t} fmt={fmt} />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SegmentedToggle size="sm" value={hour} onChange={setPicked} options={hourOpts} />
+        <span className="flex items-center gap-1.5 text-xs" style={{ color: isPrep ? "var(--brand-text)" : "var(--text-3)" }}>
+          <Clock size={13} className="shrink-0" />
+          {isPrep
+            ? t("production.hourly.prepNow").replace("{at}", clock((hour - 1) * 60)).replace("{span}", `${clock(hour * 60)}–${clock((hour + 1) * 60)}`)
+            : t("production.hourly.forHour").replace("{span}", `${clock(hour * 60)}–${clock((hour + 1) * 60)}`)}
+        </span>
+      </div>
+      {cards.length === 0 ? (
+        <p className="text-[12px] px-1 py-2" style={{ color: "var(--text-3)" }}>{t("production.hourly.noneThisHour")}</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {cards.map(({ c, list, total }) => (
+            <div key={c.id} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <div className="flex items-baseline justify-between gap-2 pb-2 mb-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+                <span className="text-sm font-semibold min-w-0" style={{ color: "var(--text-1)" }}>{t(`production.cont.${c.id}`)}</span>
+                <span className="flex items-baseline gap-1.5 shrink-0">
+                  <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("production.cont.total")}</span>
+                  <span className="text-base font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(total, 0)}</span>
+                </span>
+              </div>
+              <ul className="flex flex-col">
+                {list.map(({ team, n }) => (
+                  <li key={`${team.w.work_center}|${team.g?.group ?? ""}|${team.rest ? 1 : 0}`}
+                    className="flex items-center justify-between gap-2 min-h-[30px]">
+                    <span className="flex items-center gap-1.5 min-w-0">{renderTeam(team)}</span>
+                    <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-1)" }}>{fmt(n, 0)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
-      {lines.map(({ team, tl, used, people, clockKnown }) => {
-        const tlo = Math.floor(tl.start / 60);
-        const thi = Math.max(tlo, ...tl.hours.keys());
-        const over = tl.shiftEnd != null && tl.end > tl.shiftEnd + 0.5;
-        return (
-          <Matrix key={`${team.w.work_center}|${team.g?.group ?? ""}|${team.rest ? 1 : 0}`}
-            title={renderTeam(team)}
-            sub={
-              <span style={{ color: over ? "#ef4444" : "var(--text-3)" }}>
-                {clockKnown ? "" : `${t("production.hourly.clockUnknown")} · `}
-                {clock(tl.start)} → {clock(tl.end)}
-                {people ? ` · ${fmt(people, 1)} ${t("production.hourly.people")}` : ""}
-                {over ? ` · ${t("production.hourly.overrun").replace("{end}", clock(tl.shiftEnd))}` : ""}
-              </span>
-            }
-            lo={tlo} hi={thi} hours={tl.hours} untimed={tl.untimed} used={used}
-            shiftEnd={tl.shiftEnd} prepHour={prepHour} nowMin={nowMin} t={t} fmt={fmt} />
-        );
-      })}
-    </div>
-  );
-}
-
-function Matrix({ title, sub, lo, hi, hours, untimed, used, shiftEnd, prepHour, nowMin, t, fmt }) {
-  const cols = [];
-  for (let h = lo; h <= hi; h++) cols.push(h);
-  const hasUntimed = used.some((c) => untimed[c.id]);
-  const total = (cid) => cols.reduce((s, h) => s + (hours.get(h)?.[cid] ?? 0), 0) + (untimed[cid] ?? 0);
-  const past = (h) => nowMin != null && (h + 1) * 60 <= nowMin;
-  const afterShift = (h) => shiftEnd != null && h * 60 >= shiftEnd;
-  const cellBg = (h) => (h === prepHour ? "rgba(200,151,63,0.16)" : "transparent");
-  return (
-    <div className="rounded-xl" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pt-2.5 pb-2">
-        <span className="flex items-center gap-1.5 min-w-0">{title}</span>
-        {sub && <span className="text-[11px] tabular-nums">{sub}</span>}
-      </div>
-      <div className="overflow-x-auto">
-        <table className="text-xs tabular-nums border-collapse w-full">
-          <thead>
-            <tr>
-              <th className="sticky left-0 z-[1] text-left font-medium px-3 py-1.5 whitespace-nowrap"
-                style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>
-                {t("production.hourly.container")}
-              </th>
-              {cols.map((h) => (
-                <th key={h} className="px-2 py-1.5 font-medium text-center whitespace-nowrap"
-                  title={h === prepHour ? t("production.hourly.prepHint") : afterShift(h) ? t("production.hourly.afterShift") : undefined}
-                  style={{
-                    background: cellBg(h), borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                    color: h === prepHour ? "var(--brand-text)" : afterShift(h) ? "#ef4444" : past(h) ? "var(--text-4)" : "var(--text-2)",
-                  }}>
-                  {hourLabel(h)}–{hourLabel(h + 1)}
-                  {h === prepHour && <span className="ml-1 text-[10px] font-semibold uppercase">{t("production.hourly.prep")}</span>}
-                </th>
-              ))}
-              {hasUntimed && (
-                <th className="px-2 py-1.5 font-medium text-center whitespace-nowrap" title={t("production.hourly.untimedHint")}
-                  style={{ borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)", color: "#eab308" }}>
-                  {t("production.hourly.untimed")}
-                </th>
-              )}
-              <th className="px-3 py-1.5 font-semibold text-right whitespace-nowrap"
-                style={{ borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)", color: "var(--text-2)" }}>
-                {t("production.cont.total")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {used.map((c) => (
-              <tr key={c.id}>
-                <td className="sticky left-0 z-[1] px-3 py-1.5 whitespace-nowrap max-w-[220px] truncate"
-                  title={t(`production.cont.${c.id}`)}
-                  style={{ background: "var(--bg-inner)", color: "var(--text-1)", borderTop: "1px solid var(--border)" }}>
-                  {t(`production.cont.${c.id}`)}
-                </td>
-                {cols.map((h) => {
-                  const n = hours.get(h)?.[c.id] ?? 0;
-                  return (
-                    <td key={h} className="px-2 py-1.5 text-center"
-                      style={{
-                        background: cellBg(h), borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)",
-                        color: n ? (past(h) ? "var(--text-3)" : "var(--text-1)") : "var(--text-4)",
-                        fontWeight: n && h === prepHour ? 700 : n ? 600 : 400,
-                      }}>
-                      {n ? fmt(n, 0) : "·"}
-                    </td>
-                  );
-                })}
-                {hasUntimed && (
-                  <td className="px-2 py-1.5 text-center"
-                    style={{ borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)", color: untimed[c.id] ? "#eab308" : "var(--text-4)" }}>
-                    {untimed[c.id] ? fmt(untimed[c.id], 0) : "·"}
-                  </td>
-                )}
-                <td className="px-3 py-1.5 text-right font-bold"
-                  style={{ borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)", color: "var(--text-1)" }}>
-                  {fmt(total(c.id), 0)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p className="text-[11px] px-1" style={{ color: "var(--text-3)" }}>
+        {t("production.hourly.howto").replace("{pct}", Math.round(eff * 100))}
+      </p>
     </div>
   );
 }
