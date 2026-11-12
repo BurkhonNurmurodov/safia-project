@@ -303,6 +303,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # «Navbat» — its own keys: readers of override_set take every change for ПЛАН/ФАКТ.
     (("POST",),   "/api/production/priority",                  "shopfloor", "production.priority_set"),
     (("POST",),   "/api/production/priority/copy",             "shopfloor", "production.priority_copied"),
+    (("POST",),   "/api/production/priority/team",             "shopfloor", "production.priority_reordered"),
     (("POST",),   "/api/production/staffing",                  "shopfloor", "production.staffing_set"),
     # «O'lchov birligi» — the one catalog field a brigadir sets, so it carries a
     # key of its own rather than reading as an admin's catalog edit.

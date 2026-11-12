@@ -681,8 +681,24 @@ that order. A «Pozitsiyalar» column right after «№» and before the SAP cod
   scope and closed-day lock, a leader on their own cells / group only.
 - **Counted inside ONE team** (work centre + group letter): two cells may each
   hold a 1 (the operator: two yacheykas make separate products at the same
-  time). The same number on two lines of ONE team is allowed and printed RED
-  with a hint — the timeline reads them as made together.
+  time).
+- **1…k with no gap and no repeat** (the operator, same day: «a cell with 20
+  products cannot have 21; after 4 comes 5, no skipping»). Every write rebuilds
+  the team's list and renumbers it (`_write_team_order` in
+  `routers/production.py`): typing N on a line puts it at place N and moves the
+  lines from N on down one; clearing a line closes its gap; a number past one
+  beyond the lines already ordered is refused («1–{max}», checked on the page
+  first). A repeat left by the first build (v4.478.0 allowed one, red) is mended
+  by the next write to that team — the table still paints one red until then.
+- **«Navbatni tartiblash»** — the drag dialog (`PriorityOrderModal.jsx` over
+  the `SortableList` template), the column picker's reorder for ROWS: pick the
+  cell, drag its products (or ↑/↓ on a grip), «Saqlash» numbers the WHOLE list
+  1…n in the order on screen — `POST /api/production/priority/team`
+  (`{date, work_center, group, lines: [{sap_code, line_key}]}`, Jurnal
+  `production.priority_reordered`; a line of another team or one sent twice is
+  a 400). Unordered lines sit after the ordered ones in № order and get their
+  numbers on save. The cell picker is locked while the list holds an unsaved
+  drag.
 - **Its own door, never /override**: `POST /api/production/priority`
   (`{date, sap_code, work_center, line_key, value}`, Jurnal action
   `production.priority_set`). The ПЛАН/ФАКТ door refuses `field: "priority"`,
@@ -692,55 +708,20 @@ that order. A «Pozitsiyalar» column right after «№» and before the SAP cod
   an order typed there would have counted as a leader filling ФАКТ in.
 - **«Kechagi tartib»** (`POST /api/production/priority/copy {date}`, Jurnal
   `production.priority_copied`): on a PRESS only — nothing copies itself, the
-  order is put by people. Today's order (over the lines the caller may edit)
-  becomes the last earlier day's within 14 days that has one; a line that day
-  did not order is cleared. Asks first (`ConfirmDialog`) when today already has
+  order is put by people. Every team the caller may edit takes the order of the
+  last earlier day within 14 that has one — that day's lines still on today's
+  table, in that day's order, renumbered 1…k (a line gone since leaves no gap);
+  a line that day did not order is cleared. Asks first (`ConfirmDialog`) when today already has
   an order.
 - **Stored like «Kontiner krishka»**: `pp_line_daily.priority` (INTEGER, NULL =
   not ordered, `startup.add_pp_line_priority`, both entrypoints). A SAP upload
   KEEPS it (the file says nothing about the order of work); a catalog edit and
   a cell follow (`catalog_follow._LINE_COLS`) carry it with the line.
 - **Read by**: the hourly containers timeline only (`HourlyContainers.jsx`):
-  «Navbat» first, then № for unordered lines; lines sharing a number are made
-  together — the step lasts their summed minutes, each spread over all of it.
+  «Navbat» first, then № for unordered lines (a legacy repeat is still read as
+  «made together» until it is mended).
   No load, minutes, KPI or Excel figure moves with it; the «Excel» button
   carries the column as an inserted value like any other visible one.
-
-### …and a line's «Navbat» — the team's order for the day (`pp_line_daily.priority`, 2026-11-12)
-
-The operator: supervisors put which product a team makes first, second…, the
-team finishes the plan of one and moves to the next, and the containers follow
-that order. A «Pozitsiyalar» column right after «№» and before the SAP code
-(ru «Очерёдность», en «Order»), a whole number 1–999 per LINE per DAY.
-
-- **Who**: supervisors AND leaders (the operator) — the ПЛАН/ФАКТ audience,
-  scope and closed-day lock, a leader on their own cells / group only.
-- **Counted inside ONE team** (work centre + group letter): two cells may each
-  hold a 1 (the operator: two yacheykas make separate products at the same
-  time). The same number on two lines of ONE team is allowed and printed RED
-  with a hint — the timeline reads them as made together.
-- **Its own door, never /override**: `POST /api/production/priority`
-  (`{date, sap_code, work_center, line_key, value}`, Jurnal action
-  `production.priority_set`). The ПЛАН/ФАКТ door refuses `field: "priority"`,
-  because every reader of `production.override_set` (`auto_check_report`,
-  `auto_check_restore`, `auto_check_timing`, `filling_times_report`,
-  `admin_objections_report`) takes any change on it for a typed ПЛАН or ФАКТ —
-  an order typed there would have counted as a leader filling ФАКТ in.
-- **«Kechagi tartib»** (`POST /api/production/priority/copy {date}`, Jurnal
-  `production.priority_copied`): on a PRESS only — nothing copies itself, the
-  order is put by people. Today's order (over the lines the caller may edit)
-  becomes the last earlier day's within 14 days that has one; a line that day
-  did not order is cleared. Asks first (`ConfirmDialog`) when today already has
-  an order.
-- **Stored like «Kontiner krishka»**: `pp_line_daily.priority` (INTEGER, NULL =
-  not ordered, `startup.add_pp_line_priority`, both entrypoints). A SAP upload
-  KEEPS it (the file says nothing about the order of work); a catalog edit and
-  a cell follow (`catalog_follow._LINE_COLS`) carry it with the line.
-- **Read by**: the hourly containers timeline only (`HourlyContainers.jsx`):
-  «Navbat» first, then № for unordered lines; lines sharing a number are made
-  together — the step lasts their summed minutes, each spread over all of it.
-  No load, minutes or KPI figure moves with it; the «Excel» button carries the
-  column as an inserted value like any other visible one.
 
 ### …and a line's «Kontiner krishka» (`pp_line_daily.container_cap`, 2026-10-19 — REMOVED from the table 2026-10-30)
 

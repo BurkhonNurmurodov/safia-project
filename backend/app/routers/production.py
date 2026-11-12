@@ -1880,12 +1880,99 @@ def set_override(
     return _apply_override(body, manager_id, payload, db)
 
 
+# ── «Navbat» — a team's order of products for the day ─────────────────────
+# THE rule (the operator, 2026-11-12): inside ONE team (work centre + group
+# letter) the order is 1…k with no gap and no repeat, k ≤ the team's lines on
+# the table. Every write — a typed number, a cleared one, a drag, «Kechagi
+# tartib» — rebuilds the team's list and renumbers it through
+# `_write_team_order`, so no path can leave a gap behind.
+
+def _team_ctx(db: Session, payload: dict, day: date, mid: int):
+    """(the day's active lines as [(qty_key, wc, line_key, group)] in table
+    order, the caller's (wc scope, group scope))."""
+    cat = pp_catalog.at(db, mid, day)
+    keys = line_keys(cat.lines)
+    groups = wc_group.line_groups(cat.lines)
+    lines = []
+    for p in cat.active_lines:
+        lk = keys.get(p.id)
+        if not lk:
+            continue
+        qk, wc = daily_key(p.sap_code, p.name), p.work_center or ""
+        lines.append((qk, wc, lk, groups.get((wc, qk, lk))))
+    scope = _leader_wc_scope(db, payload, day, mid)
+    gscope = _leader_group_scope(db, payload, day, mid) if scope is not None else None
+    return lines, scope, gscope
+
+
+def _team_members(lines, wc: str, group) -> list:
+    return [(qk, w, lk) for qk, w, lk, g in lines if w == wc and (g or None) == (group or None)]
+
+
+def _require_team_scope(scope, gscope, wc: str, group) -> None:
+    if not _in_scope(scope, wc) or (scope is not None and not wc_group.in_scope(gscope, wc, group)):
+        raise HTTPException(status_code=403, detail="This team is not one of your cells")
+
+
+def _team_rows(db: Session, mid: int, day: date, wc: str) -> dict:
+    return {(r.qty_key, r.work_center or "", r.line_key): r
+            for r in db.query(PPLineDaily).filter(
+                PPLineDaily.manager_id == mid, PPLineDaily.date == day,
+                PPLineDaily.work_center == wc).all()}
+
+
+def _current_order(members: list, rows: dict) -> list:
+    """The team's ordered lines as they stand, by stored number then table
+    order — which also mends a gap or a repeat left by an older bundle."""
+    pos = {k: i for i, k in enumerate(members)}
+    have = [k for k in members if rows.get(k) is not None and rows[k].priority is not None]
+    return sorted(have, key=lambda k: (rows[k].priority, pos[k]))
+
+
+def _write_team_order(db: Session, mid: int, day: date, members: list,
+                      rows: dict, ordered: list) -> int:
+    """`ordered` gets 1…k, every other member of the team is cleared. Returns
+    how many lines changed."""
+    want = {k: i + 1 for i, k in enumerate(ordered)}
+    changed = 0
+    for k in members:
+        v = want.get(k)
+        r = rows.get(k)
+        if r is None:
+            if v is None:
+                continue
+            r = PPLineDaily(manager_id=mid, date=day, qty_key=k[0], work_center=k[1], line_key=k[2])
+            db.add(r)
+            rows[k] = r
+        if r.priority != v:
+            r.priority = v
+            changed += 1
+    return changed
+
+
+def _priority_write(db: Session, mid: int, day: date, fn):
+    """Run one order write under the quantities lock, with the closed-day lock
+    checked and one retry on a racing insert (the /override rule)."""
+    idle_lock.require_open(db, mid, day)
+    for attempt in (0, 1):
+        try:
+            pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
+            out = fn()
+            db.commit()
+            return out
+        except IntegrityError:
+            db.rollback()
+            if attempt:
+                raise HTTPException(status_code=409,
+                                    detail="another save touched these lines — try again")
+
+
 class PriorityBody(BaseModel):
     date: str
     sap_code: str           # the row's `qty_key`
     work_center: str
     line_key: str           # «Navbat» is always ONE line's
-    value: Optional[float]  # 1…PRIORITY_MAX, null clears
+    value: Optional[float]  # 1…(ordered lines + 1), null takes it out
 
 
 @router.post("/api/production/priority")
@@ -1895,20 +1982,107 @@ def set_priority(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    """«Navbat» (2026-11-12): which product a team makes first, second… on a
-    day. Same audience, scope, closed-day lock and line check as ПЛАН/ФАКТ;
-    a number shared by two lines of one team is allowed (the page marks it)."""
+    """Put ONE line at place `value` of its team's order: the lines from that
+    place on move down one, and a cleared line closes its gap. A number past
+    the end of the order (or past the team's line count) is refused."""
+    day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    # Before the catalog is read, as /override does: a cell follow cannot move
+    # the lines between this read and the write.
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
+    lines, scope, gscope = _team_ctx(db, payload, day, mid)
+    me = next((x for x in lines if (x[0], x[1], x[2]) ==
+               (body.sap_code, body.work_center or "", body.line_key)), None)
+    if me is None:
+        raise HTTPException(status_code=400,
+                            detail="that line is not one of this day's positions")
+    wc, group = me[1], me[3]
+    _require_team_scope(scope, gscope, wc, group)
+    members = _team_members(lines, wc, group)
+    key = (me[0], me[1], me[2])
     v = body.value
-    if v is not None:
-        if v != int(v) or not (1 <= v <= PRIORITY_MAX):
-            raise HTTPException(status_code=400,
-                                detail=f"priority must be a whole number 1–{PRIORITY_MAX}")
-        v = int(v)
-    if not (body.line_key or "").strip():
-        raise HTTPException(status_code=400, detail="line_key is required for priority")
-    ob = OverrideBody(date=body.date, sap_code=body.sap_code, work_center=body.work_center,
-                      field="priority", value=v, line_key=body.line_key)
-    return _apply_override(ob, manager_id, payload, db)
+    if v is not None and v != int(v):
+        raise HTTPException(status_code=400, detail="priority must be a whole number")
+    holder = {}
+
+    def run():
+        rows = _team_rows(db, mid, day, wc)
+        order = _current_order(members, rows)
+        was = order.index(key) + 1 if key in order else None
+        rest = [k for k in order if k != key]
+        if v is not None:
+            top = len(rest) + 1
+            if not (1 <= v <= top):
+                raise HTTPException(status_code=400, detail=f"priority must be 1–{top}",
+                                    headers={"X-Priority-Max": str(top)})
+            rest.insert(int(v) - 1, key)
+        holder["was"] = was
+        return _write_team_order(db, mid, day, members, rows, rest)
+
+    _priority_write(db, mid, day, run)
+    action_log.enrich(
+        target_kind="priority", target_id=f"{mid}:{day}:{body.sap_code}:{wc}:{body.line_key}",
+        target_name=body.sap_code, unit_id=mid, day=day,
+        details=[("date", str(day)), ("sap_code", body.sap_code),
+                 ("work_center", wc), ("group", group), ("line", body.line_key)],
+        changes=[("priority", holder.get("was"), int(v) if v is not None else None)],
+    )
+    return _build_dashboard(db, mid, day, scope, payload)
+
+
+class TeamLine(BaseModel):
+    sap_code: str
+    line_key: str
+
+
+class PriorityTeamBody(BaseModel):
+    date: str
+    work_center: str
+    group: Optional[str] = None
+    lines: list[TeamLine]   # the team's lines in their new order; the rest are cleared
+
+
+@router.post("/api/production/priority/team")
+def set_team_priority(
+    body: PriorityTeamBody,
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """The drag-to-reorder dialog: a team's whole order at once, numbered 1…k
+    in the order sent. A line of another team, or one sent twice, is refused."""
+    day = _parse_date(body.date)
+    mid = _resolve_manager_id(payload, manager_id, db, day)
+    # Before the catalog is read, as /override does: a cell follow cannot move
+    # the lines between this read and the write.
+    pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
+    lines, scope, gscope = _team_ctx(db, payload, day, mid)
+    wc, group = body.work_center or "", (body.group or None)
+    _require_team_scope(scope, gscope, wc, group)
+    members = _team_members(lines, wc, group)
+    if not members:
+        raise HTTPException(status_code=400, detail="this team has no positions on this day")
+    mset = set(members)
+    ordered = [(x.sap_code, wc, x.line_key) for x in body.lines]
+    if len(set(ordered)) != len(ordered):
+        raise HTTPException(status_code=400, detail="a position is in the list twice")
+    if any(k not in mset for k in ordered):
+        raise HTTPException(status_code=400, detail="a position in the list is not this team's")
+    holder = {}
+
+    def run():
+        rows = _team_rows(db, mid, day, wc)
+        holder["before"] = len(_current_order(members, rows))
+        return _write_team_order(db, mid, day, members, rows, ordered)
+
+    changed = _priority_write(db, mid, day, run)
+    action_log.enrich(
+        target_kind="priority_team", target_id=f"{mid}:{day}:{wc}:{group or ''}",
+        target_name=wc + (f" · {group}" if group else ""), unit_id=mid, day=day,
+        details=[("date", str(day)), ("work_center", wc), ("group", group),
+                 ("ordered", len(ordered)), ("changed", changed)],
+    )
+    return _build_dashboard(db, mid, day, scope, payload)
 
 
 class PriorityCopyBody(BaseModel):
@@ -1922,18 +2096,16 @@ def copy_priority(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    """«Kechagi tartib»: today's «Navbat» becomes the order of the LAST earlier
-    day that has one (yesterday, or Saturday after a Sunday off), for every line
-    of today's catalog the caller may edit. Lines that day did not order are
-    cleared, so today reads exactly as that day did. Only on a button press —
-    nothing copies by itself (the operator: the order is set by people)."""
+    """«Kechagi tartib»: every team the caller may edit takes the order of the
+    LAST earlier day (within 14) that has one — that day's lines still on
+    today's table, in that day's order, renumbered 1…k (a line gone since
+    leaves no gap). Only on a button press: the order is put by people."""
     day = _parse_date(body.date)
     mid = _resolve_manager_id(payload, manager_id, db, day)
+    # Before the catalog is read, as /override does: a cell follow cannot move
+    # the lines between this read and the write.
     pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
-    scope = _leader_wc_scope(db, payload, day, mid)
-    gscope = _leader_group_scope(db, payload, day, mid) if scope is not None else None
-    idle_lock.require_open(db, mid, day)
-
+    lines, scope, gscope = _team_ctx(db, payload, day, mid)
     src_day = (db.query(func.max(PPLineDaily.date))
                .filter(PPLineDaily.manager_id == mid, PPLineDaily.date < day,
                        PPLineDaily.date >= day - timedelta(days=14),
@@ -1941,60 +2113,33 @@ def copy_priority(
                .scalar())
     if src_day is None:
         raise HTTPException(status_code=404, detail="no earlier day in the last 14 has an order")
-
-    lines = pp_catalog.at(db, mid, day).lines
-    keys = line_keys(lines)
-    groups = wc_group.line_groups(lines)
-    mine = set()
-    for p in lines:
-        lk = keys.get(p.id)
-        if not lk:
-            continue
-        k = (daily_key(p.sap_code, p.name), p.work_center or "", lk)
-        if scope is not None:
-            if not _in_scope(scope, k[1]):
-                continue
-            if not wc_group.in_scope(gscope, k[1], groups.get((k[1], k[0], lk))):
-                continue
-        mine.add(k)
-
     src = {(r.qty_key, r.work_center or "", r.line_key): r.priority
            for r in db.query(PPLineDaily).filter(
                PPLineDaily.manager_id == mid, PPLineDaily.date == src_day,
                PPLineDaily.priority.isnot(None)).all()}
-    have = {(r.qty_key, r.work_center or "", r.line_key): r
-            for r in db.query(PPLineDaily).filter(
-                PPLineDaily.manager_id == mid, PPLineDaily.date == day).all()}
-    set_n = cleared = 0
-    for k in mine:
-        want = src.get(k)
-        r = have.get(k)
-        if r is None:
-            if want is None:
-                continue
-            r = PPLineDaily(manager_id=mid, date=day, qty_key=k[0],
-                            work_center=k[1], line_key=k[2])
-            db.add(r)
-        if r.priority != want:
-            if want is None:
-                cleared += 1
-            else:
-                set_n += 1
-            r.priority = want
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="another save touched these lines — try again")
+    teams = []
+    for wc, group in dict.fromkeys((x[1], x[3] or None) for x in lines):
+        if not _in_scope(scope, wc) or (scope is not None and not wc_group.in_scope(gscope, wc, group)):
+            continue
+        teams.append((wc, group))
 
+    def run():
+        changed = 0
+        for wc, group in teams:
+            members = _team_members(lines, wc, group)
+            pos = {k: i for i, k in enumerate(members)}
+            ordered = sorted((k for k in members if k in src), key=lambda k: (src[k], pos[k]))
+            changed += _write_team_order(db, mid, day, members, _team_rows(db, mid, day, wc), ordered)
+        return changed
+
+    changed = _priority_write(db, mid, day, run)
     action_log.enrich(
         target_kind="priority_copy", target_id=f"{mid}:{day}",
         target_name=str(day), unit_id=mid, day=day,
-        details=[("date", str(day)), ("from", str(src_day)),
-                 ("set", set_n), ("cleared", cleared)],
+        details=[("date", str(day)), ("from", str(src_day)), ("changed", changed)],
     )
     out = _build_dashboard(db, mid, day, scope, payload)
-    out["priority_copied"] = {"from": src_day.isoformat(), "set": set_n, "cleared": cleared}
+    out["priority_copied"] = {"from": src_day.isoformat(), "changed": changed}
     return out
 
 

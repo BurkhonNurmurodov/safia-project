@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore, Scale, ListOrdered,
+  Archive, ArchiveRestore, Scale, ListOrdered, GripVertical,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -47,6 +47,7 @@ import { GROUP_LETTERS, wcGroupLabel } from "../utils/wcGroup";
 import { cellLabel } from "../utils/cellName";
 import StaffingProofModal from "../components/production/StaffingProofModal";
 import HourlyContainers from "../components/production/HourlyContainers";
+import PriorityOrderModal, { teamKeyOf } from "../components/production/PriorityOrderModal";
 import { ddmm, hhmm } from "../components/production/staffingClock";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -1613,7 +1614,7 @@ export default function Production() {
   // Subscribes this page to the admin's bands (see the import's note).
   useStatusBands();
   const { t, lang } = useLang();
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
   // Before every persisted filter below: a scope link writes them first.
@@ -2060,9 +2061,20 @@ export default function Production() {
       setCopyAsk(false);
       const c = res?.data?.priority_copied;
       if (c) toast.success(t("production.priority.copied")
-        .replace("{d}", ddmmyyyy(c.from)).replace("{n}", String(c.set + c.cleared)));
+        .replace("{d}", ddmmyyyy(c.from)).replace("{n}", String(c.changed)));
     },
     onError: (e) => setCopyErr(writeErr(e)),
+  });
+  // «Navbatni tartiblash» — a team's whole order from the drag dialog.
+  const [orderOpen, setOrderOpen] = useState(false);
+  const priorityTeam = useMutation({
+    mutationFn: (body) => api.post("/api/production/priority/team", { date, ...body }, { params: managerParam }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      setOrderOpen(false);
+      toast.success(t("production.priority.orderSaved"));
+    },
+    onError: (e) => toast.error(writeErr(e)),
   });
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
@@ -2817,8 +2829,12 @@ export default function Production() {
   // «Navbat» — its own door (/api/production/priority), never /override, so a
   // Jurnal reader never takes an order for a typed ПЛАН/ФАКТ.
   const savePriority = (row) => (value) => {
-    if (value != null && (!Number.isInteger(value) || value < 1 || value > 999)) {
-      toast.error(t("production.priority.bad"));
+    // The team's order has no gap and no repeat (the operator): a number may go
+    // up to one past the lines already ordered — the server moves the others.
+    const team = teamKeyOf(row);
+    const top = rows.filter((x) => teamKeyOf(x) === team && x.priority != null && x !== row).length + 1;
+    if (value != null && (!Number.isInteger(value) || value < 1 || value > top)) {
+      toast.error(t("production.priority.bad").replace("{max}", String(top)));
       return;
     }
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
@@ -4138,6 +4154,17 @@ export default function Production() {
                 size="lg"
                 variant="secondary"
                 className="whitespace-nowrap"
+                icon={<GripVertical size={14} />}
+                onClick={() => setOrderOpen(true)}
+              >
+                {t("production.priority.order")}
+              </Button>
+            )}
+            {dayOpen && rows.length > 0 && (
+              <Button
+                size="lg"
+                variant="secondary"
+                className="whitespace-nowrap"
                 icon={<ListOrdered size={14} />}
                 loading={priorityCopy.isPending && !copyAsk}
                 title={t("production.priority.copyHint")}
@@ -4774,6 +4801,16 @@ export default function Production() {
       )}
 
       {/* catalog line delete (admin) — «are you sure» before a hard delete */}
+      <PriorityOrderModal
+        open={orderOpen}
+        onClose={() => setOrderOpen(false)}
+        rows={rows}
+        initialTeam={wcSel.length === 1 ? `${String(wcSel[0]).trim().toUpperCase()}|` : null}
+        teamLabel={(wc, g) => (g ? wcGroupLabel(wc, g) : wcLabel(wc))}
+        onSave={(body) => priorityTeam.mutate(body)}
+        saving={priorityTeam.isPending}
+        t={t} fmt={fmt} tx={tx}
+      />
       <ConfirmDialog
         open={copyAsk}
         onCancel={() => { setCopyAsk(false); setCopyErr(null); }}
