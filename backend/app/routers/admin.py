@@ -1260,6 +1260,17 @@ def admin_copy_capabilities(
     }
 
 
+# ── «Tashkiliy tuzilma» — the org chart ───────────────────────────────────────
+# Read-only: every profile with its place in the plant, its logins and what
+# each may open. `verify_admin`, like the two registers it reads — it shows the
+# whole permission system, so it is never a capability.
+
+@router.get("/org-chart")
+def admin_org_chart(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    from app.services import org_chart
+    return org_chart.build(db)
+
+
 @router.get("/capabilities/audit")
 def admin_capability_audit(
     limit: int = 200,

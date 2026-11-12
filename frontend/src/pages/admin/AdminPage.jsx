@@ -25,7 +25,8 @@ import { ADMIN_PAGES } from "./adminPages";
  *     the first one they may, with the amber «you may not open that» band —
  *     never a silent snap somewhere unrelated; nothing at all → «/».
  *   - the one content column (max-w-6xl): a page renders no frame of its own,
- *     so moving between pages never moves the column's edge;
+ *     so moving between pages never moves the column's edge — a page marked
+ *     `wide` in ADMIN_NAV (a canvas: the org chart) takes the full width;
  *   - the page's one-line description, and the red «Xavfli» chip on a page
  *     that can destroy data.
  *
@@ -53,7 +54,7 @@ export default function AdminPage({ id }) {
 
   return (
     <Layout title={t(n.labelKey)}>
-      <div className="max-w-6xl">
+      <div className={n.wide ? "" : "max-w-6xl"}>
         {denied && (
           <div
             className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs mb-4"
