@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -45,8 +46,11 @@ K_TOKEN = "tasker_token"            # SEALED — web_auth.seal_password
 K_LAST_TEST = "tasker_last_test"    # JSON: counts and department names only
 
 # What a copy from a chat, a doc or a code block brings along that is no part of
-# any token: zero-width characters, and the quotes or backticks around it.
-_INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
+# any token: zero-width characters and soft hyphens, a typographic dash where
+# the token has "-", a space or line break where a viewer wrapped it (seen
+# 2026-11-12: «…FIjdu DDOwmx…»), and the quotes or backticks around it.
+_INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"))
+_DASHES = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d"), "-")
 _WRAP = "`'\"«»“”‘’"
 _SENDABLE = re.compile(r"[\x21-\x7e]{8,300}")
 
@@ -92,14 +96,26 @@ def norm_base(raw: Optional[str]) -> str:
 
 
 def clean_token(raw: Optional[str]) -> str:
-    """The token as pasted, minus what the copy brought along."""
-    return str(raw or "").translate(_INVISIBLE).strip().strip(_WRAP).strip()
+    """The token as pasted, minus what the copy brought along. A token holds no
+    whitespace, so every space inside is the copy's, never the token's."""
+    s = unicodedata.normalize("NFKC", str(raw or "")).translate(_INVISIBLE).translate(_DASHES)
+    return "".join(s.split()).strip(_WRAP)
 
 
 def valid_token(token: str) -> bool:
     """Sendable in a header: printable ASCII, no spaces. Whether it is the
     RIGHT token is Tasker's to say — the Test button asks it."""
     return bool(_SENDABLE.fullmatch(token or ""))
+
+
+def token_problem(token: str) -> Optional[str]:
+    """Why ``token`` can't be sent, naming the exact character — None when it can."""
+    for i, ch in enumerate(token or ""):
+        if not "\x21" <= ch <= "\x7e":
+            return f"character {i + 1} of the token, «{ch}» (U+{ord(ch):04X}), cannot be sent"
+    if not 8 <= len(token or "") <= 300:
+        return f"the token is {len(token or '')} characters long — that is not a whole token"
+    return None
 
 
 def config(db: Session) -> dict:
@@ -144,8 +160,9 @@ def save(db: Session, *, base: Optional[str] = None, token: Optional[str] = None
             changed["token"] = "cleared"
     elif token:
         token = clean_token(token)
-        if not valid_token(token):
-            raise ValueError("the token holds a space or a character that cannot be sent — paste it again")
+        problem = token_problem(token)
+        if problem:
+            raise ValueError(problem)
         _put(db, K_TOKEN, seal_password(token))
         changed["token"] = len(token)
     if changed:

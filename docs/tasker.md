@@ -23,10 +23,13 @@ Tasker yet.**
   what was actually pasted, and the token cannot be checked against the one
   Tasker issued. Never logged; the action register records that it changed and
   its length. An emptied field + Save removes it.
-- **A pasted token is CLEANED, not judged** (`clean_token`): zero-width
-  characters and surrounding quotes / backticks / «» are dropped, and the only
-  refusal is a space or a non-ASCII character (it could not be sent in a
-  header). Whether it is the RIGHT token is Tasker's answer to «Tekshirish».
+- **A pasted token is CLEANED, not judged** (`clean_token`): NFKC, zero-width
+  characters and soft hyphens dropped, typographic dashes (‐ ‑ – — − －) back
+  to `-`, EVERY whitespace removed (a token holds none — the second paste on
+  12 Nov carried a viewer's wrap as a space and a non-breaking hyphen), and
+  surrounding quotes / backticks / «» dropped. What is left and still can't go
+  in a header is refused NAMING the character and its position
+  (`token_problem`). Whether it is the RIGHT token is Tasker's answer to «Tekshirish».
   The first version demanded `tsk_` + 20–200 URL-safe characters and refused a
   real token pasted with extra characters around it, hidden by the mask. The doc's localhost token is a TEST
   value for Tasker's local setup; production gets its own token once Tasker

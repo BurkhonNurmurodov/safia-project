@@ -39,6 +39,14 @@ class TaskerTest(unittest.TestCase):
         for raw in (TOKEN, f" {TOKEN}\n", f"`{TOKEN}`", f'"{TOKEN}"', f"«{TOKEN}»",
                     f"​{TOKEN}﻿"):
             self.assertEqual(tasker.clean_token(raw), TOKEN, repr(raw))
+        # a viewer that wrapped it and swapped its dash (seen 2026-11-12)
+        dashed = "tsk_" + "abcdEFG-hij_" * 4
+        for raw in (dashed.replace("-", "‑").replace("_hij", "_ hij", 1),
+                    dashed.replace("-", "–").replace("EFG", "EF\nG"),
+                    dashed.replace("-", "－­")):
+            self.assertEqual(tasker.clean_token(raw), dashed, repr(raw))
+        self.assertIsNone(tasker.token_problem(dashed))
+        self.assertIn("U+00E9", tasker.token_problem("tsk_abcdé1234567"))
         self.assertTrue(tasker.valid_token(TOKEN))
         self.assertTrue(tasker.valid_token("not_tsk_prefixed+/="))   # Tasker judges it, not us
         for bad in ("", "short", "Bearer " + TOKEN, "tsk_абвгдежзий"):
