@@ -678,6 +678,14 @@ bo'yicha»: the five containers as rows, every clock hour of the day as a column
 a line has no hour, «Jami» last; the NEXT hour gold with «… da tayyorlang»
 above, hours already over dimmed, the clock re-read every minute.
 
+- **Readable at a glance** (the operator, same day: «the hour is not visible,
+  add a sum for every hour»): a «Jami (soat)» row adds the five containers up
+  per hour; every cell is tinted gold by its size within its row (the sum row
+  within itself) — an intensity ramp, not a status; on today's page the
+  CURRENT hour is outlined («hozir»), the NEXT one's head is solid gold
+  («tayyorlang»), past hours fade, and the table scrolls itself so the current
+  hour sits just right of the sticky first column. Another day says «Bugungi
+  kun emas — joriy soat belgilanmaydi» instead of the prepare line.
 - **Admins and shift managers only** — `HOURLY_ROLES` in the card AND in
   `routers/shift_report.py`; the endpoint answers anyone else 403.
 - **Follows the page's filters** (plant, shift, units) exactly as `/containers`
