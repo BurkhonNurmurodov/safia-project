@@ -711,7 +711,7 @@ def _positions(ident: dict) -> dict[date, dict[int, tuple]]:
     return out
 
 
-_LINE_COLS = ("plan_override", "actual_override", "container_cap", "updated_at")
+_LINE_COLS = ("plan_override", "actual_override", "container_cap", "priority", "updated_at")
 
 
 def _rekey_line_daily(db: Session, units: list[int], h: date, last: date, pb: dict, pa: dict,
@@ -744,7 +744,7 @@ def _rekey_line_daily(db: Session, units: list[int], h: date, last: date, pb: di
             continue
         carry[t] = {c: getattr(row, c) for c in _LINE_COLS}
         if pid in joined and any(getattr(row, c) is not None
-                                 for c in ("plan_override", "actual_override", "container_cap")):
+                                 for c in ("plan_override", "actual_override", "container_cap", "priority")):
             named.append(_named("hidden_typed", id=pid, day=s[1].isoformat(), unit=t[0]))
         db.delete(row)
         idx.pop(s)

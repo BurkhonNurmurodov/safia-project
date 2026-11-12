@@ -1560,6 +1560,13 @@ class PPLineDaily(Base):
     # where it is (the file says nothing about lids) and a catalog edit carries
     # it with the line like the two quantities. startup.add_pp_line_container_cap.
     container_cap   = Column(Numeric(14, 4), nullable=True)
+    # 2026-11-12 «Navbat»: which product this line's team makes FIRST, second…
+    # on this day — typed by the supervisor or the leader on «Pozitsiyalar»
+    # through the same /override door. Counted inside ONE team (work centre +
+    # group): two cells may both hold a 1. NULL = not ordered. Read by the
+    # hourly containers timeline only; no load or KPI figure moves with it.
+    # startup.add_pp_line_priority.
+    priority        = Column(Integer, nullable=True)
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Every component is NOT NULL, so a plain UniqueConstraint is enough — the

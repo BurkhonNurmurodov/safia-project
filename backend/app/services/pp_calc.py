@@ -825,6 +825,9 @@ def compute_dashboard(
             # this line on this day, or None — never 0. Nothing computes with it.
             "container_cap": (_f(lo["container_cap"])
                               if lo.get("container_cap") is not None else None),
+            # «Navbat» (2026-11-12): the order this line's team makes it in on
+            # this day, or None. Read by the hourly containers timeline only.
+            "priority": (int(lo["priority"]) if lo.get("priority") is not None else None),
             # how many catalog lines currently share this quantity record, and
             # whether THIS row is still reading the shared one. The page says so
             # rather than leaving the reader to discover it by typing.

@@ -145,6 +145,7 @@ try:
         report_auto_schema,
         add_pp_product_auto_fill,
         add_pp_line_container_cap,
+        add_pp_line_priority,
         add_pp_product_archive_columns,
         add_pp_product_uom,
         add_assessment_answer_columns,
@@ -298,6 +299,7 @@ try:
     set_gemini_model_pro()
     add_pp_product_auto_fill()
     add_pp_line_container_cap()
+    add_pp_line_priority()
     add_pp_product_archive_columns()
     add_pp_product_uom()
     add_assessment_answer_columns()

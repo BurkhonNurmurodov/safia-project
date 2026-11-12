@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore, Scale,
+  Archive, ArchiveRestore, Scale, ListOrdered,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -85,8 +85,9 @@ const CONTAINERS = [
 ];
 const CONTAINER_BY_KEY = Object.fromEntries(CONTAINERS.flatMap((c) =>
   [[`cap_${c.id}`, { ...c, kind: "cap" }], [`cnt_${c.id}`, { ...c, kind: "cnt" }]]));
-// «Jamoalar» → «Soatlik» stays off the page until the operator turns it on.
-const SHOW_HOURLY = false;
+// «Jamoalar» → «Soatlik» is shown to these roles only (the operator,
+// 2026-11-12) while it is being tried out.
+const HOURLY_ROLES = ["admin", "shift-manager"];
 const containerCount = (r, field) => {
   const cap = Number(r[field]);
   const plan = r.plan_qty;
@@ -151,6 +152,10 @@ const cellTitle = (cell, tl, group = cell?.wc_group) => (cell?.verifix_code
 // the form paints it green, as it paints its own inputs.
 const COLS = [
   { key: "seq", labelKey: "production.col.seq", align: "center", hintKey: "production.col.seqHint" },
+  // «Navbat» (2026-11-12, the operator): which product the team makes first,
+  // second… today — typed by the supervisor or the leader, counted inside one
+  // team, read by the hourly containers timeline.
+  { key: "priority", labelKey: "production.col.priority", align: "center", edit: true, hintKey: "production.col.priorityHint" },
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
   { key: "op", labelKey: "production.col.op", align: "center", hintKey: "production.col.opHint" },
   { key: "name", labelKey: "production.col.name", align: "left" },
@@ -319,6 +324,7 @@ const groupUntypedTitle = (t, w, g) => (g.orphan ? t("production.group.orphan")
 const sortVal = (r, key) => {
   switch (key) {
     case "seq":          return r.seq ?? null;
+    case "priority":     return r.priority ?? null;
     case "sap_code":     return r.sap_code;
     case "op":           return r.op ?? null;
     case "name":         return r.name;
@@ -411,7 +417,7 @@ const moveCell = (el, dCol, dRow) => {
 // the editor FILLS the cell instead of floating a small box inside it. Enter
 // commits and drops to the cell below, Tab commits and steps right, Escape
 // cancels, Delete clears the override.
-function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
+function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = false, decimals = 0 }) {
   const { t } = useLang();
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
@@ -490,8 +496,8 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
   // that editing here silently does nothing.
   if (readOnly) {
     return (
-      <td title={title || undefined} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-1)" }}>
-        {fmt(value, 0)}
+      <td title={title || undefined} className="px-3 py-2 text-center tabular-nums" style={{ color: warn ? "#ef4444" : "var(--text-1)" }}>
+        {fmt(value, decimals)}
       </td>
     );
   }
@@ -539,8 +545,9 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title }) {
       {/* A typed value is displayed as ANY REGULAR CELL — no colour, no weight,
           no dot. What the operator entered IS the figure for that day, not an
           annotation on the sheet’s, so nothing here says where it came from. */}
-      <span className="inline-flex items-center gap-1 tabular-nums" style={{ color: "var(--text-1)" }}>
-        {fmt(value, 0)}
+      <span className="inline-flex items-center gap-1 tabular-nums"
+        style={{ color: warn ? "#ef4444" : "var(--text-1)", fontWeight: warn ? 700 : undefined }}>
+        {fmt(value, decimals)}
         <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
       </span>
       {/* the editor covers the cell's whole box — inset-0 resolves against the
@@ -2038,6 +2045,25 @@ export default function Production() {
   // empty row and the action strip each stop one cell short of the header.
   const colCount = visibleCols.length + (canPickRows ? 1 : 0);
 
+  const priorityM = useMutation({
+    mutationFn: (body) => api.post("/api/production/priority", body, { params: managerParam }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
+    onError: (e) => toast.error(writeErr(e)),
+  });
+  // «Kechagi tartib» — today's order := the last earlier day's, on a press only.
+  const [copyAsk, setCopyAsk] = useState(false);
+  const [copyErr, setCopyErr] = useState(null);
+  const priorityCopy = useMutation({
+    mutationFn: () => api.post("/api/production/priority/copy", { date }, { params: managerParam }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      setCopyAsk(false);
+      const c = res?.data?.priority_copied;
+      if (c) toast.success(t("production.priority.copied")
+        .replace("{d}", ddmmyyyy(c.from)).replace("{n}", String(c.set + c.cleared)));
+    },
+    onError: (e) => setCopyErr(writeErr(e)),
+  });
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
     onSuccess: () => {
@@ -2390,6 +2416,14 @@ export default function Production() {
   const markedDates = useMemo(() => new Set(datesData?.dates ?? []), [datesData]);
 
   const rows = data?.rows ?? [];
+  // «Navbat» is counted inside ONE team (work centre + group letter): the same
+  // number twice in a team is allowed but marked, two cells may each hold a 1.
+  const prioKey = (r) => `${String(r.work_center ?? "").trim().toUpperCase()}|${r.wc_group ?? ""}|${r.priority}`;
+  const prioCount = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) if (r.priority != null) m.set(prioKey(r), (m.get(prioKey(r)) ?? 0) + 1);
+    return m;
+  }, [rows]);
   const wcs = data?.work_centers ?? [];
   // The «Команды» panel draws ONE CARD PER GROUP for a work centre typed per
   // group (`typesPerGroup`): each group is its own cell with its own people,
@@ -2405,11 +2439,12 @@ export default function Production() {
   // of the row's own count (`containerCount`, the table's «soni» columns). A
   // whole-centre card sums every line at its Команда; a group card the lines
   // carrying its letter. «—» where no line of the team states a capacity.
-  // «Soatlik» (hourly containers) is built and deployed but HIDDEN until the
-  // operator says to show it (2026-11-12). A tab that saved "hourly" reads as
-  // «Yuklama» meanwhile. Flip SHOW_HOURLY to bring the toggle back.
+  // «Soatlik» (hourly containers) is offered to HOURLY_ROLES only (admins and
+  // shift managers, the operator 2026-11-12); anyone else who had saved
+  // "hourly" reads «Yuklama».
+  const showHourly = HOURLY_ROLES.includes(auth?.role);
   const [teamsViewSaved, setTeamsView] = usePersistentState("production_teams_view", "load");
-  const teamsView = !SHOW_HOURLY && teamsViewSaved === "hourly" ? "load" : teamsViewSaved;
+  const teamsView = !showHourly && teamsViewSaved === "hourly" ? "load" : teamsViewSaved;
   const teamContainers = useMemo(() => {
     const norm = (v) => String(v ?? "").trim().toUpperCase();
     const out = new Map();
@@ -2779,6 +2814,22 @@ export default function Production() {
   // the line's own name and Трудоемкость rather than its position, so a catalog
   // import that reorders the sheet cannot hand this number to another operation.
   // It rides the undo too, so the inverse edit reaches the same line.
+  // «Navbat» — its own door (/api/production/priority), never /override, so a
+  // Jurnal reader never takes an order for a typed ПЛАН/ФАКТ.
+  const savePriority = (row) => (value) => {
+    if (value != null && (!Number.isInteger(value) || value < 1 || value > 999)) {
+      toast.error(t("production.priority.bad"));
+      return;
+    }
+    const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
+                 line_key: row.line_key };
+    const prev = row.priority ?? null;
+    tracked({
+      label: `${row.name} · ${t("production.col.priority")}`,
+      forward: () => priorityM.mutateAsync({ ...at, value }),
+      back: () => priorityM.mutateAsync({ ...at, value: prev }),
+    });
+  };
   const saveOverride = (row, field) => (value) => {
     const at = { date, sap_code: row.qty_key ?? row.sap_code, work_center: row.work_center,
                  field, line_key: row.line_key };
@@ -2935,6 +2986,16 @@ export default function Production() {
               : r.actual_shared ? t("production.qty.shared").replace("{n}", r.group_size) : undefined}
             value={shownQty(r, "actual")} onSave={saveOverride(r, "actual")} />
         );
+      // «Navbat»: a whole number, the team's order for the day. Two lines of
+      // ONE team holding the same number turn red (allowed, but worth a look).
+      case "priority": {
+        const dup = r.priority != null && (prioCount.get(prioKey(r)) ?? 0) > 1;
+        return (
+          <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
+            warn={dup} title={dup ? t("production.priority.dup") : t("production.col.priorityHint")}
+            value={r.priority ?? null} onSave={savePriority(r)} />
+        );
+      }
       case "plan":
         return (
           <QtyCell key={key} col={key} row={i} readOnly={!dayOpen}
@@ -3042,6 +3103,7 @@ export default function Production() {
       ? XL_DASH : { v: Number(v), d });
     switch (key) {
       case "seq": return shownSeq(r) == null ? XL_DASH : { v: shownSeq(r), d: 0, fg: XL_SOFT };
+      case "priority": return r.priority == null ? XL_DASH : { v: r.priority, d: 0 };
       case "sap_code": return r.sap_code ? { t: String(r.sap_code), fg: XL_SOFT } : XL_DASH;
       case "op": return r.op != null && r.op !== "" ? { t: String(r.op), fg: XL_SOFT } : XL_DASH;
       case "name": return { t: r.name ?? "" };
@@ -3787,7 +3849,7 @@ export default function Production() {
             <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
             <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
               options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")],
-                ...(SHOW_HOURLY ? [["hourly", t("production.teams.hourly")]] : [])]} />
+                ...(showHourly ? [["hourly", t("production.teams.hourly")]] : [])]} />
           </span>
         } />
         {!loading && teamsView === "hourly" ? (
@@ -4066,6 +4128,26 @@ export default function Production() {
                 onClick={openCreate}
               >
                 {t("production.addRow")}
+              </Button>
+            )}
+            {/* «Kechagi tartib»: copies the last earlier day's «Navbat» onto
+                today, on a press only. Asks first when today already has an
+                order, because the copy replaces it. */}
+            {dayOpen && rows.length > 0 && (
+              <Button
+                size="lg"
+                variant="secondary"
+                className="whitespace-nowrap"
+                icon={<ListOrdered size={14} />}
+                loading={priorityCopy.isPending && !copyAsk}
+                title={t("production.priority.copyHint")}
+                onClick={() => {
+                  setCopyErr(null);
+                  if (rows.some((r) => r.priority != null)) setCopyAsk(true);
+                  else priorityCopy.mutate(undefined, { onError: (e) => toast.error(writeErr(e)) });
+                }}
+              >
+                {t("production.priority.copy")}
               </Button>
             )}
             {/* A day an edit made now cannot reach: it keeps the catalog it
@@ -4692,6 +4774,17 @@ export default function Production() {
       )}
 
       {/* catalog line delete (admin) — «are you sure» before a hard delete */}
+      <ConfirmDialog
+        open={copyAsk}
+        onCancel={() => { setCopyAsk(false); setCopyErr(null); }}
+        onConfirm={() => { setCopyErr(null); priorityCopy.mutate(); }}
+        title={t("production.priority.copyTitle")}
+        message={t("production.priority.copyConfirm")}
+        confirmLabel={t("production.priority.copy")}
+        cancelLabel={t("production.cancelEdit")}
+        error={copyErr}
+        loading={priorityCopy.isPending}
+      />
       <ConfirmDialog
         open={!!confirmArch}
         onCancel={() => { setConfirmArch(null); setArchErr(""); }}

@@ -5998,6 +5998,20 @@ def add_pp_line_container_cap() -> None:
     _ensure_columns(_PP_LINE_CAP_DDL, "pp_line_daily.container_cap")
 
 
+_PP_LINE_PRIORITY_DDL = (
+    ("pp_line_daily", (("priority", "INTEGER"),), None),
+)
+
+
+def add_pp_line_priority() -> None:
+    """2026-11-12: «Navbat» — the order a team makes its products in on a day
+    (`pp_line_daily.priority`, models.PPLineDaily). NULL on every existing row =
+    not ordered. Pure DDL, idempotent, through `_ensure_columns` and FATAL on
+    failure for the same reason as `add_pp_line_container_cap`: every read of
+    the overlay selects this column."""
+    _ensure_columns(_PP_LINE_PRIORITY_DDL, "pp_line_daily.priority")
+
+
 _PP_PRODUCT_ARCHIVE_DDL = (
     ("pp_products", (("archived_at", "TIMESTAMPTZ"),
                      ("archived_by", "VARCHAR"),
