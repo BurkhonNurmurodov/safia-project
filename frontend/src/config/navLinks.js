@@ -6,7 +6,7 @@
 import {
   Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, BriefcaseBusiness, CalendarCheck, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
-  Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
+  Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
@@ -111,8 +111,11 @@ export const ALL_LINKS = [
   // read-only (routers/audit_table.py). ADMINS ONLY, and not grantable.
   { to: "/audit", adminOnly: true, key: "nav.audit", icon: ScrollText, group: "lab" },
   // «Pechlar» — the Revent ovens: live board, bakes, utilisation, alarms and
-  // door (services/revent_analytics.py). Laboratory, admin-only until opened.
-  { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab" },
+  // door (services/revent_analytics.py). Admin-only until opened on the Access
+  // tab. On the launcher it is the first page of the «Avtomatika» app
+  // (2026-11-12, the operator), not a Laboratory page; its page access is
+  // unchanged, and for anybody else it stays in the Laboratory group.
+  { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab", app: "automation" },
   // «API» — a person's own tokens for the external read API and its manual
   // (routers/api_tokens.py). Admin-only until opened on the Access tab.
   { to: "/tokens", page: "api", key: "nav.api", icon: KeyRound, group: "lab" },
@@ -160,8 +163,8 @@ export const NAV_GROUPS = [
 // utils/launcherRoles.js). For them «/» is a grid of these tiles — a
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
-// pages. An app is a nav group by default; ARC, the overview,
-// the reports and the activity page are apps of their own (a link's `app`).
+// pages. An app is a nav group by default; ARC, the overview, the reports,
+// the activity page, HR and automation are apps of their own (a link's `app`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
 export const APPS = [
@@ -178,6 +181,12 @@ export const APPS = [
   { id: "education", labelKey: "navgrp.education",  icon: GraduationCap,   hue: "indigo" },
   { id: "verifix",   labelKey: "navgrp.verifix",    icon: ScanFace,        hue: "cyan" },
   { id: "lab",       labelKey: "navgrp.lab",        icon: TestTubes,       hue: "pink" },
+  // The plant's machines read by the platform (2026-11-12, the operator) —
+  // «Pechlar» first, out of the Laboratory. Its tile shows only to somebody
+  // who may open one of its pages: admins, while `ovens` stays admin-only.
+  // «Avtomatika» / «Автоматика», not the longer verbal noun: that one breaks
+  // mid-word on a phone's tile (the reason `apps.activity` is one word).
+  { id: "automation", labelKey: "apps.automation",  icon: Cpu,             hue: "amber" },
   // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
   // phone's tile; the tile says it in one word.
   { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },
