@@ -11,6 +11,13 @@ workers' clock-in/out for a date — «the date also could be today».
   or `X-Api-Key: <token>`. Wrong ones share the report door's throttle (ten in
   ten minutes per address). `/api/ext/` is in `security._EXEMPT_PREFIXES`, so
   no Telegram session is involved; a refusal is `401 bad_token`.
+  **A live token is looked up BEFORE the throttle and is never refused by it**
+  (v4.468.0): the address the throttle counts can be typed (`CF-Connecting-IP`
+  at the origin, see `docs/web-clients.md`) or shared (one NAT, one VPS), so
+  ten wrong tokens on it — or one system polling with a revoked token — locked
+  out every other system behind it for ten minutes. A token is 32 random bytes,
+  so nothing is guessed meanwhile; the price is one indexed digest lookup per
+  wrong call from a throttled address.
 - **`date=YYYY-MM-DD`** on all three; blank = today on the Tashkent clock. A
   night shift belongs to the date it started on. **`cell=<verifix code>`** on
   the two dated ones narrows to one cell; without it every cell comes back in
@@ -29,6 +36,14 @@ workers' clock-in/out for a date — «the date also could be today».
   its work centre with its WHOLE quantity and `shared: true`, while the cell's
   minutes carry an even share of it — so a lettered cell's `plan_minutes` is
   not the sum of its SKUs' minutes.
+  **A SKU's `containers`** (v4.468.0, for the internal-logistics app, which
+  moves them): `{yellow|round|grey|bucket|box: {capacity, count}}`, one entry
+  per container the catalog line states a capacity for (`pp_products.cap_*`,
+  the «Pozitsiyalar» columns — see «…and a line's four CONTAINERS» in
+  `docs/production-quantities.md`); `count` is `pp_containers.count` of the
+  line's plan, the figure the page and «Konteynerlar — jami» show, `null`
+  without a plan. `{}` = no capacity entered. A `shared` line's count is the
+  whole line's, like its `plan`.
 - **`GET /attendance`** → per cell `{code, workers: [{employee_id, name, job,
   clock_in, clock_out}]}`, times as `2026-11-09T07:53+05:00`. A unit whose day
   is CLOSED answers from the closed copy (`attendance`: exchanges applied,

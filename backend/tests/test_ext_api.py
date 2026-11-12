@@ -20,6 +20,37 @@ class ExtApiTest(unittest.TestCase):
                 ext_api._client(req, None)
             self.assertEqual(e.exception.status_code, 401)
 
+    def test_a_live_token_is_never_throttled(self):
+        # ten wrong tokens on an address (typed, or shared by two systems) must
+        # not lock out the live token behind it; wrong ones still wait
+        from unittest import mock
+        from app.services import ops_door
+        ip = "198.51.100.7"
+        req = lambda key: SimpleNamespace(headers={"x-api-key": key, "cf-connecting-ip": ip}, client=None,
+                                          url=SimpleNamespace(path="/api/ext/v1/cells"))
+        tokens_exist = SimpleNamespace(query=lambda *a: SimpleNamespace(first=lambda: 1))
+        live = SimpleNamespace(owner_name="Logistika", owner_tid=1, name="logistics")
+        try:
+            for _ in range(ops_door.BAD_LIMIT):
+                ops_door.note_bad(ip)
+            with mock.patch.object(ext_api.api_tokens, "use",
+                                   side_effect=lambda db, v: live if v == "sfx_good" else None):
+                self.assertEqual(ext_api._client(req("sfx_good"), tokens_exist), "Logistika · logistics")
+                with self.assertRaises(HTTPException) as e:
+                    ext_api._client(req("sfx_wrong"), tokens_exist)
+                self.assertEqual(e.exception.status_code, 429)
+        finally:
+            ops_door._BAD.pop(ip, None)
+
+    def test_containers_need_a_stated_capacity(self):
+        from decimal import Decimal
+        row = {"plan_qty": 3339, "uom": "kg", "cap_yellow": Decimal("20.0000"), "cap_round": 12.5, "cap_box": None}
+        self.assertEqual(ext_api._containers(row), {"yellow": {"capacity": 20.0, "count": 167},
+                                                    "round": {"capacity": 12.5, "count": 268}})
+        self.assertEqual(ext_api._containers({"plan_qty": None, "cap_grey": 8}),
+                         {"grey": {"capacity": 8.0, "count": None}})
+        self.assertEqual(ext_api._containers({"plan_qty": 10}), {})
+
     def test_token_state(self):
         from datetime import timedelta, timezone
         from app.services import api_tokens

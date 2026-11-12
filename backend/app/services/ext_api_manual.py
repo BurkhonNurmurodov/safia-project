@@ -23,7 +23,7 @@ _FIELDS = {
     "sku": [("sap_code", "string | null", "f_sku_sap"), ("name", "string", "f_sku_name"),
             ("unit", "string | null", "f_sku_unit"), ("plan", "number", "f_sku_plan"),
             ("fact", "number", "f_sku_fact"), ("plan_minutes", "number", "f_sku_min"),
-            ("shared", "boolean", "f_sku_shared")],
+            ("shared", "boolean", "f_sku_shared"), ("containers", "object", "f_sku_cont")],
     "attendance": [("code", "string", "f_code"), ("workers", "array", "f_workers"),
                    ("employee_id", "string | null", "f_emp"), ("name", "string", "f_name"),
                    ("job", "string | null", "f_job"), ("clock_in", "string | null", "f_in"),
@@ -73,6 +73,10 @@ _S = {
         "f_sku_min": "Planned minutes for this SKU.",
         "f_sku_shared": "true = the line belongs to every cell of the work centre and is listed under each "
                         "with its whole quantity. Do not add such lines up across cells.",
+        "f_sku_cont": "The containers the day's plan needs, by type: yellow (rectangular yellow container), "
+                      "round (round yellow container), grey (grey container), bucket, box (yellow box). Each is "
+                      "{capacity, count}: capacity = how many fit, in the SKU's unit; count = plan ÷ capacity, "
+                      "rounded up (null without a plan). A type with no capacity entered is left out; {} = none entered.",
         "f_workers": "The cell's workers (the fields below).",
         "f_emp": "The worker's Verifix id. null on a day already closed.",
         "f_name": "Full name.",
@@ -133,6 +137,10 @@ _S = {
         "f_sku_min": "Плановые минуты по этому SKU.",
         "f_sku_shared": "true = строка относится ко всем ячейкам рабочего центра и указана у каждой с полным "
                         "количеством. Не складывайте такие строки между ячейками.",
+        "f_sku_cont": "Контейнеры, нужные под план дня, по типам: yellow (жёлтый прямоугольный контейнер), "
+                      "round (жёлтый круглый контейнер), grey (серый контейнер), bucket (ведро), box (жёлтый ящик). "
+                      "Каждый — {capacity, count}: capacity — сколько помещается, в единице SKU; count — план ÷ "
+                      "вместимость с округлением вверх (null без плана). Тип без вместимости не выводится; {} = не указана.",
         "f_workers": "Сотрудники ячейки (поля ниже).",
         "f_emp": "ID сотрудника в Verifix. null для уже закрытого дня.",
         "f_name": "ФИО.",
@@ -194,6 +202,10 @@ _S = {
         "f_sku_min": "Shu SKU bo'yicha rejadagi daqiqalar.",
         "f_sku_shared": "true = qator ish markazining barcha yacheykalariga tegishli va har birida to'liq miqdori "
                         "bilan ko'rsatilgan. Bunday qatorlarni yacheykalar bo'yicha qo'shmang.",
+        "f_sku_cont": "Kunlik rejaga kerakli konteynerlar, turi bo'yicha: yellow (sariq to'rtburchak konteyner), "
+                      "round (sariq dumaloq konteyner), grey (kulrang konteyner), bucket (chelak), box (sariq yashik). "
+                      "Har biri {capacity, count}: capacity — nechta sig'adi, SKU birligida; count — reja ÷ sig'im, "
+                      "yuqoriga yaxlitlangan (reja bo'lmasa null). Sig'imi kiritilmagan tur chiqmaydi; {} = kiritilmagan.",
         "f_workers": "Yacheyka xodimlari (maydonlari quyida).",
         "f_emp": "Xodimning Verifix ID raqami. Yopilgan kun uchun null.",
         "f_name": "To'liq ismi.",
@@ -255,6 +267,10 @@ _S = {
         "f_sku_min": "Шу SKU бўйича режадаги дақиқалар.",
         "f_sku_shared": "true = қатор иш марказининг барча ячейкаларига тегишли ва ҳар бирида тўлиқ миқдори "
                         "билан кўрсатилган. Бундай қаторларни ячейкалар бўйича қўшманг.",
+        "f_sku_cont": "Кунлик режага керакли контейнерлар, тури бўйича: yellow (сариқ тўртбурчак контейнер), "
+                      "round (сариқ думалоқ контейнер), grey (кулранг контейнер), bucket (челак), box (сариқ яшик). "
+                      "Ҳар бири {capacity, count}: capacity — нечта сиғади, SKU бирлигида; count — режа ÷ сиғим, "
+                      "юқорига яхлитланган (режа бўлмаса null). Сиғими киритилмаган тур чиқмайди; {} = киритилмаган.",
         "f_workers": "Ячейка ходимлари (майдонлари қуйида).",
         "f_emp": "Ходимнинг Verifix ID рақами. Ёпилган кун учун null.",
         "f_name": "Тўлиқ исми.",

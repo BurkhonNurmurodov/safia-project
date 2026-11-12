@@ -26,8 +26,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ApiToken, Attendance, Manager
 from app.routers.ovens import _ip, _refuse
-from app.services import (api_tokens, cell_lookup, live_day, live_staff, ops_door, verifix_live,
-                          wc_group, zagruzka_source)
+from app.services import (api_tokens, cell_lookup, live_day, live_staff, ops_door, pp_containers,
+                          verifix_live, wc_group, zagruzka_source)
 from app.services.cell_lookup import norm_code
 
 log = logging.getLogger(__name__)
@@ -42,10 +42,8 @@ KEYS = {
 def _client(request: Request, db: Session = Depends(get_db)) -> str:
     """Who is calling, or 401 / 429: a personal token (services/api_tokens.py)
     in ``Authorization: Bearer`` or ``X-Api-Key``. Wrong ones share the report
-    door's per-address throttle."""
+    door's per-address throttle; a live token is never throttled."""
     ip = _ip(request)
-    if ops_door.throttled(ip):
-        raise _refuse("throttled", "Too many wrong tokens from this address — wait ten minutes.", 429)
     scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
     v = token.strip() if scheme.lower() == "bearer" else ""
     v = v or (request.headers.get("x-api-key") or "").strip()
@@ -59,6 +57,14 @@ def _client(request: Request, db: Session = Depends(get_db)) -> str:
             for known, name in KEYS.items():
                 if hmac.compare_digest(api_tokens.digest_of(v), known):
                     return name
+    # The throttle meets wrong and missing tokens only. A live token (32 random
+    # bytes) cannot be guessed, so it must not be refused for somebody else's
+    # mistakes on its address: an address is typed (CF-Connecting-IP at the
+    # origin) or shared (one NAT, one VPS), and one stale token would lock out
+    # every system behind it.
+    if ops_door.throttled(ip):
+        raise _refuse("throttled", "Too many wrong tokens from this address — wait ten minutes.", 429)
+    if v:
         ops_door.note_bad(ip)
     log.warning("[EXT] token refused from %s", ip)
     raise _refuse("bad_token", "Missing, wrong, expired or revoked token.", 401)
@@ -92,6 +98,16 @@ def _cells(db: Session, day: date, code: Optional[str]) -> list[tuple]:
 
 def _r(v) -> Optional[float]:
     return None if v is None else round(float(v), 2)
+
+
+def _containers(row: dict) -> dict:
+    """{type: {capacity, count}} for each container the line states a capacity
+    for (the «Pozitsiyalar» columns); `count` is what the day's plan needs —
+    `pp_containers.count`, the figure the page and «Konteynerlar — jami» show."""
+    return {key: {"capacity": float(row[col]),
+                  "count": pp_containers.count(row.get("plan_qty"), row.get("uom"), row[col])}
+            for col, key in zip(pp_containers.CONTAINERS, pp_containers.keys())
+            if row.get(col) is not None}
 
 
 @router.get("/cells")
@@ -140,6 +156,7 @@ def production(date: Optional[str] = Query(None), cell: Optional[str] = Query(No
                 "plan": _r(r.get("plan_qty")), "fact": _r(r.get("actual_qty")),
                 "plan_minutes": _r(r.get("total_labor")),
                 "shared": bool(grp) and not r.get("wc_group"),
+                "containers": _containers(r),
             } for r in rows_of[mid]
                 if norm_code(r.get("work_center")) == code
                 and wc_group.in_scope({(code, grp)}, code, r.get("wc_group"))
