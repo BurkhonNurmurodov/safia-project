@@ -29,13 +29,29 @@ names change.
   is a break, as on /staff); «Ketdi» = `left` + `no_out`; «Hali kelmagan» =
   `not_yet` (the shift starts later — tonight's shift, for the evening meal);
   «Kelmadi» = `absent`. A day off is on no line.
-- **A night shift is filed under the day it started**, so until 14:00
-  yesterday's rows are read too: somebody still inside from last night counts
+- **A night shift is filed under the day it started**, so yesterday's rows
+  are ALWAYS read with today's: somebody still inside from last night counts
   in «Hozir ishda» (and is named in the sentence under the number, `night`)
-  but not in «Bugun keldi».
-- **«Kun davomida ishda»** — the people in the building at the start of each
-  hour of today, from the same clocks; a missing check-out counts up to the
-  shift's end, never past it. Plain CSS bars: the page loads no chart library.
+  but not in «Bugun keldi», and this morning's hours hold last night's people
+  all day. (Until 2026-11-12 yesterday was read only before 14:00, and the
+  early hours emptied in the afternoon.)
+- **«Soatlar bo'yicha» — every hour of today with its NUMBER printed, then
+  the forecast** (the operator, 2026-11-12: «show the numbers per hour
+  somewhere … you know how many people have arrived and when they're
+  (approximately) leaving based on the time schedule, so you can show planned
+  forecast»). `hours` is 24 slots: up to now, the people in the building at
+  the start of the hour, from the clocks (a missing check-out counts up to
+  the shift's end, never past it); after now (`plan: true`), what the SAME
+  rows' schedules say — whoever is at work stays until their shift's planned
+  end, whoever is «Hali kelmagan» comes at its planned start and stays to its
+  end. Nobody who did not come is expected and nobody leaves early; a person
+  with no schedule end is kept for the rest of the day. The page draws the
+  forecast as a dashed outline under a lighter figure (shape, never colour
+  alone — a «~» before each number crowded the row), highlights
+  the current hour, and opens scrolled to it — 24 columns are wider than a
+  phone or a laptop. Plain CSS bars: the page loads no chart library. The
+  first cut (a small hover-to-read chart inside the top card) hid the numbers
+  behind a hover a phone does not have.
 - **«Bo'limlar bo'yicha»** — the same five counts per Verifix department (the
   employee's `division_id` in the stored directory), biggest first.
 - **One read serves everybody**: `GET /api/kitchen/now` → `kitchen.headcount`,
@@ -46,4 +62,5 @@ names change.
   past 10 minutes the page says Verifix is silent and the live dot turns amber.
   Nobody on the page = no Verifix calls at all.
 - **Not built:** a split by plant (only brigadirs hang on a plant), meal times
-  or portions, names, past days, an export, sortable columns.
+  or portions, names, past days, an export, sortable columns, arrivals and
+  departures per hour, a forecast past midnight.

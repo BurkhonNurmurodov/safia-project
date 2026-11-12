@@ -15,6 +15,10 @@ own clocks: the whole plant's marks cost ~25 s a call (`verifix_explore`).
 Who is where is `verifix_live._person`'s answer, not a second rule: «inside»
 and «break» (out of the door before the shift's end) are AT WORK NOW; «left»
 and «no_out» are gone.
+
+The hours AHEAD are a forecast from the same rows' schedules: whoever is here
+stays until their shift's planned end, whoever is «not_yet» comes at its
+planned start. Nobody who did not come is expected, and nobody leaves early.
 """
 from __future__ import annotations
 
@@ -33,8 +37,6 @@ log = logging.getLogger(__name__)
 
 TTL_S = 120              # a snapshot serves every viewer this long
 ERROR_BACKOFF_S = 60     # …and a failed read is not tried again sooner than this
-NIGHT_UNTIL_H = 14       # a night shift is filed under the day it STARTED: until this
-                         # hour yesterday's rows are read too (`_marks_window`'s hour)
 ON_SITE = {"inside", "break"}
 GONE = {"left", "no_out"}
 
@@ -72,6 +74,10 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
     tot: Counter = Counter()
     by_div: dict[str, Counter] = defaultdict(Counter)
     spans: list[tuple[datetime, datetime]] = []      # who was in the building, from – to
+    plan: list[tuple[datetime, datetime]] = []       # …and who the schedules put there, after now
+    # shortcut: no schedule end = here for the rest of today; a handful of
+    # people, upgrade when a real unscheduled crowd shows up in the forecast.
+    midnight = datetime.combine(today + timedelta(days=1), datetime.min.time())
     for eid in set(report) | {e for d in days for e in stored.get(d) or {}}:
         on_site = False
         p = None
@@ -84,6 +90,10 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
                 rec, marks = (report.get(eid) or {}).get(d), []
             p = verifix_live._person(d, now, rec, marks, None)
             here = p["status"] in ON_SITE
+            if here and not on_site:
+                plan.append((now, p["end"] or midnight))
+            elif p["status"] == "not_yet":
+                plan.append((p["begin"], p["end"] or midnight))
             on_site = on_site or here
             if p["in"]:
                 # A missing check-out counts up to the shift's end, never past it.
@@ -109,8 +119,10 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
     keys = ("inside", "night", "came", "left", "not_yet", "absent")
     hours = []
     t = datetime.combine(today, datetime.min.time())
-    while t <= now:
-        hours.append({"t": t.strftime("%H:%M"), "n": sum(1 for a, b in spans if a <= t < b)})
+    while t < midnight:
+        ahead = t > now
+        hours.append({"t": t.strftime("%H:%M"), "plan": ahead,
+                      "n": sum(1 for a, b in (plan if ahead else spans) if a <= t < b)})
         t += timedelta(hours=1)
     return {
         **{k: tot[k] for k in keys},
@@ -124,7 +136,10 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
 def _build(db: Session, cfg: dict) -> dict:
     now = verifix_live.now_local()
     today = now.date()
-    days = [today - timedelta(days=1), today] if now.hour < NIGHT_UNTIL_H else [today]
+    # A night shift is filed under the day it STARTED, so yesterday's rows are
+    # always read too: its people are in this morning's hours and, until they
+    # leave, in the count.
+    days = [today - timedelta(days=1), today]
     directory, _ = verifix_live._directory(db, cfg, verifix_live.DIR_FALLBACK_S)
     stored = {}
     for d in days:

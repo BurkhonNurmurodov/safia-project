@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Building2, Clock, LogIn, LogOut, PlugZap, TriangleAlert, UserX } from "lucide-react";
+import { Building2, CalendarClock, Clock, LogIn, LogOut, PlugZap, TriangleAlert, UserX } from "lucide-react";
 import Layout from "../components/layout/Layout";
-import TableCard, { Th } from "../components/ui/DataTable";
+import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
 import Button from "../components/ui/Button";
@@ -20,57 +20,67 @@ import { TXT, fill } from "./kitchenText";
 
 const STALE_S = 600;                                  // older than this = Verifix is silent
 const num = (n) => (n ?? 0).toLocaleString("ru-RU");  // 1 482
-const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 
-/** The day so far, one bar an hour. Hover, focus or tap a bar to read it. */
-function DayBars({ hours, T }) {
-  const [sel, setSel] = useState(null);
+/** Today hour by hour: how many people were at work at the start of each hour,
+ *  then — dashed, in a lighter figure — how many the shift schedules put there. The numbers are
+ *  printed: nothing hides behind a hover a phone does not have. */
+function Hours({ hours, T }) {
+  const box = useRef(null);
   const max = Math.max(1, ...hours.map((h) => h.n));
-  const peak = hours.reduce((a, h) => (h.n > a.n ? h : a), hours[0] || { t: "00:00", n: 0 });
-  const shown = sel != null && hours[sel] ? hours[sel] : null;
+  const nowAt = hours.reduce((a, h, i) => (h.plan ? a : i), 0);    // the hour we are in
+  // Wider than a phone or a laptop: open on the current hour, the hours ahead in view.
+  useEffect(() => {
+    const el = box.current;
+    const col = el?.querySelector("[data-now]");
+    if (col) el.scrollLeft = col.offsetLeft - el.clientWidth / 3;
+  }, [nowAt]);
+  const swatch = (plan) => (
+    <span className="inline-block w-3 h-3 rounded-sm" aria-hidden
+      style={plan ? { border: "1.5px dashed var(--brand)" } : { background: "var(--brand)" }} />
+  );
   return (
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div>
-          <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.dayTitle}</div>
-          <div className="text-xs" style={{ color: "var(--text-3)" }}>{T.daySub}</div>
-        </div>
-        <div className="text-xs font-medium tabular-nums" style={{ color: "var(--text-2)" }} aria-live="polite">
-          {fill(shown ? T.at : T.peak, { t: (shown || peak).t, n: num((shown || peak).n) })}
-        </div>
+    <section className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SectionHead
+        icon={CalendarClock} title={T.hoursTitle}
+        right={(
+          <div className="flex items-center gap-4 text-xs" style={{ color: "var(--text-2)" }}>
+            <span className="inline-flex items-center gap-1.5">{swatch(false)}{T.legendFact}</span>
+            <span className="inline-flex items-center gap-1.5">{swatch(true)}{T.legendPlan}</span>
+          </div>
+        )}
+      />
+      <div ref={box} className="overflow-x-auto px-4 pt-4 pb-2">
+        <ol className="flex items-end gap-[3px] min-w-[1024px]" aria-label={T.hoursTitle}>
+          {hours.map((h, i) => {
+            const now = i === nowAt;
+            return (
+              <li
+                key={h.t} data-now={now ? "" : undefined}
+                className="flex-1 flex flex-col items-center gap-1 rounded-lg pt-1.5 pb-1"
+                style={now ? { background: "var(--bg-inner)" } : undefined}
+              >
+                <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: h.plan ? "var(--text-3)" : "var(--text-1)", fontWeight: now ? 700 : 500 }}>
+                  {num(h.n)}
+                </span>
+                <span className="w-full h-24 flex items-end px-[3px]" aria-hidden>
+                  <span
+                    className="w-full rounded-t overflow-hidden"
+                    style={{
+                      height: `${Math.max(2, (h.n / max) * 100)}%`,
+                      ...(h.plan ? { border: "1.5px dashed var(--brand)", borderBottom: "none" } : null),
+                    }}
+                  >
+                    <span className="block h-full" style={{ background: "var(--brand)", opacity: h.plan ? 0.14 : now ? 1 : 0.5 }} />
+                  </span>
+                </span>
+                <span className="text-[11px] tabular-nums" style={{ color: now ? "var(--text-1)" : "var(--text-3)", fontWeight: now ? 700 : 400 }}>{h.t}</span>
+              </li>
+            );
+          })}
+        </ol>
       </div>
-      <div className="mt-4 flex items-end gap-[2px] sm:gap-1 h-28" onMouseLeave={() => setSel(null)}>
-        {HOURS.map((t, i) => {
-          const h = hours[i];
-          const last = i === hours.length - 1;
-          return (
-            <button
-              key={t} type="button" disabled={!h}
-              aria-label={h ? fill(T.at, { t, n: num(h.n) }) : t}
-              onMouseEnter={() => h && setSel(i)} onFocus={() => setSel(i)} onClick={() => setSel(i)}
-              className="group flex-1 h-full flex items-end rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
-              style={{ background: "none", border: "none", padding: 0, cursor: h ? "pointer" : "default" }}
-            >
-              <span
-                className="w-full rounded-t-sm transition-opacity duration-150"
-                style={{
-                  height: h ? `${Math.max(2, (h.n / max) * 100)}%` : 2,
-                  background: h ? "var(--brand)" : "var(--border)",
-                  opacity: !h || last || sel === i ? 1 : 0.45,
-                }}
-              />
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 flex gap-[2px] sm:gap-1 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }} aria-hidden>
-        {HOURS.map((t, i) => (
-          <span key={t} className="flex-1 w-0 whitespace-nowrap">
-            <span className={i % 6 === 0 ? "" : i % 3 === 0 ? "hidden sm:inline" : "hidden"}>{t}</span>
-          </span>
-        ))}
-      </div>
-    </div>
+      <p className="px-4 pb-3.5 text-xs" style={{ color: "var(--text-3)" }}>{T.hoursSub}</p>
+    </section>
   );
 }
 
@@ -94,10 +104,11 @@ export default function Kitchen() {
   if (!d && q.isLoading) {
     body = (
       <div className="space-y-4">
-        <SkeletonBlock className="h-64 w-full rounded-2xl" />
+        <SkeletonBlock className="h-44 w-full rounded-2xl" />
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)}
         </div>
+        <SkeletonBlock className="h-56 w-full rounded-2xl" />
         <SkeletonTable rows={6} cols={6} />
       </div>
     );
@@ -124,9 +135,9 @@ export default function Kitchen() {
     const top = Math.max(1, ...deps.map((r) => r.inside));
     body = (
       <div className="space-y-4">
-        {/* Now, and the day that led to it — one card, split inside. */}
+        {/* Now: the number, and beside it what it is made of. */}
         <section
-          className="rounded-2xl p-5 sm:p-7 grid gap-6 lg:grid-cols-[minmax(340px,2fr)_3fr] lg:items-end"
+          className="rounded-2xl p-5 sm:p-7 grid gap-x-12 gap-y-3 lg:grid-cols-[auto_1fr] lg:items-end"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
         >
           <div className="min-w-0">
@@ -143,7 +154,9 @@ export default function Kitchen() {
               </span>
               <span className="text-base" style={{ color: "var(--text-3)" }}>{T.people}</span>
             </div>
-            <p className="mt-3 text-sm" style={{ color: "var(--text-2)" }}>
+          </div>
+          <div className="min-w-0 lg:pb-2">
+            <p className="text-sm max-w-[60ch]" style={{ color: "var(--text-2)" }}>
               {fill(T.cameLine, { came: num(d.came), left: num(d.left) })}
               {d.night > 0 && <> {fill(T.nightLine, { n: num(d.night) })}</>}
             </p>
@@ -152,7 +165,6 @@ export default function Kitchen() {
               {fill(stale ? T.stale : T.asOf, { t: at })}
             </p>
           </div>
-          <DayBars hours={d.hours || []} T={T} />
         </section>
 
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
@@ -161,6 +173,8 @@ export default function Kitchen() {
           <KPICard label={T.kNotYet} value={num(d.not_yet)} sub={T.kNotYetSub} icon={Clock} color="#3b82f6" valueColor="var(--text-1)" />
           <KPICard label={T.kAbsent} value={num(d.absent)} sub={T.kAbsentSub} icon={UserX} color="#ef4444" valueColor="var(--text-1)" />
         </div>
+
+        <Hours hours={d.hours || []} T={T} />
 
         <TableCard
           icon={Building2} title={T.depTitle} right={deps.length || null} mobileMaxHeight="none"

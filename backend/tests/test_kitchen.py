@@ -41,6 +41,10 @@ class TallyTest(unittest.TestCase):
                                                  "left": 0, "not_yet": 0, "absent": 0})
         hours = {h["t"]: h["n"] for h in out["hours"]}
         self.assertEqual((hours["00:00"], hours["07:00"], hours["08:00"], hours["10:00"]), (1, 2, 3, 3))
+        # The hours ahead follow the schedules: 1 stays to 17:00, 5 goes at 11:00, 3 comes at 20:00.
+        self.assertEqual((hours["11:00"], hours["16:00"], hours["17:00"], hours["19:00"], hours["20:00"],
+                          hours["23:00"]), (1, 1, 0, 0, 1, 1))
+        self.assertEqual([h["plan"] for h in out["hours"]], [False] * 11 + [True] * 13)
 
     def test_stored_read_wins(self):
         """The minute job's entry (with a door mark out) replaces the report's row."""
