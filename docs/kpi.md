@@ -87,8 +87,12 @@ tasks 40/41 name it.
   (5 minus the `max_points` of every KPI not `live`), never a typed number, and
   prints nothing while every KPI is live — it returns by itself if the audit
   table becomes unreadable (the audit is then not `live`). A KPI with no score —
-  no concern in the month or every one escalated, no people working, a month
-  not computed — reads «—» and counts 0 in that row's total (ruling 6).
+  no people working, a month not computed — reads «—» and counts 0 in that
+  row's total (ruling 6). **Concerns are the exception from 2026-11-12**: a
+  cell with no concern in the month, or every one escalated, scores the rule's
+  `worst` (1 → 0.25 points) — the operator, after HR's own October file was
+  found to score them so (41 of its named cells). Its figure still reads «havotir
+  yo'q» / «foiz yo'q»; only the score changed.
 - **The concerns KPI gained a RULE** (it had bands on the page and no score):
   `concerns_rule(db)` — app setting `concerns_rule`, admin-editable like
   `turnover_rule` / `foreign_rule`, default HR's bands on the page's own %

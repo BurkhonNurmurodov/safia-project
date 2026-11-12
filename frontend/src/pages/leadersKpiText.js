@@ -109,7 +109,7 @@ const uz = {
   },
   rAuditNote: "HR auditga eng ko'pi 3 ball qo'yadi (0,3 KPI bali), shuning uchun HR jadvalida eng yuqori jami 4,8.",
   rMissing: "Platformada hali yo'q KPI 0 ball bilan kiradi; manba paydo bo'lganda jami o'zi o'sadi.",
-  rNoConcern: "Oyda havotiri bo'lmagan yacheyka (yoki hammasi ko'tarilgan) havotir balini olmaydi — jamida 0.",
+  rNoConcern: "Oyda havotiri bo'lmagan yacheyka (yoki hammasi ko'tarilgan) havotirdan eng past ballni oladi — 1.",
 
   tExportDl: "Excel yuklab olindi", tExportTg: "Excel Telegram'ga yuborildi", tExportFail: "Excel tayyorlanmadi: {e}",
   loadFailed: "Ma'lumot yuklanmadi", loadFailedMsg: "Server javob bermadi. Qayta urinib ko'ring.",
@@ -318,7 +318,7 @@ const uz_cyrl = {
   },
   rAuditNote: "HR аудитга энг кўпи 3 балл қўяди (0,3 KPI балли), шунинг учун HR жадвалида энг юқори жами 4,8.",
   rMissing: "Платформада ҳали йўқ KPI 0 балл билан киради; манба пайдо бўлганда жами ўзи ўсади.",
-  rNoConcern: "Ойда ҳавотири бўлмаган ячейка (ёки ҳаммаси кўтарилган) ҳавотир баллини олмайди — жамида 0.",
+  rNoConcern: "Ойда ҳавотири бўлмаган ячейка (ёки ҳаммаси кўтарилган) ҳавотирдан энг паст баллни олади — 1.",
 
   tExportDl: "Excel юклаб олинди", tExportTg: "Excel Telegram'га юборилди", tExportFail: "Excel тайёрланмади: {e}",
   loadFailed: "Маълумот юкланмади", loadFailedMsg: "Сервер жавоб бермади. Қайта уриниб кўринг.",
@@ -527,7 +527,7 @@ const ru = {
   },
   rAuditNote: "За аудит HR ставит максимум 3 балла (0,3 балла KPI), поэтому в таблице HR максимальный итог 4,8.",
   rMissing: "KPI, которых на платформе ещё нет, входят с 0 баллов; как появится источник — итог вырастет сам.",
-  rNoConcern: "Ячейка без замечаний за месяц (или все переданы выше) балла за замечания не получает — в итоге 0.",
+  rNoConcern: "Ячейка без замечаний за месяц (или все переданы выше) получает за замечания низший балл — 1.",
 
   tExportDl: "Excel скачан", tExportTg: "Excel отправлен в Telegram", tExportFail: "Excel не сформирован: {e}",
   loadFailed: "Данные не загрузились", loadFailedMsg: "Сервер не ответил. Попробуйте ещё раз.",
@@ -735,7 +735,7 @@ const en = {
   },
   rAuditNote: "HR scores the audit at most 3 (0.3 KPI points), so HR's own best total is 4.8.",
   rMissing: "A KPI not on the platform yet counts 0; once a source exists the total grows by itself.",
-  rNoConcern: "A cell with no concerns in the month (or every concern escalated) gets no concerns score — 0 in the total.",
+  rNoConcern: "A cell with no concerns in the month (or every concern escalated) gets the lowest concerns score — 1.",
 
   tExportDl: "Excel downloaded", tExportTg: "Excel sent to Telegram", tExportFail: "Excel failed: {e}",
   loadFailed: "The data did not load", loadFailedMsg: "The server did not answer. Try again.",

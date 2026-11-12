@@ -183,7 +183,9 @@ def _concerns_row(counts: dict, rule: dict) -> dict:
     v = {s: int(counts.get(s, 0) or 0) for s in wc.STATUSES}
     f = wc._figures(v)
     total = sum(v.values())
-    score = concerns_score(f["pct0"], rule) if total and f["rated"] else None
+    # Nothing to rate (no concerns, or every one escalated) scores the worst
+    # band, as HR's file does — the operator, 2026-11-12.
+    score = concerns_score(f["pct0"], rule) if f["rated"] else int(rule["worst"])
     return {**v, "total": total, "rated": f["rated"], "open": f["open"],
             "pct": f["pct"], "pct0": f["pct0"], "score": score,
             "points": points_of(score, rule["weight"])}
