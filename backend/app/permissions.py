@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -75,6 +75,11 @@ DEFAULT_PAGE_ACCESS = {
     # a stored matrix once. "supervisor" grants every brigadir their own pinned
     # dashboard (per-user gating is a later phase).
     "production": ["top-manager", "shift-manager"],
+    # «Konteynerlar» (/containers, 2026-11-13, the operator) — the plant's
+    # containers for the day: totals, hour by hour and per brigadir, laid out
+    # for a TV on the shop floor. ADMIN-ONLY until the operator opens it for
+    # the people who handle containers (the Access tab, or a personal grant).
+    "containers": [],
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
     "trudoyomkost": ["top-manager", "shift-manager"],

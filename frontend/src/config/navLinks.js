@@ -8,7 +8,7 @@ import {
   Briefcase, BriefcaseBusiness, CalendarCheck, ChefHat, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
-  MessageSquareWarning, MonitorDot, Network, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
+  MessageSquareWarning, MonitorDot, Network, Package, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
@@ -54,6 +54,9 @@ export const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
+  // «Konteynerlar» — the day's containers (totals · hour by hour · per
+  // brigadir) laid out for a TV. Admin-only until opened on the Access tab.
+  { to: "/containers", page: "containers", key: "nav.containers", icon: Package, group: "prod" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },

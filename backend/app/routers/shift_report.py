@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Attendance, LeaderConcern, Manager
-from app.permissions import require_page
+from app.permissions import page_allowed, require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
 from app.services import (cell_hours, leader_register, live_overview, live_staff,
@@ -427,7 +427,7 @@ def get_containers(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview", "shift-daily")),
+    payload: dict = Depends(require_page("overview", "shift-daily", "containers")),
 ):
     """The whole plant's (scope's) container totals for one day — the «Smena
     kunligi» card (2026-10-30, the operator: «total number of each container
@@ -437,11 +437,15 @@ def get_containers(
     through `zagruzka_source.line_facts` (the Positions table's own resolution,
     the catalog the day had). Every non-archived unit, its загрузка switch
     regardless: a unit outside the загрузка still fills containers. Scoped as
-    the board is (`_scope`); `shift` narrows to that shift's units."""
+    the board is (`_scope`); `shift` narrows to that shift's units.
+
+    `by_unit` (2026-11-13, the «Konteynerlar» page): the same counts per
+    brigadir unit — `[{id, name, shift, totals}]`, units with no count left
+    out. Their sum per container IS `totals`."""
     from app.services import pp_containers, zagruzka_source
     keys = pp_containers.keys()
     empty = {"day": day.isoformat(), "totals": {k: None for k in keys},
-             "lines": {k: 0 for k in keys}, "units": 0}
+             "lines": {k: 0 for k in keys}, "units": 0, "by_unit": []}
     ids, _note = _scope(db, payload, factory, manager_id)
     if empty_scope(ids):
         return empty
@@ -456,6 +460,7 @@ def get_containers(
     totals = {k: None for k in keys}
     lines = {k: 0 for k in keys}
     units: set = set()
+    per_unit: dict = {}
 
     def emit(mid, line, wc, qkey, lk, d, qp, qa, pv, av):
         if line is None or not qp:
@@ -467,10 +472,18 @@ def get_containers(
             totals[k] = (totals[k] or 0) + n
             lines[k] += 1
             units.add(mid)
+            u = per_unit.setdefault(mid, {})
+            u[k] = u.get(k, 0) + n
 
     zagruzka_source.line_facts(db, unit_ids, day, day, emit)
+    by_unit = []
+    if per_unit:
+        for m in db.query(Manager).filter(Manager.id.in_(list(per_unit))).all():
+            by_unit.append({"id": m.id, "name": m.name, "shift": m.shift,
+                            "totals": per_unit[m.id]})
+        by_unit.sort(key=lambda u: (-sum(u["totals"].values()), u["name"] or ""))
     return {"day": day.isoformat(), "totals": totals, "lines": lines,
-            "units": len(units)}
+            "units": len(units), "by_unit": by_unit}
 
 
 # «Konteynerlar — jami» hour by hour (2026-11-12, the operator): admins and
@@ -486,14 +499,16 @@ def get_containers_hourly(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview", "shift-daily")),
+    payload: dict = Depends(require_page("overview", "shift-daily", "containers")),
 ):
     """The scope's containers per clock HOUR for one day: Σ over every
     configured unit of `hourly_containers.unit_hours` off the unit's own
     «Zagruzka fayli» dashboard — so each team's hours are exactly what its
     «Soatlik» view shows. Same scope and shift narrowing as `/containers`.
     Kept like the board (`_cache_*`, 60 s): it runs the engine once per unit."""
-    if payload.get("role") not in HOURLY_ROLES:
+    # Whoever may open «Konteynerlar» (/containers) reads the hours too — the
+    # page IS the hours; everyone else stays behind the trial's role gate.
+    if payload.get("role") not in HOURLY_ROLES and not page_allowed(db, payload, "containers"):
         raise HTTPException(status_code=403, detail="admins and shift managers only")
     from app.services import hourly_containers
     keys = hourly_containers.KEYS

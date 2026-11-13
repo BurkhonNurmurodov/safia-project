@@ -63,6 +63,7 @@ const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Ovens = lazyWithReload(() => import("./pages/Ovens"));
 const Kitchen = lazyWithReload(() => import("./pages/Kitchen"));
+const Containers = lazyWithReload(() => import("./pages/Containers"));
 const ApiAccess = lazyWithReload(() => import("./pages/ApiAccess"));
 const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
@@ -140,7 +141,7 @@ const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime, "idle-solutions": IdleSolutions,
   reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, ovens: Ovens, kitchen: Kitchen, tokens: ApiAccess,
-  staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production,
+  staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production, containers: Containers,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi, "brigadirs-kpi": BrigadirsKpi,
   tasks: Tasks, activity: UsersActivity, "setup-times": SetupTimes, "idle-cell": IdleCell,
@@ -654,6 +655,7 @@ function AppWithLang() {
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
+            <Route path="/containers" element={<AuthGate><RequirePage page="containers"><Containers /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />

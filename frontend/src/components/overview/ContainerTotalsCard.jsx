@@ -83,12 +83,15 @@ const toMin = (hhmm) => {
 };
 const heat = (n, max) => (n > 0 && max > 0 ? `rgba(200,151,63,${(0.06 + 0.34 * (n / max)).toFixed(3)})` : "transparent");
 
-function HourlyTable({ day, params, enabled, t }) {
+// Exported for «Konteynerlar» (/containers), which shows the same table on a
+// TV: `refetchInterval` keeps it current without anyone touching it.
+export function HourlyTable({ day, params, enabled = true, t, refetchInterval = false }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["shift-daily-containers-hourly", day, params],
     queryFn: () => api.get("/api/shift-report/containers-hourly", { params: { ...params, day } }).then((r) => r.data),
     enabled: enabled && !!day,
     staleTime: 60_000,
+    refetchInterval,
   });
   const [, tick] = useState(0);
   useEffect(() => {

@@ -40,6 +40,7 @@ export const PAGES = [
   { key: "daily",    route: "/daily",    labelKey: "nav.daily" },
   { key: "shift-daily", route: "/shift-daily", labelKey: "nav.shiftDaily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
+  { key: "containers", route: "/containers", labelKey: "nav.containers" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "ontime", route: "/ontime", labelKey: "nav.ontime" },
   { tier: "test", key: "reports", route: "/reports", labelKey: "nav.reports" },

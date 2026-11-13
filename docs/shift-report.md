@@ -362,3 +362,35 @@ changed: the viewer's scope is still the role's (`_scope`, `factory_scope`).
 shift-managers while it is tried out), so the hour-by-hour view stays hidden
 from everyone else. **A new endpoint this page reads needs `shift-daily` in
 its `require_page`.**
+
+## «Konteynerlar» — the containers page, for a TV (`/containers`, 2026-11-13)
+
+The operator: a new row under Production for containers, shown only to the
+people who handle containers — admins only for now, opened later — carrying
+everything about containers: the day's totals, hour by hour, and per
+supervisor; and it hangs on a TV, so designed for one.
+
+- **Page key `containers`** (`permissions.PAGE_KEYS`, default `[]` = admin-only;
+  open it on the Access tab or per person with `page.view.containers`). Nav
+  row in «Ishlab chiqarish» after «Zagruzka fayli» (`navLinks.js`, icon Package).
+- **No figure of its own.** It reads `/api/shift-report/containers` (now also
+  answering `by_unit` — `[{id, name, shift, totals}]` per brigadir unit, most
+  first, units with no count left out; their sum per container IS `totals`)
+  and `/containers-hourly` — the numbers «Smena kunligi» prints. Both accept
+  the `containers` page; the hourly endpoint's trial role gate
+  (`HOURLY_ROLES`) lets a `containers` holder through, since the page IS the
+  hours.
+- **What it shows** (`pages/Containers.jsx`): five container tiles + «Jami
+  konteynerlar»; «Hozirgi soat» and «Keyingi soat — hozir tayyorlang» (the
+  hour to prepare for, gold) — on the live day only; the hour-by-hour table
+  (`HourlyTable`, exported from `ContainerTotalsCard.jsx`); «Brigadirlar
+  bo'yicha» — each unit's containers, a gold intensity tint per column, and
+  its share of the day.
+- **Live by default**: no picked day = the current PRODUCTION day (08:00 →
+  08:00, the platform default), re-read every minute, rolling over by itself;
+  picking a day stops that and a green «Jonli» button returns to it.
+- **TV mode** («TV rejimi», or open `/containers?tv=1` on the TV): the board
+  alone over the whole screen (z-200 overlay + browser fullscreen when the
+  browser allows it), a header with the day, the shift and a big Tashkent
+  clock, and everything scaled with CSS `zoom` to the screen width
+  (÷1440, 1–2.4×). Escape or ✕ leaves it.
