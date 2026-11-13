@@ -215,8 +215,10 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   alone gives the figures it gives beside its neighbour), `_merge` puts the
   months together for `compose` (a unit a month lacks reads None there, which
   every fold skips like the zero it replaced). A FINISHED month is kept 30 min
-  as built, then served up to 12 h while a new build runs behind the reader
-  (`_FINISHED`); the month still running 2 min, then up to 1 h (`_RUNNING`).
+  as built, then served while a new build runs behind the reader
+  (`_FINISHED`); the month still running 2 min, then the same way (`_RUNNING`)
+  — the 12 h / 1 h past which a month was built in the request went on
+  2026-11-13, the next point.
   A viewer who wrote since is served the kept month too, with a build that
   started after their write running behind it (`KeptAnswers(…,
   writers_refresh=True)`); the payload says `state` «refreshing» and the page
@@ -230,10 +232,74 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   for both counts (`quality_attribution.unit_rows_both`), and the code / title
   normalisers remembered per text (`cell_lookup._norm`,
   `kpi_calculator._direct_title`, `workers.normalize_role`). The default report (this
-  month and the one before, the whole plant) is built two minutes after a
-  process starts (`reports.warm`, from the lifespan). The export reads the same
+  month and the one before, the whole plant) was built two minutes after every
+  process start (`reports.warm`) until 2026-11-13 — `keep_fresh` now, the next
+  point. The export reads the same
   parts (a deep copy of the sections it wants, because it writes the page's
   formatting onto the rows).
+- **The months are STORED, and the reports readers open are kept built by the
+  clock** (2026-11-13 — the operator: «this screen is taking too much time to
+  load and open», the page on October). Measured on production that day: with
+  its months kept the report answers in 0.19 s; a month's build is 3.3–4.9 s
+  (September 4.5 s the first time and 3.3 s again, October 4.9 s, November's
+  13 days 3.7 s — загрузка 1.2–1.9 s, idle share 1.1 s and attendance
+  0.5–0.6 s are three quarters of it), and the two months are built one after
+  the other inside the request. The kept months lived in the worker's MEMORY,
+  a backend deploy swaps the worker (140 backend deploys in ten days, 5–24 a
+  day), the warm-up built November + October only, and a browser that last
+  showed October asks for October + September again — so September was built
+  in the first reader's request after every deploy, both months in the two
+  minutes before the warm-up, and any month nobody had opened for 12 h.
+  - `services/kept_store.py` keeps a `KeptAnswers`' answers in the table
+    `kept_answers` — one row per (store, key): the answer as typed JSON and
+    when its build started. `_FINISHED` and `_RUNNING` have a store each.
+    Every month a build keeps is written there; a month the process does not
+    hold is read from there before it is built.
+  - **A month ANOTHER process built is served at once, however old, and
+    rebuilt behind the reader once** (`state` «refreshing», the page's own
+    «Yangilanmoqda…») — never served as the fresh one: it predates this
+    process's code, and whatever its viewer wrote before the restart. Once
+    that build lands it is this process's month and the 30 min / 2 min rules
+    above apply. So a reader waits for a build only when a month was never
+    built in their scope. The operator took the other side of this knowingly:
+    a stored month is SHOWN for the seconds its rebuild takes, where a month
+    past 12 h used to be built in the request.
+  - **`keep_fresh` keeps three months built — the month still running, the
+    one before and the one before that, the whole plant** — which is both
+    reports a reader opens (this month's, and the last finished month's):
+    every hour at :10 and two minutes after a start
+    (`routers/reports.register_jobs`, mirrored in passenger_wsgi.py). The
+    running month is built every hour; a finished one at 02:10, or at any hour
+    once it is 36 h old; a month the store already holds young enough is not
+    built, so a deploy by itself builds nothing. `warm` is gone.
+  - **`FORMAT` (routers/reports.py) is the shape of a month's part, and rides
+    the key**: bump it when a release re-shapes what `_month_part` returns, so
+    a stored month of the old shape is never read. Forgotten, a stored month
+    `compose` fails on is dropped and built in the request (`_report`) — one
+    slow open, never a broken page.
+  - `kept_answer.forget_all()` (the catalog follow, the turnover rule) empties
+    the store too, and a row written before a forget is never read.
+  - **The store is never in the way.** A fault — the database away, a value
+    the codec does not know, a row that does not read back — is a miss or an
+    unsaved month, and the page behaves as it did before the store. The
+    payload says how it is doing, next to `timings`: `kept.from` (each month:
+    «built» · «memory» · «store») and `kept.store` (saved · read · errors, and
+    the last error, which names the value it could not keep).
+  - A rebuild that FAILS leaves the stored month on screen under its own
+    «Tayyorlandi» time (with the date, when that is not today) and is tried
+    again a minute later; `keep_fresh` logs the month as «failed». The month
+    is never blanked by a build that broke — and nothing on the page says the
+    build is failing beyond that time: a warning there is not built.
+  - The codec is exact, and checked: JSON alone turns a unit-id key into a
+    string, and a report keyed by strings prints «—» in every row without
+    failing anywhere. `save` reads its own text back and stores only an answer
+    that comes back equal.
+  - Not built: a faster build (three quarters of one is the загрузка and
+    idle-share reads other pages share); the two months built side by side;
+    the trudoyomkost store's 62 warmed days widened to the third month; a
+    browser copy that survives a MINOR release (`offlineCache` drops it —
+    104 minors in those ten days — and with the months stored the server
+    answers in 0.2 s).
 - **Every block title is DISTINCT across the whole report** (`caps` in
   `reportsText.js`: «Kutish — toifalar», not a second «Toifalar»). A
   workbook names each sheet after the last heading, so identical titles become

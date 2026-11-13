@@ -533,6 +533,11 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.verifix_month_kinds import register_jobs as register_vfx_month_jobs
     run(register_vfx_month_jobs)
+    # «Hisobotlar»: the default report's three months kept built — every hour
+    # at :10 and two minutes after a start — and STORED, so a deploy's new
+    # worker serves them at once (mirrored in passenger_wsgi.py).
+    from app.routers.reports import register_jobs as register_reports_jobs
+    run(register_reports_jobs)
     # «Trello»: read every board every 15 minutes, catch up after boot
     # (mirrored in passenger_wsgi.py).
     from app.services.trello import register_jobs as register_trello_jobs
@@ -847,10 +852,8 @@ async def lifespan(app: FastAPI):
     # «Hisobotlar» all read — so a deploy's empty store is not paid by viewers.
     from app.services import labor_kept as _labor_kept
     _labor_kept.warm()
-    # …and «Hisobotlar»'s default report (this month and the one before, the
-    # whole plant), two minutes in — after that store — for the same reason.
-    from app.routers import reports as _reports_router
-    _reports_router.warm()
+    # («Hisobotlar» no longer warms here: its months are stored and kept built
+    # by a job — `routers/reports.register_jobs`, with the other jobs above.)
 
     # One port, no root (app/supervisor.py): this worker is READY — the
     # supervisor stops answering for it and retires the worker it replaces.

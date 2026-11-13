@@ -18,7 +18,7 @@ folding. The split is `ojidaniya_deck`'s: nothing in `services/` imports a
 router.
 
 Two VIEWER facts narrow a build beside the plant lock, and both ride the kept
-months' key (`_report`'s `scope_key`): the «Kutish mas'uli» CATEGORY lock
+months' key (`_scope`): the «Kutish mas'uli» CATEGORY lock
 (`services/idle_scope`, applied to the «Kutish» section exactly as /downtime applies it) and whether
 the «Xarajat» section is this viewer's at all (`downtime.COST_ROLES`). One
 viewer's build is never served to another — the `leaders_kpi._board_key` rule.
@@ -29,7 +29,7 @@ import logging
 import time
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -40,8 +40,8 @@ from app.database import get_db
 from app.permissions import require_page
 from app.services import (
     action_log, assistant_documents, brigadir_board as bb, idle_scope, idle_share,
-    idle_source, ojidaniya_cost, plan_fulfillment, quality_attribution, reports, turnover,
-    wage_rate,
+    idle_source, kept_store, ojidaniya_cost, plan_fulfillment, quality_attribution, reports,
+    turnover, wage_rate,
 )
 from app.services.factory_scope import empty_scope, resolve_factory, scoped_manager_ids
 from app.services import verifix_month_kinds, verifix_scope
@@ -450,17 +450,78 @@ def _merge(parts: list[dict]) -> dict:
 # Each MONTH is kept on its own, so the October report and the November one
 # share October. A FINISHED month moves only with a late edit (a day reopened,
 # a complaint closed, the turnover month closing on the 5th): kept 30 min as
-# built, then served up to 12 h while a new build runs behind the reader. The
-# month still running: 2 min, then up to 1 h the same way. A viewer who
-# changed something since is served the kept month too, with a build that
-# started after their write running behind it (`writers_refresh`) — the page
-# reads `state` «refreshing» and asks again until it lands. Before 2026-11-05
-# the whole report was one kept build (2 min / 10 min, and a writer waited):
-# 5–11 s on every open a deploy, a pause or any write had emptied.
-_FINISHED = KeptAnswers("reports-month", ttl=1800, stale=43200, max_keys=48,
-                        writer_waits=True, writers_refresh=True)
-_RUNNING = KeptAnswers("reports-running", ttl=120, stale=3600, max_keys=24,
-                       writer_waits=True, writers_refresh=True)
+# built, then served while a new build runs behind the reader. The month still
+# running: 2 min, then the same way. A viewer who changed something since is
+# served the kept month too, with a build that started after their write
+# running behind it (`writers_refresh`) — the page reads `state` «refreshing»
+# and asks again until it lands. Before 2026-11-05 the whole report was one
+# kept build (2 min / 10 min, and a writer waited): 5–11 s on every open a
+# deploy, a pause or any write had emptied.
+#
+# The months are STORED (2026-11-13, `services/kept_store.py`): until then they
+# lived in the worker's memory, a backend deploy swaps the worker 5–24 times a
+# day, and the first reader after each one waited 4–10 s for months the worker
+# just retired had built minutes earlier. A month this process does not hold
+# is read from the store and served at once, with one build behind the reader
+# (`KeptAnswers`' rule for an answer another process built). So a reader waits
+# for a build only when a month was NEVER built in their scope — `stale` is as
+# long as a row lives (`_FINISHED_DAYS` / `_RUNNING_DAYS`): an old month is
+# shown with «Yangilanmoqda…» and replaced, where it used to be built in the
+# request past 12 h (1 h for the running one). `keep_fresh` keeps the default
+# report's months built by the clock, so what is shown first is recent.
+#
+# FORMAT is the SHAPE of a month's part as `_merge` and `compose` read it. It
+# rides the key, so a stored month of another format is never read: bump it
+# when a release renames or re-shapes what `_month_part` returns. (A stored
+# part `compose` fails on is dropped and built in the request — `_report` — so
+# a forgotten bump costs one slow open, never a broken page.)
+FORMAT = 1
+_FINISHED_DAYS = 45
+_RUNNING_DAYS = 3            # its key carries the day: a row is of use for one
+_FINISHED = KeptAnswers("reports-month", ttl=1800, stale=_FINISHED_DAYS * 86400, max_keys=48,
+                        writer_waits=True, writers_refresh=True,
+                        store=kept_store.DbStore("reports-month", max_age_days=_FINISHED_DAYS))
+_RUNNING = KeptAnswers("reports-running", ttl=120, stale=_RUNNING_DAYS * 86400, max_keys=24,
+                       writer_waits=True, writers_refresh=True,
+                       store=kept_store.DbStore("reports-running", max_age_days=_RUNNING_DAYS))
+
+
+def _kept_for(mo: dict) -> KeptAnswers:
+    return _RUNNING if mo["partial"] else _FINISHED
+
+
+def _scope(db: Session, payload: dict, factory, shift, mids: list[int]) -> tuple:
+    """(the units, the viewer's category lock, the scope KEY) of one request.
+
+    The key is everything a month's part reads off the VIEWER beside the scope
+    it was asked for: the plant lock (the scoped units), the category lock and
+    whether the cost section is theirs. A fact a build depends on and the key
+    does not carry is a build served to a viewer it was never narrowed for —
+    the `leaders_kpi._board_key` rule. Any narrowing added to `_month_part`
+    later goes in here too."""
+    scoped = scoped_manager_ids(db, payload, factory, mids)
+    units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
+    lock = idle_scope.viewer_categories(db, payload)
+    key = (factory, shift, tuple(mids),
+           None if scoped is None else tuple(sorted(scoped)),
+           None if lock is None else tuple(sorted(lock)),
+           _sees_cost(payload))
+    return units, lock, key
+
+
+def _part_key(mo: dict, scope_key: tuple) -> tuple:
+    return (FORMAT, mo["ym"], mo["to"].isoformat()) + scope_key
+
+
+def _part_build(payload: dict, mo: dict, factory, shift, mids: list[int]):
+    """What builds ONE month's part — in a request, behind a reader or by the
+    clock, always this."""
+    def run(s: Session) -> dict:
+        # A build's objects die by refcount (a full GC is pure GIL), and
+        # its four readers of the cell weights share one computation.
+        with gc_paused(), idle_source.reuse_weights(s):
+            return _month_part(s, payload, mo, factory, shift, mids)
+    return run
 
 
 @router.get("")
@@ -484,44 +545,55 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
     export both come through here, so the file a reader downloads is built
     from the very parts their screen is showing.
 
-    A part's key is everything it reads off the VIEWER beside the scope it was
-    asked for: the plant lock (the scoped units), the category lock and whether
-    the cost section is theirs. A fact a build depends on and the key does not
-    carry is a build served to a viewer it was never narrowed for — the
-    `leaders_kpi._board_key` rule. Any narrowing added to `_month_part` later
-    goes in here too."""
+    A part's key is `_scope`'s — everything it reads off the VIEWER beside the
+    scope it was asked for — under the part's FORMAT, month and last day."""
     today = turnover.local(turnover.now_aware()).date()
     months = reports.months_for(m, today, bb.data_floor(db))
-    scoped = scoped_manager_ids(db, payload, factory, mids)
-    units = [] if empty_scope(scoped) else bb.board_units(db, scoped, shift)
-    lock = idle_scope.viewer_categories(db, payload)
-    scope_key = (factory, shift, tuple(mids),
-                 None if scoped is None else tuple(sorted(scoped)),
-                 None if lock is None else tuple(sorted(lock)),
-                 _sees_cost(payload))
+    units, lock, scope_key = _scope(db, payload, factory, shift, mids)
 
+    keys = [_part_key(mo, scope_key) for mo in months]
     parts: list[dict] = []
     states: list[str] = []
-    for mo in months:
-        def run(s: Session, mo=mo) -> dict:
-            # A build's objects die by refcount (a full GC is pure GIL), and
-            # its four readers of the cell weights share one computation.
-            with gc_paused(), idle_source.reuse_weights(s):
-                return _month_part(s, payload, mo, factory, shift, mids)
-
-        kept = _RUNNING if mo["partial"] else _FINISHED
-        part, state = kept.lookup(db, payload, (mo["ym"], mo["to"].isoformat()) + scope_key, run)
+    came: list[str] = []
+    for mo, key in zip(months, keys):
+        # `src`: where this month's figures were — «built» in this request,
+        # «store» (another process built them: shown, and rebuilt behind) or
+        # this process's «memory».
+        part, state, src = _kept_for(mo).lookup_from(
+            db, payload, key, _part_build(payload, mo, factory, shift, mids))
         parts.append(part)
         states.append(state)
+        came.append(src)
 
     ids = {u.id for u in units}
-    out = reports.compose({
-        "months": months,
-        "unit_ids": ids,
-        **_merge(parts),
-        "scope": {"factory": factory, "shift": shift, "managers": mids,
-                  "units": len(units)},
-    })
+
+    def composed() -> dict:
+        return reports.compose({
+            "months": months,
+            "unit_ids": ids,
+            **_merge(parts),
+            "scope": {"factory": factory, "shift": shift, "managers": mids,
+                      "units": len(units)},
+        })
+
+    try:
+        out = composed()
+    except Exception:
+        # A month the STORE handed over that this code can no longer read — its
+        # shape moved with a release and FORMAT was not bumped. Let go of it
+        # and build it here: one slow open, never a page that fails until the
+        # build behind it lands. A fault with no stored month in it is a fault.
+        stored = [i for i, src in enumerate(came) if src == "store"]
+        if not stored:
+            raise
+        log.exception("reports: a stored month no longer fits this code — rebuilding %s",
+                      ", ".join(months[i]["ym"] for i in stored))
+        for i in stored:
+            kept = _kept_for(months[i])
+            kept.drop(keys[i])
+            parts[i], states[i], came[i] = kept.lookup_from(
+                db, payload, keys[i], _part_build(payload, months[i], factory, shift, mids))
+        out = composed()
     out["today"] = today.isoformat()
     # The OLDEST month's build time — what the figures on screen are as of.
     out["built_at"] = min(p["built_at"] for p in parts)
@@ -530,6 +602,10 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
     out["state"] = ("refreshing" if "refreshing" in states
                     else "built" if "built" in states else "kept")
     out["timings"] = {p["ym"]: p["timings"] for p in parts}
+    # …and whether keeping them works: where each month came from, and what the
+    # store did since this process started (saved · read · errors).
+    out["kept"] = {"from": {mo["ym"]: src for mo, src in zip(months, came)},
+                   "store": kept_store.health()}
     # The LOCK, never a pick — what the page prints as «you are seeing only …»
     # (`CatLockNotice`) and the document names in its subtitle; null for every
     # viewer who can widen. `idle_scope.narrow_downtime`'s own rule.
@@ -542,33 +618,85 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
     return out
 
 
-WARM_DELAY_S = 120
+# The report a reader opens is this month's (the month still running and the
+# one before) or last month's (the last finished month and the one before it —
+# what a monthly report is read for, and what a browser that last showed it
+# asks for again): three months, the whole plant. `keep_fresh` keeps exactly
+# those built, by the clock:
+KEEP_MINUTE = 10                    # every hour at :10 — no other job's minute
+BOOT_DELAY_S = 120                  # …and once after a start, behind `labor_kept.warm`
+RUNNING_MAX_AGE_S = 50 * 60         # the month still running: built every hour
+FINISHED_HOUR = 2                   # a finished month: once a night, at 02:10 —
+FINISHED_NIGHT_AGE_S = 6 * 3600     #   unless something built it in the last 6 h —
+FINISHED_MAX_AGE_S = 36 * 3600      #   and at any hour once a night was missed
 
 
-def warm() -> None:
-    """Build the report an admin opens first — this month and the one before,
-    the whole plant — on a thread of its own, two minutes after a process
-    starts (after the trudoyomkost store has warmed, `labor_kept.warm`), so the
-    first open after a deploy is not the one that waits. Read-only; a failure
-    costs the warm-up, never the page."""
-    import threading
+def keep_fresh(why: str = "clock") -> dict:
+    """Keep the months of the default report built — {ym: «kept» | «built» |
+    «refreshing» | «failed»}. Run by the clock (`register_jobs`), on the copy
+    that runs the jobs; every other copy reads what it stored.
 
-    def go():
-        time.sleep(WARM_DELAY_S)
-        from app.database import SessionLocal
-        db = SessionLocal()
+    Before 2026-11-13 this was `warm`: one build of this month's report two
+    minutes after EVERY start, 5–24 times a day, and nothing in between — so
+    September, which the October report compares with, was never ready, and a
+    month nobody had opened for 12 hours was built in its first reader's
+    request. A start now builds nothing that the store already holds young
+    enough; a month is built when it is missing or due.
+
+    Read-only, a session per month (`KeptAnswers.ensure`). One month failing
+    costs that month, never the others."""
+    from app.database import SessionLocal
+
+    t0 = time.monotonic()
+    payload = {"role": "admin"}
+    db = SessionLocal()
+    try:
+        now = turnover.local(turnover.now_aware())
+        today = now.date()
+        floor = bb.data_floor(db)
+        _units, _lock, scope_key = _scope(db, payload, None, None, [])
+        this = reports.month_start(today)
+        wanted: dict[str, dict] = {}
+        for picked in (reports.month_start(reports.prev_month(this)), this):
+            for mo in reports.months_for(picked, today, floor):
+                wanted[mo["ym"]] = mo
+    finally:
+        db.rollback()
+        db.close()
+
+    finished_age = FINISHED_NIGHT_AGE_S if now.hour == FINISHED_HOUR else FINISHED_MAX_AGE_S
+    out: dict[str, str] = {}
+    for ym_, mo in sorted(wanted.items()):
         try:
-            t0 = time.monotonic()
-            _report(db, {"role": "admin"}, _month(None), None, None, [])
-            db.rollback()
-            print(f"[reports] warmed the default report in {time.monotonic() - t0:.1f} s",
-                  flush=True)
+            out[ym_] = _kept_for(mo).ensure(
+                _part_key(mo, scope_key), _part_build(payload, mo, None, None, []),
+                RUNNING_MAX_AGE_S if mo["partial"] else finished_age)
         except Exception:  # noqa: BLE001
-            log.exception("reports: warm-up failed")
-        finally:
-            db.close()
+            log.exception("reports: keeping %s built failed", ym_)
+            out[ym_] = "failed"
+    pruned = _FINISHED.prune() + _RUNNING.prune()
+    print(f"[reports] kept fresh ({why}) in {time.monotonic() - t0:.1f} s — "
+          + ", ".join(f"{k} {v}" for k, v in out.items())
+          + (f"; {pruned} old row(s) pruned" if pruned else ""), flush=True)
+    return out
 
-    threading.Thread(target=go, name="reports-warm", daemon=True).start()
+
+def register_jobs() -> None:
+    """`keep_fresh` every hour at :KEEP_MINUTE, and once two minutes after a
+    start (after the trudoyomkost store has warmed, `labor_kept.warm`).
+    Mirrored in passenger_wsgi.py."""
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        from app.scheduler import SCHEDULER_TZ, get_scheduler, schedule_at
+        get_scheduler().add_job(
+            keep_fresh, trigger=CronTrigger(minute=KEEP_MINUTE, timezone=SCHEDULER_TZ),
+            id="reports-keep-fresh", replace_existing=True)
+        schedule_at("reports-keep-fresh-boot",
+                    datetime.now(timezone.utc) + timedelta(seconds=BOOT_DELAY_S),
+                    keep_fresh, args=("boot",))
+        log.info("reports: jobs registered (hourly at :%02d)", KEEP_MINUTE)
+    except Exception:  # noqa: BLE001
+        log.exception("reports: could not register the jobs")
 
 
 class ExportIn(BaseModel):

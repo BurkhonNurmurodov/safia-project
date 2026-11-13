@@ -5837,3 +5837,25 @@ class KitchenHistory(Base):
     arr     = Column(JSONB, nullable=False)
     dep     = Column(JSONB, nullable=False)
     read_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class KeptAnswerRow(Base):
+    """An expensive answer KEPT ACROSS RESTARTS (services/kept_store.py) — what
+    a `KeptAnswers` given a store writes after every build and reads when a
+    process that has just started is asked for an answer it does not hold yet.
+    First, and so far only, «Hisobotlar»' months (2026-11-13): a deploy swaps
+    the worker and a month built in the old one's memory took 4–5 s to build
+    again inside the first reader's request.
+
+    One row per (store, key): `name` is the KeptAnswers instance, `key` the
+    SHA-256 of the answer's key, `label` that key as text for a person reading
+    the table. `built_at` is when the build STARTED (what `KeptAnswers` ages an
+    answer by), `value` the answer in `kept_store`'s typed JSON. Nothing here
+    is a source of truth: every row can be deleted and is simply built again."""
+    __tablename__ = "kept_answers"
+
+    name     = Column(String(40), primary_key=True)
+    key      = Column(String(64), primary_key=True)
+    label    = Column(String(200))
+    built_at = Column(DateTime(timezone=True), nullable=False)
+    value    = Column(Text, nullable=False)
