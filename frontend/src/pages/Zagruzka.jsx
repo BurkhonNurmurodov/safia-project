@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { leaveRef } from "../utils/leave";
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, Info, Layers, UserRound, SlidersHorizontal, FileSpreadsheet, Loader2 } from "lucide-react";
@@ -275,7 +276,7 @@ const MetricHeatmapCard = memo(function MetricHeatmapCard({
 
       {full ? createPortal(
         <div
-          className="fixed inset-0 z-[200] flex flex-col"
+          ref={leaveRef} className="fade-in fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           <div
@@ -652,7 +653,7 @@ export default function Zagruzka() {
           (see the DateRangePicker fix). ── */}
       {COMPARISON[openFull] && heatmap?.managers?.length ? createPortal(
         <div
-          className="fixed inset-0 z-[200] flex flex-col"
+          ref={leaveRef} className="fade-in fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           <div className="flex-1 overflow-auto p-4">
@@ -690,7 +691,7 @@ export default function Zagruzka() {
       {/* ── Fleet Heatmap fullscreen overlay ── */}
       {openFull === "heatmap" && createPortal(
         <div
-          className="fixed inset-0 z-[200] flex flex-col"
+          ref={leaveRef} className="fade-in fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           {/* Header */}

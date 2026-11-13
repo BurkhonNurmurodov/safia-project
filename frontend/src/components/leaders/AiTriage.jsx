@@ -17,6 +17,7 @@ import { useToast } from "../ui/Toast";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { QueuePhoto } from "./ProofPhoto";
 import api from "../../utils/api";
+import { leaveRef } from "../../utils/leave";
 
 /* ══ AI proof review ══════════════════════════════════════════════════════════
  *
@@ -795,11 +796,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
       )}
 
       {zoom && (
-        <div role="dialog" aria-modal="true" aria-label={T.aiZoom}
+        <div ref={leaveRef} role="dialog" aria-modal="true" aria-label={T.aiZoom}
           onClick={() => setZoom(null)}
-          className="fixed inset-0 z-[95] flex items-center justify-center p-4 cursor-zoom-out"
+          className="modal-backdrop fixed inset-0 z-[95] flex items-center justify-center p-4 cursor-zoom-out"
           style={{ background: "rgba(0,0,0,0.85)" }}>
-          <img src={zoom} alt="" className="max-w-full max-h-full rounded-xl" />
+          <img src={zoom} alt="" className="modal-card max-w-full max-h-full rounded-xl" />
           {/* position via style: Button's own `relative` class outranks a passed
               `absolute` in the stylesheet, dropping the X into the flex flow */}
           <Button size="sm" variant="secondary"

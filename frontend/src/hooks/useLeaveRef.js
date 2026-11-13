@@ -12,7 +12,8 @@ import { leaveGhost, trackScroll } from "../utils/leave";
  *
  * `targetRef` is optional: pass the object ref the component reads (outside-
  * click tests, measuring) and it is kept pointing at the node exactly as
- * before; leave it out when nothing reads the node.
+ * before. When nothing reads the node no hook is needed at all — hand the
+ * element `leaveRef` from utils/leave.js.
  *
  * It changes nothing about WHEN the element unmounts. As the element leaves
  * the document a lifeless copy plays the exit its class is given in index.css

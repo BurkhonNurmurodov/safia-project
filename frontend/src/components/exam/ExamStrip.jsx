@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { leaveRef } from "../../utils/leave";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronDown, ChevronUp, Loader2, PencilLine, SkipForward, ArrowRight, GraduationCap, RefreshCw } from "lucide-react";
 import { useLang } from "../../context/LangContext";
@@ -46,7 +47,8 @@ export default function ExamStrip() {
       role="region"
       aria-live="polite"
       aria-label={t("exam.strip.label")}
-      className="fixed left-4 right-4 md:left-auto md:w-[440px]"
+      ref={leaveRef}
+      className="rise-in fixed left-4 right-4 md:left-auto md:w-[440px]"
       style={{
         bottom: "calc(var(--tg-safe-bottom, 0px) + 8px)", zIndex: 40,
         background: passed ? "rgba(34,197,94,0.14)" : "var(--bg-card)",

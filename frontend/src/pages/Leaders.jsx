@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
+import { leaveRef } from "../utils/leave";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
@@ -4808,12 +4809,12 @@ export default function Leaders() {
       {/* enlarged proof photo — above the detail modal, click anywhere closes.
           Portaled to document.body like every full-screen overlay. */}
       {zoom && createPortal(
-        <div role="dialog" aria-modal="true" onClick={() => setZoom(null)}
-          className="fixed inset-0 flex items-center justify-center p-4 cursor-zoom-out"
+        <div ref={leaveRef} role="dialog" aria-modal="true" onClick={() => setZoom(null)}
+          className="modal-backdrop fixed inset-0 flex items-center justify-center p-4 cursor-zoom-out"
           style={{ background: "rgba(0,0,0,0.88)", zIndex: 80,
             paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)",
             paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
-          <img src={zoom} alt="" className="max-w-full max-h-full rounded-xl" />
+          <img src={zoom} alt="" className="modal-card max-w-full max-h-full rounded-xl" />
           {/* position via style: Button's own `relative` class outranks a passed
               `absolute` in the stylesheet, dropping the X into the flex flow */}
           <Button size="sm" variant="secondary"

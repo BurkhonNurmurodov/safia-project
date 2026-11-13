@@ -346,9 +346,11 @@ body.sidebar-open { overflow: hidden; }
 
    · ENTER — a class on the surface: `.pop` (menus, dropdowns, popovers),
              `.modal-backdrop` + `.modal-card` (dialogs), `.sheet-backdrop` +
-             `.sheet` (a phone's bottom sheets), `.tip` (tooltips), `.toast-in`,
-             `.fade-in` (a bare dimmer).
-   · LEAVE — `useLeaveRef` (hooks/useLeaveRef.js) on the same element. React
+             `.sheet` (a phone's bottom sheets), `.side-in` (a panel from the
+             right edge), `.tip` (tooltips), `.toast-in`, `.fade-in` (a bare
+             dimmer, a fullscreen view), `.rise-in` (a bar from the bottom).
+   · LEAVE — `useLeaveRef` (hooks/useLeaveRef.js), or the hook-less `leaveRef`
+             (utils/leave.js), as the ref of the same element. React
              still removes it at once — focus, Escape and the page under it
              behave as if it were gone, because it is. A lifeless copy wearing
              `data-leaving` plays the exit below and is removed
@@ -385,6 +387,13 @@ body.sidebar-open { overflow: hidden; }
   .sheet-card { animation: modalPop .2s var(--ease-out); }
 }
 
+/* Side panel — in from the right edge and back out to it («Yordamchi», the
+   action log's detail). A bar that rises from the bottom edge (the exam strip). */
+@keyframes sideIn  { from { transform: translateX(100%); } }
+@keyframes sideOut { to   { transform: translateX(100%); } }
+.side-in { animation: sideIn .28s var(--ease-sheet); }
+.rise-in { animation: toastInUp .24s var(--ease-out); }
+
 /* Tooltip, bare dimmer. */
 @keyframes tipIn { from { opacity: 0; transform: translateY(2px); } }
 .tip { animation: tipIn .1s var(--ease-out); }
@@ -416,6 +425,7 @@ body.sidebar-open { overflow: hidden; }
   [data-leaving] .sheet-card { animation: modalPopOut .15s var(--ease-in) both !important; }
 }
 .pop[data-leaving] { animation: popOut .1s var(--ease-in) both !important; }
+.side-in[data-leaving] { animation: sideOut .2s var(--ease-in) both !important; }
 .tip[data-leaving] { animation: leaveFade .08s linear both !important; }
 .toast-in[data-leaving] { animation: toastOut .16s var(--ease-in) both !important; }
 
@@ -479,7 +489,7 @@ body.sidebar-open { overflow: hidden; }
 .nav-item:active:not([aria-current="page"]) { background: var(--hover-bg); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pop, .sheet, .sheet-card, .sheet-backdrop, .tip, .fade-in { animation: none !important; }
+  .pop, .sheet, .sheet-card, .sheet-backdrop, .tip, .fade-in, .side-in, .rise-in { animation: none !important; }
   .seg-ind, .seg-btn { transition: none !important; }
   .btn { transition: none; }
 }

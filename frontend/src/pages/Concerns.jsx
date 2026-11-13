@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
+import useLeaveRef from "../hooks/useLeaveRef";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -172,6 +173,7 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
   const [dropStyle, setDropStyle] = useState({});
   const triggerRef = useRef(null);
   const listRef = useRef(null);
+  const setList = useLeaveRef(listRef); // the list eases out when it closes
   const color = STATUS_COLOR[status] || "var(--text-3)";
 
   function computeDropStyle() {
@@ -221,7 +223,9 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
   const dropdown = open
     ? createPortal(
         <div
-          ref={listRef}
+          ref={setList}
+          className="pop"
+          data-side={dropStyle.bottom != null ? "top" : undefined}
           style={{
             ...dropStyle,
             background: "var(--bg-card)",

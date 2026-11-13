@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { leaveRef } from "../../utils/leave";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, History, Loader2, Maximize2, SquarePen, BotMessageSquare, X } from "lucide-react";
@@ -122,8 +123,8 @@ export default function AssistantPanel() {
   const icon = "w-8 h-8 max-sm:w-10 max-sm:h-10 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)] flex-shrink-0";
 
   return createPortal(
-    <aside id="assistant-panel" aria-label={t("nav.assistant")}
-      className="fixed z-[45] inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 flex flex-col"
+    <aside ref={leaveRef} id="assistant-panel" aria-label={t("nav.assistant")}
+      className="side-in fixed z-[45] inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 flex flex-col"
       style={{
         width: phone ? "100%" : `${PANEL_W}px`,
         background: "var(--bg-card)",

@@ -13,6 +13,7 @@
  * writes nothing and feeds no other page.
  */
 import { createPortal } from "react-dom";
+import { leaveRef } from "../utils/leave";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -470,7 +471,7 @@ export default function ZagruzkaCell() {
               the containing block for this fixed overlay. */}
           {compFullscreen && !loading && createPortal(
             <div
-              className="fixed inset-0 z-[200] flex flex-col"
+              ref={leaveRef} className="fade-in fixed inset-0 z-[200] flex flex-col"
               style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
             >
               <div className="flex-1 overflow-auto p-4">
@@ -531,7 +532,7 @@ export default function ZagruzkaCell() {
 
           {heatmapFullscreen && createPortal(
             <div
-              className="fixed inset-0 z-[200] flex flex-col"
+              ref={leaveRef} className="fade-in fixed inset-0 z-[200] flex flex-col"
               style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
             >
               <div

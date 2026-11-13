@@ -43,6 +43,7 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter, PickFilter, FilterPanel } 
 import { useStaffApi, StaffApiProvider, STAFF_API, TODAY_STAFF_API } from "../context/StaffApiContext";
 import { LiveRowNotes, LiveStatusChip, LiveDayState, n2 as liveN2 } from "../components/staff/LiveBits";
 import DayStepper from "../components/ui/DayStepper";
+import { leaveRef } from "../utils/leave";
 import { PersonLink } from "../components/people/peopleUtil";
 import StaffPhoneList, { Dotted } from "../components/staff/StaffPhoneList";
 import useIsMobile from "../hooks/useIsMobile";
@@ -2917,17 +2918,18 @@ function MobileSheetDatePicker({ value, onChange, t, bare = false }) {
         )}
       </div>
 
+      {/* The shared sheet motion (index.css, docs/motion.md): the dimmer
+          fades, the sheet rides up from the edge and back down on close. */}
       {open && createPortal(
-        <div style={{ position: "fixed", inset: 0, zIndex: 10001, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
-          <div style={{
+        <div ref={leaveRef} className="sheet-root" style={{ position: "fixed", inset: 0, zIndex: 10001, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div onClick={() => setOpen(false)} className="fade-in" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
+          <div className="sheet" style={{
             position: "relative",
             background: "var(--bg-card)",
             borderRadius: "20px 20px 0 0",
             maxHeight: "90dvh",
             display: "flex",
             flexDirection: "column",
-            animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
             paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
           }}>
             {/* Handle */}
@@ -3142,6 +3144,8 @@ function FilterBottomSheet({
 
   return createPortal(
     <div
+      ref={leaveRef}
+      className="sheet-root"
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
         display: "flex", flexDirection: "column", justifyContent: "flex-end",
@@ -3150,6 +3154,7 @@ function FilterBottomSheet({
       {/* Backdrop */}
       <div
         onClick={onClose}
+        className="fade-in"
         style={{
           position: "absolute", inset: 0,
           background: "rgba(0,0,0,0.6)",
@@ -3160,6 +3165,7 @@ function FilterBottomSheet({
       {/* Sheet */}
       <div
         ref={ref}
+        className="sheet"
         style={{
           position: "relative",
           background: "var(--bg-card)",
@@ -3167,7 +3173,6 @@ function FilterBottomSheet({
           maxHeight: "82vh",
           display: "flex",
           flexDirection: "column",
-          animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
           paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
         }}
       >
@@ -3238,12 +3243,6 @@ function FilterBottomSheet({
         </div>
       </div>
 
-      <style>{`
-        @keyframes slideUpSheet {
-          from { transform: translateY(100%); }
-          to   { transform: translateY(0); }
-        }
-      `}</style>
     </div>,
     document.body
   );

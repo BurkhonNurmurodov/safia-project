@@ -54,6 +54,7 @@ export default function LogPanel({ r, onClose, onPrev, onNext, hasPrev, hasNext,
   const top = useHeaderBottom();
   const rootRef = useRef(null);
   // The phone form is a bottom sheet: it rides up from the edge and back down.
+  // The desktop one slides in from the right edge and back out to it.
   const setSheet = useLeaveRef(rootRef);
   const titleRef = useRef(null);
 
@@ -203,11 +204,11 @@ export default function LogPanel({ r, onClose, onPrev, onNext, hasPrev, hasNext,
 
   return createPortal(
     <aside
-      ref={rootRef}
+      ref={setSheet}
       role="complementary"
       aria-label={title}
       onKeyDown={onKey}
-      className="fixed right-0 bottom-0 flex flex-col"
+      className="side-in fixed right-0 bottom-0 flex flex-col"
       style={{
         top,
         width: 440,

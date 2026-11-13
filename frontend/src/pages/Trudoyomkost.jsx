@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { leaveRef } from "../utils/leave";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -472,6 +473,7 @@ export default function Trudoyomkost() {
       {/* Export success toast — fixed top-right, outside normal flow */}
       {exportDone && (
         <div
+          ref={leaveRef}
           className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed",

@@ -150,3 +150,19 @@ export function leaveGhost(node, scrolled) {
     });
   } catch { /* no copy — the surface leaves at once */ }
 }
+
+/**
+ * The same thing with no hook: a ready-made ref for a surface nobody else
+ * needs a handle on —
+ *
+ *   {zoom && <div ref={leaveRef} className="modal-backdrop …">…</div>}
+ *
+ * One function serves every element: React keeps each element's own cleanup.
+ * A component that READS the node (outside-click tests, measuring) uses
+ * `useLeaveRef(itsRef)` instead, which keeps that ref pointing at it.
+ */
+export function leaveRef(node) {
+  if (!node) return undefined;
+  const scrolled = trackScroll(node);
+  return () => leaveGhost(node, scrolled);
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { leaveRef } from "../../utils/leave";
 import {
   Bold, Italic, Underline, Strikethrough, EyeOff, Code, SquareCode,
   TextQuote, Link2, RemoveFormatting, Heading1, Heading2, Heading3,
@@ -489,9 +490,9 @@ function ToolbarMenu({ icon: Icon, title, items, disabled }) {
         <Icon size={14} />
       </button>
       {open && createPortal(
-        <div className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
+        <div ref={leaveRef} className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
           <div
-            className="absolute min-w-[210px] max-h-[340px] overflow-y-auto rounded-xl py-1"
+            className="pop absolute min-w-[210px] max-h-[340px] overflow-y-auto rounded-xl py-1"
             style={{
               left: Math.min(pos.x, window.innerWidth - 240),
               top: Math.min(pos.y, window.innerHeight - 360),
@@ -561,9 +562,9 @@ function EmojiPalette({ emojis, t, onOpen, onInsert, onAdd, onDelete }) {
         <Smile size={14} />
       </button>
       {open && createPortal(
-        <div className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
+        <div ref={leaveRef} className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
           <div
-            className="absolute rounded-xl py-2 px-2.5"
+            className="pop absolute rounded-xl py-2 px-2.5"
             style={{
               left: Math.min(pos.x, window.innerWidth - 296),
               top: Math.min(pos.y, window.innerHeight - 360),
@@ -1596,9 +1597,9 @@ export default function RichTextEditor({
 
       {/* right-click context menu — Telegram-composer style */}
       {ctx && createPortal(
-        <div className="fixed inset-0" style={{ zIndex: 130 }} onMouseDown={() => setCtx(null)} onContextMenu={(e) => { e.preventDefault(); setCtx(null); }}>
+        <div ref={leaveRef} className="fixed inset-0" style={{ zIndex: 130 }} onMouseDown={() => setCtx(null)} onContextMenu={(e) => { e.preventDefault(); setCtx(null); }}>
           <div
-            className="absolute min-w-[220px] max-h-[340px] overflow-y-auto rounded-xl py-1"
+            className="pop absolute min-w-[220px] max-h-[340px] overflow-y-auto rounded-xl py-1"
             style={{
               left: Math.min(ctx.x, window.innerWidth - 240),
               top: Math.min(ctx.y, window.innerHeight - 360),

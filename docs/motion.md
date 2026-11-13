@@ -55,16 +55,24 @@ press, leaving)», plus two small modules.
 | `.sheet-backdrop` + `.sheet` | a phone's bottom sheets | dimmer fades, sheet rides up from the edge |
 | `.sheet-card` | `TimeWheelPicker` | a sheet below 640px, a centred card above |
 | `.sheet-root` + `.fade-in` + `.sheet` | `FilterSheet` | its dimmer is a separate element because it BLURS the page — a blur cannot see through a fading parent, so the root only keeps time |
+| `.side-in` | a panel on the right edge («Yordamchi», the action log's detail) | slides in from that edge and back out to it |
+| `.rise-in` | a bar on the bottom edge (the exam strip) | rises into place |
 | `.tip` | `Tooltip` | fades in 100 ms, so sweeping across icons does not flicker |
 | `.toast-in` | `Toast` | slides from its edge; `data-pos="bottom"` rises |
-| `.fade-in` | a bare dimmer (the phone drawer's) | fades |
+| `.fade-in` | a bare dimmer (the phone drawer's), a fullscreen view (/zagruzka) | fades |
 | `.brk-in` | an in-flow reveal (a `PanelField` row unfolding) | Tier 1's 3px lift — in-flow content gets an entrance only |
 
 ### Leaving — `useLeaveRef` on the same element
 
-`hooks/useLeaveRef.js` + `utils/leave.js`. Hand the hook's callback to the
-surface's `ref` (pass the object ref the component already reads, and it keeps
-pointing at the node):
+`hooks/useLeaveRef.js` + `utils/leave.js`. Two forms of one thing:
+
+- **`leaveRef`** (`utils/leave.js`) — a ready-made ref, no hook:
+  `<div ref={leaveRef} className="pop …">`. One function serves every
+  element (React keeps each element's own cleanup). For a surface nobody
+  else needs a handle on — which is most of what a page builds by hand.
+- **`useLeaveRef(itsRef)`** — for a component that READS the node
+  (outside-click tests, measuring): pass the object ref it already uses and
+  it keeps pointing at the node.
 
 ```jsx
 const popRef = useRef(null);
@@ -156,25 +164,38 @@ hand-rolled dialogs (`PendingInfoModal`, `FormulaModal`, `CommentModal`,
 `ColorGuideModal`, `CategoryLegendModal`, `AttendanceModal`, the forecast
 dialog in `WorkerForecast`), the header's profile and language menus and
 sign-out question, the notification panel, the search results, the phone
-drawer's dimmer, `LogPanel`'s phone sheet.
+drawer's dimmer, `LogPanel` (a sheet on a phone, a side panel on a desktop).
+
+Second pass, the same day — what pages build by hand: the two phone sheets of
+`/staff` (the filter sheet and its date picker, which had their own inline
+`slideUpSheet` keyframes), the enlarged proof photo on `/leaders` and in the
+AI triage (they open like `Lightbox`), the status dropdown on `/concerns`,
+the row menu on the attendance upload, the three `RichTextEditor` menus, the
+sign-out countdown, «Yordamchi»'s panel, the exam strip, the fullscreen
+views on `/zagruzka` and the cell page (they fade in; one small enough to
+copy fades out), and the three hand-pasted toasts (`WorkerForecast`,
+`Daily`, `Trudoyomkost`).
 
 Also fixed on the way: the calendar sheet's grab handle was positioned against
 the screen, not the sheet (its sheet had no `relative`), and sat at the top of
 the viewport.
 
-**Not covered yet**: «Yordamchi»'s side panel, `LogPanel`'s desktop aside, the
-`RichTextEditor` menus, the fullscreen overlays on `/zagruzka`, the exam
-strip, and the three hand-pasted toasts (`WorkerForecast`, `Daily`,
-`Trudoyomkost`) — they enter with `.toast-in` and still leave at once.
+**Left alone on purpose**: the «Sifat nazorati %» hover box in
+`ShiftReportTable` (under active change the same day), the «Konteynerlar» TV
+mode, the `/gamification` design preview, the camera page, and the wall
+screens (`/live`, the launcher), which carry motion of their own.
 
 ### How it was checked
 
 No local app (the standing rule). A static harness bundled the real templates
 with the project's own Vite plugins and was driven in headless Chrome over
-CDP: 101 assertions — desktop, a 390px touch phone, reduced motion, a
+CDP: 114 assertions — desktop, a 390px touch phone, reduced motion, a
 development build under StrictMode, the light theme — plus frames caught in
 slow motion (animations and timers stretched by the same factor). It asserts
 the things an eye cannot: the real dialog is gone and focus is back on the
 opener in the same task the close was pressed, the copy is inert and holds the
 scroll position and the typed text, exactly one copy exists and it is removed,
-the pill lands within half a pixel of its segment, nothing is left behind.
+the pill lands within half a pixel of its segment, an in-flow element leaves
+no copy, nothing is left behind. The page-built surfaces of the second pass
+were checked as shapes (the same classes on the hook-less `leaveRef`), not by
+mounting those pages.

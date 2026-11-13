@@ -32,6 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { leaveRef } from "../../utils/leave";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRightLeft, CalendarClock, Check, CheckCircle2, ChevronDown,
@@ -201,9 +202,9 @@ function RowMenu({ items }) {
         <MoreVertical size={14} />
       </button>
       {open && pos && createPortal(
-        <div className="fixed inset-0" style={{ zIndex: 90 }} onClick={() => setOpen(false)}>
+        <div ref={leaveRef} className="fixed inset-0" style={{ zIndex: 90 }} onClick={() => setOpen(false)}>
           <div
-            className="absolute rounded-xl overflow-hidden py-1"
+            className="pop absolute rounded-xl overflow-hidden py-1"
             style={{
               top: pos.top, left: pos.left, width: pos.width,
               background: "var(--bg-card)",

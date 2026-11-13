@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { leaveRef } from "../utils/leave";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import ReactApexChart from "react-apexcharts";
@@ -473,6 +474,7 @@ function SupervisorDaily() {
       {/* Delete toast */}
       {deleteToast && (
         <div
+          ref={leaveRef}
           className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed", top: 16, right: 16, zIndex: 9999,
