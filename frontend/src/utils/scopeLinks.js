@@ -50,8 +50,10 @@ export const staffLink = ({ unit, date, tab = "workers" }) =>
 
 // «Sifat va shikoyatlar», «Brigadirlar» tab — one brigadir, by the name the
 // register matched (`r.sup`, the unit's own name), over a date span.
-export const qualityLink = ({ brigadir, from, to, status }) =>
-  `/quality${query({ brigadir, from: isoDay(from), to: isoDay(to), status })}`;
+// `hair: "with"` opens it «Soch bilan» (the board's with-hair lane); without
+// it the page lands «Sochsiz», as it always did.
+export const qualityLink = ({ brigadir, from, to, status, hair }) =>
+  `/quality${query({ brigadir, from: isoDay(from), to: isoDay(to), status, hair })}`;
 
 // «Xavotirlar» — one brigadir's unit, at one level, in the given statuses,
 // over «Barcha vaqt»: the board's count has no period, so nothing narrower

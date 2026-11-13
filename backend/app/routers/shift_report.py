@@ -253,8 +253,12 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     # hair category (`SKIP_CATEGORY`, ditto), attributed exactly as the Quality
     # page attributes it: `quality_attribution` — the record's cell on its date,
     # else «Отв. бригадир» resolved against EVERY live unit.
-    quality = shift_report.fold_quality(
-        quality_attribution.unit_rows(db, m_from, m_to, shift_report.SKIP_CATEGORY))
+    # The column prints the rate twice — hair aside, and every record (hair
+    # too) — from ONE read and one resolver (`unit_rows_both`).
+    q_every, q_kept = quality_attribution.unit_rows_both(
+        db, m_from, m_to, shift_report.SKIP_CATEGORY)
+    quality = shift_report.fold_quality(q_kept)
+    quality_hair = shift_report.fold_quality(q_every)
 
     # ── Ochiq xavotirlar — open, and sitting at the brigadir's own level.
     concerns = dict(
@@ -344,6 +348,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     concerns.get(m.id, 0),
                     shift_report.att_cell(att.get(m.id),
                                           with_cells is None or m.id in with_cells),
+                    shift_report.quality_cell(quality_hair.get(m.id)),
                 )
                 for m in groups[s]
             ],

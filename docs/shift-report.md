@@ -406,3 +406,33 @@ supervisor; and it hangs on a TV, so designed for one.
   — «Soatlarga taqsimlangan: X / Y» under the table, and an amber chip naming
   the brigadirs with no hours (no «Zagruzka fayli» set up), instead of a
   footnote, since the tiles count every unit and the hours cannot.
+
+## «Sifat nazorati %» prints the rate twice — without hair and with it (2026-11-13)
+
+The operator: «we have a quality control column in the shift day, but the
+problems are here written without a hair and now we have to add the problems
+with the hair» — and, asked how, «in that column should be and with hair and
+without hair»; asked where, «Only Smena kunligi».
+
+- **One column, two lanes.** The header «Sifat nazorati %» spans two heatmap
+  tiles (`Th`'s new `colSpan`): «sochsiz» — the rate the column always printed,
+  hair records left out — and «soch bilan», the same rate over EVERY record of
+  the month, hair included (the Quality page's «Soch bilan»). Same window (the
+  month in progress), same attribution, same `ACTIONABLE`, same band and legend
+  row for both; every row stays one line high.
+- **Payload**: `quality` is unchanged (so a tab on an older bundle reads what it
+  always read) and `quality_hair` is the new cell, same shape. Both come from
+  ONE read — `quality_attribution.unit_rows_both`, the helper «Hisobotlar»
+  already used — folded twice by `shift_report.fold_quality`.
+- **Each lane opens its own reading**: the «soch bilan» tile links with
+  `hair=with` (`scopeLinks.qualityLink`), which `Quality.jsx`'s `readLinkScope`
+  turns into `quality_hair_mode: "with"`; without the param the page lands
+  «Sochsiz», as before. The tooltip names the lane and its fraction
+  («soch bilan · 20/40»).
+- **Sorting**: the header's own press sorts by «sochsiz» (key `quality`); the
+  two lane labels in the header are buttons that sort by their own lane
+  (`qualityHair` for the second), and the header shows the sort mark for either.
+- **Only this board.** «Brigadirlar reytingi», «Hisobotlar», «Brigadirlar KPI»
+  and every KPI weight keep the without-hair rate — `SKIP_CATEGORY` still means
+  what it meant for them.
+- Widths: the name 30%, four single lanes 12% each, the pair 22% (was 5 × 14%).

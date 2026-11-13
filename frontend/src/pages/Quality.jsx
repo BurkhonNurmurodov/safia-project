@@ -481,7 +481,8 @@ const fmtDateTime = (iso8601) => {
 // A link that opens this page on one brigadir over a span (utils/scopeLinks.js
 // `qualityLink` — the «Smena hisoboti» board's «Sifat nazorati %» cell, which
 // opens the unresolved records of the month it counted). It lands on the
-// «Brigadirlar» tab «Sochsiz» — the board's own reading of the register — and
+// «Brigadirlar» tab «Sochsiz» — the board's first lane — or «Soch bilan» when
+// the link says `hair=with` (its second lane, 2026-11-13), and
 // clears every record filter it does not name, so the list is exactly the
 // linked scope. Read by `useUrlScope`.
 const readLinkScope = (q) => {
@@ -493,7 +494,7 @@ const readLinkScope = (q) => {
     quality_date_from: dayParam(q, "from"),            // none → the page's default
     quality_date_to: dayParam(q, "to"),
     quality_status_sel: listParam(q, "status", Object.keys(STATUS_COLORS)),
-    quality_hair_mode: "without",
+    quality_hair_mode: q.get("hair") === "with" ? "with" : "without",
     quality_src_sel: null,
     quality_type_sel: null,
     quality_cat_sel: null,

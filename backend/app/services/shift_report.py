@@ -8,7 +8,8 @@ One row per brigadir, six columns, and not one of them is a new measurement:
                       far — off the stored live Verifix read
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
     Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS
-                      MONTH, hair records left out
+                      MONTH — twice in the one column: hair records left out
+                      (`quality`), and every record, hair too (`quality_hair`)
     Ochiq xavotirlar  concerns still open at the brigadir's own level, whole time
 
 It replaced a Google Sheet somebody filled and coloured by hand every morning,
@@ -43,6 +44,12 @@ RESOLVED = "done"
 # board counting them stated a closure rate the page beside it never shows. The
 # router applies it (this module never queries); a row with NO category is kept,
 # because «uncategorised» is not «hair».
+#
+# From 2026-11-13 the column prints BOTH readings side by side (the operator:
+# «in that column should be and with hair and without hair»): `quality` is this
+# one, unchanged, and `quality_hair` is the same rate over every record, hair
+# included — the Quality page's «Soch bilan». Only this board gained it;
+# «Brigadirlar reytingi», «Hisobotlar» and the KPIs keep the without-hair rate.
 SKIP_CATEGORY = "hair"
 
 # routers/concerns.py VALID_STATUSES = todo | doing | done; open = not done.
@@ -301,7 +308,7 @@ def att_cell(acc: Optional[dict], has_cells: bool) -> dict:
 
 
 def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
-        att: Optional[dict] = None) -> dict:
+        att: Optional[dict] = None, quality_hair: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -310,5 +317,7 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         "att": att or _blank("no_read"),
         "compl": compl,
         "quality": quality,
+        # the same rate WITH the hair records (`SKIP_CATEGORY` says why both)
+        "quality_hair": quality_hair or _blank("no_records", done=0, actionable=0),
         "concerns": {"open": int(open_concerns or 0)},
     }
