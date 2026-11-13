@@ -576,11 +576,16 @@ def get_downtime_cell_detail(
 
 
 def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
-                 stopped: bool, kpi_only: bool, cats: List[str]) -> dict:
+                 stopped: bool, kpi_only: bool, cats: List[str],
+                 with_hc: bool = True) -> dict:
     """The unit's filed events per date, and WHICH dates its cells answer for.
 
     `cells_days` is not decorative: a cells day with nothing filed and a sheet
-    day both arrive with no intervals, and only this list tells them apart."""
+    day both arrive with no intervals, and only this list tells them apart.
+
+    `with_hc=False` skips the headcount read (every cell's `hc` is then None) —
+    for a caller that lists the events and shows no «Odam soni» («Kutish
+    yechimlari»); the events themselves are the very same rows."""
     units = idle_source.cell_units(db)
     cells_days = [
         d.isoformat()
@@ -619,7 +624,7 @@ def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,
     # its own, so the number under a cell and the number the bar was built from
     # are one figure. Absent for a cell nobody typed / nobody worked, which the
     # client shows as «no answer» rather than as a zero.
-    hc = idle_source.cell_headcount(db, cells, date_from, date_to)
+    hc = idle_source.cell_headcount(db, cells, date_from, date_to) if with_hc else {}
 
     lids = {c.leader_id for c in cells if c.leader_id}
     leaders = {p.id: p.name for p in db.query(RoleProfile).filter(

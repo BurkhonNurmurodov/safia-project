@@ -1,49 +1,53 @@
-"""«Kutish yechimlari» — which waiting causes hurt most, who answers for each,
-and what they intend to do about it (`/idle-solutions`, beside /downtime).
+"""«Kutish yechimlari» — which waiting causes hurt most, what everybody did about
+each filed stop, and whether that worked (`/idle-solutions`, beside /downtime).
 
 Nothing is measured here. The minutes are `routers/downtime._downtime`'s own
 answer (the page's one computation, headcount-weighted mean per brigadir-day,
-stopped half), summed per category over the period; the owner of a category is
-`services/idle_scope` (the «Kutish mas'uli» register); this module adds ONE new
-fact — the solutions the owners write — in `idle_category_solutions`.
+stopped half), summed per category over the period; the stops are the bar
+modal's own rows (`_cell_detail`); the owner of a category is
+`services/idle_scope` (the «Kutish mas'uli» register). This module adds ONE new
+fact — the solutions people write — in `idle_category_solutions`.
 
-**Who may write.** The person assigned to the category, and admins. Reading
-follows `/downtime` (page key `downtime`), including a «Kutish mas'uli»'s own
-category lock, applied through the same `idle_scope` calls.
+**Who may write (2026-11-13).** Everybody who reads the page writes their OWN
+solution to a stop they can see — the unit's brigadir, the cause's owner, a
+shift- or top-manager, an admin: «what did you do about it». A row belongs to
+its author: only they (and an admin) edit it. A cause- or brigadir-wide solution
+(no stop) stays the cause owner's and an admin's. Reading follows `/downtime`
+(page key `downtime`), including a «Kutish mas'uli»'s own category lock and a
+brigadir's own unit.
 
 A solution is a small log entry (open → doing → done), never a rewrite of the
 previous one, so the history of what was promised stays readable.
 """
-import math
+import statistics
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import identity
 from app.database import get_db
-from app.models import IdleCategorySolution
+from app.models import Cell, CellOjidaniyaInterval, IdleCategorySolution
 from app.permissions import _oauth2, require_page
-from app.services import action_log, idle_scope
+from app.services import action_log, idle_intervals, idle_scope
+from app.services.factory_scope import empty_scope, scoped_manager_ids
 
 router = APIRouter(prefix="/api/idle-solutions", tags=["idle-solutions"])
 
 TZ = timezone(timedelta(hours=5))   # Tashkent, the platform's wall clock
 
-# «Is the problem solved, or repeating?» — judged by OCCURRENCES (working days on
-# which the cause shows up), the BEFORE_DAYS before the solution against every
-# day since. These are choices, not rulings — one constant each to move.
-BEFORE_DAYS = 28        # history read before the solution (its usual rhythm)
-EARLY_DAYS = 3          # fewer calendar days since = a fix cannot be in force yet
-MIN_QUIET = 7           # working days without it before «solved» (the floor)
-MAX_QUIET = 28          # ... and the ceiling, however rare the cause used to be
-QUIET_X = 3             # solved needs QUIET_X × the cause's usual gap quiet
-REDUCED_DROP = 50.0     # % fall in occurrences per working day that counts as reduced
-PERIOD_MIN = 28         # the Tahlil tab never looks at fewer days: repeating is a question of weeks
-UNIT_NOTES = 4          # stop notes served per brigadir under a cause
-REPEAT_DAYS = 3         # a cause with no solution on this many days is flagged
+# The Tahlil tab's rules — choices, not rulings, one constant each to move.
+# «The same problem» is ONE cell waiting on ONE cause again.
+HOLD_DAYS = 14          # a done solution «worked» once the problem stayed away this long
+REPEAT_DAYS = 3         # one cell, one cause, on this many days = a repeating problem
+AFTER_DAYS = 60         # stops read past the period's end, to judge its solutions
+MIN_CHART_DAYS = 7      # the daily strip never shows fewer days (utils/chartRange.js)
+PEAK_HOURS = 2          # the «when» card names the busiest window of this many hours
+TOP_CELLS = 8
+TOP_REPEATS = 20
 
 STATUSES = ("open", "doing", "done")
 MAX_DAYS = 124
@@ -56,6 +60,13 @@ MAX_NOTES = 8           # brigadir comments served per problem, newest first
 # 2026-11-05). It stays on /downtime and in every figure there.
 EXCLUDED = ("Cat H",)
 MAX_EVENTS = 100        # filed stops served per (category, brigadir), newest first
+
+# Who opens the page — and, from 2026-11-13, who writes on it.
+READER_ROLES = ("admin", idle_scope.OWNER_ROLE, "shift-manager", "top-manager", "supervisor")
+# Whose own answer every stop they see waits for: the brigadir of the unit it
+# happened in and the owner of its cause. The manager tiers and admins may
+# write too; nothing counts their silence.
+EXPECTED_ROLES = ("supervisor", idle_scope.OWNER_ROLE)
 
 
 def _state(rows) -> str:
@@ -73,9 +84,9 @@ _downtime_page = require_page("downtime")
 
 
 def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dict:
-    """The page's read gate: the /downtime page key, plus top-managers and
-    supervisors (brigadirs), who hold no /downtime access but may read this page —
-    read-only; a viewer's plant lock still applies through `_downtime`."""
+    """The page's gate, reading and writing alike: the /downtime page key, plus
+    top-managers and supervisors (brigadirs), who hold no /downtime access but
+    use this page; a viewer's plant lock still applies through `_downtime`."""
     import jwt
     from jwt import PyJWTError as JWTError
     from app.config import settings
@@ -88,17 +99,11 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
     return _downtime_page(token, db)
 
 
-def _writer_only(payload: dict) -> None:
-    """Writing needs the admin role or the category-owner role («Kutish mas'uli»);
-    `_may_write` then narrows an owner to THEIR categories. Everyone else reads only."""
-    if payload.get("role") not in ("admin", idle_scope.OWNER_ROLE):
-        raise HTTPException(status_code=403, detail="Admin or category owner only")
-
-
 def _reader_only(payload: dict) -> None:
-    """Reading: admins, category owners (their own categories, locked by
-    `idle_scope`), shift-managers, top-managers and supervisors (own unit)."""
-    if payload.get("role") not in ("admin", idle_scope.OWNER_ROLE, "shift-manager", "top-manager", "supervisor"):
+    """The page's five roles: admins, category owners (their own categories,
+    locked by `idle_scope`), shift-managers, top-managers and supervisors (own
+    unit). Each of them reads AND writes."""
+    if payload.get("role") not in READER_ROLES:
         raise HTTPException(status_code=403, detail="Admin only")
 
 
@@ -106,20 +111,142 @@ def _fmt_dt(v):
     return v.isoformat() if v else None
 
 
-def _item(r: IdleCategorySolution) -> dict:
+def _item(r: IdleCategorySolution, viewer: Optional[str] = None, is_admin: bool = False) -> dict:
+    """One solution as the page prints it. `mine` / `can_edit` are the server's
+    whole answer to «is this row the reader's» — a row belongs to the authoring
+    PROFILE, and one account may hold several."""
+    mine = bool(viewer and r.author_key and r.author_key == viewer)
     return {
         "id": r.id, "category": r.category, "manager_id": r.manager_id, "event_id": r.event_id, "text": r.text, "status": r.status,
         "author_key": r.author_key, "author_name": r.author_name,
+        "author_role": identity.parse_profile_key(r.author_key)[0],
         "created_at": _fmt_dt(r.created_at), "updated_at": _fmt_dt(r.updated_at),
+        "done_at": _fmt_dt(r.done_at),
+        "mine": mine, "can_edit": is_admin or mine,
     }
 
 
 def _may_write(db: Session, payload: dict, category: str) -> bool:
+    """A cause- or brigadir-wide solution: the cause's owner, and admins."""
     if payload.get("role") == "admin":
         return True
     viewer = identity.viewer_profile_key(db, payload)
     owner = idle_scope.owners(db).get(category)
     return bool(viewer and owner and viewer == owner)
+
+
+def _own_unit(payload: dict, manager_id: List[int]) -> List[int]:
+    """A supervisor (brigadir) reads ONLY their own unit's problems — whatever
+    brigadirs they pick; a supervisor with no unit reads nothing."""
+    if payload.get("role") == "supervisor":
+        mine = payload.get("role_id")
+        return [mine] if mine is not None else [-1]
+    return manager_id
+
+
+def _period(date_from: Optional[date], date_to: Optional[date]) -> tuple[date, date]:
+    if not date_to:
+        date_to = datetime.now(TZ).date()
+    if not date_from:
+        date_from = date_to - timedelta(days=13)
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from is after date_to")
+    if (date_to - date_from).days + 1 > MAX_DAYS:
+        raise HTTPException(status_code=400, detail=f"Period longer than {MAX_DAYS} days")
+    return date_from, date_to
+
+
+def _minute_rows(db: Session, payload: dict, a: date, b: date, shift: Optional[int],
+                 manager_id: List[int], factory: Optional[int]) -> tuple[list, Optional[list]]:
+    """`_downtime`'s rows over a..b under the viewer's category lock — the
+    page's ONE source of minutes. Each row gains `day`, its date as a `date`
+    (`_downtime` spells it «dd.mm.yyyy»). Returns (rows, lock)."""
+    # Lazy: the downtime router is a sibling router, not a service.
+    from app.routers.downtime import _downtime
+    out = _downtime(db, payload, a, b, shift, manager_id, False, factory)
+    lock = idle_scope.viewer_categories(db, payload)
+    out = idle_scope.narrow_downtime(out, idle_scope.resolve_cats(db, payload, []), lock=lock)
+    rows = []
+    for r in out.get("rows") or []:
+        raw = str(r.get("date"))[:10]
+        try:
+            day = datetime.strptime(raw, "%d.%m.%Y").date()
+        except ValueError:
+            try:
+                day = date.fromisoformat(raw)
+            except ValueError:
+                continue
+        rows.append({**r, "day": day})
+    return rows, lock
+
+
+def _aggregate(rows: list) -> dict:
+    """The minute rows folded every way the page reads them."""
+    cat_min: dict[str, float] = {}
+    cat_days: dict[str, set] = {}
+    cat_units: dict[str, dict[int, float]] = {}
+    unit_cat: dict[int, dict[str, float]] = {}
+    unit_name: dict[int, dict] = {}
+    day_min: dict[date, float] = {}
+    for r in rows:
+        mid = r.get("manager_id")
+        unit_name[mid] = {"manager_id": mid, "manager_name": r.get("manager_name"),
+                          "shift": r.get("shift")}
+        for c, v in (r.get("by_category") or {}).items():
+            v = float(v or 0)
+            if v <= 0 or c in EXCLUDED:
+                continue
+            cat_min[c] = cat_min.get(c, 0.0) + v
+            cat_days.setdefault(c, set()).add(r["day"])
+            cat_units.setdefault(c, {})
+            cat_units[c][mid] = cat_units[c].get(mid, 0.0) + v
+            unit_cat.setdefault(mid, {})
+            unit_cat[mid][c] = unit_cat[mid].get(c, 0.0) + v
+            day_min[r["day"]] = day_min.get(r["day"], 0.0) + v
+    return {"cat_min": cat_min, "cat_days": cat_days, "cat_units": cat_units,
+            "unit_cat": unit_cat, "unit_name": unit_name, "day_min": day_min,
+            "total": sum(cat_min.values())}
+
+
+def _stops(db: Session, unit_ids, a: date, b: date) -> dict[tuple, list]:
+    """Every filed stop of the units over a..b, keyed (category, unit), newest
+    first. The brigadirs' own words: the note on every filed stop (/idle-cell),
+    read through the bar modal's own reader so the comment shown here is the
+    very row /downtime lists."""
+    from app.routers.downtime import _cell_detail
+    out: dict[tuple, list] = {}
+    for mid in unit_ids:
+        try:
+            det = _cell_detail(db, mid, a, b, True, False, [], with_hc=False)
+        except Exception:
+            continue
+        for d, cells_ in (det.get("days") or {}).items():
+            for cell in cells_:
+                for iv in cell.get("intervals") or []:
+                    out.setdefault((iv["category"], mid), []).append({
+                        "id": iv.get("id"),
+                        "date": d, "cell": cell.get("code"), "cell_id": cell.get("cell_id"),
+                        "leader": cell.get("leader"),
+                        "start": iv.get("start"), "end": iv.get("end"),
+                        "minutes": iv.get("minutes"), "note": (iv.get("note") or "").strip(),
+                    })
+    for lst in out.values():
+        lst.sort(key=lambda n: (n["date"], n["start"] or ""), reverse=True)
+    return out
+
+
+def _solutions(db: Session, event_ids) -> list:
+    """The solutions the page can show: every one answering a listed stop, plus
+    the older brigadir- and cause-wide rows (no stop) — newest first. The ids go
+    as ONE array parameter: with everybody writing, the table grows by the stop."""
+    from app.services.leader_bot import _in_ids
+    ids = [i for i in event_ids if i is not None]
+    cond = IdleCategorySolution.event_id.is_(None)
+    if ids:
+        cond = or_(cond, _in_ids(IdleCategorySolution.event_id, ids))
+    return (db.query(IdleCategorySolution).filter(cond)
+            .order_by(IdleCategorySolution.created_at.desc(),
+                      IdleCategorySolution.id.desc()).all())
 
 
 @router.get("/analysis")
@@ -133,69 +260,14 @@ def analysis(
     payload: dict = Depends(_reader),
 ):
     _reader_only(payload)
-    # A supervisor (brigadir) reads ONLY their own unit's problems — whatever
-    # brigadirs they pick; a supervisor with no unit reads nothing.
-    if payload.get("role") == "supervisor":
-        mine = payload.get("role_id")
-        manager_id = [mine] if mine is not None else [-1]
-    # Lazy: the downtime router is a sibling router, not a service.
-    from app.routers.downtime import _downtime
+    manager_id = _own_unit(payload, manager_id)
+    date_from, date_to = _period(date_from, date_to)
 
-    if not date_to:
-        date_to = date.today()
-    if not date_from:
-        date_from = date_to - timedelta(days=13)
-    if date_from > date_to:
-        raise HTTPException(status_code=400, detail="date_from is after date_to")
-    if (date_to - date_from).days + 1 > MAX_DAYS:
-        raise HTTPException(status_code=400, detail=f"Period longer than {MAX_DAYS} days")
-
-    out = _downtime(db, payload, date_from, date_to, shift, manager_id, False, factory)
-    lock = idle_scope.viewer_categories(db, payload)
-    out = idle_scope.narrow_downtime(out, idle_scope.resolve_cats(db, payload, []), lock=lock)
-
-    cat_min: dict[str, float] = {}
-    cat_days: dict[str, set] = {}
-    cat_units: dict[str, dict[int, float]] = {}
-    unit_cat: dict[int, dict[str, float]] = {}
-    unit_name: dict[int, dict] = {}
-    for r in out.get("rows") or []:
-        mid = r.get("manager_id")
-        unit_name[mid] = {"manager_id": mid, "manager_name": r.get("manager_name"),
-                          "shift": r.get("shift")}
-        for c, v in (r.get("by_category") or {}).items():
-            v = float(v or 0)
-            if v <= 0 or c in EXCLUDED:
-                continue
-            cat_min[c] = cat_min.get(c, 0.0) + v
-            cat_days.setdefault(c, set()).add(r.get("date"))
-            cat_units.setdefault(c, {})
-            cat_units[c][mid] = cat_units[c].get(mid, 0.0) + v
-            unit_cat.setdefault(mid, {})
-            unit_cat[mid][c] = unit_cat[mid].get(c, 0.0) + v
-
-    # The brigadirs' own words: the note on every filed stop (/idle-cell),
-    # per (category, unit). Read through the bar modal's own reader so the
-    # comment shown here is the very row /downtime lists.
-    from app.routers.downtime import _cell_detail
-    notes: dict[tuple, list] = {}
-    for mid in list(unit_name):
-        try:
-            det = _cell_detail(db, mid, date_from, date_to, True, False, [])
-        except Exception:
-            continue
-        for d, cells_ in (det.get("days") or {}).items():
-            for cell in cells_:
-                for iv in cell.get("intervals") or []:
-                    note = (iv.get("note") or "").strip()
-                    notes.setdefault((iv["category"], mid), []).append({
-                        "id": iv.get("id"),
-                        "date": d, "cell": cell.get("code"), "leader": cell.get("leader"),
-                        "start": iv.get("start"), "end": iv.get("end"),
-                        "minutes": iv.get("minutes"), "note": note,
-                    })
-    for lst in notes.values():
-        lst.sort(key=lambda n: (n["date"], n["start"] or ""), reverse=True)
+    mrows, lock = _minute_rows(db, payload, date_from, date_to, shift, manager_id, factory)
+    agg = _aggregate(mrows)
+    cat_min, cat_days, cat_units = agg["cat_min"], agg["cat_days"], agg["cat_units"]
+    unit_cat, unit_name, total = agg["unit_cat"], agg["unit_name"], agg["total"]
+    notes = _stops(db, list(unit_name), date_from, date_to)
 
     labels = idle_scope.owner_labels(db)
     viewer = identity.viewer_profile_key(db, payload)
@@ -203,12 +275,12 @@ def analysis(
     owner_keys = idle_scope.owners(db)
 
     sols: dict[str, list] = {}
-    for r in (db.query(IdleCategorySolution)
-              .order_by(IdleCategorySolution.created_at.desc(),
-                        IdleCategorySolution.id.desc()).all()):
+    for r in _solutions(db, [n["id"] for lst in notes.values() for n in lst]):
         sols.setdefault(r.category, []).append(r)
 
-    total = sum(cat_min.values())
+    def item(r):
+        return _item(r, viewer, is_admin)
+
     cats = [c for c in idle_scope.CATEGORIES
             if c not in EXCLUDED and (lock is None or c in set(lock))]
     rows = []
@@ -216,7 +288,7 @@ def analysis(
         items = sols.get(c, [])
         ranked = sorted(cat_units.get(c, {}).items(), key=lambda kv: -kv[1])
         top = ranked[:TOP_UNITS]
-        general = [i for i in items if i.manager_id is None]
+        general = [i for i in items if i.manager_id is None and i.event_id is None]
         per_unit: dict[int, list] = {}
         per_event: dict[int, list] = {}
         for i in items:
@@ -232,18 +304,23 @@ def analysis(
             events = []
             for n in nt[:MAX_EVENTS]:
                 es = per_event.get(n["id"], [])
-                events.append({**n, "solutions": [_item(i) for i in es],
-                               "state": _state(es)})
-            solved = sum(1 for e in events if e["solutions"])
-            all_sl = [i for e in events for i in per_event.get(e["id"], [])] + sl
+                events.append({**n, "solutions": [item(i) for i in es],
+                               "state": _state(es),
+                               # has THIS reader written their own answer to it
+                               "mine": any(viewer and i.author_key == viewer for i in es)})
+            solved = sum(1 for n in nt if per_event.get(n["id"]))
+            mine_n = sum(1 for n in nt
+                         if any(viewer and i.author_key == viewer
+                                for i in per_event.get(n["id"], [])))
+            all_sl = [i for n in nt for i in per_event.get(n["id"], [])] + sl
             problems.append({
                 **unit_name[m], "minutes": round(v, 1),
                 "share": round(100 * v / cat_total, 1) if cat_total else 0.0,
                 "days": len({n["date"] for n in nt}) if nt else None,
-                "events": events, "events_n": len(nt), "solved_n": solved,
+                "events": events, "events_n": len(nt), "solved_n": solved, "mine_n": mine_n,
                 "notes": [e for e in events if e["note"]][:MAX_NOTES],
                 "notes_n": sum(1 for e in events if e["note"]),
-                "solutions": [_item(i) for i in sl],
+                "solutions": [item(i) for i in sl],
                 "state": _state(all_sl),
             })
         mins = round(cat_min.get(c, 0.0), 1)
@@ -256,11 +333,15 @@ def analysis(
             "top_units": [{**unit_name[m], "minutes": round(v, 1)} for m, v in top],
             "owner": labels.get(c),
             "owner_key": owner_keys.get(c),
+            # The cause-wide door (the owner's and an admin's), as it always
+            # was; a STOP is answered by everybody — the payload's `can_write`.
             "can_write": is_admin or bool(viewer and owner_keys.get(c) == viewer),
             "problems": problems,
             "problems_n": sum(max(p["events_n"], 1) for p in problems),
+            "stops_n": sum(p["events_n"] for p in problems),
             "solved_n": sum(p["solved_n"] for p in problems),
-            "solutions": [_item(i) for i in general[:SHOW_LAST]],
+            "mine_n": sum(p["mine_n"] for p in problems),
+            "solutions": [item(i) for i in general[:SHOW_LAST]],
             "solutions_n": len(items),
             "state": (items[0].status if items else "none"),
             "open_n": sum(1 for i in items if i.status != "done"),
@@ -286,23 +367,98 @@ def analysis(
         "no_owner_n": sum(1 for r in rows if r["minutes"] > 0 and not r["owner"]),
         "no_solution_n": sum(r["problems_n"] - r["solved_n"] for r in rows),
         "problems_n": sum(r["problems_n"] for r in rows),
+        "stops_n": sum(r["stops_n"] for r in rows),
+        "mine_n": sum(r["mine_n"] for r in rows),
         "cat_locked": lock,
         "is_admin": is_admin,
+        # Everybody who reads a stop may answer it; `expects_me` marks the two
+        # roles whose own answer each stop on their page waits for.
+        "can_write": True,
+        "expects_me": payload.get("role") in EXPECTED_ROLES,
     }
 
 
-def _sol_date(r) -> date:
-    return (r.created_at.astimezone(TZ) if r.created_at else datetime.now(TZ)).date()
-
-
-ORDER = ("repeating", "new", "unanswered", "early", "nodata", "reduced", "solved", "none", "once")
-
+# ── Tahlil ────────────────────────────────────────────────────────────────────
 
 def _days(a: date, b: date):
     d = a
     while d <= b:
         yield d
         d += timedelta(days=1)
+
+
+def _local_day(v) -> Optional[date]:
+    return v.astimezone(TZ).date() if v else None
+
+
+def _done_day(s: IdleCategorySolution) -> Optional[date]:
+    """The day a solution became «done» — None while it is open / doing."""
+    if s.status != "done":
+        return None
+    return _local_day(s.done_at or s.updated_at or s.created_at)
+
+
+def outcome(stop_day: date, sols: list, later: list, asof: date) -> dict:
+    """What became of ONE filed stop — the Tahlil tab's five plain answers.
+
+      * unanswered — nobody wrote anything;
+      * promised   — written, none of it marked done yet;
+      * back       — after it was done, the same cell waited on the same cause
+                     again within HOLD_DAYS (`back` = that day);
+      * held       — HOLD_DAYS passed without it;
+      * watch      — done, HOLD_DAYS not over yet (`left` = days to go).
+
+    `later` are the days the same (cell, cause) was filed again, ascending. The
+    clock starts the day the first solution was marked done (never before the
+    stop itself), and a repeat on that very day is not held against it — the
+    day says nothing about which came first.
+    """
+    if not sols:
+        return {"state": "unanswered"}
+    done = [d for d in (_done_day(s) for s in sols) if d]
+    if not done:
+        return {"state": "promised"}
+    since = max(min(done), stop_day)
+    until = since + timedelta(days=HOLD_DAYS)
+    back = next((d for d in later if since < d <= until), None)
+    if back:
+        return {"state": "back", "since": since, "back": back}
+    if asof >= until:
+        return {"state": "held", "since": since}
+    return {"state": "watch", "since": since,
+            "left": max(1, min(HOLD_DAYS, (until - asof).days))}
+
+
+def stop_hours(stops: list) -> list:
+    """Minutes of stop time falling in each hour of the day (24 buckets). An
+    `end` at or before `start` crossed midnight — the platform's clock rule."""
+    out = [0.0] * 24
+    for s in stops:
+        a, b = idle_intervals.to_min(s.get("start")), idle_intervals.to_min(s.get("end"))
+        if a is None or b is None:
+            continue
+        if b <= a:
+            b += 1440
+        t = a
+        while t < b:
+            nxt = min(b, (t // 60 + 1) * 60)
+            out[(t // 60) % 24] += nxt - t
+            t = nxt
+    return [round(v, 1) for v in out]
+
+
+def peak_window(hours: list, span: int = PEAK_HOURS) -> Optional[dict]:
+    """The busiest `span` consecutive hours (wrapping past midnight) and their
+    share of all stop time — None when nothing was filed."""
+    total = sum(hours)
+    if total <= 0:
+        return None
+    best = max(range(24), key=lambda h: (sum(hours[(h + i) % 24] for i in range(span)), -h))
+    got = sum(hours[(best + i) % 24] for i in range(span))
+    return {"from": best, "to": (best + span) % 24, "share": round(100 * got / total)}
+
+
+_WORST = ("back", "unanswered", "promised", "watch", "held")
 
 
 @router.get("/analytics")
@@ -315,243 +471,234 @@ def analytics(
     db: Session = Depends(get_db),
     payload: dict = Depends(_reader),
 ):
-    """Is each waiting cause SOLVED or REPEATING after its written solution?
+    """The Tahlil tab: five plain questions about the period on screen.
 
-    The unit of evidence is an OCCURRENCE — a working day on which the cause
-    shows up at all — never its minutes (one long stop must not hide five small
-    repeats, nor one big stop hide that it stopped). Minutes ride along as the
-    secondary figure. Nothing new is measured: the minutes are `_downtime`'s own
-    rows, the stops are `analysis()`'s events.
+      1. Is the waiting going down?  — its minutes against the same number of
+         days right before it, and the day-by-day strip.
+      2. Where does it come from?    — by cause, by brigadir, by cell.
+      3. When?                       — the hours of the day and the weekdays the
+         stops fall on.
+      4. Are the stops answered?     — every stop is in ONE of five states
+         (`outcome`), who wrote their own answer, how fast.
+      5. Did the solutions work?     — of the answers marked done: the problem
+         stayed away for HOLD_DAYS, or the same cell waited on the same cause
+         again; and the (cell, cause) pairs that keep repeating.
 
-    Per cause (and per brigadir when a solution is written for one) the newest
-    solution is judged by `judge()`:
-      * solved    — no occurrence since, for as long as the cause's own rhythm
-                    needs (3× its usual gap before, 7–28 working days);
-      * repeating — it came back; `relapse` marks a return after a long quiet;
-      * reduced   — it still comes back, but at most half as often as before;
-      * early     — not enough working days since to say (also: fewer than
-                    EARLY_DAYS calendar days, when a fix cannot be in force yet);
-      * new       — it never happened before the solution and does now;
-      * nodata    — fewer than 5 working days of history before the solution.
-    A cause nobody wrote a solution for is `unanswered`. Quiet is counted in the
-    WORKING days of the scope (days it has a row), so a weekend is not a cure.
+    Nothing new is measured: minutes are `_downtime`'s rows, stops the bar
+    modal's. Two kinds of minutes are never mixed — a cause's and a brigadir's
+    are the page's waiting minutes; a cell's and an hour's are the filed stops'
+    own lengths, and the payload names them `stop_minutes`.
     """
     _reader_only(payload)
     if payload.get("role") == "supervisor":
         raise HTTPException(status_code=403, detail="Analytics are not open to supervisors")
-    from app.routers.downtime import _downtime
 
-    # A picked day (or any span under PERIOD_MIN) is widened backwards from its end.
-    end = date_to or datetime.now(TZ).date()
-    start = date_from or end - timedelta(days=13)
-    widened = start <= end and (end - start).days + 1 < PERIOD_MIN
-    if widened:
-        start = end - timedelta(days=PERIOD_MIN - 1)
-    base = analysis(date_from=start, date_to=end, shift=shift, factory=factory,
-                    manager_id=manager_id, db=db, payload=payload)
-    d_from = date.fromisoformat(base["date_from"])
-    d_to = date.fromisoformat(base["date_to"])
-    # Judged AS OF the end of the period (never later than today): a past period
-    # shows the picture at that time, and a solution written after it is unknown.
-    asof = min(datetime.now(TZ).date(), d_to)
+    d_from, d_to = _period(date_from, date_to)
+    n_days = (d_to - d_from).days + 1
+    today = datetime.now(TZ).date()
+    q_to = d_from - timedelta(days=1)
+    q_from = q_to - timedelta(days=n_days - 1)
+    strip_from = min(d_from, d_to - timedelta(days=MIN_CHART_DAYS - 1))
 
-    sols = (db.query(IdleCategorySolution)
-            .order_by(IdleCategorySolution.created_at.desc(), IdleCategorySolution.id.desc())
-            .limit(400).all())
-    sols = [r for r in sols if r.category not in EXCLUDED and _sol_date(r) <= d_to
-            and (not manager_id or r.manager_id is None or r.manager_id in manager_id)]
-    wide_from = d_from
-    for r in sols:
-        wide_from = min(wide_from, _sol_date(r) - timedelta(days=BEFORE_DAYS))
-    wide_to = d_to
-    wide_from = max(wide_from, wide_to - timedelta(days=MAX_DAYS - 1))
-    out = _downtime(db, payload, wide_from, wide_to, shift, manager_id, False, factory)
-    lock = idle_scope.viewer_categories(db, payload)
-    out = idle_scope.narrow_downtime(out, idle_scope.resolve_cats(db, payload, []), lock=lock)
+    mrows, lock = _minute_rows(db, payload, min(q_from, strip_from), d_to,
+                               shift, manager_id, factory)
+    cur = _aggregate([r for r in mrows if d_from <= r["day"] <= d_to])
+    prev = _aggregate([r for r in mrows if q_from <= r["day"] <= q_to])
+    strip_min: dict[date, float] = {}
+    for r in mrows:
+        if r["day"] >= strip_from:
+            for c, v in (r.get("by_category") or {}).items():
+                if c not in EXCLUDED and float(v or 0) > 0:
+                    strip_min[r["day"]] = strip_min.get(r["day"], 0.0) + float(v)
 
-    # (category, manager, iso day) -> minutes, (category, iso day) -> minutes,
-    # and the working days (a row exists) of everybody / of each brigadir
-    cm: dict[tuple, float] = {}
-    cc: dict[tuple, float] = {}
-    wd_all: set = set()
-    wd_m: dict = {}
-    for r in out.get("rows") or []:
-        # `_downtime` spells a row's day «dd.mm.yyyy»; everything here keys on ISO
-        raw = str(r.get("date"))[:10]
-        try:
-            dstr = datetime.strptime(raw, "%d.%m.%Y").date().isoformat()
-        except ValueError:
-            dstr = raw
-        wd_all.add(dstr)
-        wd_m.setdefault(r.get("manager_id"), set()).add(dstr)
-        for c, v in (r.get("by_category") or {}).items():
-            v = float(v or 0)
-            if v <= 0 or c in EXCLUDED:
-                continue
-            cm[(c, r.get("manager_id"), dstr)] = cm.get((c, r.get("manager_id"), dstr), 0.0) + v
-            cc[(c, dstr)] = cc.get((c, dstr), 0.0) + v
+    # The period's stops, and every later one of the same units — what tells
+    # whether a problem came back. Judged as of today, never past AFTER_DAYS.
+    stops_to = min(max(today, d_to), d_to + timedelta(days=AFTER_DAYS))
+    asof = min(today, stops_to)
+    filed = _stops(db, list(cur["unit_name"]), d_from, stops_to)
+    in_view = set(c for c in idle_scope.CATEGORIES
+                  if c not in EXCLUDED and (lock is None or c in set(lock)))
 
-    def minutes_on(c, mid, k: str) -> float:
-        return cc.get((c, k), 0.0) if mid is None else cm.get((c, mid, k), 0.0)
+    again: dict[tuple, list] = {}       # (cell, cause) -> the days it was filed, ascending
+    stops: list = []                    # the period's stops, exactly the Muammolar tab's
+    for (c, m), lst in filed.items():
+        if c not in in_view:
+            continue
+        for s in lst:
+            day = date.fromisoformat(s["date"])
+            again.setdefault((s["cell_id"], c), []).append(day)
+            if day <= d_to and m in cur["cat_units"].get(c, {}):
+                stops.append({**s, "day": day, "category": c, "manager_id": m})
+    for lst in again.values():
+        lst.sort()
 
-    def span(c, mid, a: date, b: date) -> float:
-        return sum(minutes_on(c, mid, d.isoformat()) for d in _days(a, b))
+    by_event: dict[int, list] = {}
+    for r in _solutions(db, [s["id"] for s in stops]):
+        if r.event_id is not None:
+            by_event.setdefault(r.event_id, []).append(r)
 
-    def occ_days(c, mid, a: date, b: date) -> list:
-        return [k for k in (d.isoformat() for d in _days(a, b)) if minutes_on(c, mid, k) > 0]
+    labels = idle_scope.owner_labels(db)
+    owner_keys = idle_scope.owners(db)
+    waits: list = []                    # days from a stop to its first answer
+    for s in stops:
+        sols = by_event.get(s["id"], [])
+        later = [d for d in again.get((s["cell_id"], s["category"]), []) if d > s["day"]]
+        s["sols"] = sols
+        s["out"] = outcome(s["day"], sols, later, asof)
+        s["authors"] = {x.author_key for x in sols if x.author_key}
+        if sols:
+            first = min(_local_day(x.created_at) or s["day"] for x in sols)
+            waits.append(max(0, (first - s["day"]).days))
 
-    def wdays(mid, a: date, b: date) -> int:
-        s = wd_all if mid is None else wd_m.get(mid, set())
-        return sum(1 for d in _days(a, b) if d.isoformat() in s)
+    def count(rows, state=None):
+        return sum(1 for s in rows if state is None or s["out"]["state"] == state)
 
-    def judge(c, mid, sol) -> dict:
-        sd = _sol_date(sol)
-        b0, b1 = max(sd - timedelta(days=BEFORE_DAYS), wide_from), sd - timedelta(days=1)
-        a0, a1 = max(sd + timedelta(days=1), wide_from), asof
-        ob, oa = occ_days(c, mid, b0, b1), occ_days(c, mid, a0, a1)
-        wb = max(wdays(mid, b0, b1), len(ob))
-        wa = max(wdays(mid, a0, a1), len(oa))
-        rate_b = len(ob) / wb if wb else 0.0
-        rate_a = len(oa) / wa if wa else 0.0
-        need = MIN_QUIET
-        if ob and wb:
-            need = min(MAX_QUIET, max(MIN_QUIET, math.ceil(QUIET_X * wb / len(ob))))
-        last = oa[-1] if oa else None
-        quiet = wdays(mid, (date.fromisoformat(last) + timedelta(days=1)) if last else sd + timedelta(days=1), a1)
-        first_gap = (wdays(mid, sd + timedelta(days=1), date.fromisoformat(oa[0]) - timedelta(days=1))
-                     if oa else None)
-        cal_after = max(0, (a1 - sd).days)
-        if wb < 5:
-            verdict = "nodata"
-        elif cal_after < EARLY_DAYS:
-            verdict = "early"
-        elif not ob:
-            verdict = "new" if oa else "none"
-        elif not oa:
-            verdict = "solved" if quiet >= need else "early"
-        elif wa >= MIN_QUIET and rate_a <= rate_b * (1 - REDUCED_DROP / 100.0):
-            verdict = "reduced"
-        else:
-            verdict = "repeating"
-        daily = [round(minutes_on(c, mid, d.isoformat()), 1) for d in _days(b0, a1)]
-        return {
-            "verdict": verdict, "date": sd.isoformat(), "before_n": len(ob), "before_wd": wb,
-            "after_n": len(oa), "after_wd": wa, "after_days": cal_after,
-            "rate_before": round(rate_b, 3), "rate_after": round(rate_a, 3),
-            "quiet_needed": need, "quiet": quiet, "last_seen": last,
-            "relapse": bool(oa) and bool(ob) and first_gap is not None and first_gap >= need,
-            "min_before": round(span(c, mid, b0, b1), 1), "min_after": round(span(c, mid, a0, a1), 1),
-            "daily": daily, "daily_from": b0.isoformat(), "marker": (sd - b0).days,
-        }
+    funnel = {k: count(stops, k) for k in _WORST}
+    funnel["stops"] = len(stops)
 
-    cat_rows = {r["category"]: r for r in base["categories"]}
-    # Shown: a cause that happened in the period (under every filter), or one whose
-    # solution was written in the period AND that shows up at all under the filters —
-    # a filter that leaves a cause no data must hide it, never print it «solved».
-    cats = [r["category"] for r in base["categories"] if (r["minutes"] or 0) > 0]
-    seen_cats = {k[0] for k in cc}
-    for r in sols:
-        if r.category not in cats and d_from <= _sol_date(r) <= d_to and r.category in seen_cats:
-            cats.append(r.category)
+    def delta_rows(now: dict, before: dict):
+        return sorted(((k, v, before.get(k, 0.0)) for k, v in now.items()), key=lambda x: -x[1])
 
-    causes = []
-    for c in cats:
-        row = cat_rows.get(c) or {}
-        problems = [p for p in (row.get("problems") or []) if (p.get("minutes") or 0) > 0]
-        scope_sol: dict = {}
-        for r in sols:
-            if r.category == c:
-                scope_sol.setdefault(r.manager_id, r)
-        judged: dict = {}
-        if None in scope_sol:
-            judged[None] = (scope_sol[None], judge(c, None, scope_sol[None]))
-        else:
-            for mid_, s_ in scope_sol.items():
-                judged[mid_] = (s_, judge(c, mid_, s_))
-        verdicts = [j["verdict"] for _, j in judged.values()]
-        # a brigadir with the same waiting on enough days and no solution of their own
-        orphans = [p for p in problems if None not in scope_sol and p["manager_id"] not in scope_sol
-                   and len(occ_days(c, p["manager_id"], d_from, d_to)) >= REPEAT_DAYS]
-        if orphans and judged:
-            verdicts.append("unanswered")
-        if judged:
-            sol, j = min(judged.values(), key=lambda sj: ORDER.index(sj[1]["verdict"]))
-            status = min(verdicts, key=ORDER.index)
-        else:
-            pd = occ_days(c, None, d_from, d_to)
-            # no solution: a cause seen on fewer than REPEAT_DAYS days is not a problem yet
-            sol, status = None, ("unanswered" if len(pd) >= REPEAT_DAYS else "once")
-            j = {"verdict": "unanswered", "after_n": len(pd), "after_wd": wdays(None, d_from, d_to),
-                 "last_seen": pd[-1] if pd else None, "quiet": None, "relapse": False,
-                 "daily": [round(minutes_on(c, None, d.isoformat()), 1) for d in _days(d_from, d_to)],
-                 "daily_from": d_from.isoformat(), "marker": None}
-        units = []
-        for p in problems:
-            mid = p["manager_id"]
-            sol_u = scope_sol.get(mid) or scope_sol.get(None)
-            since = _sol_date(sol_u) if sol_u else None
-            a0 = since + timedelta(days=1) if since else d_from
-            od = occ_days(c, mid, a0, asof if since else d_to)
-            cells: dict[str, set] = {}
-            recent = []   # the brigadir's own words on their latest stops (newest first)
-            sd_u = _sol_date(sol_u).isoformat() if sol_u else None
-            for e in p.get("events") or []:
-                dd = str(e.get("date"))[:10]
-                if dd >= a0.isoformat():
-                    cells.setdefault(e.get("cell") or "—", set()).add(dd)
-                # what became of THIS stop: answered by its own solution, else by the
-                # scope's — a stop after that solution is a repeat (red), one before it
-                # is solved (done) or in process (open / doing); nothing written = none
-                evs = e.get("solutions") or []
-                if evs:
-                    mark = "solved" if all(x["status"] == "done" for x in evs) else "doing"
-                elif sol_u is None:
-                    mark = "none"
-                elif dd > sd_u:
-                    mark = "repeat"
-                else:
-                    mark = "solved" if sol_u.status == "done" else "doing"
-                recent.append({"date": dd, "cell": e.get("cell"), "minutes": e.get("minutes"),
-                               "note": e.get("note") or "", "mark": mark})
-            tc = max(cells.items(), key=lambda kv: len(kv[1]), default=(None, set()))
-            own = judged.get(mid) if None not in scope_sol else None
-            units.append({
-                "manager_id": mid, "manager_name": p["manager_name"], "minutes": p["minutes"],
-                "days": len(od), "last_seen": od[-1] if od else None,
-                "cell": tc[0], "cell_days": len(tc[1]),
-                "verdict": own[1]["verdict"] if own else None,
-                "covered": sol_u is not None, "since": since.isoformat() if since else None,
-                "notes": recent[:UNIT_NOTES],
-            })
-        units.sort(key=lambda u: (-u["days"], -u["minutes"]))
-        sol_out = None
-        if sol is not None:
-            sol_out = {
-                "id": sol.id, "text": sol.text, "status": sol.status, "author_name": sol.author_name,
-                "date": _sol_date(sol).isoformat(), "manager_id": sol.manager_id,
-                "manager_name": next((p["manager_name"] for p in problems if p["manager_id"] == sol.manager_id), None),
-            }
-        causes.append({
-            "category": c, "minutes": round(float(row.get("minutes") or 0), 1), "status": status,
-            "owner": row.get("owner"),
-            "j": j, "solution": sol_out, "solutions_n": len([r for r in sols if r.category == c]),
-            "units": units, "orphans_n": len(orphans),
-            "rethink": bool(sol_out) and sol_out["status"] in ("doing", "done") and j["verdict"] in ("repeating", "new"),
+    total, prev_total = cur["total"], prev["total"]
+
+    by_cause = []
+    for c, v, pv in delta_rows(cur["cat_min"], prev["cat_min"]):
+        mine = [s for s in stops if s["category"] == c]
+        by_cause.append({
+            "category": c, "minutes": round(v, 1), "prev_minutes": round(pv, 1),
+            "share": round(100 * v / total, 1) if total else 0.0,
+            "stops": len(mine), "answered": sum(1 for s in mine if s["sols"]),
+            "owner": labels.get(c),
         })
-    causes.sort(key=lambda x: (ORDER.index(x["status"]), -(x["j"].get("after_n") or 0), -x["minutes"]))
-    counts = {k: sum(1 for x in causes if x["status"] == k) for k in ORDER}
+
+    by_unit = []
+    unit_now = {m: sum(cs.values()) for m, cs in cur["unit_cat"].items()}
+    unit_before = {m: sum(cs.values()) for m, cs in prev["unit_cat"].items()}
+    for m, v, pv in delta_rows(unit_now, unit_before):
+        mine = [s for s in stops if s["manager_id"] == m]
+        top = max(cur["unit_cat"][m].items(), key=lambda kv: kv[1])[0]
+        by_unit.append({
+            **cur["unit_name"][m], "minutes": round(v, 1), "prev_minutes": round(pv, 1),
+            "share": round(100 * v / total, 1) if total else 0.0,
+            "stops": len(mine), "answered": sum(1 for s in mine if s["sols"]),
+            # the brigadir's OWN answers — everybody writes their own
+            "own": sum(1 for s in mine if f"supervisor:{m}" in s["authors"]),
+            "top_category": top,
+        })
+
+    cells: dict = {}
+    for s in stops:
+        k = s["cell_id"]
+        a = cells.setdefault(k, {"cell_id": k, "cell": s["cell"], "manager_id": s["manager_id"],
+                                 "stops": 0, "days": set(), "stop_minutes": 0.0, "cats": {}})
+        a["stops"] += 1
+        a["days"].add(s["day"])
+        a["stop_minutes"] += float(s["minutes"] or 0)
+        a["cats"][s["category"]] = a["cats"].get(s["category"], 0.0) + float(s["minutes"] or 0)
+    by_cell = sorted(cells.values(), key=lambda a: (-a["stop_minutes"], -a["stops"]))[:TOP_CELLS]
+    by_cell = [{
+        "cell_id": a["cell_id"], "cell": a["cell"], "manager_id": a["manager_id"],
+        "manager_name": cur["unit_name"].get(a["manager_id"], {}).get("manager_name"),
+        "stops": a["stops"], "days": len(a["days"]), "stop_minutes": round(a["stop_minutes"], 1),
+        "top_category": max(a["cats"].items(), key=lambda kv: kv[1])[0],
+    } for a in by_cell]
+
+    hours = stop_hours(stops)
+    weekdays = [{"stop_minutes": 0.0, "stops": 0, "days": 0} for _ in range(7)]
+    for d in _days(d_from, d_to):
+        weekdays[d.weekday()]["days"] += 1
+    for s in stops:
+        w = weekdays[s["day"].weekday()]
+        w["stop_minutes"] = round(w["stop_minutes"] + float(s["minutes"] or 0), 1)
+        w["stops"] += 1
+
+    # Who answers for what: each cause's owner, their stops and their OWN answers.
+    owners: dict = {}
+    for s in stops:
+        key = owner_keys.get(s["category"])
+        who = labels.get(s["category"])
+        if not key or not who:
+            continue
+        o = owners.setdefault(key, {"profile_key": key, "name": who.get("name"),
+                                    "categories": set(), "stops": 0, "own": 0})
+        o["categories"].add(s["category"])
+        o["stops"] += 1
+        o["own"] += 1 if key in s["authors"] else 0
+    order = {c: i for i, c in enumerate(idle_scope.CATEGORIES)}
+    owners_out = sorted(({**o, "categories": sorted(o["categories"], key=lambda c: order.get(c, 99))}
+                         for o in owners.values()), key=lambda o: (o["own"] - o["stops"], -o["stops"]))
+
+    # One cell waiting on one cause again and again — the place to act. Listed
+    # when it was filed on REPEAT_DAYS days, or came back after a done solution.
+    pairs: dict = {}
+    for s in stops:
+        k = (s["cell_id"], s["category"])
+        p = pairs.setdefault(k, {"rows": [], "days": set()})
+        p["rows"].append(s)
+        p["days"].add(s["day"])
+    repeats = []
+    for (cell_id, c), p in pairs.items():
+        rows_ = sorted(p["rows"], key=lambda s: (s["day"], s["start"] or ""))
+        back_n = count(rows_, "back")
+        if len(p["days"]) < REPEAT_DAYS and not back_n:
+            continue
+        states = {s["out"]["state"] for s in rows_}
+        state = next(k for k in _WORST if k in states)
+        last_sol = max((x for s in rows_ for x in s["sols"]),
+                       key=lambda x: (x.created_at, x.id), default=None)
+        newest = rows_[-1]
+        repeats.append({
+            "cell_id": cell_id, "cell": newest["cell"], "category": c,
+            "manager_id": newest["manager_id"],
+            "manager_name": cur["unit_name"].get(newest["manager_id"], {}).get("manager_name"),
+            "days": len(p["days"]), "stops": len(rows_),
+            "stop_minutes": round(sum(float(s["minutes"] or 0) for s in rows_), 1),
+            "answered": sum(1 for s in rows_ if s["sols"]), "back_n": back_n,
+            "state": state, "last_date": newest["day"].isoformat(),
+            "note": next((s["note"] for s in reversed(rows_) if s["note"]), ""),
+            "solution": None if last_sol is None else {
+                "text": last_sol.text, "status": last_sol.status,
+                "author_name": last_sol.author_name,
+                "author_role": identity.parse_profile_key(last_sol.author_key)[0],
+                "date": (_local_day(last_sol.created_at) or newest["day"]).isoformat(),
+            },
+        })
+    repeats.sort(key=lambda r: (_WORST.index(r["state"]), -r["back_n"], -r["days"], -r["stop_minutes"]))
+
+    stops_by_day: dict[date, int] = {}
+    for s in stops:
+        stops_by_day[s["day"]] = stops_by_day.get(s["day"], 0) + 1
+
     return {
-        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
-        "before_days": BEFORE_DAYS, "early_days": EARLY_DAYS, "min_quiet": MIN_QUIET,
-        "max_quiet": MAX_QUIET, "quiet_x": QUIET_X, "reduced_drop": REDUCED_DROP,
-        "repeat_days": REPEAT_DAYS, "widened": widened, "period_min": PERIOD_MIN,
-        "causes": causes, "counts": counts,
-        "rethink_n": sum(1 for x in causes if x["rethink"]),
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(), "days": n_days,
+        "prev_from": q_from.isoformat(), "prev_to": q_to.isoformat(),
+        "asof": asof.isoformat(), "hold_days": HOLD_DAYS, "repeat_days": REPEAT_DAYS,
+        "total": {
+            "minutes": round(total, 1), "prev_minutes": round(prev_total, 1),
+            "stops": len(stops), "causes": len(by_cause), "units": len(by_unit),
+        },
+        "daily": [{"day": d.isoformat(), "minutes": round(strip_min.get(d, 0.0), 1),
+                   "stops": stops_by_day.get(d, 0) if d >= d_from else None,
+                   "in_period": d >= d_from}
+                  for d in _days(strip_from, d_to)],
+        "by_cause": by_cause, "by_unit": by_unit, "by_cell": by_cell,
+        "hours": hours, "peak": peak_window(hours), "weekdays": weekdays,
+        "funnel": funnel,
+        "speed": {
+            "answered": len(waits),
+            "median_days": int(statistics.median_low(waits)) if waits else None,
+            "same_day": sum(1 for w in waits if w == 0),
+        },
+        "owners": owners_out,
+        "repeats": repeats[:TOP_REPEATS], "repeats_n": len(repeats),
+        "cat_locked": lock,
     }
 
 
+# ── writing ───────────────────────────────────────────────────────────────────
+
 class SolutionBody(BaseModel):
-    category: str
+    category: Optional[str] = None
     text: str
     status: Optional[str] = "open"
     manager_id: Optional[int] = None
@@ -578,31 +725,81 @@ def _clean_status(s: Optional[str]) -> str:
     return s
 
 
+def _stop_in_reach(db: Session, payload: dict, body: SolutionBody) -> tuple[str, int]:
+    """The (cause, unit) of the filed stop a solution answers — after checking
+    this viewer READS that stop on the page. Everybody answers the stops they
+    can see and nobody one they cannot: the check asks the page's own reader
+    (`_cell_detail`), so «listed» has one meaning for reading and writing — an
+    approved stop of the stopped half, in the unit it stood in that day."""
+    from app.routers.downtime import _cell_detail
+    ev = db.query(CellOjidaniyaInterval).filter(
+        CellOjidaniyaInterval.id == body.event_id).first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="stop_not_found")
+    if ev.category not in idle_scope.CATEGORIES or ev.category in EXCLUDED:
+        raise HTTPException(status_code=400, detail="unknown_category")
+    if body.category and body.category != ev.category:
+        raise HTTPException(status_code=400, detail="category_mismatch")
+    try:
+        day = date.fromisoformat(str(ev.date)[:10])
+    except ValueError:
+        raise HTTPException(status_code=404, detail="stop_not_found")
+    unit = body.manager_id
+    if unit is None:
+        cell = db.query(Cell.manager_id).filter(Cell.id == ev.cell_id).first()
+        unit = cell.manager_id if cell else None
+    if unit is None:
+        raise HTTPException(status_code=404, detail="stop_not_found")
+
+    role = payload.get("role")
+    if role == "supervisor" and payload.get("role_id") != unit:
+        raise HTTPException(status_code=403, detail="out_of_scope")
+    if role == idle_scope.OWNER_ROLE and ev.category not in (
+            idle_scope.viewer_categories(db, payload) or []):
+        raise HTTPException(status_code=403, detail="not_category_owner")
+    scoped = scoped_manager_ids(db, payload, None, [unit])
+    if empty_scope(scoped) or (scoped is not None and unit not in scoped):
+        raise HTTPException(status_code=403, detail="out_of_scope")
+
+    det = _cell_detail(db, unit, day, day, True, False, [ev.category], with_hc=False)
+    listed = any(iv.get("id") == ev.id
+                 for cells_ in (det.get("days") or {}).values()
+                 for cell in cells_ for iv in cell.get("intervals") or [])
+    if not listed:
+        raise HTTPException(status_code=404, detail="stop_not_found")
+    return ev.category, unit
+
+
 @router.post("")
 def add_solution(
     body: SolutionBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime")),
+    payload: dict = Depends(_reader),
 ):
-    _writer_only(payload)
-    if body.category not in idle_scope.CATEGORIES or body.category in EXCLUDED:
-        raise HTTPException(status_code=400, detail="unknown_category")
-    if not _may_write(db, payload, body.category):
-        raise HTTPException(status_code=403, detail="not_category_owner")
+    _reader_only(payload)
+    if body.event_id is not None:
+        category, manager_id = _stop_in_reach(db, payload, body)
+    else:
+        category, manager_id = body.category, body.manager_id
+        if category not in idle_scope.CATEGORIES or category in EXCLUDED:
+            raise HTTPException(status_code=400, detail="unknown_category")
+        if not _may_write(db, payload, category):
+            raise HTTPException(status_code=403, detail="not_category_owner")
     text = _clean_text(body.text)
     status = _clean_status(body.status or "open")
     key = identity.viewer_profile_key(db, payload)
     name = (idle_scope._profile_names(db, [key]).get(key) or {}).get("name") if key else None
     row = IdleCategorySolution(
-        category=body.category, manager_id=body.manager_id, event_id=body.event_id, text=text, status=status,
+        category=category, manager_id=manager_id, event_id=body.event_id, text=text, status=status,
         author_key=key,
-        author_name=name or payload.get("full_name") or payload.get("name"))
+        author_name=name or payload.get("full_name") or payload.get("name"),
+        done_at=datetime.now(timezone.utc) if status == "done" else None)
     db.add(row)
     db.commit()
-    action_log.enrich(target_kind="idle_category", target_id=body.category,
-                      details=[("category", body.category), ("manager_id", body.manager_id), ("event_id", body.event_id),
+    action_log.enrich(target_kind="idle_category", target_id=category,
+                      details=[("category", category), ("manager_id", manager_id), ("event_id", body.event_id),
                                ("status", status)])
-    return _item(row)
+    return _item(row, key, payload.get("role") == "admin")
 
 
 @router.put("/{solution_id}")
@@ -610,14 +807,17 @@ def edit_solution(
     solution_id: int,
     body: SolutionEdit,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime")),
+    payload: dict = Depends(_reader),
 ):
-    _writer_only(payload)
+    _reader_only(payload)
     row = db.query(IdleCategorySolution).filter(IdleCategorySolution.id == solution_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="not_found")
-    if not _may_write(db, payload, row.category):
-        raise HTTPException(status_code=403, detail="not_category_owner")
+    # A solution is its author's own: they edit it, and an admin.
+    key = identity.viewer_profile_key(db, payload)
+    is_admin = payload.get("role") == "admin"
+    if not (is_admin or (key and row.author_key == key)):
+        raise HTTPException(status_code=403, detail="not_author")
     changes = []
     if body.text is not None:
         t = _clean_text(body.text)
@@ -629,7 +829,10 @@ def edit_solution(
         if s != row.status:
             changes.append(("status", row.status, s))
             row.status = s
+            # the «did it come back» clock starts when it is done, and starts
+            # over if a done row is reopened and done again
+            row.done_at = datetime.now(timezone.utc) if s == "done" else None
     db.commit()
     action_log.enrich(target_kind="idle_category", target_id=row.category,
                       details=[("category", row.category)], changes=changes)
-    return _item(row)
+    return _item(row, key, is_admin)

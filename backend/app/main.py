@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
         add_idle_interval_cleaners,
         add_idle_solution_manager,
         add_idle_solution_event,
+        add_idle_solution_done_at,
         add_turnover_month_people_approx,
         add_leader_task_cell,
         add_late_proof_provenance,
@@ -290,6 +291,7 @@ async def lifespan(app: FastAPI):
     run(add_idle_interval_cleaners)
     run(add_idle_solution_manager)
     run(add_idle_solution_event)
+    run(add_idle_solution_done_at)
     run(add_turnover_month_people_approx)
     run(add_leader_task_cell)
     run(add_late_proof_provenance)

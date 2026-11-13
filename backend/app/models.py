@@ -4442,11 +4442,18 @@ class IdleCategorySolution(Base):
     text        = Column(Text, nullable=False)
     # open | doing | done
     status      = Column(String, nullable=False, default="open")
+    # 2026-11-13: everybody who reads the page writes their OWN solution to a
+    # stop, so the author is who a row belongs to — only they (and an admin)
+    # edit it. "role:id", the profile, like the owner register.
     author_key  = Column(String, nullable=True)
     author_name = Column(String, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     updated_at  = Column(DateTime(timezone=True), server_default=func.now(),
                          onupdate=func.now())
+    # 2026-11-13: WHEN the row became «done» — the day the «did the problem come
+    # back» clock of the Tahlil tab starts. NULL while open / doing, cleared when
+    # a done row is reopened (`startup.add_idle_solution_done_at`).
+    done_at     = Column(DateTime(timezone=True), nullable=True)
 
 
 # ── The dashboard exam («Imtihon») — services/exam*.py, routers/exam*.py ──────

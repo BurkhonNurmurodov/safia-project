@@ -2410,6 +2410,28 @@ def add_idle_solution_event() -> None:
         db.close()
 
 
+def add_idle_solution_done_at() -> None:
+    """2026-11-13: ``idle_category_solutions`` gains ``done_at`` — when a
+    solution became «done», the day the Tahlil tab starts asking whether the
+    problem came back. A row already done takes its last edit as that moment
+    (the only date it has). DDL + one idempotent UPDATE."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE idle_category_solutions "
+            "ADD COLUMN IF NOT EXISTS done_at TIMESTAMP WITH TIME ZONE"))
+        db.execute(text(
+            "UPDATE idle_category_solutions "
+            "SET done_at = COALESCE(updated_at, created_at) "
+            "WHERE status = 'done' AND done_at IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] idle solution done_at migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_cleaners() -> None:
     """2026-09-29: ``cell_ojidaniya_intervals`` gains ``cleaners`` — the
     «Tozalovchilar» count a Tozalash (Cat H) entry must now carry: how many

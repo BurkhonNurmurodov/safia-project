@@ -773,9 +773,11 @@ for that person to write their solution. `routers/idle_solutions.py`
 (`GET /api/idle-solutions/analysis`, `POST` / `PUT /api/idle-solutions[/{id}]`),
 table `idle_category_solutions` (a log per category: text, open · doing · done,
 author snapshot), `pages/IdleSolutions.jsx` + `pages/idleSolutionsText.js`.
-**ADMIN-ONLY for now, no page key** (`adminOnly` nav row, `RequireAdmin`, every
-endpoint refuses others); the owner-may-write rule (`_may_write`) is kept for
-the day it opens to the role. Minutes are `/downtime`'s own (`_downtime`, the
+**No page key of its own**: five roles open it (`READER_ROLES` — admin,
+«Kutish mas'uli» through their own causes, shift-manager, top-manager, and a
+brigadir through their own unit, without the Tahlil tab; opened 2026-11-07 … 09),
+and from 2026-11-13 every one of them writes — see «everybody writes their own
+solution» below. Minutes are `/downtime`'s own (`_downtime`, the
 stopped half) summed per category; nothing new is measured. All 12 categories
 are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
 (multi). Not built: deadlines per solution, notices to owners.
@@ -802,8 +804,10 @@ are listed (quiet ones dimmed); filters: period, plant, shift, brigadirs
   «cleaning is part of the work, we don't need a solution for that»):
   `idle_solutions.EXCLUDED` drops it from the causes, the totals, the brigadir
   table and the write door (400). Nothing else moves — /downtime keeps it.
-- **«Tahlil» tab** (2026-11-05, the operator: is the reason repeating, did the
-  solution work, if not change the approach) — `GET /api/idle-solutions/analytics`
+- **«Tahlil» tab** (2026-11-05 — this first design was replaced on 2026-11-07 and
+  again on 2026-11-13, see the two sections further down; kept as the record of
+  what was asked: is the reason repeating, did the solution work, if not change
+  the approach) — `GET /api/idle-solutions/analytics`
   + `components/idle/SolutionAnalytics.jsx`, nothing new measured (`_downtime`
   rows and `analysis()`'s stops). Weekly minutes per cause with a falling /
   rising / flat verdict; **repeating reasons** = a (cause, brigadir) on
@@ -921,23 +925,109 @@ new decision; the two locks below are the feature.
 
 Related memory: `idle-category-owner-role`.
 
-## «Kutish yechimlari» — Tahlil tab: is it SOLVED or REPEATING? (`/idle-solutions`, 2026-11-07)
+## «Kutish yechimlari» — Tahlil tab: is it SOLVED or REPEATING? (`/idle-solutions`, 2026-11-07 — REPLACED 2026-11-13)
 
-The operator's first question of the tab is «did the problem come back after the
-solution», minutes second. `GET /api/idle-solutions/analytics` therefore judges by
-**occurrences** — a working day on which the cause shows up at all (a
-`by_category` minute > 0) — never by minutes; the old minutes-per-day
-before/after, the weekly trend card, the «repeating reasons» and the «effect»
-tables are gone. Per cause the NEWEST solution of each scope (a brigadir's own,
-else the category-wide one) is judged by `judge()` in `routers/idle_solutions.py`:
-`solved` (quiet for QUIET_X=3 × the cause's own usual gap before, 7–28 working
-days), `repeating` (came back; `relapse` = after a quiet as long as `solved`
-needed), `reduced` (occurrences per working day at least REDUCED_DROP=50% down),
-`early` (not enough quiet yet, or under EARLY_DAYS=3 calendar days), `new`,
-`nodata` (under 5 working days before), and `unanswered` for a cause with no
-solution (or a brigadir with the same waiting on ≥ REPEAT_DAYS=3 days and none of
-their own). **Quiet is counted in the scope's WORKING days** (days it has a row in
-`_downtime`), so a weekend is not a cure. The page leads with the verdict (list
-sorted repeating first); a row opens to the solution, before/after/quiet/last-seen,
-the day strip and the brigadirs it came back with. A solution's comment date stands
-in for the date it took effect — there is no «implemented on» field yet. The invented demo causes and the DEMO banner used to preview this were erased on 2026-11-09.
+**Gone.** This design judged each cause by OCCURRENCES against its newest
+solution — `judge()`, the verdicts solved / repeating / relapse / reduced / early /
+new / nodata / unanswered / once, the 28-day widening, a weekly bar strip per
+cause — and its reader could not follow it (the operator, 2026-11-13: «even i
+kinda messing up with this analysises»). It also stopped meaning anything once
+everybody answers every stop: «the newest solution of the scope» is then always
+days old, so every cause read «early». What replaced it is the next section;
+nothing of `judge()` is left in `routers/idle_solutions.py`.
+
+## «Kutish yechimlari» — everybody writes their own solution, and Tahlil in five plain questions (`/idle-solutions`, 2026-11-13)
+
+The operator: «in this page every should write own solutions for the downtime
+comments, like what they did … make the analysis part more advanced but clear to
+the regular people»; the analysis itself was left to the builder.
+
+**Writing.** Everybody who READS the page writes their OWN solution to a filed
+stop they can see — admin, «Kutish mas'uli», shift-manager, top-manager,
+brigadir (`READER_ROLES`). `POST` / `PUT` sit behind the page's own gate
+(`_reader`), no longer `require_page("downtime")`, which a brigadir and a
+top-manager do not hold.
+
+- **`_stop_in_reach` is the write rule, and it asks the page's own reader**: the
+  stop must be one `_cell_detail` lists for the unit (approved, the stopped half,
+  the unit it stood in that day), inside the viewer's reach — a brigadir's own
+  unit, an owner's own causes, `scoped_manager_ids` for the rest. The stop names
+  its cause and its unit; the body's are checked against it (400
+  `category_mismatch`), never trusted. A stop off the page is 404
+  `stop_not_found`, one out of reach 403.
+- A cause- or brigadir-wide row (no stop) stays the cause owner's and an admin's
+  (`_may_write`); the page still has no form for one.
+- **A solution is its AUTHOR's** (`author_key`, the profile): only they and an
+  admin change its text or status — `PUT` answers 403 `not_author` to anybody
+  else, the cause's owner included. The server says whose each row is (`mine`,
+  `can_edit`, `author_role`); the page prints the author's name and role and never
+  derives ownership. The row's ⋮ (`ActionMenu`) edits the text.
+- **`expects_me` — the brigadir and the cause's owner**: the two roles whose own
+  answer every stop on their page waits for (`EXPECTED_ROLES`). For them the form
+  «Siz nima qildingiz?» stands open on each stop they have not answered, the
+  counters read «Siz a/b tasiga yozdingiz» (`mine_n`), the KPI «Sizdan yechim
+  kutilmoqda» takes the place of «Mas'ulsiz sabablar», and the list toggle offers
+  «Men yozmaganlar». Everybody else opens the form with «+ Yechim yozish» and
+  filters by «Yechimsizlar». A stop answered inside that filter stays where it is
+  until the list is asked for again — saving never pulls the row out from under
+  the reader.
+- **The form leads with «Bajarildi»** — the question is what was DONE; «Bajarilmoqda»
+  and «Rejada» are one tap away. `idle_category_solutions.done_at`
+  (`startup.add_idle_solution_done_at`) is WHEN a row became done: set on a done
+  create and when the status turns done, cleared when it is reopened; a row done
+  before the column took its last edit.
+- A category's `can_write` keeps its old meaning (owner / admin) for a tab from
+  before the change; the payload's top-level `can_write` is the new rule.
+- The solutions query reads only the rows answering the listed stops, plus the
+  older stop-less ones — ids as ONE array parameter (`leader_bot._in_ids`); with
+  everybody writing the table grows by the stop.
+- Unchanged: who READS the page (a leader does not; a brigadir has no Tahlil
+  tab), Cat H off the page, every minute being /downtime's.
+
+**Tahlil** — `GET /api/idle-solutions/analytics` rewritten,
+`components/idle/SolutionAnalytics.jsx`. Every card is a plain QUESTION, answered
+first in one sentence and only then drawn:
+
+0. «Qisqacha» — four sentences: the trend, the biggest cause, the stops nobody
+   answered, the problems that came back.
+1. «Kutish kamayyaptimi?» — the period's minutes against the SAME number of days
+   right before it (under ±5% reads «unchanged»), and the day strip: weeks past
+   92 days (`trendGrain`), never fewer than 7 days — earlier days are drawn faded.
+2. «Kutish qayerdan kelyapti?» — by cause, brigadir or cell, each with its change
+   against the period before; six rows, the rest behind «yana N ta».
+3. «Qachon ko'p to'xtalyapti?» — the hours of the day (`stop_hours`; the busiest
+   two-hour window is named, `peak_window`) and the weekdays, from 14 days on.
+4. «To'xtashlarga yechim yozilyaptimi?» — every stop stands in ONE of five states
+   (`outcome()`): no solution · a plan not done yet · done and watched · it worked
+   · the problem came back; how soon the first answer comes; and who wrote their
+   OWN answer (each brigadir, each owner).
+5. «Yechimlar ish beryaptimi?» — and «Takrorlanayotgan muammolar», each with its
+   last comment, its last solution and a button that opens the cause on
+   «Muammolar».
+
+- **«The same problem» is ONE cell waiting on ONE cause again** — one definition
+  for the whole tab. `HOLD_DAYS` = 14: from the day a stop's first solution was
+  marked done (never before the stop itself), the same (cell, cause) filed again
+  within 14 days is «Muammo qaytdi»; 14 days without it is «Ish berdi»; less is
+  «kuzatuvda». A repeat on the very day it was done is not held against it — the
+  day says nothing about which came first. `REPEAT_DAYS` = 3: a (cell, cause) on
+  three days of the period, or back after a solution, is listed. Judged as of
+  today, reading stops up to `AFTER_DAYS` = 60 past the period. Choices, one
+  constant each.
+- **Counts, never a «worked %».** A solution is known to have FAILED within days
+  and known to have WORKED only after the whole watch, so a rate over a recent
+  period always leans to failure; a 14-day period can show «Ish berdi» for
+  nothing yet, and the card says so and suggests a longer one.
+- **Two kinds of minutes never share a card.** A cause's and a brigadir's are the
+  page's waiting minutes (`_downtime`'s, as on «Muammolar»); a cell's, an hour's
+  and a weekday's are the filed stops' OWN lengths (`stop_minutes`, worded
+  «to'xtab turdi»).
+- The period's stops are exactly the «Muammolar» tab's (one inclusion rule), so
+  the two tabs count alike.
+- `_cell_detail(with_hc=False)` skips the headcount read for this page — it shows
+  no «Odam soni»; the events are the very same rows.
+- Tests: `backend/tests/test_idle_solutions.py` (who answers which stop, a
+  solution being its author's, `done_at`, the five states, the hours).
+- Not built: a notice to the brigadir / owner when a stop waits for them, a
+  deadline on a «Rejada» row, Tahlil for a brigadir's own unit.
+
