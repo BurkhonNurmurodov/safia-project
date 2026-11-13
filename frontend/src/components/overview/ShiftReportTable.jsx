@@ -14,8 +14,8 @@
 //   exactly it. A payload from before the change still names its month
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
-//   printed as «solved/total · %» («0/50 · 0%») — and the cell's hover box
-//   splits the count into «soch bilan» and «sochsiz» (the operator's call,
+//   printed as a percentage alone — and the cell's hover box states the
+//   count, solved/total, for «soch bilan» and for «sochsiz» (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -32,8 +32,7 @@
 //   are FLAT band colours, never a gradient — these are verdicts, not
 //   intensities — and the figures sit centred in the fill, because the colour
 //   does the comparing now and centred digits cost nothing. Every row is ONE
-//   line high and carries ONE figure per cell (the quality cell prints its
-//   count on the same line, before its %), so nothing beside the value can
+//   line high and carries ONE figure per cell, so nothing beside the value can
 //   double the board's height or compete with it. The cell is the загрузка
 //   heatmap's cell — same saturated hues, same auto-contrast ink, same square
 //   full-bleed rectangle ruled by a 1px line — because one platform should not
@@ -586,21 +585,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
-              {/* «solved/total · %» — the count IS printed in the cell (the
-                  operator, 2026-11-13: «it should be like that 0/50, did he
-                  solve these problems or not»; it had lived in the tooltip
-                  alone since 2026-09-16). Hair included, all time. One line:
-                  a phone drops the dot, and below 360px the % too — the
-                  cell's colour still states the band. The hover box splits
-                  the count into with hair and without. */}
-              {figCell(r.quality_hair, resolvedTone, (c) => (
-                <span className="whitespace-nowrap max-sm:text-[11px]">
-                  {c.done}/{c.actionable}
-                  <span className="max-[359px]:hidden">
-                    <span className="max-sm:hidden"> ·</span> {pctText(c.value)}
-                  </span>
-                </span>
-              ), qualityTitle(r), qualityTarget(r))}
+              {/* The percentage is the figure: the overall rate, hair
+                  included, all time. The count stays in the hover box, split
+                  into with hair and without («0/50 solved · 0%» per line) — it
+                  was printed in the cell for a few minutes on 2026-11-13 and
+                  the operator took it back out, as on 2026-09-16. */}
+              {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
+                qualityTitle(r), qualityTarget(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );

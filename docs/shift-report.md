@@ -485,3 +485,9 @@ window left a brigadir judged on a record or two («0/1»).
   wording, per reading: «soch bilan: 0/50 bartaraf etilgan · 0%» over the
   «sochsiz» line (key `overview.sr.qSolved`; `qLeft` and the «left» wording
   are gone).
+- **…and the count left the cell again the same morning** (the operator:
+  «bring back initial format» → «Only % in the cell»): the cell prints the
+  percentage alone, as it always had. What stays from that round is the hover
+  box's wording — «soch bilan: 0/50 bartaraf etilgan · 0%» over the «sochsiz»
+  line. So the standing state is: % in the cell (hair included, all time),
+  both counts on hover.
