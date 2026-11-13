@@ -338,6 +338,27 @@ are a real identical pair inside each load, and both of each pair stay).
   upstream (replace, not append). The operator approved this one deletion, not
   a standing one; cleaning again is deleting that flag's row, or a new ruling.
 
+## Two dismissed leaders lose their Telegram link (`unbind_ended_leaders_nov13`, 2026-11-13)
+
+From v4.502.0 a Verifix dismissal takes a leader's accounts and browser login
+off the profile («A leader who left is ENDED by Verifix» in
+`docs/cells-and-org.md`). The five leaders the sync dismissed before that kept
+theirs; three still held a Telegram registration. The operator («Yes, remove
+both»): Usmonjonov G'iyosjon (leader:269, dismissed 23 Aug, last filed 20 Aug)
+and Nabiyeva Gulnora (leader:319, dismissed 20 Oct, last filed 8 Oct).
+
+- TEMPORARY `startup.unbind_ended_leaders_nov13` (`later`, both entrypoints,
+  flag `oneshot:unbind_ended_leaders_nov13`): every registration of the two
+  profiles removed as a delete removes it (`_remove_role_row` — an account
+  with no other role goes with it), only while the profile is still ended; a
+  Jurnal row `identity.profile_unassigned` per profile, the admins DMed. The
+  browser login is NOT touched (not asked; the report door cannot see it).
+  Delete the function, its flag constant and both calls once the flag is set.
+- **Left as it is: Akramov Dilshodbek** (leader:292) — Verifix dismissed him
+  on 1 Oct, yet his profile filed until 9 Nov and holds two registrations. Most
+  likely rehired under a NEW Verifix record, which the tie (to the old one)
+  cannot follow; the operator is asking HR.
+
 ## The guest Fozilova Dilafruz sees two pages (`startup.grant_dilafruz_pages`, 2026-11-13)
 
 The operator: the new guest Fozilova Dilafruz, head of AXO, is to see

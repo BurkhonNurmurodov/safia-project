@@ -2131,6 +2131,55 @@ def add_leader_ended_on() -> None:
                     "leader ended_on column")
 
 
+UNBIND_ENDED_FLAG = "oneshot:unbind_ended_leaders_nov13"
+# The operator, 2026-11-13 («Yes, remove both»): the two leaders Verifix
+# dismissed before a dismissal took access away, who still held a Telegram link.
+_UNBIND_ENDED = {269: "Usmonjonov G'iyosjon", 319: "Nabiyeva Gulnora"}
+
+
+def unbind_ended_leaders_nov13() -> None:
+    """TEMPORARY one-shot: take the Telegram registrations off leader profiles
+    269 and 319, as a dismissal does from v4.502.0. Only while the profile is
+    still ENDED (a person who came back keeps theirs). Once, under its flag;
+    delete it and both calls once the flag is set on prod."""
+    import html
+
+    from app.routers.profiles import _bound_role_rows, _remove_role_row
+    from app.services import action_log
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=UNBIND_ENDED_FLAG).first():
+            return
+        lines = []
+        for pid, label in _UNBIND_ENDED.items():
+            p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
+            if p is None or p.ended_on is None:
+                why = "topilmadi" if p is None else "qaytgan"
+                lines.append(f"{label} (leader:{pid}) — {why}, tegilmadi")
+                continue
+            rows = _bound_role_rows(db, "leader", pid)
+            for r in rows:
+                _remove_role_row(db, r)
+            lines.append(f"{label} (leader:{pid}) — {len(rows)} ta Telegram bog'lamasi olindi")
+            action_log.record(db, category="identity", action="identity.profile_unassigned",
+                              actor_name="system (one-shot 2026-11-13)", actor_role="system",
+                              target_kind="profile", target_id=f"leader:{pid}", target_name=p.name,
+                              unit_id=p.manager_id, details=[("accounts", len(rows))],
+                              reason="Verifix: dismissed")
+        db.add(AppSetting(key=UNBIND_ENDED_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print("[startup] unbind ended leaders: " + "; ".join(lines))
+        _dm_admins_plain("✅ <b>Ishdan chiqqan liderlar — Telegram uzildi</b>\n"
+                         + "\n".join(esc(l) for l in lines))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] unbind ended leaders failed: {exc}")
+    finally:
+        db.close()
+
+
 def end_dismissed_leaders() -> None:
     """The leaders the Verifix sync dismissed BEFORE ``ended_on`` existed get
     it: the sync's own cutoff date. Idempotent — a leader returned since has no

@@ -284,6 +284,9 @@ async def lifespan(app: FastAPI):
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     later(date_window_edits_nov13)
+    # Two dismissed leaders' Telegram links, removed (13 Nov, once).
+    from app.startup import unbind_ended_leaders_nov13
+    later(unbind_ended_leaders_nov13)
     # The 12 cells the sync hid in October count for October (once).
     from app.startup import backdate_dispatch_cells_october
     later(backdate_dispatch_cells_october)
