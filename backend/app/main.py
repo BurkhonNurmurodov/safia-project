@@ -271,6 +271,9 @@ async def lifespan(app: FastAPI):
     # public.audit's older full-copy loads go, once (docs/data-fixes.md).
     from app.startup import clean_audit_reloads
     later(clean_audit_reloads)
+    # The guest Fozilova Dilafruz gets «Smena kunligi» + «Zagruzka fayli» (once).
+    from app.startup import grant_dilafruz_pages
+    later(grant_dilafruz_pages)
     # The operator's list of cells NOT counted in the загрузка (once).
     later(untick_cells_in_load)
     run(add_attendance_upload_source)

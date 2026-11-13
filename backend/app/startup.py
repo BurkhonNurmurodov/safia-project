@@ -10155,3 +10155,65 @@ def clean_audit_reloads() -> None:
         print(f"[startup] audit reloads clean failed: {exc}")
     finally:
         db.close()
+
+
+# The operator, 2026-11-13: the new guest Fozilova Dilafruz (head of AXO) sees
+# «Smena kunligi» and «Zagruzka fayli» — view only, nothing else. A guest has
+# no unit, so «Zagruzka fayli» is granted at «all» (at «own» it would be empty).
+# Granted on the PROFILE, so it holds from the moment her request is approved.
+# Runs once (flag); finds her by folded name among guest profiles and does
+# nothing unless exactly ONE matches. The admins are told either way.
+DILAFRUZ_GRANT_FLAG = "oneshot:guest_dilafruz_pages_nov13"
+_DILAFRUZ_TOKENS = {"fozilova", "dilafruz"}
+_DILAFRUZ_GRANTS = {"page.view.shift-daily": "all", "page.view.production": "all"}
+
+
+def grant_dilafruz_pages() -> None:
+    import html
+
+    from app import capabilities
+    from app.services.people import fold_name
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DILAFRUZ_GRANT_FLAG).first():
+            return
+        found = []
+        for p in db.query(RoleProfile).filter(RoleProfile.role == "guest").all():
+            names = (p.name, p.name_uz_cyrl, p.name_ru, p.name_en)
+            if any(_DILAFRUZ_TOKENS <= set(fold_name(n).split()) for n in names if n):
+                found.append(p)
+        if len(found) != 1:
+            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Dilafruz grant: {len(found)} guest profiles match — nothing granted")
+            _dm_admins_plain(
+                "⚠️ <b>Fozilova Dilafruz — sahifalar berilmadi</b>\n"
+                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda bering: «Smena kunligi» va "
+                "«Zagruzka fayli» (all).")
+            return
+        prof = found[0]
+        key = f"guest:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key], grants=dict(_DILAFRUZ_GRANTS),
+            actor_name="system (one-shot 2026-11-13)")
+        db.add(AppSetting(key=DILAFRUZ_GRANT_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        reqs = db.query(TelegramUserRole).filter(
+            TelegramUserRole.role == "guest", TelegramUserRole.role_id == prof.id).all()
+        status = ", ".join(sorted({r.status or "?" for r in reqs})) or "ro'yxatdan o'tmagan"
+        print(f"[startup] Dilafruz grant: {key} → {sorted(_DILAFRUZ_GRANTS)}; request: {status}")
+        _dm_admins_plain(
+            "✅ <b>Fozilova Dilafruz — sahifalar berildi</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            "«Smena kunligi» · «Zagruzka fayli» (all) — faqat ko'rish.\n"
+            f"Mehmon so'rovi holati: {esc(status)}")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Dilafruz grant failed: {exc}")
+        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — sahifalar berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()

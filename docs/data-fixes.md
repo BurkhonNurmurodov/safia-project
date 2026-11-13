@@ -337,3 +337,17 @@ are a real identical pair inside each load, and both of each pair stay).
 - **The copies come back at the writer's next load** — the fix that lasts is
   upstream (replace, not append). The operator approved this one deletion, not
   a standing one; cleaning again is deleting that flag's row, or a new ruling.
+
+## The guest Fozilova Dilafruz sees two pages (`startup.grant_dilafruz_pages`, 2026-11-13)
+
+The operator: the new guest Fozilova Dilafruz, head of AXO, is to see
+«Smena kunligi» and «Zagruzka fayli» — a guest, view only, «if we change
+something I'll say it later». A one-shot (flag
+`oneshot:guest_dilafruz_pages_nov13`, `later`) puts `page.view.shift-daily`
+and `page.view.production` on her GUEST PROFILE (`apply_profile_perms`, so the
+Permissions tab shows them and the capability audit records them), both at
+«all»: a guest hangs on no unit, so «own» would show her an empty «Zagruzka
+fayli». No action grant, no SAP-codes grant, no role change. She is found by
+folded name among `role_profiles` guests; anything but exactly ONE match
+grants nothing. The admins get a DM either way, naming the profile and her
+guest request's status.
