@@ -99,6 +99,23 @@ def report_days(now: datetime, shift: Optional[int],
 QUALITY_FROM = "2015-01-01"
 
 
+# «Problems since 01.10 — solved 31/55», the hover box of the quality cell (the
+# operator, 2026-11-13: «can you show the solved ones from october» → «Written
+# since 1 October»): the records FILED on or after this day, hair included —
+# how many there are and how many are solved. By the filing date because that
+# is the one date the register has; a FIXED day, his, not a rolling window —
+# move it here when he names another. It replaced «solved since the month's
+# start» the same day (`quality_baseline`, which still keeps its lists).
+QUALITY_SINCE = "2026-10-01"
+
+
+def since_cell(acc: Optional[dict]) -> dict:
+    """{"done", "total"} of the records filed since `QUALITY_SINCE` — a
+    `fold_quality` answer in the box's own words; a unit with none reads 0/0."""
+    acc = acc or {}
+    return {"done": int(acc.get("done") or 0), "total": int(acc.get("actionable") or 0)}
+
+
 def quality_window(day: date) -> tuple[str, str, str]:
     """("", first, after_last) — ALL TIME up to `day`, as the ISO strings the
     quality register is cut by (`first <= date < after_last`).
@@ -319,7 +336,7 @@ def att_cell(acc: Optional[dict], has_cells: bool) -> dict:
 
 def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         att: Optional[dict] = None, quality_hair: Optional[dict] = None,
-        quality_open: Optional[dict] = None) -> dict:
+        quality_since: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -330,8 +347,8 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         "quality": quality,
         # the same rate WITH the hair records (`SKIP_CATEGORY` says why both)
         "quality_hair": quality_hair or _blank("no_records", done=0, actionable=0),
-        # «0/24»: of the records open when the month's count began, how many
-        # are solved since (`quality_baseline`). None: no starting list yet.
-        "quality_open": quality_open,
+        # «31/55»: of the records filed since `QUALITY_SINCE`, how many are
+        # solved — the cell's hover box.
+        "quality_since": quality_since or since_cell(None),
         "concerns": {"open": int(open_concerns or 0)},
     }

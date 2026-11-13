@@ -198,9 +198,8 @@ def _empty(now, note, month: str, picked=None) -> dict:
         # the span the quality column WAS counted over, both days inclusive
         "quality_from": shift_report.QUALITY_FROM,
         "quality_to": now.date().isoformat(),
-        # the day this month's «solved since» count began (`quality_baseline`);
-        # None until `_compute` has it, or when it could not be read
-        "quality_open_since": None,
+        # the filing day the hover box's «solved x/y» counts from
+        "quality_since_from": shift_report.QUALITY_SINCE,
         "shifts": [],
     }
 
@@ -271,17 +270,19 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     quality = shift_report.fold_quality(q_kept)
     quality_hair = shift_report.fold_quality(q_every)
 
-    # ── «0/24» in the quality cell's hover box — of the records that were open
-    # when this month's count began, how many are solved since. The starting
-    # list is `quality_baseline`'s, taken by the first board of the month, and
-    # it reads in a session of its own: a failure there costs the box its
-    # figure (it falls back to «left: hair / without hair»), never the board.
+    # ── «31/55» in the quality cell's hover box — of the records FILED since
+    # `shift_report.QUALITY_SINCE` (1 October), hair included, how many are
+    # solved. `q_every` already carries each group's date, so it is a second
+    # fold of the same read.
+    q_since = shift_report.fold_quality(
+        r for r in q_every if (r[2] or "") >= shift_report.QUALITY_SINCE)
+    # The month's starting list of open records is still TAKEN, though the box
+    # no longer prints its count (2026-11-13): a list not taken on its day can
+    # never be taken afterwards. Its failure costs nothing here.
     try:
-        q_since, q_open = quality_baseline.board(now.date())
+        quality_baseline.keep(now.date())
     except Exception:  # noqa: BLE001
-        log.exception("shift-report: quality baseline failed")
-        q_since, q_open = None, {}
-    out["quality_open_since"] = q_since
+        log.exception("shift-report: quality baseline not taken")
 
     # ── Ochiq xavotirlar — open, and sitting at the brigadir's own level.
     concerns = dict(
@@ -372,8 +373,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     shift_report.att_cell(att.get(m.id),
                                           with_cells is None or m.id in with_cells),
                     shift_report.quality_cell(quality_hair.get(m.id)),
-                    (q_open.get(m.id) or {"done": 0, "total": 0})
-                    if q_since else None,
+                    shift_report.since_cell(q_since.get(m.id)),
                 )
                 for m in groups[s]
             ],

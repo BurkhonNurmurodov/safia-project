@@ -31,6 +31,12 @@ list of records that were open when the month's count began.
   record. Each record answers to the unit `quality_attribution` names for it
   TODAY, the rule every quality figure on the platform uses.
 
+**Not on screen since the afternoon of 2026-11-13**: the box prints «solved of
+the problems filed since 1 October» instead (`shift_report.QUALITY_SINCE`).
+The lists are still TAKEN every month (`keep`, called by the board) — the one
+part that cannot be made up afterwards — and `board` still answers the count
+for whoever asks for it back.
+
 The pure half (`fingerprint` · `pick_open` · `match` · `fold`) imports nothing
 and is what `tests/test_quality_baseline.py` covers; the database half opens
 its OWN session (`board`), so a failure here can never leave the board's
@@ -193,6 +199,17 @@ def ensure(s, today: date) -> Optional[str]:
         s.commit()
         _taken[month] = on
         return on
+
+
+def keep(today: date) -> None:
+    """Take this month's starting list if nobody has — and nothing else. After
+    the first call of a month it touches no database at all."""
+    if month_of(today) in _taken:
+        return
+    from app.database import SessionLocal
+
+    with SessionLocal() as s:
+        ensure(s, today)
 
 
 def board(today: date) -> tuple[Optional[str], dict[int, dict]]:

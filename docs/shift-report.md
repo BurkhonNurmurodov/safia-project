@@ -569,3 +569,30 @@ offered a count that starts today: «Yes, start today».
   the matching, the fold). The database half was run once against SQLite with
   stub models before shipping; it has no test in the suite.
 
+## The quality hover box counts the problems filed since 1 October (2026-11-13)
+
+The operator, an hour after «0/24» shipped: «can you show the solved ones from
+october» → told the register knows the day a problem was WRITTEN, not the day
+it was solved, and asked what to count: «Written since 1 October».
+
+- **THE STANDING hover box**: caption «01.10 dan beri muammolar», one line
+  «Bartaraf etilgan  31/55» — of the brigadir's records FILED on or after
+  `shift_report.QUALITY_SINCE` ("2026-10-01"), hair included, `ACTIONABLE`
+  statuses, how many are `done`. A second fold of the read the column already
+  makes (`unit_rows_both`'s rows carry their date), so it costs no query.
+- **A fixed day, not a rolling window** — it stays 1 October in December unless
+  somebody rules otherwise; the constant is the one place to move it. New
+  problems join the total every day, so unlike the month-start count both
+  numbers grow.
+- **Payload**: `quality_since_from` and per row `quality_since: {done, total}`.
+  `quality_open_since` / `quality_open` (the month-start count) are GONE from
+  the payload; a tab on the 4.494.0 bundle falls back to «Qolgan: Soch /
+  Sochsiz» until it reloads, and a bundle without `quality_since_from` on the
+  payload does the same.
+- **The month-start lists are still taken** (`quality_baseline.keep`, called by
+  every board build; a no-op after the first of a month): a list not taken on
+  its day cannot be made afterwards, and the operator has changed this box
+  eight times in a day. `quality_baseline.board` still answers «solved since
+  the month's start» if it is asked for back; nothing on screen reads it. The
+  section above describes that count, not what the box shows.
+
