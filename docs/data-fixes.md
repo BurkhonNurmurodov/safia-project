@@ -382,3 +382,34 @@ longer matches the logged one, or that already carries a dated change, is
 skipped and named. The flag row `oneshot:date_window_edits_nov13` holds
 `{dated, skipped, moved}`; the admins are DMed. The function is a one-shot and
 can go once the flag is set; its rows are history and stay.
+
+## The 12 cells the Verifix sync hid count for October (`backdate_dispatch_cells_october`, 2026-11-13)
+
+1711, 1811, 4712–4714 and 4721–4727 stood in Verifix all October, but our
+cell sync took each one's CLOSED coded twin and never created the cell
+(fixed in v4.497.0, docs/verifix.md «A unit Verifix re-made is the OPEN
+record»). Created on 13 Nov, they stood on October's map with no «Egasi»
+and were missing from October's frozen turnover list, so October scored them
+for nobody while HR's October file credited their leaders. The operator: «Of
+course, go ahead».
+
+- **Checked first**: our frozen 31 Oct staff list (`turnover_month_people`)
+  seats the same «Лидер» in each unit as Verifix does today — 1811
+  Egamshukurov, 4713 Masharipova, 4714 Nazarov, 4721 Xushvaxtiyeva, 4725
+  Xaydarov, 4727 Qaxorov; 4712 has two (Baxtiyorov, Saidov) and stays without
+  an owner; 1711, 4722, 4723, 4724, 4726 have none.
+- **What it does, once** (TEMPORARY `startup.backdate_dispatch_cells_october`,
+  flag `oneshot:dispatch_cells_october_nov13`, `later` in the lifespan, both
+  entrypoints): for each of those six cells whose current «Egasi» is still the
+  31 Oct person, an `owner_id` link event effective 1 Oct (src `verifix`, so
+  the sync keeps deciding it from now on; `vfx.backfill`). Then the 12 cells
+  are added to October's frozen turnover `cell_map` (only codes it lacked),
+  and every kept answer is dropped. Nothing after 1 Oct is changed; the flag
+  stores which owners were dated, which were skipped and which cells joined.
+- A cell counts as existing on every past day unless it was archived, so
+  nothing had to be dated for the cells themselves.
+- **Consequences**: October's «Liderlar KPI» credits those six leaders; their
+  turnover, foreign objects, compliance and audit count for them; Quality
+  records of October naming these cells now attribute to them as their
+  «Egasi» of the day. Delete the step, its flag constant and both calls once
+  the flag is set.

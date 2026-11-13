@@ -43,9 +43,10 @@ tasks 40/41 name it.
   counts skip it. 1711, 1811, 4712–4714 and 4721–4727 were not on /cells at
   all — Verifix holds each twice and the cell sync took the closed coded
   record; from v4.497.0 it takes the open one and creates them (docs/verifix.md,
-  «A unit Verifix re-made is the OPEN record»). Created in November, they
-  stand on October's map with no «Egasi» (the links start the day they are
-  made); October's frozen turnover list does not have them. `GET /api/leaders-kpi?month&factory
+  «A unit Verifix re-made is the OPEN record»). For October their six
+  single-leader owners are dated from 1 Oct and the 12 cells joined October's
+  frozen turnover list (docs/data-fixes.md, «The 12 cells the Verifix sync hid
+  count for October»). `GET /api/leaders-kpi?month&factory
   &shift&managers` (`routers/leaders_kpi.py`) is the ONE read every tab draws
   from: `rows[]` (`concerns` / `turnover` / `foreign` / `compliance` / `audit`
   each `{…figure, score, points}` or null, `total`, `pct`, `rank` — ties share

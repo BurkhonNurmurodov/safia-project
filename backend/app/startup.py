@@ -10399,3 +10399,75 @@ def date_window_edits_nov13() -> None:
         print(f"[startup] 13 Nov windows failed: {exc}")
     finally:
         db.close()
+
+
+# The operator, 2026-11-13: 1711, 1811, 4712–4714 and 4721–4727 were kept off
+# /cells by the Verifix sync until v4.497.0 (each had a CLOSED coded twin the
+# sync took instead), so October scored them for nobody. They existed all
+# October, and our frozen 31 Oct staff list seats the same «Лидер» in each as
+# Verifix does today. So October credits them: each one-leader cell's «Egasi»
+# is dated from 1 Oct (a `verifix` event, so the sync still decides it from
+# now on), and the 12 cells join October's frozen turnover map. Nothing after
+# 1 Oct is touched; an owner who is no longer the 31 Oct person is skipped.
+# Runs once (flag); before the sync has created all 12 it waits for the next
+# start. docs/data-fixes.md.
+OCT_DISPATCH_FLAG = "oneshot:dispatch_cells_october_nov13"
+_OCT_DISPATCH_CODES = ("1711", "1811", "4712", "4713", "4714", "4721",
+                       "4722", "4723", "4724", "4725", "4726", "4727")
+_OCT_DISPATCH_OWNERS = {"1811": "egamshukurov", "4713": "masharipova", "4714": "nazarov",
+                        "4721": "xushvaxtiyeva", "4725": "xaydarov", "4727": "qaxorov"}
+
+
+def backdate_dispatch_cells_october() -> None:
+    import json
+
+    from app.models import Cell, TurnoverMonth
+    from app.services import cell_links, kept_answer, turnover
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=OCT_DISPATCH_FLAG).first():
+            return
+        cells = {c.verifix_code: c for c in
+                 db.query(Cell).filter(Cell.verifix_code.in_(_OCT_DISPATCH_CODES)).all()}
+        if len(cells) != len(_OCT_DISPATCH_CODES):
+            print(f"[startup] October dispatch cells: {len(cells)}/12 on /cells yet — waiting")
+            return
+        owners, skipped = [], []
+        for code, surname in _OCT_DISPATCH_OWNERS.items():
+            c = cells[code]
+            p = db.get(RoleProfile, c.owner_id) if c.owner_id else None
+            if p is None or surname not in (p.name or "").lower():
+                skipped.append(code)
+                continue
+            if cell_links.record(db, c, "owner_id", c.owner_id, src="verifix",
+                                 by="Verifix (31.10 ro'yxati)",
+                                 vfx={"backfill": "2026-11-13", "why": "hidden by the sync until v4.497.0"},
+                                 effective_from=date(2026, 10, 1)):
+                owners.append(code)
+        # The map below reads the links through their own session: commit first.
+        db.commit()
+        cell_links.forget()
+        m = date(2026, 10, 1)
+        row = db.get(TurnoverMonth, m)
+        added = []
+        if row is not None and isinstance(row.cell_map, dict):
+            now = turnover.cell_map(db, turnover.last_day(m))
+            cmap = dict(row.cell_map)
+            for code in _OCT_DISPATCH_CODES:
+                k = turnover.code_key(code)
+                if k not in cmap and k in now:
+                    cmap[k] = now[k]
+                    added.append(code)
+            row.cell_map = cmap
+        db.add(AppSetting(key=OCT_DISPATCH_FLAG,
+                          value=json.dumps({"owners": owners, "skipped": skipped, "turnover_map": added})))
+        db.commit()
+        kept_answer.forget_all()
+        print(f"[startup] October dispatch cells: owners from 1 Oct {owners}, skipped {skipped}, "
+              f"October turnover map +{added}")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] October dispatch cells failed: {exc}")
+    finally:
+        db.close()
