@@ -145,9 +145,14 @@ def set_manager(db: Session, cell: Cell, leader_id: Optional[int], *, src: str,
     """The cell's «Boshqaruvchi», from the day it is made (with a brigadir
     change already waiting: with that move). Never moves the cell's unit
     (ruling 3)."""
-    if leader_id and not db.query(RoleProfile.id).filter(
-            RoleProfile.id == leader_id, RoleProfile.role == "leader").first():
-        raise Refused("leader_not_found", "Leader profile not found")
+    if leader_id:
+        lp = db.query(RoleProfile.id, RoleProfile.ended_on).filter(
+            RoleProfile.id == leader_id, RoleProfile.role == "leader").first()
+        if lp is None:
+            raise Refused("leader_not_found", "Leader profile not found")
+        if lp.ended_on:
+            raise Refused("leader_ended", "This leader has left — return them on their "
+                                          "profile before giving them a cell")
     return _record(db, cell, "leader_id", leader_id or None, src=src, by=by, vfx=vfx,
                    mark=mark, apply_now=apply_now)
 

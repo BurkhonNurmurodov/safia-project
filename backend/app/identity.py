@@ -277,10 +277,12 @@ def holder_names(db: Session, key: Optional[str]) -> list[str]:
 
 def list_leader_profiles(db: Session, manager_id: Optional[int] = None
                          ) -> list[RoleProfile]:
-    """Every leader PROFILE (optionally of one unit), claimed or not, ordered by
-    name. THE source for any leader picker — building one from
-    telegram_user_roles renders a 3-holder profile three times."""
-    q = db.query(RoleProfile).filter(RoleProfile.role == "leader")
+    """Every WORKING leader PROFILE (optionally of one unit), claimed or not,
+    ordered by name. THE source for any leader picker — building one from
+    telegram_user_roles renders a 3-holder profile three times. A leader who
+    left (`ended_on`) is in no picker."""
+    q = db.query(RoleProfile).filter(RoleProfile.role == "leader",
+                                     RoleProfile.ended_on.is_(None))
     if manager_id is not None:
         q = q.filter(RoleProfile.manager_id == manager_id)
     return q.order_by(RoleProfile.name).all()

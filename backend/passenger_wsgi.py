@@ -68,6 +68,7 @@ try:
         add_dispute_ruling_column,
         seed_verifix_sync,
         add_cell_one_process,
+        add_leader_ended_on,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -139,6 +140,7 @@ try:
         patch_task11_description_nov09,
         heal_switched_profile_keys,
         rekey_sheet_eras_boot,
+        end_dismissed_leaders,
         add_leader_auto_checks,
         register_leader_auto_sep20,
         register_leader_auto_t11,
@@ -229,6 +231,7 @@ try:
     add_late_window_columns()
     add_dispute_ruling_column()
     add_cell_one_process()
+    add_leader_ended_on()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()
@@ -661,6 +664,8 @@ try:
     patch_task11_description_nov09()
     heal_switched_profile_keys()
     rekey_sheet_eras_boot()
+    # Leaders the sync dismissed before `ended_on` existed (2026-11-13). Idempotent.
+    end_dismissed_leaders()
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()

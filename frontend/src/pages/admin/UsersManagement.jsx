@@ -147,7 +147,8 @@ export default function UsersManagement() {
   const units       = (profiles?.supervisors ?? []).filter((s) => !s.archived);
   const shiftSlots  = profiles?.shift_managers ?? [];
   const topManagers = profiles?.top_managers ?? [];
-  const leaderProfiles = profiles?.leaders ?? [];
+  // A leader who left (`ended_on`) is nobody's role to hand out.
+  const leaderProfiles = (profiles?.leaders ?? []).filter((p) => !p.ended_on);
   // Shift-first cascade (same as registration): profiles without a shift stay
   // hidden until an admin sets one in the Profiles tab.
   const shiftedUnits = form.shift ? units.filter((u) => u.shift === Number(form.shift)) : [];

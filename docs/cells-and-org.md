@@ -164,6 +164,49 @@ automatically».
 - Not changed: a past digest already sent is not re-sent; the census behind
   `cutUnits` still reads the current unit; a move before 12 Oct cannot be read.
 
+## A leader who left is ENDED, not deleted (`role_profiles.ended_on`, 2026-11-13)
+
+The operator (2026-11-13): history was destroyed whenever a leader resigned,
+moved or switched role, and resigned leaders had to be removed by hand. Step 1
+of three (the other two — a unit id on the workload tables, a dated brigadir
+per unit — are not built).
+
+- **`role_profiles.ended_on`** (DATE, NULL = working) is the first day the
+  person no longer works here. An ended profile keeps every filed day, photo,
+  verdict and concern; nothing is deleted.
+- **«Ishdan chiqdi»** — the first row of the profile page's danger card
+  (`Profile.jsx` `DangerCard`), a date not in the future. `POST
+  /api/profiles/admin/leader/{id}/end {date}` (`CAP_PROFILES_MANAGE`):
+  the cells are released (`cell_register.release_profile`), the results stop
+  counting from that day (`leader_cutoffs.set_cutoff`, reason «Ishdan
+  chiqdi» — an EARLIER cutoff a person set stands), the accounts and the
+  browser login come off the profile as a delete takes them, `ended_on` is
+  set. **«Qaytarish»** (`…/return`) clears the date and lifts the cutoff dated
+  the same day; cells and accounts are not handed back. «O'chirish» stays
+  under it, with its 409 count of what it destroys. Jurnal:
+  `identity.profile_ended` / `identity.profile_returned`.
+- **A Verifix dismissal sets the same date** (`verifix_sync` act `dismissed`:
+  `ended_on` = the cutoff date, max(dismissal, today)) and `returned` clears
+  it. It does NOT take the accounts off — the 12 Oct ruling (results, not
+  access) stands until the operator says otherwise. A leader a PERSON ended
+  while Verifix still lists them working is held (`ctx.held`): no seat, no
+  pick, no automatic return.
+- **Leaders the sync dismissed before the column existed** get the date at
+  boot (`startup.end_dismissed_leaders`, `later`, both entrypoints,
+  idempotent: the sync's own cutoff is the proof, and a return lifts it).
+- **Off today's lists**: `identity.list_leader_profiles` (the task assignee
+  picker), the registration options (nobody claims the profile of a leader
+  who left), the «add role» picker on the Users tab, the org chart, and
+  `cell_register.set_manager` refuses them (`leader_ended`). The /leaders
+  rankings need nothing: a cut leader with no day left in the window is
+  already dropped (`scoreSlots`), and past windows keep them.
+- **The profiles register** hides them until «Ishdan chiqqanlar → Ko'rsatish»;
+  shown, the name carries a grey chip «Ishdan chiqqan · dd.mm.yyyy».
+  `/api/profiles/admin/list` serves `ended_on` on every leader.
+- **Not covered**: the header search, the /cells leader filter and the
+  «Liderlar KPI» board still list an ended leader; a release is dated the day
+  it is pressed, not the resignation date; nobody is notified.
+
 ## A leader on Verifix, or in place of one (`leader_kind`)
 
 From **2026-10-04** (the operator's directive) every leader profile says

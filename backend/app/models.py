@@ -475,6 +475,10 @@ class RoleProfile(Base):
     # day the person CLAIMED the profile in the bot (a brigadir's pick: the pick
     # day). NULL = owes as it always did (a profile claimed before 2026-10-12).
     owes_from       = Column(Date, nullable=True)
+    # leaders: the first day the person no longer works here («Ishdan chiqdi»,
+    # by an admin or a Verifix dismissal). NULL = working. An ended profile
+    # keeps every past day and leaves today's pickers and lists.
+    ended_on        = Column(Date, nullable=True)
     # Earlier spellings of the name (a Verifix rename accepted on the sync page
     # keeps the old one here), so days filed under it stay the same person.
     name_aliases    = Column(JSONB, nullable=True)

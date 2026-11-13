@@ -2121,6 +2121,41 @@ def add_cell_one_process() -> None:
         db.close()
 
 
+def add_leader_ended_on() -> None:
+    """2026-11-13: a leader who left is ENDED, not deleted —
+    ``role_profiles.ended_on``, the first day they no longer work here. NULL =
+    working, which every existing row is. Pure DDL, idempotent, no flag. Runs
+    FIRST at boot and is FATAL on failure like the Verifix columns: every ORM
+    read of a profile selects it, so a copy without it has no sign-in."""
+    _ensure_columns((("role_profiles", (("ended_on", "DATE"),), None),),
+                    "leader ended_on column")
+
+
+def end_dismissed_leaders() -> None:
+    """The leaders the Verifix sync dismissed BEFORE ``ended_on`` existed get
+    it: the sync's own cutoff date. Idempotent — a leader returned since has no
+    sync cutoff left, so nothing ends them again. Safe to delete once it has
+    run on prod (the sync sets the date itself from now on)."""
+    from app.services.verifix_org import ARCHIVED_BY
+    db = SessionLocal()
+    try:
+        n = db.execute(text(
+            "UPDATE role_profiles p SET ended_on = CAST(c.from_date AS date) "
+            "FROM leader_cutoffs c "
+            "WHERE p.role = 'leader' AND p.ended_on IS NULL "
+            "AND p.vfx_meta->>'cut_from' IS NOT NULL "
+            "AND c.leader_profile_id = p.id AND c.set_by = :by"),
+            {"by": ARCHIVED_BY}).rowcount
+        db.commit()
+        if n:
+            print(f"[startup] {n} dismissed leader(s) marked ended")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] end_dismissed_leaders skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_manager_kind_columns() -> None:
     """2026-10-04: a supervisor unit says whether its brigadir IS one on
     Verifix (``managers.supervisor_kind`` + ``supervisor_kind_meta`` —

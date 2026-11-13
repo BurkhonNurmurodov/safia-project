@@ -173,7 +173,9 @@ def build(db: Session) -> dict:
 
     units = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all()
     unit_ids = {m.id for m in units}
-    profiles = db.query(RoleProfile).order_by(RoleProfile.name).all()
+    # A leader who left (`ended_on`) is not on the chart: it shows today.
+    profiles = (db.query(RoleProfile).filter(RoleProfile.ended_on.is_(None))
+                .order_by(RoleProfile.name).all())
     leaders = [p for p in profiles if p.role == "leader"]
     holders = _holders(db, leaders)
     users = {u.telegram_id: u for u in db.query(TelegramUser).all()}

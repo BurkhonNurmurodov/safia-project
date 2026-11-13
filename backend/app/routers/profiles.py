@@ -676,6 +676,8 @@ def admin_list_profiles(db: Session = Depends(get_db),
             # answer came from (services/leader_kind.py).
             item["leader_kind"] = p.leader_kind
             item["leader_kind_info"] = leader_kind.out(p)
+            # «Ishdan chiqdi»: the first day they no longer work here, else null.
+            item["ended_on"] = p.ended_on.isoformat() if p.ended_on else None
             # The shift this leader's checklist runs on, when not the unit's
             # (services/leader_shift) — the switch under «Chek-list smenasi».
             item["checklist_shift"] = leader_shift.info(p, mgr_shifts.get(p.manager_id))
@@ -2675,6 +2677,91 @@ def admin_delete_profile(ptype: str, pid: int, confirm: bool = False,
     return {"ok": True}
 
 
+# ── Admin: a leader who left is ENDED, not deleted ────────────────────────────
+
+class EndLeaderPayload(BaseModel):
+    date: str  # "YYYY-MM-DD" — the first day the person no longer works here
+
+
+@router.post("/admin/leader/{pid}/end")
+def admin_end_leader(pid: int, payload: EndLeaderPayload, db: Session = Depends(get_db),
+                     caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """«Ishdan chiqdi»: from `date` the leader is off today's pickers and
+    lists, and every day before it stays as it was. The cells are released,
+    the results stop counting from that day (`leader_cutoffs` — an earlier
+    cutoff a person set stands), and the accounts and the browser login come
+    off the profile exactly as a delete takes them. Nothing filed is touched,
+    so «Qaytarish» undoes it."""
+    from datetime import date as _date
+    from app.services import cell_archive, leader_cutoffs, leader_load
+    p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    try:
+        day = _date.fromisoformat((payload.date or "")[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if day > cell_archive.today():
+        raise HTTPException(status_code=400, detail="The date cannot be in the future")
+    by, iso = caller.get("full_name"), day.isoformat()
+    codes = cell_register.release_profile(db, pid, src="manual", by=by, apply_now=True)
+    have = leader_cutoffs.record(leader_cutoffs.load(db), p.id, p.name)
+    if have is None or str(have.from_date)[:10] > iso:
+        leader_cutoffs.set_cutoff(db, leader_id=p.id, leader_name=p.name, from_date=iso,
+                                  manager_id=p.manager_id, reason="Ishdan chiqdi", actor=by)
+        leader_cutoffs.drop_pending_reviews(db, p.id, iso)
+    holders = _bound_role_rows(db, "leader", pid)
+    for r in holders:
+        _remove_role_row(db, r)
+    db.query(WebCredential).filter(
+        WebCredential.profile_key == profile_key("leader", pid)).delete(synchronize_session=False)
+    p.ended_on = day
+    db.commit()
+    _links_changed()
+    leader_load.forget()
+    changes = [("status", None, f"ended {iso}")]
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.ended",
+                    details=[("role", tv("role.leader")), ("profile", p.name)], changes=changes)
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key("leader", pid), target_name=p.name,
+        unit_id=p.manager_id,
+        details=[("role", "leader"), ("profile", p.name), ("from", iso),
+                 ("cells", ", ".join(codes) or "—"), ("accounts", len(holders))],
+        changes=changes,
+    )
+    return {"ok": True, "ended_on": iso, "cells": codes}
+
+
+@router.post("/admin/leader/{pid}/return")
+def admin_return_leader(pid: int, db: Session = Depends(get_db),
+                        caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """«Qaytarish»: the leader is back on the lists. The cutoff the end set
+    (the one dated the same day) is lifted; a cutoff of another date is a
+    person's own decision and stands. Cells and accounts are not handed back —
+    the brigadir picks the cell, the person claims the profile again."""
+    from app.services import leader_cutoffs
+    p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if not p.ended_on:
+        return {"ok": True}
+    was = p.ended_on.isoformat()
+    have = leader_cutoffs.record(leader_cutoffs.load(db), p.id, p.name)
+    if have is not None and str(have.from_date)[:10] == was:
+        leader_cutoffs.lift(db, leader_id=p.id, leader_name=p.name)
+    p.ended_on = None
+    db.commit()
+    changes = [("status", f"ended {was}", None)]
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.returned",
+                    details=[("role", tv("role.leader")), ("profile", p.name)], changes=changes)
+    action_log.enrich(
+        target_kind="profile", target_id=profile_key("leader", pid), target_name=p.name,
+        unit_id=p.manager_id,
+        details=[("role", "leader"), ("profile", p.name)], changes=changes,
+    )
+    return {"ok": True}
+
+
 class UnassignPayload(BaseModel):
     ptype:       str
     pid:         int
@@ -3248,7 +3335,7 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
     # archived units keep their leaders out of the picker
     leader_profiles = [
         p for p in db.query(RoleProfile)
-        .filter(RoleProfile.role == "leader")
+        .filter(RoleProfile.role == "leader", RoleProfile.ended_on.is_(None))
         .order_by(RoleProfile.name).all()
         if p.manager_id in mgr_names
     ]

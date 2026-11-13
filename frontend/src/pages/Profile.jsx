@@ -15,6 +15,7 @@ import Button from "../components/ui/Button";
 import ActionMenu from "../components/ui/ActionMenu";
 import FormField from "../components/ui/FormField";
 import StyledSelect from "../components/ui/StyledSelect";
+import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import LangTextInput from "../components/ui/LangTextInput";
 import ProfileAvatar, { useMyProfileDetails } from "../components/ui/ProfileAvatar";
@@ -27,6 +28,7 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { copyText } from "../utils/copyText";
+import { todayISO } from "../utils/targets";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useExam } from "../context/ExamContext";
@@ -1854,6 +1856,23 @@ function DangerCard({ ptype, item, onDone }) {
   const [impacts, setImpacts] = useState(null);
 
   const archivable = ptype === "supervisor" && !item.archived && item.has_data;
+  // A leader who left is ENDED with a date, never deleted: off today's lists,
+  // every past day kept. `endDay` is the dialog's date (null = closed).
+  const isLeader = ptype === "leader";
+  const ended = isLeader ? item.ended_on : null;
+  const [endDay, setEndDay] = useState(null);
+  const failed = (e) => setActionError(
+    typeof e?.response?.data?.detail === "string" ? e.response.data.detail : t("admin.profiles.error"));
+  const endMut = useMutation({
+    mutationFn: (date) => api.post(`/api/profiles/admin/leader/${item.id}/end`, { date }),
+    onSuccess: () => { setEndDay(null); onDone(); },
+    onError: failed,
+  });
+  const returnMut = useMutation({
+    mutationFn: () => api.post(`/api/profiles/admin/leader/${item.id}/return`),
+    onSuccess: () => { setConfirm(null); onDone(); },
+    onError: failed,
+  });
 
   const deleteMut = useMutation({
     mutationFn: (confirmed = false) =>
@@ -1893,15 +1912,38 @@ function DangerCard({ ptype, item, onDone }) {
     onError: (e) => setActionError(e?.response?.data?.detail || t("weblogin.saveFailed")),
   });
 
-  const busy = deleteMut.isPending || archiveMut.isPending || loginDeleteMut.isPending;
+  const busy = deleteMut.isPending || archiveMut.isPending || loginDeleteMut.isPending
+    || endMut.isPending || returnMut.isPending;
   const rowCls = "flex flex-col @xl:flex-row @xl:items-center justify-between gap-3 @xl:gap-5";
 
   return (
     <Card icon={AlertTriangle} color={HUE.danger} danger title={t("profile.dangerZone")}>
       {/* One row per irreversible action: the consequence on the left, the
           single button that causes it on the right. */}
-      {web && (
+      {isLeader && (
         <div className={`${rowCls} pb-4 border-b`} style={{ borderColor: "var(--border)" }}>
+          <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
+            {t(ended ? "profile.endedHint" : "profile.endHint")
+              .replace("{name}", tl(item.name) || "")
+              .replace("{date}", ended ? ended.split("-").reverse().join(".") : "")}
+          </p>
+          <div className="flex-shrink-0">
+            {ended ? (
+              <Button tint variant="success" icon={<ArchiveRestore size={13} />} disabled={busy}
+                      onClick={() => { setActionError(""); setConfirm("return"); }}>
+                {t("profile.returnLeader")}
+              </Button>
+            ) : (
+              <Button tint variant="secondary" icon={<LogOut size={13} />} disabled={busy}
+                      onClick={() => { setActionError(""); setEndDay(todayISO()); }}>
+                {t("profile.endLeader")}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+      {web && (
+        <div className={`${rowCls} pb-4 border-b${isLeader ? " pt-4" : ""}`} style={{ borderColor: "var(--border)" }}>
           <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
             {t("weblogin.deleteBody")}
           </p>
@@ -1914,7 +1956,7 @@ function DangerCard({ ptype, item, onDone }) {
           </div>
         </div>
       )}
-      <div className={`${rowCls}${web ? " pt-4" : ""}`}>
+      <div className={`${rowCls}${web || isLeader ? " pt-4" : ""}`}>
         <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
           {t(archivable ? "admin.profiles.archiveMsg" : "profile.dangerHint").replace("{name}", tl(item.name) || "")}
         </p>
@@ -1941,6 +1983,46 @@ function DangerCard({ ptype, item, onDone }) {
         </div>
       </div>
 
+      <Modal
+        open={endDay !== null}
+        onClose={() => { if (!endMut.isPending) { setEndDay(null); setActionError(""); } }}
+        dismissable={!endMut.isPending}
+        title={t("profile.endLeader")}
+        subtitle={tl(item.name)}
+        icon={<LogOut size={15} />}
+        maxWidth="max-w-sm"
+        footer={
+          <>
+            <Button variant="secondary" disabled={endMut.isPending}
+                    onClick={() => { setEndDay(null); setActionError(""); }}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" loading={endMut.isPending}
+                    onClick={() => { setActionError(""); endMut.mutate(endDay); }}>
+              {t("profile.endLeader")}
+            </Button>
+          </>
+        }
+      >
+        <FormField label={t("profile.endFrom")} hint={t("profile.endFromHint")} error={actionError}>
+          <DateRangePicker single dateFrom={endDay || ""} dateTo={endDay || ""}
+            setDateFrom={(v) => setEndDay(v || todayISO())} setDateTo={() => {}}
+            max={todayISO()} triggerClassName="px-3 py-2 text-sm" />
+        </FormField>
+        <p className="text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
+          {t("profile.endBody")}
+        </p>
+      </Modal>
+      <ConfirmDialog
+        open={confirm === "return"}
+        error={actionError}
+        onCancel={() => { setConfirm(null); setActionError(""); }}
+        onConfirm={() => { setActionError(""); returnMut.mutate(); }}
+        title={t("profile.returnLeader")}
+        message={t("profile.returnMsg").replace("{name}", tl(item.name) || "")}
+        confirmLabel={t("profile.returnLeader")}
+        loading={returnMut.isPending}
+      />
       <ConfirmDialog
         open={confirm === "login"}
         tone="danger"

@@ -795,6 +795,11 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
                 "others": [{"id": o.id, "role": o.role, "name": o.name}
                            for o in ctx.shared_emp[p.vfx_employee_id] if o.id != p.id]})
             continue
+        if p.role == "leader" and p.ended_on and not (p.vfx_meta or {}).get("cut_from"):
+            # Ended by a PERSON («Ishdan chiqdi»): no seat, no pick and no
+            # automatic return — a person returns them.
+            ctx.held.add(("profile", p.id))
+            continue
         e = ctx.by_emp.get(p.vfx_employee_id)
         meta = dict(p.vfx_meta or {})
         if e is None:
@@ -1290,6 +1295,8 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
             leader_cutoffs.drop_pending_reviews(db, p.id, cut)
             cut_set = True
         p.vfx_meta = {**(p.vfx_meta or {}), "cut_from": cut}
+        if not p.ended_on:              # off today's lists from the same day
+            p.ended_on = date.fromisoformat(cut)
         if cut_set:
             notes.append(("cutoff", p.id, {"name": p.name, "unit": p.manager_id,
                                            "from": cut, "reason": reason}))
@@ -1304,6 +1311,7 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
         meta = dict(p.vfx_meta or {})
         meta.pop("cut_from", None)
         p.vfx_meta = meta
+        p.ended_on = None
         notes.append(("vfx_leader_returned", p.manager_id, {"leader": p.name}))
     elif k == "photo":
         if not _set_photo(db, a):

@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
         add_dispute_ruling_column,
         seed_verifix_sync,
         add_cell_one_process,
+        add_leader_ended_on,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -152,6 +153,7 @@ async def lifespan(app: FastAPI):
         patch_task11_description_nov09,
         heal_switched_profile_keys,
         rekey_sheet_eras_boot,
+        end_dismissed_leaders,
         register_leader_rules_sep19,
         register_leader_rules_sep26,
         register_leader_temp_hours,
@@ -243,6 +245,7 @@ async def lifespan(app: FastAPI):
     run(add_late_window_columns)
     run(add_dispute_ruling_column)
     run(add_cell_one_process)
+    run(add_leader_ended_on)
     run(add_last_seen_column)
     run(add_tg_name_column)
     run(add_edit_requests_batch_id)
@@ -809,6 +812,8 @@ async def lifespan(app: FastAPI):
     later(heal_switched_profile_keys)
     # A unit that changed brigadir keeps its sheet history (2026-11-12). Idempotent.
     later(rekey_sheet_eras_boot)
+    # Leaders the sync dismissed before `ended_on` existed (2026-11-13). Idempotent.
+    later(end_dismissed_leaders)
     # Jumaniyazov Sanjarbek's checklist runs on shift 1 from 6 Oct (once).
     later(move_sanjarbek_checklist_shift)
     # ⚠ TEMPORARY one-shot (2026-10-17) — «Boshqaruvchi» / «Egasi» changes
