@@ -84,8 +84,13 @@ const toMin = (hhmm) => {
 const heat = (n, max) => (n > 0 && max > 0 ? `rgba(200,151,63,${(0.06 + 0.34 * (n / max)).toFixed(3)})` : "transparent");
 
 // Exported for «Konteynerlar» (/containers), which shows the same table on a
-// TV: `refetchInterval` keeps it current without anyone touching it.
-export function HourlyTable({ day, params, enabled = true, t, refetchInterval = false }) {
+// TV: `refetchInterval` keeps it current without anyone touching it; `around`
+// ({before, after}) shows only the hours from `before` ahead of the current
+// one to `after` beyond it — a TV cannot be scrolled — while the «Jami»
+// column still counts the whole day; `size="lg"` sets it in reading-distance
+// type. Both apply only where they are passed («Smena kunligi» is unchanged).
+export function HourlyTable({ day, params, enabled = true, t, refetchInterval = false, around = null, size = "md" }) {
+  const big = size === "lg";
   const { data, isLoading, isError } = useQuery({
     queryKey: ["shift-daily-containers-hourly", day, params],
     queryFn: () => api.get("/api/shift-report/containers-hourly", { params: { ...params, day } }).then((r) => r.data),
@@ -159,6 +164,17 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
   const byH = Object.fromEntries(hours.map((x) => [x.h, x.counts || {}]));
   const cols = [];
   for (let h = lo; h <= hi; h++) cols.push(h);
+  // What is drawn: every hour, or — `around` on the live day — a window round
+  // the current hour, slid back inside the day at its edges. Totals stay on
+  // `cols`, the whole day.
+  const win = around && nowHour != null && cols.length > 0;
+  let shown = cols;
+  if (win) {
+    const span = around.before + around.after + 1;
+    let a = Math.max(lo, nowHour - around.before);
+    a = Math.min(a, Math.max(lo, hi - span + 1));
+    shown = cols.filter((h) => h >= a && h < a + span);
+  }
   const outside = (cmp) => {
     const o = {};
     for (const x of hours) if (cmp(x.h)) for (const [k, n] of Object.entries(x.counts || {})) o[k] = (o[k] ?? 0) + n;
@@ -172,15 +188,16 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
     const x = shifts.find((sh) => [m, m + DAY, m - DAY].some((v) => v >= sh.st && v < sh.en));
     return x ? x.n : null;
   };
-  const isBoundary = (h) => h > lo && shiftOf(h) !== shiftOf(h - 1);
+  const isBoundary = (h) => h > shown[0] && shiftOf(h) !== shiftOf(h - 1);
   const divL = (h) => (isBoundary(h) ? { borderLeft: "2px solid var(--text-3)" } : {});
   const groups = [];
-  for (const h of cols) {
+  for (const h of shown) {
     const n = shiftOf(h);
     const g = groups[groups.length - 1];
     if (g && g.n === n) g.span += 1; else groups.push({ n, span: 1, h });
   }
-  const hasUntimed = keys.some((k) => untimed[k]);
+  const hasUntimed = !win && keys.some((k) => untimed[k]);
+  const showBefore = !win && hasBefore, showAfter = !win && hasAfter;
   const val = (k, h) => byH[h]?.[k] ?? 0;
   const sumH = (h) => keys.reduce((s, k) => s + val(k, h), 0);
   const rowMax = Object.fromEntries(keys.map((k) => [k, Math.max(0, ...cols.map((h) => val(k, h)))]));
@@ -193,7 +210,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
   const cellBorder = { borderTop: "1px solid var(--border)", borderLeft: "1px solid var(--border)" };
   const lastKey = "__sum";
   const cell = (k, h, n, max, bold) => (
-    <td key={h} className="px-2 py-2 text-center"
+    <td key={h} className={`${big ? "px-3 py-3" : "px-2 py-2"} text-center`}
       style={{ ...cellBorder, ...divL(h), ...ring(h, false, k === lastKey),
         background: heat(n, max),
         opacity: past(h) ? 0.55 : 1,
@@ -206,12 +223,12 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
     <>
       {head}
       <div ref={scrollRef} className="overflow-x-auto rounded-xl" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-        <table className="text-xs tabular-nums border-collapse w-full">
+        <table className={`${big ? "text-lg" : "text-xs"} tabular-nums border-collapse w-full`}>
           <thead>
             {groups.some((g) => g.n != null) && (
               <tr>
                 <th className="sticky left-0 z-[2]" style={{ background: "var(--bg-inner)" }} />
-                {hasBefore && <th />}
+                {showBefore && <th />}
                 {groups.map((g) => (
                   <th key={g.h} colSpan={g.span}
                     className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-left whitespace-nowrap"
@@ -219,7 +236,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
                     {g.n != null ? t("production.contTotals.shiftN").replace("{n}", String(g.n)) : ""}
                   </th>
                 ))}
-                {hasAfter && <th />}
+                {showAfter && <th />}
                 {hasUntimed && <th />}
                 <th />
               </tr>
@@ -227,25 +244,25 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
             <tr>
               <th ref={firstRef} className="sticky left-0 z-[2] text-left font-medium px-3 py-2 whitespace-nowrap"
                 style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>{t("production.hourly.container")}</th>
-              {hasBefore && (
+              {showBefore && (
                 <th className="px-2 py-2 font-medium text-center whitespace-nowrap align-bottom"
                   title={t("production.contTotals.beforeHint")}
                   style={{ borderLeft: "1px solid var(--border)", color: "var(--text-3)" }}>{t("production.contTotals.before")}</th>
               )}
-              {cols.map((h) => (
+              {shown.map((h) => (
                 <th key={h} ref={h === nowHour || (nowHour != null && nowHour < lo && h === lo) ? nowRef : undefined}
-                  className="px-2 py-1.5 font-medium text-center whitespace-nowrap align-bottom"
+                  className={`${big ? "px-3 py-2" : "px-2 py-1.5"} font-medium text-center whitespace-nowrap align-bottom`}
                   title={h === prepHour ? t("production.hourly.prepHint") : h === nowHour ? t("production.contTotals.nowHint") : undefined}
                   style={{ borderLeft: "1px solid var(--border)", ...divL(h), ...ring(h, true, false),
                     background: h === prepHour ? "var(--brand)" : "transparent",
                     color: h === prepHour ? "var(--on-brand)" : h === nowHour ? "var(--brand-text)" : past(h) ? "var(--text-4)" : "var(--text-2)",
                     fontWeight: h === prepHour || h === nowHour ? 700 : 500 }}>
-                  {h === prepHour && <div className="text-[9px] uppercase tracking-wider leading-none mb-0.5">{t("production.hourly.prep")}</div>}
-                  {h === nowHour && <div className="text-[9px] uppercase tracking-wider leading-none mb-0.5">{t("production.contTotals.now")}</div>}
+                  {h === prepHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t("production.hourly.prep")}</div>}
+                  {h === nowHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t("production.contTotals.now")}</div>}
                   {hourLabel(h)}–{hourLabel(h + 1)}
                 </th>
               ))}
-              {hasAfter && (
+              {showAfter && (
                 <th className="px-2 py-2 font-medium text-center whitespace-nowrap align-bottom"
                   title={t("production.contTotals.afterHint")}
                   style={{ borderLeft: "2px solid var(--text-3)", color: "#ef4444" }}>{t("production.contTotals.after")}</th>
@@ -264,18 +281,18 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
                 + (before[k] ?? 0) + (after[k] ?? 0);
               return (
                 <tr key={k}>
-                  <td className="sticky left-0 z-[1] px-3 py-2 whitespace-nowrap max-w-[200px] truncate"
+                  <td className={`sticky left-0 z-[1] px-3 ${big ? "py-3 max-w-[320px]" : "py-2 max-w-[200px]"} whitespace-nowrap truncate`}
                     title={t(`production.cont.${k}`)}
                     style={{ background: "var(--bg-inner)", color: "var(--text-1)", borderTop: "1px solid var(--border)" }}>
                     {t(`production.cont.${k}`)}
                   </td>
-                  {hasBefore && (
+                  {showBefore && (
                     <td className="px-2 py-2 text-center" style={{ ...cellBorder, color: before[k] ? "var(--text-2)" : "var(--text-4)" }}>
                       {before[k] ? fmt(before[k]) : "·"}
                     </td>
                   )}
-                  {cols.map((h) => cell(k, h, val(k, h), rowMax[k], false))}
-                  {hasAfter && (
+                  {shown.map((h) => cell(k, h, val(k, h), rowMax[k], false))}
+                  {showAfter && (
                     <td className="px-2 py-2 text-center" style={{ ...cellBorder, borderLeft: "2px solid var(--text-3)", color: after[k] ? "#ef4444" : "var(--text-4)" }}>
                       {after[k] ? fmt(after[k]) : "·"}
                     </td>
@@ -296,16 +313,16 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
                 style={{ background: "var(--bg-card)", color: "var(--text-1)", borderTop: "2px solid var(--border)" }}>
                 {t("production.contTotals.sumRow")}
               </td>
-              {hasBefore && (
+              {showBefore && (
                 <td className="px-2 py-2 text-center font-bold"
                   style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", color: "var(--text-2)" }}>
                   {fmt(keys.reduce((s, k) => s + (before[k] ?? 0), 0))}
                 </td>
               )}
-              {cols.map((h) => {
+              {shown.map((h) => {
                 const n = sumH(h);
                 return (
-                  <td key={h} className="px-2 py-2 text-center"
+                  <td key={h} className={`${big ? "px-3 py-3" : "px-2 py-2"} text-center`}
                     style={{ borderTop: "2px solid var(--border)", borderLeft: "1px solid var(--border)", ...divL(h), ...ring(h, false, true),
                       background: heat(n, sumMax), opacity: past(h) ? 0.55 : 1,
                       color: n ? "var(--text-1)" : "var(--text-4)", fontWeight: 700 }}>
@@ -313,7 +330,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
                   </td>
                 );
               })}
-              {hasAfter && (
+              {showAfter && (
                 <td className="px-2 py-2 text-center font-bold"
                   style={{ borderTop: "2px solid var(--border)", borderLeft: "2px solid var(--text-3)", color: "#ef4444" }}>
                   {fmt(keys.reduce((s, k) => s + (after[k] ?? 0), 0))}
@@ -334,7 +351,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>{t("production.contTotals.hourlyHint")}</p>
+      {!big && <p className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>{t("production.contTotals.hourlyHint")}</p>}
     </>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight } from "lucide-react";
+import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight, AlertTriangle } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -226,10 +226,13 @@ function Board({ day, params, isLive, tv, t }) {
       ) : (
         <>
           {isLive && <HourStrip q={hourlyQ} day={day} t={t} tv={tv} />}
+          {isLive && <NextByUnit q={hourlyQ} day={day} t={t} tv={tv} />}
           <section className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 pb-4 pt-1">
-            <HourlyTable day={day} params={params} t={t} refetchInterval={refetch} />
+            <HourlyTable day={day} params={params} t={t} refetchInterval={refetch}
+              around={tv ? { before: 1, after: 6 } : null} size={tv ? "lg" : "md"} />
+            <Coverage totals={data} hourly={hourlyQ.data} t={t} />
           </section>
-          <UnitTable data={data} loading={!data} t={t} />
+          <UnitTable data={data} loading={!data} t={t} tv={tv} />
         </>
       )}
     </div>
@@ -293,10 +296,10 @@ function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = fals
         <div className="text-sm mt-3" style={{ color: "var(--text-3)" }}>{t("production.hourly.noneThisHour")}</div>
       ) : (
         <div className="flex items-end gap-6 mt-3">
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-3 min-w-0 flex-1">
+          <div className="flex flex-wrap items-end gap-x-5 gap-y-3 min-w-0 flex-1">
           {keys.map((k) => (
             <div key={k} className="min-w-0">
-              <div className="text-[12px] truncate max-w-[180px]" style={{ color: "var(--text-3)" }} title={t(`production.cont.${k}`)}>{t(`production.cont.${k}`)}</div>
+              <div className="text-[12px] truncate max-w-[140px]" style={{ color: "var(--text-3)" }} title={t(`production.cont.${k}`)}>{t(`production.cont.${k}`)}</div>
               <div className={`${tv ? "text-4xl" : "text-3xl"} font-bold tabular-nums leading-tight`} style={{ color: "var(--text-1)" }}>{fmt(counts[k])}</div>
             </div>
           ))}
@@ -314,7 +317,7 @@ function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = fals
 
 // Every brigadir's containers for the day, the most first; each cell tinted by
 // its size within its column, the last column the brigadir's share of the day.
-function UnitTable({ data, loading, t }) {
+function UnitTable({ data, loading, t, tv }) {
   const { tl } = useTranslit();
   const rows = data?.by_unit ?? [];
   const keys = KEYS.filter((k) => rows.some((u) => u.totals?.[k]));
@@ -347,7 +350,7 @@ function UnitTable({ data, loading, t }) {
           const sum = sumOf(u);
           const pct = grand ? (sum / grand) * 100 : 0;
           return (
-            <tr key={u.id} className="text-sm">
+            <tr key={u.id} className={tv ? "text-lg [&>td]:py-3" : "text-sm"}>
               <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>{i + 1}</td>
               <td className="px-3 py-2 max-w-[260px] truncate font-medium" title={tl(u.name)}>{tl(u.name)}</td>
               <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{u.shift ? `S${u.shift}` : "—"}</td>
@@ -374,5 +377,102 @@ function UnitTable({ data, loading, t }) {
         })}
       </tbody>
     </TableCard>
+  );
+}
+
+// Who needs the NEXT hour's containers — the hour to prepare for, split by
+// brigadir (each unit's own «Soatlik» timeline, `by_unit` of
+// /containers-hourly), the most first, with what the current hour already
+// takes beside it. Units with nothing in either hour are left out.
+function NextByUnit({ q, day, t, tv }) {
+  const { tl } = useTranslit();
+  const now = tashkentNow();
+  const nowMin = day === now.iso ? now.min : day === prevISO(now.iso) ? now.min + DAY : null;
+  if (nowMin == null) return null;
+  const h = Math.floor(nowMin / 60);
+  const units = q.data?.by_unit ?? [];
+  const at = (u, hr) => (u.hours ?? []).find((x) => x.h === hr)?.counts ?? {};
+  const rows = units.map((u) => {
+    const next = at(u, h + 1), cur = at(u, h);
+    const sum = (c) => KEYS.reduce((s, k) => s + (c[k] ?? 0), 0);
+    return { ...u, next, nextSum: sum(next), curSum: sum(cur) };
+  }).filter((u) => u.nextSum || u.curSum).sort((a, b) => b.nextSum - a.nextSum || b.curSum - a.curSum);
+  const keys = KEYS.filter((k) => rows.some((u) => u.next[k]));
+  const colMax = Object.fromEntries(keys.map((k) => [k, Math.max(0, ...rows.map((u) => u.next[k] ?? 0))]));
+  const span = `${hourLabel(h + 1)}:00–${hourLabel(h + 2)}:00`;
+  const rowCls = tv ? "text-lg [&>td]:py-3" : "text-sm";
+  return (
+    <TableCard icon={ArrowRight} title={t("containers.nextByUnit")} subtitle={t("containers.nextByUnitSub")} headSize="lg"
+      right={<span className="text-sm font-semibold tabular-nums" style={{ color: "var(--brand-text)" }}>{span}</span>}
+      maxHeight="none">
+      <thead>
+        <tr>
+          <Th label={t("containers.brigadir")} />
+          <Th label={t("filter.shift")} align="center" />
+          {keys.map((k) => <Th key={k} label={t(`production.cont.${k}`)} align="right" />)}
+          <Th label={t("containers.nextTotal")} align="right" />
+          <Th label={t("containers.nowTotal")} align="right" />
+        </tr>
+      </thead>
+      <tbody>
+        {q.isLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <tr key={i}><td colSpan={keys.length + 4} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
+          ))
+        ) : !rows.length ? (
+          <tr><td colSpan={keys.length + 4} className="px-3 py-6 text-center" style={{ color: "var(--text-3)" }}>{t("production.hourly.noneThisHour")}</td></tr>
+        ) : rows.map((u) => (
+          <tr key={u.id} className={rowCls}>
+            <td className="px-3 py-2 max-w-[260px] truncate font-medium" title={tl(u.name)}>{tl(u.name)}</td>
+            <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{u.shift ? `S${u.shift}` : "—"}</td>
+            {keys.map((k) => {
+              const n = u.next[k] ?? 0;
+              return (
+                <td key={k} className="px-3 py-2 text-right tabular-nums"
+                  style={{ background: heat(n, colMax[k]), color: n ? "var(--text-1)" : "var(--text-4)", fontWeight: n ? 600 : 400 }}>
+                  {n ? fmt(n) : "·"}
+                </td>
+              );
+            })}
+            <td className="px-3 py-2 text-right tabular-nums font-bold" style={{ color: u.nextSum ? "var(--brand-text)" : "var(--text-4)" }}>{u.nextSum ? fmt(u.nextSum) : "·"}</td>
+            <td className="px-3 py-2 text-right tabular-nums" style={{ color: u.curSum ? "var(--text-2)" : "var(--text-4)" }}>{u.curSum ? fmt(u.curSum) : "·"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </TableCard>
+  );
+}
+
+// The hours cover only units with «Zagruzka fayli» set up (a unit needs its
+// dashboard to have a timeline), while the tiles count every unit — so the
+// two totals can differ. Said where it shows, in words, never left to a
+// footnote: how much of the day the hours place, and which brigadirs they
+// leave out.
+function Coverage({ totals, hourly, t }) {
+  const { tl } = useTranslit();
+  if (!totals || !hourly) return null;
+  const day = KEYS.reduce((s, k) => s + (totals.totals?.[k] ?? 0), 0);
+  let placed = 0;
+  for (const x of hourly.hours ?? []) for (const k of KEYS) placed += x.counts?.[k] ?? 0;
+  for (const k of KEYS) placed += hourly.untimed?.[k] ?? 0;
+  const inHours = new Set((hourly.by_unit ?? []).map((u) => u.id));
+  const missing = (totals.by_unit ?? []).filter((u) => !inHours.has(u.id));
+  if (!day) return null;
+  const gap = missing.length > 0 || placed !== day;
+  const names = missing.map((u) => tl(u.name)).join(", ");
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[13px]">
+      <span className="tabular-nums" style={{ color: "var(--text-2)" }}>
+        {t("containers.coverage").replace("{a}", fmt(placed)).replace("{b}", fmt(day))}
+      </span>
+      {gap && missing.length > 0 && (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md min-w-0 max-w-full"
+          style={{ color: "#eab308", background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.35)" }}
+          title={names}>
+          <AlertTriangle size={13} className="shrink-0" />
+          <span className="truncate">{t("containers.notInHours").replace("{n}", String(missing.length)).replace("{names}", names)}</span>
+        </span>
+      )}
+    </div>
   );
 }

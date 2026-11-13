@@ -394,3 +394,15 @@ supervisor; and it hangs on a TV, so designed for one.
   browser allows it), a header with the day, the shift and a big Tashkent
   clock, and everything scaled with CSS `zoom` to the screen width
   (÷1440, 1–2.4×). Escape or ✕ leaves it.
+- **Reviewed the same day** (the operator: «what is missing or wrong»), four
+  fixes: **«Keyingi soat — brigadirlar bo'yicha»** — who needs the next
+  hour's containers, from `/containers-hourly`'s new `by_unit` (each unit's
+  own hours; summed they ARE `hours`), most first, with the current hour
+  beside it; **the TV shows a window of hours** (`HourlyTable around` = one
+  hour back, six ahead, slid inside the day; «Jami» still the whole day;
+  «Oldin» / «Keyin» / «Vaqtsiz» columns only on the full table) because a TV
+  cannot be scrolled; **reading-distance type** on the TV (`size="lg"`, the
+  two brigadir tables at text-lg); and **the hours say what they leave out**
+  — «Soatlarga taqsimlangan: X / Y» under the table, and an amber chip naming
+  the brigadirs with no hours (no «Zagruzka fayli» set up), instead of a
+  footnote, since the tiles count every unit and the hours cannot.

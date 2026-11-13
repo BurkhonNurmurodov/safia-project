@@ -505,7 +505,13 @@ def get_containers_hourly(
     configured unit of `hourly_containers.unit_hours` off the unit's own
     «Zagruzka fayli» dashboard — so each team's hours are exactly what its
     «Soatlik» view shows. Same scope and shift narrowing as `/containers`.
-    Kept like the board (`_cache_*`, 60 s): it runs the engine once per unit."""
+    Kept like the board (`_cache_*`, 60 s): it runs the engine once per unit.
+
+    `by_unit` (2026-11-13, «Konteynerlar»): the same hours per brigadir unit
+    — `[{id, name, shift, hours: [{h, counts}], untimed}]`, units with nothing
+    left out — so the page can say WHO needs the next hour's containers and
+    which units the hours leave out (a unit with no «Zagruzka fayli» set up
+    has no timeline and is not here). Summed per hour they ARE `hours`."""
     # Whoever may open «Konteynerlar» (/containers) reads the hours too — the
     # page IS the hours; everyone else stays behind the trial's role gate.
     if payload.get("role") not in HOURLY_ROLES and not page_allowed(db, payload, "containers"):
@@ -517,7 +523,7 @@ def get_containers_hourly(
     shifts = [{"shift": n, "start": a, "end": b}
               for n, (a, b) in sorted(cell_hours.defaults(db).items())]
     empty = {"day": day.isoformat(), "hours": [], "untimed": {}, "keys": keys, "units": 0,
-             "shifts": shifts}
+             "shifts": shifts, "by_unit": []}
     ids, _note = _scope(db, payload, factory, manager_id)
     if empty_scope(ids):
         return empty
@@ -538,6 +544,7 @@ def get_containers_hourly(
     hours: dict = {}
     untimed: dict = {}
     units = 0
+    per_unit: dict = {}
     for mid in unit_ids:
         try:
             h_map, u_map = hourly_containers.unit_hours(production._build_dashboard(db, mid, day))
@@ -545,14 +552,23 @@ def get_containers_hourly(
             continue
         if h_map or u_map:
             units += 1
+            per_unit[mid] = (h_map, u_map)
         for h, e in h_map.items():
             o = hours.setdefault(h, {})
             for k, n in e.items():
                 o[k] = o.get(k, 0) + n
         for k, n in u_map.items():
             untimed[k] = untimed.get(k, 0) + n
+    by_unit = []
+    if per_unit:
+        for m in db.query(Manager).filter(Manager.id.in_(list(per_unit))).all():
+            h_map, u_map = per_unit[m.id]
+            by_unit.append({"id": m.id, "name": m.name, "shift": m.shift,
+                            "hours": [{"h": h, "counts": dict(h_map[h])} for h in sorted(h_map)],
+                            "untimed": dict(u_map)})
+        by_unit.sort(key=lambda u: u["name"] or "")
     out = {"day": day.isoformat(), "keys": keys, "units": units, "untimed": untimed,
-           "shifts": shifts,
+           "shifts": shifts, "by_unit": by_unit,
            "hours": [{"h": h, "counts": hours[h]} for h in sorted(hours)]}
     _cache_put(key, started, out)
     return out
