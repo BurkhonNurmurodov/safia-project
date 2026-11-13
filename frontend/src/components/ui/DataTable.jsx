@@ -81,19 +81,15 @@ export function SortIcon({ active, dir }) {
  *   hint   – tooltip text (title attribute)
  *   cls    – extra classes (e.g. responsive "hidden sm:table-cell")
  */
-export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, cls = "", filter, colSpan, alsoActive = false }) {
+export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, cls = "", filter }) {
   const { pageScroll } = useContext(TableCtx);
   const sortable = !!(k && onSort);
-  // `colSpan` heads several lanes with ONE header (the shift board's «Sifat
-  // nazorati %» over its «sochsiz» / «soch bilan» pair); `alsoActive` marks it
-  // sorted while a lane under it — sorted by a control inside `label` — is.
-  const active = sortable && (sort?.key === k || alsoActive);
+  const active = sortable && sort?.key === k;
   const alignCls = align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
   const justify = align === "center" ? "justify-center" : align === "right" ? "justify-end" : "";
   return (
     <th
       title={hint}
-      colSpan={colSpan}
       onClick={sortable ? () => onSort(k) : undefined}
       aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
       className={`sticky top-0 z-10 px-3 py-2.5 font-semibold select-none whitespace-nowrap transition-colors ${sortable ? "cursor-pointer hover:bg-[var(--bg-accent)]" : ""} ${alignCls} ${cls}`}

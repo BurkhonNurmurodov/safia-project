@@ -10,13 +10,13 @@
 //   %» covers the CURRENT MONTH (the operator's call, 2026-09-18), and the
 //   month it names is the one the SERVER counted (`quality_month` on the
 //   payload) — a month derived from the browser's clock is how the header and
-//   the figures would come to name two different windows. The column is TWO
-//   lanes under one header (the operator's call, 2026-11-13: «in that column
-//   should be and with hair and without hair»): «sochsiz» leaves HAIR records
-//   out — the Quality page's own default reading of the register — and «soch
-//   bilan» counts every record. Each lane is a tile of its own, judged by the
-//   same band, opening the Quality page in its own hair mode; the two lane
-//   labels in the header sort by their own lane.
+//   the figures would come to name two different windows. The figure is the
+//   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
+//   and the cell's hover box prints both readings with their counts: «soch
+//   bilan · 20/40 · 50%» over «sochsiz · 12/15 · 80%» (the operator's call,
+//   2026-11-13; two lanes side by side stood here for an hour first and he
+//   asked for one column). The cell opens the Quality page «Soch bilan», the
+//   reading it counted.
 // - Its scope is the PAGE's filter bar: the shared plant, and the `shift` the
 //   page hands it. A supervisor pick is never read — the page has no such
 //   control, so one left standing on another page would narrow the board with
@@ -116,16 +116,15 @@ const SORT_VALUE = {
   load: (r) => r.load?.value,
   att: (r) => r.att?.value,
   compl: (r) => r.compl?.value,
-  quality: (r) => r.quality?.value,
-  qualityHair: (r) => r.quality_hair?.value,
+  // the figure the column prints: the overall rate, hair included
+  quality: (r) => r.quality_hair?.value,
   concerns: (r) => r.concerns?.open,
 };
 // The first press on a column puts its WORST rows on top: the lowest
 // percentage, the most open concerns. A third press returns to name order.
-const FIRST_DIR = { name: "asc", load: "asc", att: "asc", compl: "asc", quality: "asc", qualityHair: "asc", concerns: "desc" };
+const FIRST_DIR = { name: "asc", load: "asc", att: "asc", compl: "asc", quality: "asc", concerns: "desc" };
 const DEFAULT_SORT = { key: "name", dir: "asc" };
-// The name, four single lanes and «Sifat nazorati %»'s pair.
-const COLS = 7;
+const COLS = 6;
 
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
 
@@ -215,42 +214,11 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
   );
 }
 
-// «Sifat nazorati %» heads TWO lanes, so its header carries a third line: the
-// lane labels, each over its own lane and each a sort control for it. The
-// header's own press still sorts by the first lane («sochsiz»).
-function LaneLabels({ lanes, sort, onSort }) {
-  return (
-    <span className="mt-1 grid w-full grid-cols-2">
-      {lanes.map((l) => {
-        const on = sort?.key === l.k;
-        return (
-          <button
-            key={l.k}
-            type="button"
-            title={l.title}
-            aria-pressed={on}
-            onClick={(e) => { e.stopPropagation(); onSort(l.k); }}
-            className="min-w-0 px-0.5 text-center text-[11px] max-[359px]:text-[10.5px] sm:text-[10.5px] font-semibold whitespace-nowrap outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
-            style={{ color: on ? "var(--brand-text)" : "var(--text-3)" }}
-          >
-            <span className="sm:hidden">{l.short}</span>
-            <span className="max-sm:hidden">{l.full}</span>
-          </button>
-        );
-      })}
-    </span>
-  );
-}
-
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push six columns past a phone's width.
-const TH_BASE = "align-bottom max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
+const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
-const TH_FIG = `${TH_BASE} sm:w-[12%]`;
-// The pair's header spans both lanes edge to edge, so each lane label sits
-// over its own lane.
-const TH_PAIR = `${TH_BASE} sm:w-[22%] [&>span]:flex [&>span]:w-full [&>span>span:first-child]:flex-1 [&>span>span:first-child]:w-full`;
 // The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
 // CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
 // shapes are the mistakes this one answers: painted cells whose gridline was
@@ -324,7 +292,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const multi = groups.length > 1;
   const missing = rows.filter((r) => r.load?.reason || r.compl?.reason).length;
   const anyPartial = rows.some((r) => r.load?.partial && !r.load?.reason);
-  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, r.quality?.reason, r.quality_hair?.reason]))]
+  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, r.quality_hair?.reason]))]
     .filter((k) => REASON_ICON[k]);
 
   const picked = !!data?.picked;
@@ -390,12 +358,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const staffTarget = (r, date) => (canStaff
     ? { to: staffLink({ unit: r.manager_id, date }), page: t("nav.staff") }
     : null);
-  // `hair` opens the Quality page «Soch bilan», the reading that lane counted.
-  const qualityTarget = (r, hair) => (canQuality && qSpan && r.name
+  // `hair: "with"` opens the Quality page «Soch bilan» — the figure counts
+  // every record, so the list behind it must too.
+  const qualityTarget = (r) => (canQuality && qSpan && r.name
     ? {
       to: qualityLink({
         brigadir: r.name, from: qSpan.from, to: qSpan.to, status: QUALITY_UNRESOLVED,
-        hair: hair ? "with" : undefined,
+        hair: "with",
       }),
       page: t("nav.quality"),
     }
@@ -468,9 +437,17 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
   };
 
-  // «sochsiz · 12/15» — which reading the lane is, and the fraction behind it.
-  const qualityTitle = (c, labelKey) => (c && !c.reason && isNum(c.value)
-    ? `${t(labelKey)} · ${c.done}/${c.actionable}` : undefined);
+  // The quality cell's hover box, one line per reading: «soch bilan · 20/40 ·
+  // 50%» (the figure in the cell) over «sochsiz · 12/15 · 80%». A reading with
+  // no record of its own — a month of nothing but hair — says so with «—».
+  const qualityTitle = (r) => {
+    const line = (c, labelKey) => (c && !c.reason && isNum(c.value)
+      ? `${t(labelKey)} · ${c.done}/${c.actionable} · ${pctText(c.value)}`
+      : `${t(labelKey)} · —`);
+    const all = r.quality_hair;
+    if (!all || all.reason || !isNum(all.value)) return undefined;
+    return [line(all, "overview.sr.hairWith"), line(r.quality, "overview.sr.hairWithout")].join("\n");
+  };
 
   const figCell = (cell, toneFn, render, extraTitle, target) => {
     const blank = !!cell?.reason;
@@ -533,7 +510,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         <td className="px-2 sm:px-3 py-2.5">
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
-        {[0, 1, 2, 3, 4, 5].map((j) => (
+        {[0, 1, 2, 3, 4].map((j) => (
           <td key={j} className="p-0 border" style={RULE}>
             <SkeletonBlock className="h-[36px] w-full" style={{ borderRadius: 0 }} />
           </td>
@@ -602,13 +579,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {/* The percentage is the figure. «done/actionable» was printed
                   beside it and is not (the operator's call, 2026-09-16) — it
                   stays on the cell as its tooltip, where it costs no width. */}
-              {/* Two lanes of the one column: hair aside, then hair too. */}
-              {figCell(r.quality, resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r.quality, "overview.sr.hairWithout"),
-                qualityTarget(r, false))}
+              {/* The overall rate, hair included; the hover box spells out
+                  both readings — with hair and without — count and %. */}
               {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r.quality_hair, "overview.sr.hairWith"),
-                qualityTarget(r, true))}
+                qualityTitle(r), qualityTarget(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );
@@ -713,36 +687,23 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                 // On a phone the month alone is the caption; with none yet,
                 // `HeadLabel` falls back to the full one.
                 capShort: qMonth || undefined,
-              }, [
-                { k: "quality", full: t("overview.sr.hairWithout"), short: t("overview.sr.hairWithoutShort"), title: t("overview.sr.hairWithoutHint") },
-                { k: "qualityHair", full: t("overview.sr.hairWith"), short: t("overview.sr.hairWithShort"), title: t("overview.sr.hairWithHint") },
-              ]],
+              }],
               ["concerns", t("overview.sr.hintConcerns"), {
                 full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"),
                 cap: t("overview.sr.capConcerns"), capShort: t("overview.sr.capConcernsShort"),
               }],
-            ].map(([k, hint, label, lanes]) => {
-              const on = sort?.key === k || !!lanes?.some((l) => l.k === sort?.key);
-              return (
-                <Th
-                  key={k}
-                  k={k}
-                  sort={sort}
-                  onSort={onSort}
-                  align="center"
-                  cls={lanes ? TH_PAIR : TH_FIG}
-                  colSpan={lanes ? lanes.length : undefined}
-                  alsoActive={on}
-                  hint={hint}
-                  label={lanes ? (
-                    <span className="flex flex-col items-center">
-                      <HeadLabel active={on} {...label} />
-                      <LaneLabels lanes={lanes} sort={sort} onSort={onSort} />
-                    </span>
-                  ) : <HeadLabel active={on} {...label} />}
-                />
-              );
-            })}
+            ].map(([k, hint, label]) => (
+              <Th
+                key={k}
+                k={k}
+                sort={sort}
+                onSort={onSort}
+                align="center"
+                cls={TH_FIG}
+                hint={hint}
+                label={<HeadLabel active={sort?.key === k} {...label} />}
+              />
+            ))}
           </tr>
         </thead>
         <tbody>{body}</tbody>

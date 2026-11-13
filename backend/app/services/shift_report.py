@@ -8,8 +8,10 @@ One row per brigadir, six columns, and not one of them is a new measurement:
                       far — off the stored live Verifix read
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
     Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS
-                      MONTH — twice in the one column: hair records left out
-                      (`quality`), and every record, hair too (`quality_hair`)
+                      MONTH — the column prints the OVERALL rate, every
+                      record, hair too (`quality_hair`); the rate with hair
+                      records left out (`quality`) rides beside it for the
+                      cell's hover box
     Ochiq xavotirlar  concerns still open at the brigadir's own level, whole time
 
 It replaced a Google Sheet somebody filled and coloured by hand every morning,
@@ -45,11 +47,13 @@ RESOLVED = "done"
 # router applies it (this module never queries); a row with NO category is kept,
 # because «uncategorised» is not «hair».
 #
-# From 2026-11-13 the column prints BOTH readings side by side (the operator:
-# «in that column should be and with hair and without hair»): `quality` is this
-# one, unchanged, and `quality_hair` is the same rate over every record, hair
-# included — the Quality page's «Soch bilan». Only this board gained it;
-# «Brigadirlar reytingi», «Hisobotlar» and the KPIs keep the without-hair rate.
+# From 2026-11-13 the board's figure is the OVERALL rate (the operator: «take
+# the overall quality control by user, with hair and without»): `quality_hair`
+# is the rate over every record, hair included — the Quality page's «Soch
+# bilan» — and is what the cell prints; `quality` is this without-hair one,
+# unchanged, printed in the cell's hover box beside it. Only this board gained
+# it; «Brigadirlar reytingi», «Hisobotlar» and the KPIs keep the without-hair
+# rate.
 SKIP_CATEGORY = "hair"
 
 # routers/concerns.py VALID_STATUSES = todo | doing | done; open = not done.
