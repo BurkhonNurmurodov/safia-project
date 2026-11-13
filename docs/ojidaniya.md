@@ -1191,10 +1191,11 @@ told, and a plan («Rejada» / «Bajarilmoqda») was a promise with no day on it
   overdue until done or moved, what waits on each role, the first day, the page
   carrying the same list, the reminder told once a day, each shift in its own
   hours, the four languages).
-- Not built: a reminder to a shift-manager about a brigadir who answers nothing
-  (escalation), «done on time / late» in Tahlil, the waiting list in the bell's
+- Not built: «done on time / late» in Tahlil, the waiting list in the bell's
   «Sizdan kutilmoqda» queue, a switch for the reminder on the «Kutish mas'uli»
-  page (today: the constant, or each person's own notification settings).
+  page (today: the constant, or each person's own notification settings). (The
+  shift-managers' digest of brigadirs who answer nothing came the same evening —
+  two sections below.)
 
 ## «Kutish yechimlari» — the ADMINS' alone until its first day (`OPEN_FROM`, 2026-11-13)
 
@@ -1226,3 +1227,38 @@ and the first reminders would have gone out the next morning at 10:00.
 - Tests: `FirstDay` (the gate by itself) and `Page.test_only_admins_until_the_first_day`,
   `test_no_reminder_before_the_first_day` in `backend/tests/test_idle_solutions.py`;
   every other test runs with the day long past (`setUp` patches it).
+
+## «Kutish yechimlari» — the shift-managers are told who is behind (`idle_solution_behind`, 2026-11-13)
+
+The operator's «yes» to «should shift managers also be told when a brigadir
+leaves stops unanswered for days?». It starts with the page's first day
+(`OPEN_FROM`), like everything else here — until then nobody can be behind.
+
+- **Behind** (`idle_solution_reminder.behind`) = a brigadir with a stop that has
+  waited on them `ESCALATE_DAYS` (3) days or more: an unanswered stop that old,
+  or their own plan that long past its date. Read off `waiting()` for each
+  unit's brigadir — the very list that brigadir sees and is reminded of — so
+  the digest counts nothing the brigadir's own page does not show. A brigadir
+  whose profile nobody holds is named too, marked «botga ulanmagan»: no
+  reminder reaches them, which is exactly what a shift-manager can fix.
+- **ONE message a day per shift-manager**, in their own shift's slot (10:00 /
+  22:00), after the brigadirs' reminders of that pass: how many brigadirs, then
+  each with their stops and the oldest day (worst first, `BEHIND_TOP` 10 named,
+  the rest counted), and one button onto the page with those brigadirs and the
+  last `REMIND_DAYS` days already picked (the page keeps both in its address).
+  **Nobody behind → nothing sent.** The ledger is the reminder's
+  (`idle_solution_reminders`), keyed by the shift-manager's own profile.
+- **Who is told** is `shift_scope.role_ids_for_unit` — every shift-manager, the
+  platform's one definition of «answerable for a unit» — so the digest names
+  every unit's brigadirs to each of them. It respects the 2026-11-11 ruling («a
+  shift-manager is told only what waits on them»): this is not news of a
+  decision, it is one line a day about people only they can speak to, and it is
+  silent on a day nobody is behind.
+- Bell row: `idle_solution_behind` (category «idle», opens the page). Cause
+  owners who answer nothing are named to nobody — not asked for.
+- Tests: `backend/tests/test_idle_solutions.py` (who is behind and since when, a
+  late plan counting like an old stop, the digest once a day and in each
+  shift's hours, nobody behind → nothing, the four languages).
+- Not built: a view on the page listing exactly the stops the digest counts
+  (the button opens the brigadirs' stops; «Yechimsizlar» narrows to the ones
+  nobody answered), the same digest for admins or top-managers.

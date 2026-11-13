@@ -81,6 +81,7 @@ _EXACT = {
     "admin_record_edited": "day", "admin_record_deleted": "day",
     "idle_request_new": "idle",
     "idle_solution_reminder": "idle",
+    "idle_solution_behind": "idle",
     "education_lesson_new": "learning",
     "call_forecast": "other",
     # A unit changed brigadir (2026-10-24).

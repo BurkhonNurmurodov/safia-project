@@ -735,7 +735,9 @@ class Page(unittest.TestCase):
         # unit 2: nobody holds it, nobody to tell; an owner of no cause is not asked at all
         self.assertEqual((out["asked"], out["sent"], out["nobody"]), (3, 2, 1))
         self.assertEqual(self.ledger(), {
-            "supervisor:1": (True, 1, 1), owner: (True, 2, 0), "supervisor:2": (False, 0, 0)})
+            "supervisor:1": (True, 1, 1), owner: (True, 2, 0), "supervisor:2": (False, 0, 0),
+            # the shift-manager nobody holds: asked about the digest once, nobody to tell
+            f"shift-manager:{self.SM['role_id']}": (False, 0, 0)})
         self.assertEqual(sorted(c.args[0] for c in dm.call_args_list), [501, 503])
         sent = {c.args[0]: c.kwargs for c in dm.call_args_list}
         self.assertIn("<b>2 ta</b>", sent[501]["html"])                 # in the holder's language
@@ -785,6 +787,83 @@ class Page(unittest.TestCase):
         self.assertEqual([c.args[0] for c in dm.call_args_list], [501])
         out, dm = self.remind(now=clock(22))
         self.assertEqual([c.args[0] for c in dm.call_args_list], [502])
+
+    # ── the shift-managers' digest ───────────────────────────────────────────
+
+    def test_a_brigadir_left_behind_is_named_to_the_shift_managers(self):
+        from app.services import idle_solution_reminder as rem
+        sm = f"shift-manager:{self.SM['role_id']}"
+        self.holder(sm, 504)
+        self.holder("supervisor:1", 501)
+        # s4 has waited 5 days and s5 four; s3 only two — not yet
+        rows = rem.behind(self.db, TODAY)
+        self.assertEqual([(r["manager_id"], r["stops"], r["overdue"], r["since"], r["held"]) for r in rows],
+                         [(1, 1, 0, ago(5).isoformat(), True), (2, 1, 0, ago(4).isoformat(), False)])
+        # a plan three days past its date has waited as long
+        self.overdue_plan(SUP1, "s3", days=rem.ESCALATE_DAYS)
+        first = rem.behind(self.db, TODAY)[0]
+        self.assertEqual((first["manager_id"], first["stops"], first["overdue"]), (1, 2, 1))
+
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual(out["managers"], 1)
+        sent = {c.args[0]: c.kwargs for c in dm.call_args_list}
+        self.assertEqual(sorted(sent), [501, 504])                      # the brigadir's own reminder too
+        text = sent[504]["html"]
+        self.assertIn("<b>2 nafar</b>", text)
+        self.assertIn("Unit 1 — <b>2 ta</b>", text)
+        self.assertIn("Unit 2 — <b>1 ta</b>", text)
+        self.assertEqual(text.count("botga ulanmagan"), 1)              # unit 2: nobody holds it
+        url = sent[504]["markup"].keyboard[0][0].web_app.url
+        self.assertIn("/idle-solutions?date_from=", url)
+        self.assertIn("manager_id=1&manager_id=2", url)
+        self.assertEqual(self.ledger()[sm], (True, 3, 1))
+        # once a day, like the reminder
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual(out["managers"], 0)
+        dm.assert_not_called()
+
+    def test_nobody_behind_no_digest(self):
+        from app.services import idle_solution_reminder as rem
+        sm = f"shift-manager:{self.SM['role_id']}"
+        self.holder(sm, 504)
+        self.write(SUP1, "s4")
+        self.write(SUP2, "s5", status="open", due_date=TODAY)           # a plan in time is an answer
+        self.assertEqual(rem.behind(self.db, TODAY), [])
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual(out["managers"], 0)
+        dm.assert_not_called()
+        self.assertEqual(self.ledger()[sm], (False, 0, 0))              # asked once, nothing to say
+        # and before the page's first day nobody can be behind
+        with mock.patch.object(ims, "OPEN_FROM", None):
+            self.assertEqual(rem.behind(self.db, TODAY), [])
+
+    def test_a_shift_manager_is_told_in_their_own_shifts_hours(self):
+        from app import models as m
+        night = m.RoleProfile(role="shift-manager", name="Night chief", shift=2)
+        self.db.add(night)
+        self.db.commit()
+        self.holder(f"shift-manager:{night.id}", 505)
+        self.holder(f"shift-manager:{self.SM['role_id']}", 504)
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual([c.args[0] for c in dm.call_args_list], [504])
+        out, dm = self.remind(shifts=[2])
+        self.assertEqual([c.args[0] for c in dm.call_args_list], [505])
+
+    def test_the_digest_reads_in_four_languages(self):
+        from app.routers.staff import _NOTIF_STRINGS, _mk_notif
+        from app.services import idle_solution_reminder as rem
+        from app.services import notification_center as nc
+        rows = rem.behind(self.db, TODAY)
+        for lang in ("uz", "uz_cyrl", "ru", "en"):
+            text = rem.behind_body(lang, rows)
+            self.assertIn("Unit 1", text, lang)
+            self.assertIn(ago(5).strftime("%d.%m"), text, lang)
+            self.assertNotIn("{", text, lang)
+            self.assertIn(lang, _NOTIF_STRINGS[rem.NKEY_BEHIND])
+        title, text = _mk_notif(rem.NKEY_BEHIND, {"n": 2, "stops": 3, "days": 3, "lines": "Unit 1 — 2; Unit 2 — 1"}, "uz")
+        self.assertEqual(title, "Kutish yechimlari: 2 nafar brigadir javob yozmayapti")
+        self.assertEqual(text, "3 kundan beri javobsiz to'xtashlar: 3\nUnit 1 — 2; Unit 2 — 1")
+        self.assertEqual(nc.category_of(rem.NKEY_BEHIND), "idle")
 
     def test_the_reminder_reads_in_four_languages(self):
         from app.routers.staff import _NOTIF_STRINGS, _mk_notif

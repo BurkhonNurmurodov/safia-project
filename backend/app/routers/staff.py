@@ -490,6 +490,14 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Решения по ожиданиям: вас ждут остановки — {n}", "Решение не написано: {unanswered}\nСрок вашего плана прошёл: {overdue}"),
         "en": ("Idle solutions: stops waiting for you — {n}", "No solution written: {unanswered}\nYour plan's date has passed: {overdue}"),
     },
+    # …and its digest for the shift-managers: the brigadirs who left stops
+    # waiting for {days} days or more. `lines` = «name — stops; …» (names).
+    "idle_solution_behind": {
+        "uz": ("Kutish yechimlari: {n} nafar brigadir javob yozmayapti", "{days} kundan beri javobsiz to'xtashlar: {stops}\n{lines}"),
+        "uz_cyrl": ("Кутиш ечимлари: {n} нафар бригадир жавоб ёзмаяпти", "{days} кундан бери жавобсиз тўхташлар: {stops}\n{lines}"),
+        "ru": ("Решения по ожиданиям: бригадиры без ответа — {n}", "Остановок без ответа {days} дн. и дольше: {stops}\n{lines}"),
+        "en": ("Idle solutions: brigadirs not answering — {n}", "Stops unanswered for {days} days or more: {stops}\n{lines}"),
+    },
     "verifix_uploaded": {
         "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),
         "uz_cyrl": ("Verifix маълумотлари юкланди", "Сана: {date}. Ўзгартиришларни киритинг (ходим алмаштириш, лавозим ўзгартириш, ўчириш) ва кунни ёпинг."),
