@@ -276,7 +276,7 @@ def list_brigadirs(
     # pinned to their own regardless of what they send (factory_scope).
     factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview", "zagruzka", "leaderboard")),
+    payload: dict = Depends(require_page("overview", "zagruzka", "leaderboard", "shift-daily")),
 ):
     if not date_to:
         date_to = date.today()

@@ -347,3 +347,18 @@ operator's word («one column of the existing table»).
   to'g'irlash» on that unit's day (`scopeLinks.staffLink`). While a shift runs,
   people still due count as absent — /staff's own reading from the shift's
   first minute.
+
+## «Smena kunligi» reads for whoever holds its page (2026-11-13)
+
+The page key `shift-daily` opened the ROUTE, but every endpoint the page reads
+was guarded by «overview» / «zagruzka» only — so a top-manager saw data
+(their role holds those too) and a person given `page.view.shift-daily` alone
+(the guest Fozilova Dilafruz, `docs/data-fixes.md`) saw «Hisobotni yuklab
+bo'lmadi» on every card. `shift-daily` now opens `/api/shift-report` and its
+`/start-load`, `/containers`, `/containers-hourly`, plus `/api/heatmap` and
+`/api/brigadirs` (`require_page` is OR). Nothing about WHAT they return
+changed: the viewer's scope is still the role's (`_scope`, `factory_scope`).
+`/containers-hourly` keeps its own role gate (`HOURLY_ROLES` — admins and
+shift-managers while it is tried out), so the hour-by-hour view stays hidden
+from everyone else. **A new endpoint this page reads needs `shift-daily` in
+its `require_page`.**

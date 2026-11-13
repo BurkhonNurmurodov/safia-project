@@ -51,7 +51,7 @@ def get_heatmap(
     # ran the whole загрузка again for the same period.
     units: bool = Query(default=False),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview", "zagruzka")),
+    payload: dict = Depends(require_page("overview", "zagruzka", "shift-daily")),
 ):
     if not date_to:
         date_to = date.today()

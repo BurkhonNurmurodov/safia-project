@@ -147,7 +147,7 @@ def get_shift_report(
     manager_id: List[int] = Query(default=[]),
     day: Optional[date] = Query(default=None, alias="date"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview")),
+    payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
     now = live_overview.now_local()
     # A picked shift-day (the page's day stepper) replaces «today» for every
@@ -362,7 +362,7 @@ def get_start_load(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview")),
+    payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
     """«Smena boshi Zagruzka» per unit per day — the figure the board's first
     column prints, for the shift dashboard's KPI cards (their day stepper and
@@ -427,7 +427,7 @@ def get_containers(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview")),
+    payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
     """The whole plant's (scope's) container totals for one day — the «Smena
     kunligi» card (2026-10-30, the operator: «total number of each container
@@ -486,7 +486,7 @@ def get_containers_hourly(
     factory: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("overview")),
+    payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
     """The scope's containers per clock HOUR for one day: Σ over every
     configured unit of `hourly_containers.unit_hours` off the unit's own
