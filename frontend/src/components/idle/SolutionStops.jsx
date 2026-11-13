@@ -15,6 +15,7 @@ import { SplitBar, SplitLegend } from "../ui/Meter";
 import Pagination from "../ui/Pagination";
 import EmptyState from "../ui/EmptyState";
 import FormField from "../ui/FormField";
+import DateRangePicker, { localISO } from "../ui/DateRangePicker";
 import CellLink from "../ui/CellLink";
 import { useToast } from "../ui/Toast";
 import { useLang } from "../../context/LangContext";
@@ -32,31 +33,52 @@ import api from "../../utils/api";
  * every filed stop in reach as ONE flat list, newest first under its day, and
  * one button on each that opens the writing sheet.
  *
- *   the card on top   how many stops still wait (for the brigadir and the
- *                     cause's owner: for THEIR own answer), as one split bar
+ *   the card on top   what waits on the reader — or, for a manager, how many
+ *                     of the period's stops have an answer — as one split bar
  *   the list          a stop = its cause, cell, clock and the leader's own
  *                     comment, then what was already written to it
  *   the sheet         «Siz nima qildingiz?» — and «Saqlash va keyingisi»
  *                     walks the stops still waiting, one after another
  *
- * The server says whose each row is (`mine`, `can_edit`) and whether this
- * reader is one whose own answer every stop waits for (`expects_me`).
+ * The server says whose each row is (`mine`, `can_edit`), whether a plan's own
+ * date has passed (`overdue`, `due_in`) and — for a brigadir and a cause's
+ * owner — WHAT WAITS ON THEM (`todo`, the server's `waiting()`): the stops of
+ * the last two weeks they wrote nothing to and the stops carrying their own
+ * overdue plan. That list has no period: it is a to-do list, the very one the
+ * menu number and the daily reminder count. The period on the bar belongs to
+ * «Hammasi».
  */
 const AMBER = "var(--status-warn)";
 const GREEN = "var(--status-ok)";
+const RED = "var(--status-bad)";
 const GREY = "#94a3b8";
 const BLUE = "#3b82f6";
-const STATE_INK = { none: GREY, open: AMBER, doing: BLUE, done: GREEN };
-// a FILL takes the raw hue (Meter.jsx): written / waiting / nothing yet
-const FILL = { done: "#22c55e", wait: "#eab308", none: GREY };
+const STATE_INK = { none: GREY, open: AMBER, doing: BLUE, done: GREEN, late: RED };
+// a FILL takes the raw hue (Meter.jsx): written / waiting / late / nothing yet
+const FILL = { done: "#22c55e", wait: "#eab308", late: "#ef4444", none: GREY };
 const STATUS_ORDER = ["done", "doing", "open"];   // «what did you do» — done leads
 const PAGE = 20;
-const NONE = new Set();
+const NO_ROWS = new Map();
 
 const catCode = (name) => String(name || "").replace(/^Cat\s*/i, "");
 const num = (v) => Math.round(Number(v) || 0).toLocaleString("ru-RU");
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 const ddmmyy = (iso) => (iso ? `${ddmm(iso)}.${iso.slice(0, 4)}` : "");
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return localISO(d);
+};
+// the list's own order, as the server sorts it: newest first
+const newestFirst = (a, b) =>
+  (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+  || ((a.start || "") < (b.start || "") ? 1 : (a.start || "") > (b.start || "") ? -1 : 0)
+  || (b.id - a.id);
+// a stop's chip — the server's `_state`: the least finished solution wins
+const stateOf = (sols) => (!sols.length ? "none"
+  : sols.some((x) => x.status === "open") ? "open"
+  : sols.some((x) => x.status === "doing") ? "doing" : "done");
+const hasOverdue = (s) => s.solutions.some((x) => x.overdue);
 // a keyboard that rises by itself hides the comment the reader came to answer
 const FINE_POINTER = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: fine)").matches;
 
@@ -95,38 +117,71 @@ function useByline(T) {
   };
 }
 
-/** A solution on a stop's card: read at a glance; its author marks it done in one tap. */
-function SolutionLine({ T, x, byline, onDone }) {
+/** A plan's own date in words — nothing for a done row or a plan without one. */
+function dueNote(T, x) {
+  if (x.status === "done" || !x.due_date) return null;
+  if (x.overdue) return { text: fill(T.dueLate, { d: ddmm(x.due_date), n: Math.abs(x.due_in ?? 0) }), ink: RED, strong: true };
+  if (x.due_in === 0) return { text: T.dueToday, ink: AMBER, strong: true };
+  return { text: fill(T.dueBy, { d: ddmm(x.due_date) }), ink: "var(--text-3)", strong: false };
+}
+
+function DueNote({ T, x }) {
+  const due = dueNote(T, x);
+  if (!due) return null;
+  return <span style={{ color: due.ink, fontWeight: due.strong ? 600 : 400 }}> · {due.text}</span>;
+}
+
+/**
+ * A solution on a stop's card: read at a glance; its author marks it done in
+ * one tap. `was` is the row as it stood before that tap, in this very list: the
+ * button and the date it carried keep their room (unseen), so the line — and
+ * every stop under it — stays where the reader's thumb left it.
+ */
+function SolutionLine({ T, x, byline, onDone, was }) {
   const b = byline(x);
+  const justDone = !!was && x.status === "done";
   return (
     <li className="rounded-lg px-2.5 py-2" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
       <div className="flex items-start gap-2 min-w-0">
-        <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: STATE_INK[x.status] || GREY }} aria-hidden="true" />
+        <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+          style={{ background: x.overdue ? RED : STATE_INK[x.status] || GREY }} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="text-sm whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{x.text}</div>
-          <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{b.text} · {T.st[x.status] || x.status}</div>
+          <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
+            {b.text} · {T.st[x.status] || x.status}<DueNote T={T} x={x} />
+            {justDone && <span className="invisible" aria-hidden="true"><DueNote T={T} x={was} /></span>}
+          </div>
         </div>
         {/* the one-tap «done» is the AUTHOR's — an admin changes somebody else's row inside the sheet */}
-        {x.mine && x.can_edit && x.status !== "done" && (
+        {x.mine && x.can_edit && x.status !== "done" ? (
           <Button size="sm" variant="success" tint icon={<Check size={12} />} title={T.markDone}
             aria-label={T.markDone} onClick={() => onDone(x)}>
             {T.st.done}
           </Button>
-        )}
+        ) : justDone ? (
+          <span className="invisible" aria-hidden="true">
+            <Button size="sm" variant="success" tint icon={<Check size={12} />} disabled tabIndex={-1}>{T.st.done}</Button>
+          </span>
+        ) : null}
       </div>
     </li>
   );
 }
 
-/** The same solution inside the sheet: its author (and an admin) change its status and words. */
-function SolutionRow({ T, x, byline, notify, onChanged }) {
+/**
+ * The same solution inside the sheet: its author (and an admin) change its
+ * status, its words and — while it is not done — the date it is promised for.
+ * `days` = { today, max } bounds that date; without it (the older stop-less
+ * rows) no date is offered.
+ */
+function SolutionRow({ T, x, byline, notify, onChanged, days }) {
   const [draft, setDraft] = useState(null);   // null = reading, a string = editing the text
   const [busy, setBusy] = useState(false);
   const b = byline(x);
   async function put(body) {
     try {
-      await api.put(`/api/idle-solutions/${x.id}`, body);
-      onChanged();
+      const r = await api.put(`/api/idle-solutions/${x.id}`, body);
+      onChanged(r.data);
       return true;
     } catch {
       notify(T.saveFail, "error");
@@ -142,16 +197,21 @@ function SolutionRow({ T, x, byline, notify, onChanged }) {
   return (
     <li className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div className="text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>{b.text}</div>
+        <div className="text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>{b.text}<DueNote T={T} x={x} /></div>
         {x.can_edit ? (
-          <div className="flex items-center gap-1 flex-shrink-0" data-no-draft>
+          <div className="flex items-center justify-end gap-1 flex-wrap" data-no-draft>
+            {days && x.status !== "done" && (
+              <DateRangePicker single dateFrom={x.due_date || ""} dateTo={x.due_date || ""}
+                setDateFrom={(iso) => { if (iso && iso !== x.due_date) put({ due_date: iso }); }} setDateTo={() => {}}
+                min={days.today} max={days.max} placeholder={T.dueSet} triggerClassName="px-2.5 py-1.5 text-xs" />
+            )}
             <StyledSelect value={x.status} onChange={(v) => put({ status: v })}
               options={STATUS_ORDER.map((k) => ({ value: k, label: T.st[k] }))}
               triggerClassName="px-2.5 py-1.5 text-xs" />
             <ActionMenu label={`${T.actions}: ${b.who}`}
               items={[{ key: "edit", label: T.edit, icon: Pencil, onSelect: () => setDraft(x.text) }]} />
           </div>
-        ) : <StateChip T={T} state={x.status} />}
+        ) : <StateChip T={T} state={x.overdue ? "late" : x.status} />}
       </div>
       {draft == null ? (
         <p className="text-sm mt-1.5 whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{x.text}</p>
@@ -170,9 +230,8 @@ function SolutionRow({ T, x, byline, notify, onChanged }) {
 }
 
 /** One filed stop: what happened, where, when — and the one button that answers it. */
-function StopRow({ T, s, label, unit, perm, byline, first, onOpen, onDone }) {
+function StopRow({ T, s, label, unit, perm, asked, byline, first, onOpen, onDone, doneHere }) {
   const code = catCode(s.category);
-  const asked = perm.write && perm.expects && !s.mine;   // this reader's own answer is the one missing
   return (
     <li className="px-4 py-3" style={{ borderTop: first ? "none" : "1px solid var(--border)" }}>
       <div className="flex items-start gap-2.5 min-w-0">
@@ -189,14 +248,17 @@ function StopRow({ T, s, label, unit, perm, byline, first, onOpen, onDone }) {
             {unit ? ` · ${unit}` : ""}
           </div>
         </div>
-        <StateChip T={T} state={s.state} />
+        {/* a plan past its own date is what the stop is, until it is done or moved */}
+        <StateChip T={T} state={hasOverdue(s) ? "late" : s.state} />
       </div>
       <p className="text-sm mt-2 whitespace-pre-wrap break-words" style={{ color: s.note ? "var(--text-1)" : "var(--text-3)" }}>
         {s.note ? `«${s.note}»` : T.noNote}
       </p>
       {s.solutions.length > 0 && (
         <ul className="space-y-1.5 mt-2">
-          {s.solutions.map((x) => <SolutionLine key={x.id} T={T} x={x} byline={byline} onDone={onDone} />)}
+          {s.solutions.map((x) => (
+            <SolutionLine key={x.id} T={T} x={x} byline={byline} onDone={onDone} was={doneHere.get(x.id)} />
+          ))}
         </ul>
       )}
       {perm.write && (
@@ -215,28 +277,35 @@ function StopRow({ T, s, label, unit, perm, byline, first, onOpen, onDone }) {
 /**
  * The writing sheet. ONE dialog stays up while the reader works through the
  * stops still waiting: «Saqlash va keyingisi» saves and shows the next one.
+ * A plan («Rejada» / «Bajarilmoqda») is saved with the day it is promised for.
  */
-function Writer({ T, label, queue, byId, units, owners, mineTexts, perm, isPending, byline, showUnit, notify, onClose, onSaved, refresh }) {
+function Writer({ T, label, queue, lookup, units, owners, mineTexts, perm, isPending, byline, showUnit, days, notify, onClose, onSaved, onChanged }) {
   const { tl } = useTranslit();
   const [pos, setPos] = useState(0);
   const [text, setText] = useState("");
   const [status, setStatus] = useState("done");
+  const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
-  const stop = byId.get(queue[pos]);
+  const stop = lookup(queue[pos]);
   if (!stop) return null;
   const code = catCode(stop.category);
-  const next = queue.findIndex((id, i) => i > pos && byId.has(id) && isPending(byId.get(id)));
+  const next = queue.findIndex((id, i) => i > pos && lookup(id) && isPending(lookup(id)));
   const unit = showUnit ? units[String(stop.manager_id)]?.manager_name : null;
   const owner = owners[stop.category];
   const before = mineTexts(stop);
-  const move = (to) => { setPos(to); setText(""); setStatus("done"); };
+  const planned = status !== "done";
+  const ready = !!text.trim() && (!planned || !!due);
+  const move = (to) => { setPos(to); setText(""); setStatus("done"); setDue(""); };
   async function save() {
     const body = text.trim();
-    if (!body) return;
+    if (!ready) return;
     setBusy(true);
     try {
-      await api.post("/api/idle-solutions", { category: stop.category, manager_id: stop.manager_id, event_id: stop.id, text: body, status });
-      onSaved(stop.id);
+      const r = await api.post("/api/idle-solutions", {
+        category: stop.category, manager_id: stop.manager_id, event_id: stop.id, text: body, status,
+        ...(planned ? { due_date: due } : {}),
+      });
+      onSaved(r.data);
       if (next >= 0) {
         notify(T.saved, "success");
         move(next);
@@ -258,7 +327,7 @@ function Writer({ T, label, queue, byId, units, owners, mineTexts, perm, isPendi
         ddmmyy(stop.date), stop.cell, stop.start ? `${stop.start}–${stop.end}` : null,
         stop.minutes ? fill(T.minutes, { m: Math.round(stop.minutes) }) : null,
         unit ? shortPerson(tl(unit) || unit) : null,
-        queue.length > 1 ? fill(T.sheetProgress, { i: pos + 1, n: queue.length }).replace(/ /g, "\u00a0") : null,
+        queue.length > 1 ? fill(T.sheetProgress, { i: pos + 1, n: queue.length }).replace(/ /g, " ") : null,
       ].filter(Boolean).join(" · ")}
       footer={
         <>
@@ -269,7 +338,7 @@ function Writer({ T, label, queue, byId, units, owners, mineTexts, perm, isPendi
             ? <Button variant="secondary" onClick={() => move(next)} disabled={busy || !!text.trim()}>{T.skip}</Button>
             : <Button variant="secondary" onClick={onClose} disabled={busy}>{T.close}</Button>}
           {perm.write && (
-            <Button onClick={save} loading={busy} disabled={!text.trim()}>{next >= 0 ? T.saveNext : T.save}</Button>
+            <Button onClick={save} loading={busy} disabled={!ready}>{next >= 0 ? T.saveNext : T.save}</Button>
           )}
         </>
       }>
@@ -291,7 +360,9 @@ function Writer({ T, label, queue, byId, units, owners, mineTexts, perm, isPendi
         <div>
           <div className="text-[11px] uppercase tracking-wider mb-1.5" style={{ color: "var(--text-3)" }}>{T.written}</div>
           <ul className="space-y-2">
-            {stop.solutions.map((x) => <SolutionRow key={x.id} T={T} x={x} byline={byline} notify={notify} onChanged={refresh} />)}
+            {stop.solutions.map((x) => (
+              <SolutionRow key={x.id} T={T} x={x} byline={byline} notify={notify} onChanged={onChanged} days={days} />
+            ))}
           </ul>
         </div>
       )}
@@ -318,6 +389,20 @@ function Writer({ T, label, queue, byId, units, owners, mineTexts, perm, isPendi
           <FormField label={T.statusLabel}>
             <SegmentedToggle fill value={status} onChange={setStatus} options={STATUS_ORDER.map((k) => [k, T.st[k]])} />
           </FormField>
+          {/* a plan is a promise with a day on it: one tap for the usual ones, the calendar for any other */}
+          {planned && (
+            <div className="brk-in">
+              <FormField label={T.dueLabel} required hint={T.dueHint}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SegmentedToggle value={due} onChange={setDue} ariaLabel={T.dueLabel}
+                    options={[[days.today, T.today], [addDays(days.today, 1), T.dTomorrow],
+                      [addDays(days.today, 3), T.d3], [addDays(days.today, 7), T.d7]]} />
+                  <DateRangePicker single weekday dateFrom={due} dateTo={due} setDateFrom={setDue} setDateTo={() => {}}
+                    min={days.today} max={days.max} placeholder={T.duePick} triggerClassName="px-3 py-2 text-sm" />
+                </div>
+              </FormField>
+            </div>
+          )}
         </>
       )}
     </Modal>
@@ -331,42 +416,63 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
   const byline = useByline(T);
   const top = useRef(null);
   const perm = { write: data.can_write ?? true, expects: !!data.expects_me };
-  // «waiting»: for the brigadir and the cause's owner — their OWN answer; for the rest — anybody's
-  const isPending = (s) => (perm.expects ? !s.mine : s.solutions.length === 0);
+  // «Sizni kutmoqda» — only for a reader the page asks; absent from a server
+  // one release behind, where the older rule below still answers.
+  const todo = perm.expects && Array.isArray(data.todo?.stops) ? data.todo : null;
   const [show, setShow] = useState(initialShow || (data.expects_me ? "pending" : "all"));
-  // Stops answered while «waiting» is on stay in place until the list is asked
-  // for again: saving must not pull the row out from under the reader.
-  const [keptOn, setKeptOn] = useState({ key: "", ids: NONE });
+  // The stops this reader has just written on, as last known — { key, rows, was }.
+  // One of them stays where it is until the list is asked for again, even after
+  // it stopped waiting (or left the payload altogether): saving must not pull a
+  // row out from under the reader, nor close the sheet they are writing in.
+  // `was` = solution id → the row before its one-tap «done» (SolutionLine).
+  const [local, setLocal] = useState({ key: "", rows: NO_ROWS, was: NO_ROWS });
   const [pageOn, setPageOn] = useState({ key: "", page: 1 });
   // { queue: [stop ids], n: opened count } — `n` keys the sheet per opening, under
   // a name of its own: the toast beside it is keyed 1, 2, 3 … as well
   const [writer, setWriter] = useState(null);
   const [legacyOpen, setLegacyOpen] = useState(false);
 
+  const today = data.today || localISO(new Date());
+  const days = useMemo(() => ({ today, max: addDays(today, data.max_plan_days || 90) }), [today, data.max_plan_days]);
   const all = data.stops;
-  const byId = useMemo(() => new Map(all.map((s) => [s.id, s])), [all]);
+  const waitingOn = todo?.stops;
+  const byId = useMemo(() => {
+    const m = new Map((waitingOn || []).map((s) => [s.id, s]));
+    for (const s of all) m.set(s.id, s);
+    return m;
+  }, [all, waitingOn]);
+  const why = useMemo(() => new Map((waitingOn || []).map((s) => [s.id, s.why])), [waitingOn]);
+  const inFilter = (s) => (!cats.length || cats.includes(s.category)) && (!cells.length || cells.includes(s.cell));
   const pool = useMemo(
     () => all.filter((s) => (!cats.length || cats.includes(s.category)) && (!cells.length || cells.includes(s.cell))),
     [all, cats, cells]);
   const narrowed = cats.length > 0 || cells.length > 0;
   const viewKey = `${listKey}|${cats.join(",")}|${cells.join(",")}`;
-  const kept = keptOn.key === viewKey ? keptOn.ids : NONE;
-  const waitingN = pool.filter(isPending).length;
-  const list = show === "pending" ? pool.filter((s) => isPending(s) || kept.has(s.id)) : pool;
+  const held = local.key === viewKey ? local.rows : NO_ROWS;
+  const doneHere = local.key === viewKey ? local.was : NO_ROWS;
+  const lookup = (id) => byId.get(id) || held.get(id);
+  // «waiting»: what the server says waits on this reader; for a manager — a stop nobody answered
+  const isPending = (s) => (todo ? why.has(s.id) : perm.expects ? !s.mine : s.solutions.length === 0);
+  const pendingRows = todo ? waitingOn.filter(inFilter) : pool.filter(isPending);
+  const lateRows = pool.filter(hasOverdue);
+  const base = show === "pending" ? pendingRows : show === "overdue" ? lateRows : null;
+  let list = pool;
+  if (base) {
+    const ids = new Set(base.map((s) => s.id));
+    const kept = [...held.values()].filter((s) => !ids.has(s.id) && inFilter(s)).map((s) => byId.get(s.id) || s);
+    list = kept.length ? [...base, ...kept].sort(newestFirst) : base;
+  }
   const pageKey = `${viewKey}|${show}`;
   const pageCount = Math.max(1, Math.ceil(list.length / PAGE));
   const page = Math.min(pageOn.key === pageKey ? pageOn.page : 1, pageCount);
   const rows = list.slice((page - 1) * PAGE, page * PAGE);
-  const days = [];
+  const groups = [];
   for (const s of rows) {
-    if (!days.length || days[days.length - 1].date !== s.date) days.push({ date: s.date, items: [] });
-    days[days.length - 1].items.push(s);
+    if (!groups.length || groups[groups.length - 1].date !== s.date) groups.push({ date: s.date, items: [] });
+    groups[groups.length - 1].items.push(s);
   }
-  const perDay = useMemo(() => {
-    const n = new Map();
-    for (const s of list) n.set(s.date, (n.get(s.date) || 0) + 1);
-    return n;
-  }, [list]);
+  const perDay = new Map();
+  for (const s of list) perDay.set(s.date, (perDay.get(s.date) || 0) + 1);
 
   const notify = (message, tone) => toast.show(message, tone);
   const unitOf = (s) => {
@@ -386,7 +492,7 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
   const mineTexts = (stop) => {
     const here = new Set(stop.solutions.map((x) => x.text));
     const out = [];
-    for (const s of all) {
+    for (const s of byId.values()) {
       if (s.category !== stop.category) continue;
       for (const x of s.solutions) {
         if (x.mine && !here.has(x.text) && !out.includes(x.text)) out.push(x.text);
@@ -395,9 +501,28 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
     }
     return out;
   };
-  const pickShow = (v) => { setKeptOn({ key: "", ids: NONE }); setShow(v); };
+  const pickShow = (v) => { setLocal({ key: "", rows: NO_ROWS, was: NO_ROWS }); setShow(v); };
+  // A row the server just returned (a new solution, a changed one) goes onto
+  // its stop as last known, and the lists are asked for again. `before` is the
+  // row a one-tap «done» replaced.
+  const wrote = (item, before) => {
+    const s = item?.event_id != null ? lookup(item.event_id) : null;
+    if (s) {
+      const sols = s.solutions.some((x) => x.id === item.id)
+        ? s.solutions.map((x) => (x.id === item.id ? item : x))
+        : [item, ...s.solutions];
+      const next = { ...s, solutions: sols, state: stateOf(sols), mine: s.mine || !!item.mine };
+      setLocal((cur) => {
+        const mine = cur.key === viewKey;
+        const was = new Map(mine ? cur.was : NO_ROWS);
+        if (before) was.set(item.id, before);
+        return { key: viewKey, rows: new Map(mine ? cur.rows : NO_ROWS).set(s.id, next), was };
+      });
+    }
+    refresh();
+  };
   const open = (id) => {
-    const s = byId.get(id);
+    const s = lookup(id);
     let queue = [id];
     if (s && isPending(s)) {
       // the stops still waiting, in the list's own order, starting from this one
@@ -407,14 +532,10 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
     }
     setWriter({ queue, n: (writer?.n || 0) + 1 });
   };
-  const onSaved = (id) => {
-    if (show === "pending") setKeptOn({ key: viewKey, ids: new Set(kept).add(id) });
-    refresh();
-  };
   const markDone = async (x) => {
     try {
-      await api.put(`/api/idle-solutions/${x.id}`, { status: "done" });
-      refresh();
+      const r = await api.put(`/api/idle-solutions/${x.id}`, { status: "done" });
+      wrote(r.data, x);
     } catch {
       notify(T.saveFail, "error");
     }
@@ -424,14 +545,54 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
     top.current?.scrollIntoView({ block: "start" });
   };
 
-  const written = pool.length - waitingN;
-  const parts = perm.expects
-    ? [{ key: "done", label: T.pWritten, value: written, color: FILL.done },
-       { key: "wait", label: T.pWaiting, value: waitingN, color: FILL.wait }]
-    : [{ key: "done", label: T.pAnswered, value: written, color: FILL.done },
-       { key: "none", label: T.pNone, value: waitingN, color: FILL.none }];
+  // The card: what waits on the reader — or how the period's stops stand.
+  let card;
+  if (todo) {
+    const late = pendingRows.filter((s) => s.why === "overdue").length;
+    const blank = pendingRows.length - late;
+    const done = narrowed
+      ? (todo.written_rows || []).filter(([c, cell]) => inFilter({ category: c, cell })).length
+      : todo.written || 0;
+    card = {
+      icon: PenLine, label: T.cardMine, value: pendingRows.length,
+      color: late ? FILL.late : blank ? FILL.wait : FILL.done,
+      ink: late ? RED : blank ? AMBER : GREEN,
+      sub: fill(T.todoWindow, { a: ddmm(todo.from), b: ddmm(todo.to) }),
+      parts: [{ key: "done", label: T.pWritten, value: done, color: FILL.done },
+              { key: "wait", label: T.pWaiting, value: blank, color: FILL.wait },
+              { key: "late", label: T.pOverdue, value: late, color: FILL.late }],
+    };
+  } else {
+    const waitingN = pendingRows.length;
+    const written = pool.length - waitingN;
+    card = {
+      icon: perm.expects ? PenLine : ClipboardList,
+      label: perm.expects ? T.cardMine : T.cardAll,
+      value: perm.expects ? waitingN : pool.length,
+      color: perm.expects ? (waitingN ? FILL.wait : FILL.done) : undefined,
+      ink: perm.expects ? (waitingN ? AMBER : GREEN) : "var(--text-1)",
+      sub: narrowed ? null : fill(T.periodMinutes, { m: num(data.total_minutes) }),
+      parts: perm.expects
+        ? [{ key: "done", label: T.pWritten, value: written, color: FILL.done },
+           { key: "wait", label: T.pWaiting, value: waitingN, color: FILL.wait }]
+        : [{ key: "done", label: T.pAnswered, value: written, color: FILL.done },
+           { key: "none", label: T.pNone, value: waitingN, color: FILL.none }],
+    };
+  }
+  const views = todo
+    ? [["pending", `${T.fTodo} · ${pendingRows.length}`], ["all", `${T.fAll} · ${pool.length}`]]
+    : perm.expects
+      ? [["pending", `${T.fPendingMine} · ${pendingRows.length}`], ["all", `${T.fAll} · ${pool.length}`]]
+      : [["all", `${T.fAll} · ${pool.length}`], ["pending", `${T.fPendingAny} · ${pendingRows.length}`],
+         ["overdue", `${T.fOverdue} · ${lateRows.length}`]];
+  const viewHint = show === "all" ? T.hintAll : show === "overdue" ? T.hintOverdue : todo ? T.hintTodo : T.hintNone;
+  // «nothing here»: the «Sabab» / «Yacheyka» picks cut everything this view
+  // draws from, or the view simply has nothing left
+  const ofTodo = show === "pending" && !!todo;
+  const cutByFilter = narrowed && list.length === 0
+    && (ofTodo ? pendingRows.length === 0 && waitingOn.length > 0 : pool.length === 0 && all.length > 0);
 
-  if (all.length === 0) {
+  if (all.length === 0 && !(waitingOn?.length)) {
     return (
       <>
         <EmptyState icon={Clock} title={T.noStops} message={T.emptySub} showUploadLink={false} />
@@ -441,14 +602,10 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
   }
   return (
     <>
-      <KPICard size="lg" className="mb-4" icon={perm.expects ? PenLine : ClipboardList}
-        color={perm.expects ? (waitingN ? FILL.wait : FILL.done) : undefined}
-        valueColor={perm.expects ? (waitingN ? AMBER : GREEN) : "var(--text-1)"}
-        label={perm.expects ? T.cardMine : T.cardAll}
-        value={perm.expects ? waitingN : pool.length} unit={T.unitStops}
-        sub={narrowed ? null : fill(T.periodMinutes, { m: num(data.total_minutes) })}>
-        <SplitBar parts={parts} height={8} />
-        <SplitLegend parts={parts} className="mt-2" />
+      <KPICard size="lg" className="mb-4" icon={card.icon} color={card.color} valueColor={card.ink}
+        label={card.label} value={card.value} unit={T.unitStops} sub={card.sub}>
+        <SplitBar parts={card.parts} height={8} />
+        <SplitLegend parts={card.parts} className="mt-2" />
       </KPICard>
 
       {data.is_admin && data.no_owner?.length > 0 && (
@@ -468,12 +625,11 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
         <SectionHead icon={ListChecks} title={T.secStops}
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(T.countStops, { n: list.length })}</span>} />
         <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-          <SegmentedToggle size="sm" value={show} onChange={pickShow}
-            options={perm.expects
-              ? [["pending", `${T.fPendingMine} · ${waitingN}`], ["all", `${T.fAll} · ${pool.length}`]]
-              : [["all", `${T.fAll} · ${pool.length}`], ["pending", `${T.fPendingAny} · ${waitingN}`]]} />
+          <SegmentedToggle size="sm" value={show} onChange={pickShow} options={views} />
+          {/* always one line of what this list is — it changes with the toggle, never with a save */}
+          <p className="text-[11px] mt-2" style={{ color: "var(--text-3)" }}>{viewHint}</p>
         </div>
-        {pool.length === 0 ? (
+        {cutByFilter ? (
           <div className="px-4 py-8 text-center">
             <div className="text-sm" style={{ color: "var(--text-2)" }}>{T.emptyFiltered}</div>
             <div className="mt-3"><Button variant="secondary" onClick={onClearFilters}>{T.clearFilters}</Button></div>
@@ -485,12 +641,16 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
               <CheckCircle2 size={22} />
             </span>
             <div className="text-sm font-semibold mt-3" style={{ color: "var(--text-1)" }}>
-              {perm.expects ? T.noPendingMine : T.noPendingAny}
+              {show === "all" ? T.noStops : show === "overdue" ? T.noOverdue : perm.expects ? T.noPendingMine : T.noPendingAny}
             </div>
-            <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noPendingSub}</div>
-            <div className="mt-3"><Button variant="secondary" onClick={() => pickShow("all")}>{T.seeAll}</Button></div>
+            {show !== "all" && (
+              <>
+                <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{show === "pending" ? T.noPendingSub : ""}</div>
+                <div className="mt-3"><Button variant="secondary" onClick={() => pickShow("all")}>{T.seeAll}</Button></div>
+              </>
+            )}
           </div>
-        ) : days.map((g) => (
+        ) : groups.map((g) => (
           <div key={g.date}>
             <div className="px-4 py-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider"
               style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)" }}>
@@ -500,7 +660,9 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
             <ul>
               {g.items.map((s, i) => (
                 <StopRow key={s.id} T={T} s={s} label={label} unit={isSupervisor ? "" : unitOf(s)} perm={perm}
-                  byline={byline} first={i === 0} onOpen={open} onDone={markDone} />
+                  // the big button: this reader's own answer is the one missing
+                  asked={perm.write && (todo ? why.get(s.id) === "unanswered" : perm.expects && !s.mine)}
+                  byline={byline} first={i === 0} onOpen={open} onDone={markDone} doneHere={doneHere} />
               ))}
             </ul>
           </div>
@@ -541,9 +703,10 @@ export default function SolutionStops({ T, data, label, isSupervisor, cats, cell
       )}
 
       {writer && (
-        <Writer key={`sheet-${writer.n}`} T={T} label={label} queue={writer.queue} byId={byId} units={data.units || {}}
+        <Writer key={`sheet-${writer.n}`} T={T} label={label} queue={writer.queue} lookup={lookup} units={data.units || {}}
           owners={data.owners || {}} mineTexts={mineTexts} perm={perm} isPending={isPending} byline={byline}
-          showUnit={!isSupervisor} notify={notify} onClose={() => setWriter(null)} onSaved={onSaved} refresh={refresh} />
+          showUnit={!isSupervisor} days={days} notify={notify} onClose={() => setWriter(null)}
+          onSaved={(item) => wrote(item)} onChanged={(item) => wrote(item)} />
       )}
       {toast.node}
     </>

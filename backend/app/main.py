@@ -98,6 +98,7 @@ async def lifespan(app: FastAPI):
         add_idle_solution_manager,
         add_idle_solution_event,
         add_idle_solution_done_at,
+        add_idle_solution_due_date,
         add_turnover_month_people_approx,
         add_leader_task_cell,
         add_late_proof_provenance,
@@ -304,6 +305,7 @@ async def lifespan(app: FastAPI):
     run(add_idle_solution_manager)
     run(add_idle_solution_event)
     run(add_idle_solution_done_at)
+    run(add_idle_solution_due_date)
     run(add_turnover_month_people_approx)
     run(add_leader_task_cell)
     run(add_late_proof_provenance)
@@ -523,6 +525,11 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.exam import register_jobs as register_exam_jobs
     run(register_exam_jobs)
+    # «Kutish yechimlari»: the daily reminder of what waits on a brigadir and a
+    # cause's owner — shift 1 and owners from 10:00, shift 2 from 22:00
+    # (mirrored in passenger_wsgi.py).
+    from app.services.idle_solution_reminder import register_jobs as register_idle_reminder_jobs
+    run(register_idle_reminder_jobs)
     # «Kadrlar qo'nimsizligi»: read Verifix's directory nightly at 23:40 (a
     # month's last read takes its list of working people), close ended
     # months at 09:05, catch up after boot (mirrored in passenger_wsgi.py).

@@ -81,6 +81,7 @@ try:
         add_idle_solution_manager,
         add_idle_solution_event,
         add_idle_solution_done_at,
+        add_idle_solution_due_date,
         add_turnover_month_people_approx,
         add_leader_task_cell,
         add_late_proof_provenance,
@@ -286,6 +287,7 @@ try:
     add_idle_solution_manager()
     add_idle_solution_event()
     add_idle_solution_done_at()
+    add_idle_solution_due_date()
     add_turnover_month_people_approx()
     add_leader_task_cell()
     add_late_proof_provenance()
@@ -714,6 +716,9 @@ try:
     # «Imtihon»: the exam's two daily jobs (mirrors main.py).
     from app.services.exam import register_jobs as register_exam_jobs
     register_exam_jobs()
+    # «Kutish yechimlari»: the daily reminder (mirrors main.py).
+    from app.services.idle_solution_reminder import register_jobs as register_idle_reminder_jobs
+    register_idle_reminder_jobs()
     # «Kadrlar qo'nimsizligi»: the nightly Verifix read + month closing (mirrors main.py).
     from app.services.turnover_sync import register_jobs as register_turnover_jobs
     register_turnover_jobs()

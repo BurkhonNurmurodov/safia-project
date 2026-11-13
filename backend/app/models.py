@@ -4497,6 +4497,34 @@ class IdleCategorySolution(Base):
     # back» clock of the Tahlil tab starts. NULL while open / doing, cleared when
     # a done row is reopened (`startup.add_idle_solution_done_at`).
     done_at     = Column(DateTime(timezone=True), nullable=True)
+    # 2026-11-14: BY WHEN a plan («Rejada» / «Bajarilmoqda») is to be done — the
+    # author's own promise. Past it while still not done, the row is «overdue»:
+    # marked on the page and named in the author's daily reminder. NULL = no
+    # date given (every row from before, and a row saved by an older tab).
+    due_date    = Column(Date, nullable=True)
+
+
+class IdleSolutionReminder(Base):
+    """The ledger of the «Kutish yechimlari» daily reminder — one row per
+    (profile, day), written BEFORE the message goes out.
+
+    A brigadir and a cause's owner are told once a day what waits on them
+    (`services/idle_solution_reminder`). The scheduler is a memory jobstore that
+    is re-armed on every deploy, and a job may be caught up by the next copy, so
+    «once a day» is this row's unique key and nothing else. A row with
+    ``sent = False`` is a day the profile was asked about and had nothing
+    waiting (or nobody holding it) — written so the day is not asked again.
+    """
+    __tablename__ = "idle_solution_reminders"
+    __table_args__ = (UniqueConstraint("profile_key", "day", name="uq_idle_solution_reminder"),)
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=False, index=True)
+    day         = Column(Date, nullable=False, index=True)
+    sent        = Column(Boolean, nullable=False, default=False)
+    unanswered  = Column(Integer, nullable=False, default=0)
+    overdue     = Column(Integer, nullable=False, default=0)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # ── The dashboard exam («Imtihon») — services/exam*.py, routers/exam*.py ──────

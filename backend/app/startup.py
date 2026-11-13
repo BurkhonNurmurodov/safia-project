@@ -2512,6 +2512,23 @@ def add_idle_solution_done_at() -> None:
         db.close()
 
 
+def add_idle_solution_due_date() -> None:
+    """2026-11-14: ``idle_category_solutions`` gains ``due_date`` — by when a
+    plan is to be done; past it and still not done, the row is overdue. One
+    nullable column, no backfill: a row from before simply has no date. (The
+    reminder's ledger, ``idle_solution_reminders``, comes from ``create_all``.)"""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE idle_category_solutions ADD COLUMN IF NOT EXISTS due_date DATE"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] idle solution due_date migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_idle_interval_cleaners() -> None:
     """2026-09-29: ``cell_ojidaniya_intervals`` gains ``cleaners`` — the
     «Tozalovchilar» count a Tozalash (Cat H) entry must now carry: how many

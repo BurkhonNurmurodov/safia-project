@@ -510,6 +510,12 @@ function Answers({ A, T, data }) {
           : fill(A.aAnswers, { n: f.stops, a: answered, p: pct(answered, f.stops) })}
       </Answer>
       <Funnel A={A} f={f} />
+      {/* of the promised ones: the plan's own date has already passed */}
+      {f.overdue > 0 && (
+        <p className="text-xs mt-2.5" style={{ color: "var(--status-bad)" }}>
+          {A.state.promised} — {fill(A.promisedLate, { n: f.overdue })}.
+        </p>
+      )}
       <div className="grid gap-5 md:grid-cols-2 mt-5 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
         <WhoList T={T} A={A} title={A.whoUnits} rows={units} empty={A.noCells} />
         <WhoList T={T} A={A} title={A.whoOwners} rows={owners} empty={A.noOwners} />

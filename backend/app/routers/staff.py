@@ -481,6 +481,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новое ожидание внесено", "{cell} · {category} · {time} | Дата: {date} | Внёс(ла): {leader_name}\nУбирали (чел.): {cleaners}"),
         "en": ("New idle time entered", "{cell} · {category} · {time} | Date: {date} | Entered by: {leader_name}\nCleaners: {cleaners}"),
     },
+    # «Kutish yechimlari» — the daily reminder (services/idle_solution_reminder):
+    # what waits on a brigadir or a cause's owner. One row per kind, so
+    # `_render_body` drops the kind that has nothing; the DM carries the list.
+    "idle_solution_reminder": {
+        "uz": ("Kutish yechimlari: {n} ta to'xtash sizni kutmoqda", "Yechim yozilmagan: {unanswered}\nRejangiz muddati o'tgan: {overdue}"),
+        "uz_cyrl": ("Кутиш ечимлари: {n} та тўхташ сизни кутмоқда", "Ечим ёзилмаган: {unanswered}\nРежангиз муддати ўтган: {overdue}"),
+        "ru": ("Решения по ожиданиям: вас ждут остановки — {n}", "Решение не написано: {unanswered}\nСрок вашего плана прошёл: {overdue}"),
+        "en": ("Idle solutions: stops waiting for you — {n}", "No solution written: {unanswered}\nYour plan's date has passed: {overdue}"),
+    },
     "verifix_uploaded": {
         "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),
         "uz_cyrl": ("Verifix маълумотлари юкланди", "Сана: {date}. Ўзгартиришларни киритинг (ходим алмаштириш, лавозим ўзгартириш, ўчириш) ва кунни ёпинг."),

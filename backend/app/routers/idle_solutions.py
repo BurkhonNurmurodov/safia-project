@@ -18,6 +18,14 @@ brigadir's own unit.
 
 A solution is a small log entry (open → doing → done), never a rewrite of the
 previous one, so the history of what was promised stays readable.
+
+**A plan has a date, and somebody is told (2026-11-14).** A row that is not done
+yet («Rejada» / «Bajarilmoqda») carries `due_date`, its author's own promise;
+past it the row is OVERDUE. `waiting()` is the ONE answer to «what waits on this
+reader» — the stops of the last `REMIND_DAYS` days they wrote nothing to, and the
+stops carrying their own overdue plan. The page's «Sizni kutmoqda» list, the
+number on the menu row (`GET /waiting`) and the daily Telegram reminder
+(`services/idle_solution_reminder`) all read it, so the three cannot disagree.
 """
 import statistics
 from datetime import date, datetime, timedelta, timezone
@@ -48,6 +56,16 @@ MIN_CHART_DAYS = 7      # the daily strip never shows fewer days (utils/chartRan
 PEAK_HOURS = 2          # the «when» card names the busiest window of this many hours
 TOP_CELLS = 8
 TOP_REPEATS = 20
+
+# What waits on a reader — the «Sizni kutmoqda» list, the menu number, the
+# reminder. The look-back equals the page's own default period, so the three
+# agree with the list a reader opens.
+REMIND_DAYS = 14        # a stop asks for its answer this long; an overdue plan is named this long
+# The day the reminders began. A stop filed before it never «waits» on anybody:
+# everybody has written their own answer only since 2026-11-13, and nobody is
+# chased for the weeks before that. It never moves LATER.
+REMIND_FROM = date(2026, 11, 14)
+MAX_PLAN_DAYS = 90      # a plan's date is at most this far ahead
 
 STATUSES = ("open", "doing", "done")
 MAX_DAYS = 124
@@ -111,17 +129,34 @@ def _fmt_dt(v):
     return v.isoformat() if v else None
 
 
-def _item(r: IdleCategorySolution, viewer: Optional[str] = None, is_admin: bool = False) -> dict:
+def _today() -> date:
+    return datetime.now(TZ).date()
+
+
+def is_overdue(r: IdleCategorySolution, today: date) -> bool:
+    """A plan whose own date has passed and that is still not done."""
+    return r.status != "done" and r.due_date is not None and r.due_date < today
+
+
+def _item(r: IdleCategorySolution, viewer: Optional[str] = None, is_admin: bool = False,
+          today: Optional[date] = None) -> dict:
     """One solution as the page prints it. `mine` / `can_edit` are the server's
     whole answer to «is this row the reader's» — a row belongs to the authoring
-    PROFILE, and one account may hold several."""
+    PROFILE, and one account may hold several. `overdue` / `due_in` are the
+    server's answer too: «today» is the plant's day, never the browser's."""
     mine = bool(viewer and r.author_key and r.author_key == viewer)
+    today = today or _today()
+    planned = r.status != "done" and r.due_date is not None
     return {
         "id": r.id, "category": r.category, "manager_id": r.manager_id, "event_id": r.event_id, "text": r.text, "status": r.status,
         "author_key": r.author_key, "author_name": r.author_name,
         "author_role": identity.parse_profile_key(r.author_key)[0],
         "created_at": _fmt_dt(r.created_at), "updated_at": _fmt_dt(r.updated_at),
         "done_at": _fmt_dt(r.done_at),
+        "due_date": r.due_date.isoformat() if r.due_date else None,
+        # days left to the plan's date: 0 = today, below 0 = that many days late
+        "due_in": (r.due_date - today).days if planned else None,
+        "overdue": is_overdue(r, today),
         "mine": mine, "can_edit": is_admin or mine,
     }
 
@@ -271,6 +306,137 @@ def _solutions(db: Session, event_ids) -> list:
     return (db.query(IdleCategorySolution).filter(cond)
             .order_by(IdleCategorySolution.created_at.desc(),
                       IdleCategorySolution.id.desc()).all())
+
+
+def _flat(db: Session, unit_ids, in_view: set, a: date, b: date) -> list:
+    """`_stops` as ONE list, newest first — only the causes the viewer reads,
+    each row naming its cause and unit."""
+    rows = []
+    for (c, m), lst in _stops(db, unit_ids, a, b).items():
+        if c in in_view:
+            rows.extend({**s, "category": c, "manager_id": m} for s in lst)
+    rows.sort(key=lambda s: (s["date"], s["start"] or "", s["id"] or 0), reverse=True)
+    return rows
+
+
+def _plan_stops(db: Session, plans: list, unit_ids: set, in_view: set) -> dict[int, dict]:
+    """The filed stops a reader's overdue plans answer, by stop id, in the
+    page's own row shape — for the ones that lie outside the days already read.
+    Each is asked of the bar modal's reader for its own unit and day, so a stop
+    the page would not list (a deleted entry, a cell that left the unit) is not
+    returned, and neither is one outside the reader's units and causes."""
+    from app.routers.downtime import _cell_detail
+    want = {r.event_id: r for r in plans
+            if r.event_id is not None and r.manager_id in unit_ids and r.category in in_view}
+    if not want:
+        return {}
+    days = {e.id: str(e.date)[:10] for e in db.query(
+        CellOjidaniyaInterval.id, CellOjidaniyaInterval.date).filter(
+        CellOjidaniyaInterval.id.in_(list(want))).all()}
+    asks: dict[tuple, set] = {}          # (unit, day) -> the causes to read there
+    for eid, r in want.items():
+        if eid in days:
+            asks.setdefault((r.manager_id, days[eid]), set()).add(r.category)
+    out: dict[int, dict] = {}
+    for (mid, iso), cats in asks.items():
+        try:
+            day = date.fromisoformat(iso)
+            det = _cell_detail(db, mid, day, day, True, False, sorted(cats), with_hc=False)
+        except Exception:
+            continue
+        for d, cells_ in (det.get("days") or {}).items():
+            for cell in cells_:
+                for iv in cell.get("intervals") or []:
+                    if iv.get("id") in want:
+                        out[iv["id"]] = {
+                            "id": iv["id"], "date": d, "cell": cell.get("code"),
+                            "cell_id": cell.get("cell_id"), "leader": cell.get("leader"),
+                            "start": iv.get("start"), "end": iv.get("end"),
+                            "minutes": iv.get("minutes"), "note": (iv.get("note") or "").strip(),
+                            "category": iv["category"], "manager_id": mid,
+                        }
+    return out
+
+
+def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
+            shift: Optional[int] = None, manager_id: Optional[List[int]] = None,
+            factory: Optional[int] = None, read: Optional[tuple] = None) -> Optional[dict]:
+    """What waits on THIS reader — the page's «Sizni kutmoqda» list, the number
+    on the menu row and the daily reminder are this one answer.
+
+    Asked only of the two roles whose own answer a stop waits for
+    (`EXPECTED_ROLES`); None for everybody else. Two kinds of stops, each named
+    once:
+
+      * unanswered — a stop of the last REMIND_DAYS days (never before
+        REMIND_FROM) that the reader sees on the page and wrote nothing to;
+      * overdue    — a stop carrying the reader's OWN plan whose date passed, no
+        more than REMIND_DAYS ago, and is still not done.
+
+    The filters are the page's own (an owner narrowing to one brigadir narrows
+    this list too); the menu number and the reminder pass none. `read` =
+    (from, to, rows): the stops a caller already read under the same filters,
+    reused when they cover the window. `payload` needs only `role` and
+    `role_id`, so the reminder asks for a profile nobody is logged in as.
+    """
+    from app.services.leader_bot import _in_ids
+    if payload.get("role") not in EXPECTED_ROLES:
+        return None
+    viewer = identity.viewer_profile_key(db, payload)
+    if not viewer:
+        return None
+    today = today or _today()
+    a = max(REMIND_FROM, today - timedelta(days=REMIND_DAYS - 1))
+    units = {u.id for u in _scope_units(
+        db, payload, shift, _own_unit(payload, list(manager_id or [])), factory)}
+    in_view = _in_view(idle_scope.viewer_categories(db, payload))
+
+    rows: list = []
+    if units and in_view and a <= today:
+        if read and read[0] <= a and read[1] >= today:
+            lo, hi = a.isoformat(), today.isoformat()
+            rows = [s for s in read[2] if lo <= s["date"] <= hi]
+        else:
+            rows = _flat(db, list(units), in_view, a, today)
+    by_id = {s["id"]: s for s in rows}
+
+    answered: set = set()
+    if by_id:
+        answered = {eid for (eid,) in db.query(IdleCategorySolution.event_id).filter(
+            IdleCategorySolution.author_key == viewer,
+            _in_ids(IdleCategorySolution.event_id, list(by_id))).all()}
+    late = db.query(IdleCategorySolution).filter(
+        IdleCategorySolution.author_key == viewer,
+        IdleCategorySolution.event_id.isnot(None),
+        IdleCategorySolution.status != "done",
+        IdleCategorySolution.due_date < today,
+        IdleCategorySolution.due_date >= today - timedelta(days=REMIND_DAYS),
+    ).all()
+    # The stop each overdue plan answers: in the window, among the caller's own
+    # rows, or read on its own day.
+    have = dict(by_id)
+    if read:
+        have.update({s["id"]: s for s in read[2]})
+    missing = [r for r in late if r.event_id not in have]
+    if missing:
+        have.update(_plan_stops(db, missing, units, in_view))
+    overdue = {r.event_id for r in late
+               if r.event_id in have and have[r.event_id]["manager_id"] in units
+               and have[r.event_id]["category"] in in_view}
+
+    out = [(have[i], "overdue") for i in overdue]
+    out += [(s, "unanswered") for i, s in by_id.items() if i not in answered and i not in overdue]
+    out.sort(key=lambda x: (x[0]["date"], x[0]["start"] or "", x[0]["id"] or 0), reverse=True)
+    # the window's stops this reader has dealt with — the bar's green part
+    written = [s for i, s in by_id.items() if i in answered and i not in overdue]
+    return {
+        "from": a, "to": today, "stops": out,
+        "unanswered": sum(1 for _, why in out if why == "unanswered"),
+        "overdue": len(overdue),
+        "written": len(written),
+        # their (cause, cell), so the page can narrow the count by its own filters
+        "written_rows": [[s["category"], s["cell"]] for s in written],
+    }
 
 
 @router.get("/analysis")
@@ -431,48 +597,74 @@ def stops(
     lock = idle_scope.viewer_categories(db, payload)
     in_view = _in_view(lock)
 
-    rows = []
-    for (c, m), lst in _stops(db, list(names), d_from, d_to).items():
-        if c in in_view:
-            rows.extend({**s, "category": c, "manager_id": m} for s in lst)
-    rows.sort(key=lambda s: (s["date"], s["start"] or "", s["id"] or 0), reverse=True)
+    today = _today()
+    rows = _flat(db, list(names), in_view, d_from, d_to)
+    # What waits on this reader — its own window, whatever period is on screen.
+    todo = waiting(db, payload, today, shift=shift, manager_id=manager_id, factory=factory,
+                   read=(d_from, d_to, rows))
+    shown = {s["id"]: s for s in rows}
+    for s, _why in (todo["stops"] if todo else []):
+        shown.setdefault(s["id"], s)
 
     viewer = identity.viewer_profile_key(db, payload)
     is_admin = payload.get("role") == "admin"
     by_event: dict[int, list] = {}
     legacy = []         # the older cause- and brigadir-wide rows: no stop to sit under
-    for r in _solutions(db, [s["id"] for s in rows]):
+    for r in _solutions(db, list(shown)):
         if r.event_id is not None:
             by_event.setdefault(r.event_id, []).append(r)
         elif r.category in in_view and (r.manager_id is None or r.manager_id in names):
             legacy.append(r)
-    for s in rows:
+    for s in shown.values():
         es = by_event.get(s["id"], [])
-        s["solutions"] = [_item(i, viewer, is_admin) for i in es]
+        s["solutions"] = [_item(i, viewer, is_admin, today) for i in es]
         s["state"] = _state(es)
         s["mine"] = any(viewer and i.author_key == viewer for i in es)
 
     mrows, _ = _minute_rows(db, payload, d_from, d_to, shift, manager_id, factory)
     labels = idle_scope.owner_labels(db)
     order = {c: i for i, c in enumerate(idle_scope.CATEGORIES)}
-    seen = sorted({s["category"] for s in rows}, key=lambda c: order.get(c, 99))
-    with_stops = {s["manager_id"] for s in rows}
+    seen = sorted({s["category"] for s in shown.values()}, key=lambda c: order.get(c, 99))
+    with_stops = {s["manager_id"] for s in shown.values()}
     return {
         "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
         "stops": rows,
+        # «Sizni kutmoqda» (`waiting`): None for a reader nothing waits on by role
+        "todo": None if todo is None else {
+            "from": todo["from"].isoformat(), "to": todo["to"].isoformat(),
+            "stops": [{**s, "why": why} for s, why in todo["stops"]],
+            "unanswered": todo["unanswered"], "overdue": todo["overdue"],
+            "written": todo["written"], "written_rows": todo["written_rows"],
+        },
         # named once each, not on every stop
         "units": {str(u.id): {"manager_name": u.name, "shift": u.shift}
                   for u in units if u.id in with_stops},
         "owners": {c: labels[c] for c in seen if c in labels},
         "no_owner": [c for c in seen if c not in labels],
         "total_minutes": round(_aggregate(mrows)["total"], 1),
-        "legacy": [{**_item(i, viewer, is_admin), "manager_name": names.get(i.manager_id)}
+        "legacy": [{**_item(i, viewer, is_admin, today), "manager_name": names.get(i.manager_id)}
                    for i in legacy[:SHOW_LAST]],
         "cat_locked": lock,
         "is_admin": is_admin,
         "can_write": True,
         "expects_me": payload.get("role") in EXPECTED_ROLES,
+        "today": today.isoformat(), "max_plan_days": MAX_PLAN_DAYS,
     }
+
+
+@router.get("/waiting")
+def waiting_count(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(_reader),
+):
+    """The number on the «Kutish yechimlari» menu row: how many stops wait on
+    this reader (`waiting`). Zeros for a reader nothing waits on by role."""
+    _reader_only(payload)
+    w = waiting(db, payload)
+    if w is None:
+        return {"unanswered": 0, "overdue": 0, "total": 0}
+    return {"unanswered": w["unanswered"], "overdue": w["overdue"],
+            "total": w["unanswered"] + w["overdue"]}
 
 
 # ── Tahlil ────────────────────────────────────────────────────────────────────
@@ -655,6 +847,9 @@ def analytics(
 
     funnel = {k: count(stops, k) for k in _WORST}
     funnel["stops"] = len(stops)
+    # of the promised ones: a plan's own date has already passed
+    funnel["overdue"] = sum(1 for s in stops if s["out"]["state"] == "promised"
+                            and any(is_overdue(x, today) for x in s["sols"]))
 
     def delta_rows(now: dict, before: dict):
         return sorted(((k, v, before.get(k, 0.0)) for k, v in now.items()), key=lambda x: -x[1])
@@ -815,11 +1010,13 @@ class SolutionBody(BaseModel):
     status: Optional[str] = "open"
     manager_id: Optional[int] = None
     event_id: Optional[int] = None
+    due_date: Optional[date] = None     # a plan's date; ignored on a done row
 
 
 class SolutionEdit(BaseModel):
     text: Optional[str] = None
     status: Optional[str] = None
+    due_date: Optional[date] = None     # sent = set it (null clears); absent = untouched
 
 
 def _clean_text(text: Optional[str]) -> str:
@@ -835,6 +1032,19 @@ def _clean_status(s: Optional[str]) -> str:
     if s not in STATUSES:
         raise HTTPException(status_code=400, detail="bad_status")
     return s
+
+
+def _clean_due(d: Optional[date], today: date) -> Optional[date]:
+    """A plan's date is a promise about the days ahead: today at the earliest,
+    MAX_PLAN_DAYS at the latest. None stays None — the date is asked for by the
+    page, not demanded here, so a tab from before this field still saves."""
+    if d is None:
+        return None
+    if d < today:
+        raise HTTPException(status_code=400, detail="due_in_past")
+    if d > today + timedelta(days=MAX_PLAN_DAYS):
+        raise HTTPException(status_code=400, detail="due_too_far")
+    return d
 
 
 def _stop_in_reach(db: Session, payload: dict, body: SolutionBody) -> tuple[str, int]:
@@ -899,19 +1109,24 @@ def add_solution(
             raise HTTPException(status_code=403, detail="not_category_owner")
     text = _clean_text(body.text)
     status = _clean_status(body.status or "open")
+    today = _today()
+    # a done row promises nothing: its date would only ever read «on time»
+    due = None if status == "done" else _clean_due(body.due_date, today)
     key = identity.viewer_profile_key(db, payload)
     name = (idle_scope._profile_names(db, [key]).get(key) or {}).get("name") if key else None
     row = IdleCategorySolution(
         category=category, manager_id=manager_id, event_id=body.event_id, text=text, status=status,
         author_key=key,
         author_name=name or payload.get("full_name") or payload.get("name"),
-        done_at=datetime.now(timezone.utc) if status == "done" else None)
+        done_at=datetime.now(timezone.utc) if status == "done" else None,
+        due_date=due)
     db.add(row)
     db.commit()
     action_log.enrich(target_kind="idle_category", target_id=category,
                       details=[("category", category), ("manager_id", manager_id), ("event_id", body.event_id),
-                               ("status", status)])
-    return _item(row, key, payload.get("role") == "admin")
+                               ("status", status)]
+                      + ([("due_date", due.isoformat())] if due else []))
+    return _item(row, key, payload.get("role") == "admin", today)
 
 
 @router.put("/{solution_id}")
@@ -944,6 +1159,13 @@ def edit_solution(
             # the «did it come back» clock starts when it is done, and starts
             # over if a done row is reopened and done again
             row.done_at = datetime.now(timezone.utc) if s == "done" else None
+    # The plan's date, only when the request names it: moved to a day ahead, or
+    # cleared. It stays on a row marked done — what was promised is history.
+    if "due_date" in body.model_fields_set and body.due_date != row.due_date:
+        new = _clean_due(body.due_date, _today())
+        changes.append(("due_date", row.due_date.isoformat() if row.due_date else None,
+                        new.isoformat() if new else None))
+        row.due_date = new
     db.commit()
     action_log.enrich(target_kind="idle_category", target_id=row.category,
                       details=[("category", row.category)], changes=changes)

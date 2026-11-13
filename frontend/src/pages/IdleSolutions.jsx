@@ -26,7 +26,9 @@ import api from "../utils/api";
  *
  *   Muammolar  every filed stop in reach as one flat list, and the sheet that
  *              writes a solution to it (components/idle/SolutionStops.jsx,
- *              GET /api/idle-solutions/stops)
+ *              GET /api/idle-solutions/stops) — for a brigadir and a cause's
+ *              owner it opens on «Sizni kutmoqda», what waits on them, which
+ *              the period below does not cut
  *   Tahlil     five plain questions about the period
  *              (components/idle/SolutionAnalytics.jsx, …/analytics)
  *
@@ -90,6 +92,8 @@ export default function IdleSolutions() {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["idle-solutions-stops"] });
     qc.invalidateQueries({ queryKey: ["idle-solutions-analytics"] });
+    // the number on the menu row (Sidebar.jsx) counts the same waiting stops
+    qc.invalidateQueries({ queryKey: ["idle-solutions-waiting"] });
   };
 
   const label = (code) => {

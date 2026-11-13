@@ -1097,5 +1097,101 @@ sat three levels down.
   sabab» tiles.
 - Tests: `backend/tests/test_idle_solutions.py` (the flat list, each role's
   reach, a stop without minutes, the stop-less rows).
-- Not built: a text search over the comments, the waiting count on the nav row,
-  a Telegram reminder to the brigadir / owner.
+- Not built: a text search over the comments. (The waiting count on the nav row
+  and the Telegram reminder came the next day — the section below.)
+
+## «Kutish yechimlari» — a plan has a date, and what waits on you is counted and reminded (`/idle-solutions`, 2026-11-14)
+
+The operator's pick from «what is missing on this page»: reminders and
+deadlines. Until now a stop could wait for its solution for ever with nobody
+told, and a plan («Rejada» / «Bajarilmoqda») was a promise with no day on it.
+
+- **A plan carries `due_date`** (`idle_category_solutions.due_date`,
+  `startup.add_idle_solution_due_date`, both entrypoints) — its author's own
+  promise. Past it while still not done, the row is **overdue** (`is_overdue`).
+  The server answers `due_date`, `due_in` (days left; below 0 = that many days
+  late) and `overdue` on every solution: «today» is the plant's day, never the
+  browser's. A date lies between today and `MAX_PLAN_DAYS` (90) ahead
+  (`due_in_past` / `due_too_far`); a done row promises nothing (its date is
+  dropped on create, and KEPT when an existing plan is marked done — what was
+  promised is history). **The date is asked for by the page, not demanded by
+  the API**: a tab from before the field still saves a plan, which then simply
+  has no date and is never overdue. `PUT` moves or clears it only when the
+  request names `due_date`.
+- **`waiting()` is THE answer to «what waits on this reader»** — asked only of
+  the two roles the page asks (`EXPECTED_ROLES`: the unit's brigadir, the
+  cause's owner of the owner role), `None` for everybody else. Two kinds, each
+  stop named once:
+  - *unanswered* — a stop of the last `REMIND_DAYS` (14, the page's own default
+    look-back) the reader sees on the page and wrote NOTHING to. Somebody
+    else's answer does not take it off; the reader's own plan does;
+  - *overdue* — a stop carrying the reader's OWN plan whose date passed, no more
+    than `REMIND_DAYS` ago. Done or moved ahead, it waits no more. Such a stop
+    may lie outside the look-back and outside the period on screen —
+    `_plan_stops` reads it on its own day through the bar modal's reader.
+  **`REMIND_FROM` (2026-11-14) is the first day**: a stop filed before it never
+  «waits» on anybody — everybody has written their own answer only since
+  13 November, and nobody is chased for the weeks before. It never moves LATER.
+  Three readers of the one function, so they cannot disagree:
+  the page's «Sizni kutmoqda» list (`todo` in `GET /stops`), the number on the
+  menu row (`GET /api/idle-solutions/waiting` → `Sidebar.jsx` `BADGES`, asked
+  every 5 minutes and dropped by the page on every save), and the reminder.
+- **«Sizni kutmoqda» has NO period** — it is a to-do list, not a report. For a
+  brigadir and an owner the page opens on it; the period on the bar (sticky in
+  `localStorage`, so often stale) cuts only «Hammasi». A line under the toggle
+  says which list is on screen, in every view (it changes with the toggle, never
+  with a save). The page's own shift / brigadir / plant filters DO narrow it (an
+  owner looking at one brigadir), which the menu number and the reminder do not.
+  The card: the number waiting, and one bar — «Yozdingiz» · «Yozilmagan» ·
+  «Reja muddati o'tgan» (`written_rows` lets the page narrow the green part by
+  «Sabab» / «Yacheyka»).
+- **For a manager and an admin nothing waits**; their list is the period's, as
+  before, with a third view: «Muddati o'tgan» — the stops whose plan is late,
+  whoever wrote it.
+- **The writing sheet asks «Qachongacha bajariladi?»** the moment the status is
+  not «Bajarildi»: four one-tap picks (Bugun · Ertaga · 3 kun · 1 hafta, a
+  `SegmentedToggle`) and the calendar for any other day; saving waits for it.
+  Inside the sheet a plan's author (and an admin) moves its date beside the
+  status. An overdue plan is red everywhere it is printed — the stop's chip
+  reads «Muddati o'tgan», its line «Muddati o'tgan: 11.11 · 2 kun» — and its
+  author still ends it in one tap from the list.
+- **A row acted on stays where it is**, even when it left the payload (an old
+  stop whose overdue plan was just marked done is in neither list any more):
+  `local` in `SolutionStops.jsx` keeps the stops the reader wrote on as the
+  server last returned them, the sheet reads through it (`lookup`), and a row
+  marked done keeps the room its button and date took (`was`, unseen), so
+  nothing under the thumb moves. Every write path hands the server's returned
+  row to `wrote()`.
+- **The daily reminder** (`services/idle_solution_reminder.py`, key
+  `idle_solution_reminder`, category «idle», bell row opening the page):
+  - who: the brigadir of every unarchived unit and every owner of the owner
+    role; a profile nobody holds is skipped;
+  - when: by the clock, two hours into the working day — shift 1 and the owners
+    from 10:00, shift 2 from 22:00 (`SLOTS`). The job fires every 20 minutes for
+    two hours from each slot, so a deploy on the slot's own minute costs nothing;
+  - once: `idle_solution_reminders`, one row per (profile, day), written BEFORE
+    the send — the unique key is what holds when two copies of the app overlap
+    or a missed job is caught up. A day with nothing waiting (or nobody to tell)
+    is recorded too, so it is asked once;
+  - what: the count, then up to three stops of each kind — overdue plans first,
+    each with the date it was due — and one button, «Yechim yozish», onto the
+    page. **Nothing waiting → nothing sent**, never a «0» message.
+  A person who turned the «idle» category's Telegram off gets the bell row
+  only — and loses the per-entry «Yangi kutish kiritildi» card with it, the one
+  switch covers both.
+- **Tahlil**: under the five states, «Reja yozilgan, hali bajarilmagan — shundan
+  N tasining muddati o'tgan» when a promise is past its date (`funnel.overdue`).
+- **Two templates gained a prop, one a fix**: `DateRangePicker` `min` now also
+  bounds the DAY calendar (days before it are muted, a quick pick reaching
+  before it is dropped) and `placeholder` words an empty trigger;
+  `SegmentedToggle` showed its pill on the last active segment when the value
+  matched no option — it now shows none.
+- Tests: `backend/tests/test_idle_solutions.py` (58: a plan's date and its
+  limits, overdue until done or moved, what waits on each role, the first day,
+  the page carrying the same list, the reminder told once a day, each shift in
+  its own hours, the four languages).
+- Not built: a reminder to a shift-manager about a brigadir who answers nothing
+  (escalation), «done on time / late» in Tahlil, the waiting list in the bell's
+  «Sizdan kutilmoqda» queue, a switch for the reminder on the «Kutish mas'uli»
+  page (today: the constant, or each person's own notification settings).
+

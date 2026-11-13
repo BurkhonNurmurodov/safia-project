@@ -1,8 +1,9 @@
 """«Kutish yechimlari» (routers/idle_solutions.py): everybody answers the stops
-they can see and nobody one they cannot, a solution is its author's own, and
-the Tahlil tab's five answers about a stop."""
+they can see and nobody one they cannot, a solution is its author's own, the
+Tahlil tab's five answers about a stop — and, from 2026-11-14, a plan's date,
+what waits on a reader and the daily reminder that names it."""
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
 
@@ -140,11 +141,17 @@ class Page(unittest.TestCase):
     def setUp(self):
         from app import models as m
         self.db = db = self.pg.Session()
-        for name in ("IdleCategorySolution", "IdleCategoryOwner", "CellOjidaniyaInterval",
+        for name in ("IdleSolutionReminder", "Notification", "TelegramUserRole", "TelegramUser",
+                     "IdleCategorySolution", "IdleCategoryOwner", "CellOjidaniyaInterval",
                      "PPWorkCenterDaily", "Cell", "RoleProfile", "Manager"):
             db.query(getattr(m, name)).delete()
         db.commit()
         self.forget()
+        # The reminders' first day is a real date; the stops here are dated from
+        # today backwards, so every test but the one about that day moves it away.
+        floor = mock.patch.object(ims, "REMIND_FROM", date(2020, 1, 1))
+        floor.start()
+        self.addCleanup(floor.stop)
 
         for i in (1, 2):
             db.add(m.Manager(id=i, name=f"Unit {i}", shift=1, zagruzka_on=True))
@@ -433,7 +440,7 @@ class Page(unittest.TestCase):
         self.answered_world()
         got = self.tahlil(ADMIN)
         self.assertEqual(got["funnel"], {"back": 1, "unanswered": 1, "promised": 1,
-                                         "watch": 1, "held": 1, "stops": 5})
+                                         "watch": 1, "held": 1, "stops": 5, "overdue": 0})
         self.assertEqual(got["total"]["stops"], 5)
         self.assertEqual((got["speed"]["answered"], got["speed"]["median_days"]), (4, 0))
 
@@ -494,6 +501,255 @@ class Page(unittest.TestCase):
 
     def test_tahlil_is_not_a_brigadirs(self):
         self.refused(403, self.tahlil, SUP1)
+
+    # ── a plan's date ────────────────────────────────────────────────────────
+
+    def overdue_plan(self, payload, stop, days=2):
+        """A plan whose date passed `days` ago. Nobody can WRITE one that way,
+        so the date is moved back underneath a plan written for today."""
+        from app.models import IdleCategorySolution as S
+        got = self.write(payload, stop, status="open", due_date=TODAY)
+        self.db.query(S).filter(S.id == got["id"]).update(
+            {"due_date": ago(days)}, synchronize_session=False)
+        self.db.commit()
+        return got["id"]
+
+    def test_a_plan_carries_its_date(self):
+        ahead = TODAY + timedelta(days=3)
+        got = self.write(SUP1, "s3", status="open", due_date=ahead)
+        self.assertEqual((got["due_date"], got["due_in"], got["overdue"]), (ahead.isoformat(), 3, False))
+        # a done row promises nothing
+        done = self.write(SUP1, "s2", status="done", due_date=ahead)
+        self.assertEqual((done["due_date"], done["due_in"], done["overdue"]), (None, None, False))
+        # a tab from before the field still saves a plan — it just has no date
+        old = self.write(SUP1, "s1", status="doing")
+        self.assertEqual((old["due_date"], old["due_in"], old["overdue"]), (None, None, False))
+
+    def test_a_plans_date_lies_ahead(self):
+        self.refused(400, self.write, SUP1, "s3", status="open", due_date=ago(1))
+        self.refused(400, self.write, SUP1, "s3", status="open",
+                     due_date=TODAY + timedelta(days=ims.MAX_PLAN_DAYS + 1))
+        self.assertEqual(self.write(SUP1, "s3", status="open", due_date=TODAY)["due_in"], 0)
+
+    def test_past_its_date_a_plan_is_overdue_until_done_or_moved(self):
+        sid = self.overdue_plan(SUP1, "s3")
+        row = {s["id"]: s for s in self.listed(SUP1)["stops"]}[self.stop["s3"]]["solutions"][0]
+        self.assertEqual((row["overdue"], row["due_in"]), (True, -2))
+        # the words alone leave the date alone
+        self.assertTrue(self.edit(SUP1, sid, text="still on it")["overdue"])
+        self.refused(400, self.edit, SUP1, sid, due_date=ago(1))
+        moved = self.edit(SUP1, sid, due_date=TODAY + timedelta(days=5))
+        self.assertEqual((moved["overdue"], moved["due_in"]), (False, 5))
+        # done: nothing is owed any more, and what was promised stays on the row
+        done = self.edit(SUP1, sid, status="done")
+        self.assertEqual((done["overdue"], done["due_in"]), (False, None))
+        self.assertEqual(done["due_date"], (TODAY + timedelta(days=5)).isoformat())
+        self.assertIsNone(self.edit(SUP1, sid, due_date=None)["due_date"])
+
+    def test_tahlil_counts_the_promises_past_their_date(self):
+        self.overdue_plan(SUP1, "s3")
+        self.write(SUP2, "s5", status="open", due_date=TODAY + timedelta(days=1))
+        f = self.tahlil(ADMIN)["funnel"]
+        self.assertEqual((f["promised"], f["overdue"]), (2, 1))
+
+    # ── what waits on a reader ───────────────────────────────────────────────
+
+    def waits(self, payload, **kw):
+        w = ims.waiting(self.db, payload, **kw)
+        return None if w is None else {s["id"]: why for s, why in w["stops"]}
+
+    def counts(self, payload):
+        w = ims.waiting(self.db, payload)
+        return w["unanswered"], w["overdue"], w["written"]
+
+    def test_what_waits_on_a_reader(self):
+        s = self.stop
+        # the last REMIND_DAYS days hold s3 and s4 (unit 1) and s5 (unit 2)
+        self.assertEqual(self.waits(SUP1), {s["s3"]: "unanswered", s["s4"]: "unanswered"})
+        self.assertEqual(self.waits(SUP2), {s["s5"]: "unanswered"})
+        # an owner: their own causes, in every unit
+        self.assertEqual(self.waits(self.OWNER), {s["s3"]: "unanswered", s["s5"]: "unanswered"})
+        self.assertEqual(self.waits(self.STRANGER), {})
+        # newest first, like the list
+        self.assertEqual(list(self.waits(SUP1)), [s["s3"], s["s4"]])
+        # nothing waits on a role the page does not ask
+        for who in (ADMIN, self.SM, self.TOP):
+            self.assertIsNone(self.waits(who), who["role"])
+
+    def test_only_the_readers_own_answer_takes_a_stop_off(self):
+        self.write(self.OWNER, "s3")                      # somebody else's answer
+        self.assertIn(self.stop["s3"], self.waits(SUP1))
+        self.assertEqual(self.counts(SUP1), (2, 0, 0))
+        # a plan is an answer — until its date passes
+        self.write(SUP1, "s3", status="open", due_date=TODAY + timedelta(days=2))
+        self.assertNotIn(self.stop["s3"], self.waits(SUP1))
+        self.assertEqual(self.counts(SUP1), (1, 0, 1))
+        self.assertEqual(ims.waiting(self.db, SUP1)["written_rows"], [["Cat B", "9101"]])
+
+    def test_an_overdue_plan_waits_again(self):
+        s = self.stop
+        sid = self.overdue_plan(SUP1, "s3")
+        self.assertEqual(self.waits(SUP1)[s["s3"]], "overdue")
+        self.assertEqual(self.counts(SUP1), (1, 1, 0))
+        # an old stop comes back with its plan: s1 is outside the look-back
+        old = self.overdue_plan(SUP1, "s1")
+        self.assertEqual(self.waits(SUP1)[s["s1"]], "overdue")
+        # somebody else's overdue plan is theirs to answer for
+        self.assertNotIn(s["s1"], self.waits(self.OWNER))
+        self.assertEqual(self.waits(self.OWNER)[s["s3"]], "unanswered")
+        # done, or moved ahead → it waits no more
+        self.edit(SUP1, sid, status="done")
+        self.edit(SUP1, old, due_date=TODAY + timedelta(days=1))
+        self.assertEqual(self.waits(SUP1), {s["s4"]: "unanswered"})
+
+    def test_a_plan_overdue_longer_than_the_look_back_is_no_longer_named(self):
+        self.overdue_plan(SUP1, "s2", days=ims.REMIND_DAYS)
+        self.assertEqual(self.waits(SUP1)[self.stop["s2"]], "overdue")
+        self.overdue_plan(SUP1, "s1", days=ims.REMIND_DAYS + 1)
+        self.assertNotIn(self.stop["s1"], self.waits(SUP1))
+
+    def test_nothing_from_before_the_reminders_began_waits(self):
+        with mock.patch.object(ims, "REMIND_FROM", ago(3)):
+            self.assertEqual(self.waits(SUP1), {self.stop["s3"]: "unanswered"})   # s4 is 5 days old
+        with mock.patch.object(ims, "REMIND_FROM", TODAY + timedelta(days=1)):
+            self.assertEqual(self.waits(SUP1), {})
+
+    def test_the_page_carries_the_same_list(self):
+        s = self.stop
+        self.overdue_plan(SUP1, "s1")
+        got = self.listed(SUP1, days=3)                   # the period on screen holds s3 alone
+        self.assertEqual([x["id"] for x in got["stops"]], [s["s3"]])
+        todo = got["todo"]
+        self.assertEqual([(x["id"], x["why"]) for x in todo["stops"]],
+                         [(s["s3"], "unanswered"), (s["s4"], "unanswered"), (s["s1"], "overdue")])
+        self.assertEqual((todo["unanswered"], todo["overdue"], todo["written"]), (2, 1, 0))
+        self.assertEqual((todo["from"], todo["to"]),
+                         (ago(ims.REMIND_DAYS - 1).isoformat(), TODAY.isoformat()))
+        # a stop from outside the period arrives whole: its words, its solutions, its unit
+        old = todo["stops"][2]
+        self.assertEqual((old["note"], old["cell"], old["category"]), ("note s1", "9101", "Cat B"))
+        self.assertTrue(old["solutions"][0]["overdue"])
+        self.assertIn("1", got["units"])
+        self.assertEqual(got["today"], TODAY.isoformat())
+        # the menu number is that list's length
+        self.assertEqual(ims.waiting_count(db=self.db, payload=SUP1),
+                         {"unanswered": 2, "overdue": 1, "total": 3})
+        # nobody else is asked
+        self.assertIsNone(self.listed(ADMIN)["todo"])
+        self.assertEqual(ims.waiting_count(db=self.db, payload=ADMIN),
+                         {"unanswered": 0, "overdue": 0, "total": 0})
+
+    def test_the_pages_filters_narrow_the_list_too(self):
+        got = ims.stops(date_from=ago(30), date_to=TODAY, shift=None, factory=None,
+                        manager_id=[2], db=self.db, payload=self.OWNER)
+        self.assertEqual([x["id"] for x in got["todo"]["stops"]], [self.stop["s5"]])
+        self.assertEqual(self.waits(self.OWNER, manager_id=[2]), {self.stop["s5"]: "unanswered"})
+
+    # ── the daily reminder ───────────────────────────────────────────────────
+
+    def holder(self, profile, tid, lang="uz"):
+        """Somebody holds this profile — a reminder has an account to reach."""
+        from app import models as m
+        role, _, ref = profile.partition(":")
+        self.db.add(m.TelegramUser(telegram_id=tid, full_name=f"User {tid}", role=role,
+                                   role_id=int(ref), language=lang, status="approved"))
+        self.db.add(m.TelegramUserRole(telegram_id=tid, role=role, role_id=int(ref),
+                                       full_name=f"User {tid}", profile_key=profile,
+                                       status="approved"))
+        self.db.commit()
+
+    def remind(self, **kw):
+        from app.services import idle_solution_reminder as rem
+        with mock.patch("app.telegram_bot.send_tg_notification", return_value=True) as dm:
+            out = rem.run(**kw)
+        return out, dm
+
+    def ledger(self):
+        from app.models import IdleSolutionReminder as R
+        self.db.expire_all()
+        return {r.profile_key: (r.sent, r.unanswered, r.overdue) for r in self.db.query(R).all()}
+
+    def test_the_reminder_tells_each_person_once_a_day(self):
+        from app.models import Notification
+        owner = f"idle-owner:{self.OWNER['role_id']}"
+        self.holder("supervisor:1", 501)
+        self.holder(owner, 503, lang="ru")
+        self.overdue_plan(SUP1, "s3")
+        out, dm = self.remind(shifts=[1])
+        # unit 2: nobody holds it, nobody to tell; an owner of no cause is not asked at all
+        self.assertEqual((out["asked"], out["sent"], out["nobody"]), (3, 2, 1))
+        self.assertEqual(self.ledger(), {
+            "supervisor:1": (True, 1, 1), owner: (True, 2, 0), "supervisor:2": (False, 0, 0)})
+        self.assertEqual(sorted(c.args[0] for c in dm.call_args_list), [501, 503])
+        sent = {c.args[0]: c.kwargs for c in dm.call_args_list}
+        self.assertIn("<b>2 ta</b>", sent[501]["html"])                 # in the holder's language
+        self.assertIn("Rejangiz muddati o'tgan — 1 ta", sent[501]["html"])
+        self.assertIn("<code>9101</code>", sent[501]["html"])
+        self.assertIn("Решение не написано — 2", sent[503]["html"])
+        self.assertNotIn("⏰", sent[503]["html"])                        # nothing of theirs is overdue
+        self.assertTrue(sent[501]["markup"].keyboard[0][0].web_app.url.endswith("/idle-solutions"))
+        # one bell row each, opening the page
+        rows = {n.recipient_profile: n for n in self.db.query(Notification).all()}
+        self.assertEqual(sorted(rows), sorted(["supervisor:1", owner]))
+        self.assertEqual((rows["supervisor:1"].nkey, rows["supervisor:1"].subject_kind,
+                          rows["supervisor:1"].subject_id),
+                         ("idle_solution_reminder", "page", "/idle-solutions"))
+        # the same day again — a deploy, a caught-up job — tells nobody twice
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual((out["asked"], out["sent"]), (0, 0))
+        dm.assert_not_called()
+
+    def test_nothing_waiting_sends_nothing(self):
+        self.holder("supervisor:2", 502)
+        self.write(SUP2, "s5")
+        out, dm = self.remind(shifts=[1])
+        self.assertEqual((out["sent"], out["quiet"]), (0, 1))
+        dm.assert_not_called()
+        self.assertEqual(self.ledger()["supervisor:2"], (False, 0, 0))
+
+    def test_each_shift_is_told_in_its_own_hours(self):
+        from app import models as m
+        from app.services import idle_solution_reminder as rem
+        self.db.query(m.Manager).filter(m.Manager.id == 2).update({"shift": 2})
+        self.db.commit()
+        self.holder("supervisor:1", 501)
+        self.holder("supervisor:2", 502)
+
+        def clock(h, mi=0):
+            return datetime.combine(TODAY, time(h, mi), tzinfo=ims.TZ)
+
+        self.assertEqual(rem.open_shifts(clock(9, 59)), [])
+        self.assertEqual(rem.open_shifts(clock(10)), [1])
+        self.assertEqual(rem.open_shifts(clock(11, 59)), [1])
+        self.assertEqual(rem.open_shifts(clock(12)), [])
+        self.assertEqual(rem.open_shifts(clock(22, 20)), [2])
+        out, dm = self.remind(now=clock(8))
+        self.assertEqual((out["slots"], out["asked"]), ([], 0))
+        out, dm = self.remind(now=clock(10, 20))
+        self.assertEqual([c.args[0] for c in dm.call_args_list], [501])
+        out, dm = self.remind(now=clock(22))
+        self.assertEqual([c.args[0] for c in dm.call_args_list], [502])
+
+    def test_the_reminder_reads_in_four_languages(self):
+        from app.routers.staff import _NOTIF_STRINGS, _mk_notif
+        from app.services import idle_solution_reminder as rem
+        from app.services import notification_center as nc
+        self.overdue_plan(SUP1, "s3")
+        w = ims.waiting(self.db, SUP1)
+        plans = rem._plan_dates(self.db, "supervisor:1", w)
+        self.assertEqual(plans, {self.stop["s3"]: ago(2).isoformat()})
+        for lang in ("uz", "uz_cyrl", "ru", "en"):
+            text = rem.body(lang, w, plans)
+            self.assertIn("<code>9102</code>", text, lang)
+            self.assertIn(ago(2).strftime("%d.%m"), text, lang)
+            self.assertNotIn("{", text, lang)
+            self.assertIn(lang, _NOTIF_STRINGS[rem.NKEY])
+        # a kind with nothing in it leaves the bell text
+        title, text = _mk_notif(rem.NKEY, {"n": 2, "unanswered": 2, "overdue": ""}, "uz")
+        self.assertEqual((title, text), ("Kutish yechimlari: 2 ta to'xtash sizni kutmoqda",
+                                         "Yechim yozilmagan: 2"))
+        self.assertEqual(nc.category_of(rem.NKEY), "idle")
+        self.assertEqual(nc.link_for("page", rem.PAGE), "/idle-solutions")
 
 
 if __name__ == "__main__":

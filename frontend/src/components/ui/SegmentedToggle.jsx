@@ -157,6 +157,9 @@ export default function SegmentedToggle({
   useLayoutEffect(() => {
     const changed = lastValue.current !== value;
     lastValue.current = value;
+    // A value no option holds (a date picked beside its quick picks) selects
+    // nothing: without this the pill stayed on the segment that was last active.
+    if (!items.some((o) => o.value === value)) activeRef.current = null;
     syncInd(changed);
   });
 

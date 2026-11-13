@@ -71,7 +71,7 @@ function getPresets(t, max) {
 
 // ── Day cell ──────────────────────────────────────────────────────────────────
 
-function Day({ iso, cur, from, to, hover, onPick, onHover, max, marked }) {
+function Day({ iso, cur, from, to, hover, onPick, onHover, max, min, marked }) {
   const effTo  = from && !to && hover ? hover : to;
   let a=null, b=null;
   if (from && effTo) [a,b] = from<=effTo ? [from,effTo] : [effTo,from];
@@ -81,8 +81,8 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max, marked }) {
   const isSingle=isStart&&isEnd, selected=isStart||isEnd;
   const day=parseInt(iso.split("-")[2]);
 
-  // Out-of-month and beyond-max days render muted and unclickable.
-  if (!cur || (max && iso > max)) return (
+  // Out-of-month, beyond-max and before-min days render muted and unclickable.
+  if (!cur || (max && iso > max) || (min && iso < min)) return (
     <div className="h-8 flex items-center justify-center">
       <span className="text-[11px]" style={{ color:"var(--text-4)", opacity:0.4 }}>{day}</span>
     </div>
@@ -110,7 +110,7 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max, marked }) {
   );
 }
 
-function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, marked }) {
+function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, min, marked }) {
   const days = calDays(year, month);
   return (
     <div>
@@ -124,7 +124,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, mark
         {days.map(({iso,cur}) => (
           <Day key={iso} iso={iso} cur={cur}
             from={from} to={to} hover={hover}
-            onPick={onPick} onHover={onHover} max={max} marked={marked} />
+            onPick={onPick} onHover={onHover} max={max} min={min} marked={marked} />
         ))}
       </div>
     </div>
@@ -146,9 +146,14 @@ export default function DateRangePicker({
   // years that end before it. The «Brigadirlar reytingi» year picker.
   year = false,
   max = null,          // ISO upper bound — days after it are muted/unpickable
-  min = null,          // month mode only: ISO lower bound — months that end
+  min = null,          // ISO lower bound. Month / year mode: periods that end
                        // before it are muted/unpickable (a register that
-                       // starts on a known month, /turnover)
+                       // starts on a known month, /turnover). Day calendar:
+                       // days before it are, and a quick pick reaching before
+                       // it is dropped — a date that must lie AHEAD (a plan's
+                       // deadline on «Kutish yechimlari»)
+  placeholder = null,  // the trigger's words while no date is picked
+                       // (default: «select dates»)
   weekday = false,     // single mode: prefix the trigger label with the weekday
   compactLabel = false, // show a numeric dd.mm.yy label below sm, verbose above —
                         // for tight mobile toolbars where the spelled-out month
@@ -376,7 +381,8 @@ export default function DateRangePicker({
   // single-date mode only offers single-day quick picks (no ranges);
   // an upper bound drops presets that reach past it
   const presets = (single ? getPresets(t, max).filter((p) => p.from === p.to) : getPresets(t, max))
-    .filter((p) => !max || p.to <= max);
+    .filter((p) => !max || p.to <= max)
+    .filter((p) => !min || p.from >= min);
 
   // A range covering everything says so on the trigger: the spelled-out
   // "1 Jan 2015 – 25 Aug 2026" is the same fact, told in the one form a reader
@@ -393,6 +399,8 @@ export default function DateRangePicker({
     ? t("filter.allTime")
     : weekday && single && dateFrom
     ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
+    : !dateFrom && !dateTo && placeholder
+    ? placeholder
     : fmtRange(dateFrom, dateTo, t);
 
   // Numeric fallback for compact toolbars: "16.07.25 – 16.07.26" (dd.mm.yy).
@@ -400,7 +408,7 @@ export default function DateRangePicker({
   const compactRange = isAllTime
     ? t("filter.allTime")
     : !dateFrom
-    ? t("filter.selectDates")
+    ? (placeholder || t("filter.selectDates"))
     : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
   // "xl" mode only: below 360px the year and the calendar glyph go too, so a
   // week stepper and the filter button share one row on a 320px phone.
@@ -547,7 +555,7 @@ export default function DateRangePicker({
               <div onMouseLeave={() => setHover(null)}>
                 <MonthGrid year={leftY} month={leftM}
                   from={tempFrom} to={tempTo} hover={hover}
-                  onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />
+                  onPick={handlePick} onHover={setHover} t={t} max={max} min={min} marked={marked} />
               </div>
             </div>
 
@@ -656,8 +664,8 @@ export default function DateRangePicker({
             </div>
 
             <div className={`grid ${single ? "grid-cols-1" : "grid-cols-2"} gap-6`} onMouseLeave={() => setHover(null)}>
-              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />
-              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} marked={marked} />}
+              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} min={min} marked={marked} />
+              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} min={min} marked={marked} />}
             </div>
 
             {!single && (

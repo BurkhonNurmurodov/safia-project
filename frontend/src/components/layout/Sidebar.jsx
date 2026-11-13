@@ -76,6 +76,19 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     refetchInterval: 60_000,
   });
 
+  // «Kutish yechimlari»: how many stops wait on THIS reader — the filed stops
+  // they wrote nothing to and their own plans past their date
+  // (`routers/idle_solutions.waiting`, the page's «Sizni kutmoqda» list and the
+  // daily reminder read the same answer). Asked only of the two roles the page
+  // itself asks; the page drops this query the moment a solution is saved.
+  const { data: idleWaiting } = useQuery({
+    queryKey: ["idle-solutions-waiting"],
+    queryFn: () => api.get("/api/idle-solutions/waiting").then(r => r.data),
+    enabled: ["supervisor", "idle-owner"].includes(auth?.role),
+    staleTime: 120_000,
+    refetchInterval: 300_000,
+  });
+
   // One map, so a link carries a badge by BEING in it — the old code tested
   // `to === "/staff"` in three places, which is why a second badge could not
   // exist without a fourth: a new badge is one line here and nothing anywhere
@@ -88,6 +101,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     "/staff": showBadge ? pendingCount : 0,
     "/panel/users": adminBadges?.users ?? 0,
     "/panel/verifixsync": adminBadges?.verifixsync ?? 0,
+    "/idle-solutions": idleWaiting?.total ?? 0,
   };
   const badgeFor = (to) => BADGES[to] || 0;
 
