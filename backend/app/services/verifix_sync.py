@@ -592,6 +592,37 @@ def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
 
 # ── the pass ──────────────────────────────────────────────────────────────────
 
+# shortcut: a fixed trickle, so the dismissals these ties lead to stay under
+# the «dismissed» cap (a pass over a cap applies NOTHING); raise it with the cap.
+GONE_TIES_PER_PASS = 5
+
+
+def _gone_leader(pl, ctx, p: RoleProfile) -> bool:
+    """An UNTIED leader whom Verifix lists only as DISMISSED. The tie run ties
+    WORKING people only, so a leader who left before their profile was tied was
+    never followed and stayed on every list. The same strict name match as the
+    tie run, and only one sure answer: one dismissed namesake, nobody working of
+    that name, nobody else's tie, dismissed no earlier than a month before the
+    profile was made (an older namesake is somebody else). Tied here; the
+    dismissal path ends them on the next reads. True when planned."""
+    if ctx.hand.get("leader", {}).get(p.id):
+        return False                    # a person tied or untied it by hand
+    m = verifix_org.match(_name_tokens(p.name), ctx.own_keys(p), ctx.unit_keys(p.manager_id),
+                          ctx.working, ctx.gone, ctx.working_rows)
+    cands = m.get("cands") or []
+    if m.get("reason") != "not_working" or len(cands) != 1:
+        return False
+    e = cands[0]
+    made = (p.created_at or _now()).astimezone(TZ).date() - timedelta(days=31)
+    if (e.get("status") != "D" or not e.get("dismissed")
+            or str(e["dismissed"])[:10] < made.isoformat()
+            or e["id"] in ctx.prof_by_emp or e["id"] in ctx.shared_emp
+            or e["id"] in ctx.unit_by_emp):
+        return False
+    pl.act("tie_gone", profile=p.id, name=p.name, emp=e, date=e["dismissed"])
+    return True
+
+
 class Plan:
     """What one pass found: automatic actions (applied in mode "on") and
     queue items (always)."""
@@ -784,7 +815,12 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             pl.meta.append((m, new_meta))
 
     # ── people
+    gone_ties = 0
     for p in ctx.profiles:
+        if (not p.vfx_employee_id and p.role == "leader" and not p.ended_on
+                and gone_ties < GONE_TIES_PER_PASS and _gone_leader(pl, ctx, p)):
+            gone_ties += 1
+            continue
         if not p.vfx_employee_id or p.role not in PROFILE_ROLES:
             continue
         if p.vfx_employee_id in ctx.shared_emp:
@@ -1268,6 +1304,13 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
         c = cells[a["cell"]]
         cell_links.record(db, c, "leader_id", a["to"], src="verifix", by="Verifix",
                           effective_from=_today(), mark=True)
+    elif k == "tie_gone":
+        p = db.query(RoleProfile).filter_by(id=a["profile"]).first()
+        if p is None or p.vfx_employee_id:
+            return False
+        p.vfx_employee_id = a["emp"]["id"]
+        p.vfx_meta = {**(p.vfx_meta or {}), **cell_register.person_meta(a["emp"]),
+                      "seen_at": _iso(ctx.org_at), "how": "gone"}
     elif k == "dismissed":
         p = db.query(RoleProfile).filter_by(id=a["profile"]).first()
         fallback = {}
@@ -1297,6 +1340,15 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
         p.vfx_meta = {**(p.vfx_meta or {}), "cut_from": cut}
         if not p.ended_on:              # off today's lists from the same day
             p.ended_on = date.fromisoformat(cut)
+        # …and off the platform: the accounts and the browser login go as a
+        # delete takes them (2026-11-13, the operator: «remove them»).
+        from app.identity import profile_key as _pk
+        from app.models import WebCredential
+        from app.routers.profiles import _bound_role_rows, _remove_role_row
+        for r in _bound_role_rows(db, "leader", p.id):
+            _remove_role_row(db, r)
+        db.query(WebCredential).filter(WebCredential.profile_key == _pk("leader", p.id)).delete(
+            synchronize_session=False)
         if cut_set:
             notes.append(("cutoff", p.id, {"name": p.name, "unit": p.manager_id,
                                            "from": cut, "reason": reason}))

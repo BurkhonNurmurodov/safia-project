@@ -177,8 +177,6 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/profiles/admin/cells/{}/manager",      "org", "org.cell_manager_picked"),
     (("PUT",),    "/api/profiles/admin/cells/{}",              "org", "org.cell_edited"),
     (("DELETE",), "/api/profiles/admin/cells/{}",              "org", "org.cell_deleted"),
-    (("POST",),   "/api/profiles/admin/leader/{}/end",         "identity", "identity.profile_ended"),
-    (("POST",),   "/api/profiles/admin/leader/{}/return",      "identity", "identity.profile_returned"),
     (("PUT",),    "/api/profiles/admin/{}/{}",                 "identity", "identity.profile_edited"),
     (("DELETE",), "/api/profiles/admin/{}/{}",                 "identity", "identity.profile_deleted"),
     (("POST",),   "/api/profiles/admin",                       "identity", "identity.profile_created"),
