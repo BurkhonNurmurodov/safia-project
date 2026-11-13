@@ -411,9 +411,11 @@ once, and followed through the tie from then on; history is never affected.
   back): `brigadir_differs`, `leader_moved`, `new_unit`, `code_changed` (the
   code cascades through every stored row), `rename` (only when VERIFIX's own
   spelling changed; the old name kept as an alias the sheet matcher reads),
-  `tie_doubtful`, `two_seats`, `seat_changed`, `seat_gone` (the seat left every
-  cell, went missing or changed status — nothing released until tapped; a seat
-  that MOVED to another cell is released automatically), `hold` (a seat whose
+  `tie_doubtful`, `two_seats`, `seat_changed`, `seat_gone` (the seat went
+  missing or is in another status than W or D — nothing released until tapped;
+  a seat still WORKING who is no longer the cell's seat — moved to another cell,
+  out of every cell, or off a leader's job — is released automatically, from
+  2026-11-13), `hold` (a seat whose
   cell has no brigadir, or whose profile was made with no unit because a person
   chose the manager — the tap connects it, the manager stays),
   `archived_open`, `seat_no_profile`, and the information-only `missing`,

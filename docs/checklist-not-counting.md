@@ -323,6 +323,35 @@ October, files and is ranked as before.
 - Not changed: a per-cell unit's leader with at least one counted cell still
   files a checklist for every cell they own, counted or not.
 
+## A leader who runs NO cell owes nothing (`verifix_sync._no_cell`, 2026-11-13)
+
+The operator (2026-11-13), on Jozilov Diyor: Verifix moved him from 7323 to
+7011, the sync released 7323 on 5 Nov, 7011 has two Verifix leaders (a
+`two_seats` item, so neither runs it) — and every day since counted as his miss
+in unit 14, his old brigadir's. «Make sure the same scenario won't happen
+problems later. Watch for verifix always.»
+
+- **The rule**: a leader who HAD a cell — a «Boshqaruvchi» (`leader_id`) link
+  released since — and runs no live cell now, with no link waiting for them,
+  stops counting from the release day: a cutoff by the sync («Verifix: no cell
+  from …», `set_by` = the sync), `vfx_meta.nocell_from`, the leader and the
+  brigadir told (`notify_cutoff`). The unit is scored on its remaining leaders.
+  A leader who never had a cell link is `leader_load`'s case, above.
+- **Back**: one who runs a cell again (or has one waiting) counts again — the
+  sync's cutoff of that date is lifted and every day from it to the day the
+  new link counts from is a day exclusion («Verifix: no cell»), because a
+  cutoff has no ceiling. A person's own cutoff is never set over or lifted (the
+  mark is still kept, so the way back clears it).
+- **Every pass checks it** (`no_cell_acts`, pure, tested), the last thing the
+  pass plans. On the first pass it hit Diyor only (from 5 Nov); Malikov Xasan
+  and Mirzakarimov Shoxrux were already cut by a person and stay so.
+- **A Verifix return** (`returned`) drops the mark with the sync's cutoff, so
+  a leader who still runs no cell is cut again on the next pass.
+- **With it, a seat's cell is released whenever the seat is still working but
+  no longer the cell's seat** (moved out, off a leader's job — the «Konditer»
+  case), not only when it moved into another seat (`docs/verifix.md`). The
+  released leader then falls under the rule above.
+
 ## A LEADER who stops counting (`/panel/ltcutoff`)
 
 From **2026-08-30** a leader can be taken out of the results **from one day on,

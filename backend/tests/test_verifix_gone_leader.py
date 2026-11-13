@@ -71,5 +71,42 @@ class GoneLeader(unittest.TestCase):
         self.assertFalse(got)
 
 
+def leader(pid, meta=None, ended=None, role="leader"):
+    return SimpleNamespace(id=pid, name=f"L{pid}", manager_id=14, role=role,
+                           ended_on=ended, vfx_meta=meta)
+
+
+class NoCell(unittest.TestCase):
+    """A leader who runs no cell owes nothing (Jozilov Diyor, 13 Nov)."""
+    from datetime import date as _d
+    NOV5, NOV20 = _d(2026, 11, 5), _d(2026, 11, 20)
+
+    def test_released_and_running_nothing_stops_counting(self):
+        acts = verifix_sync.no_cell_acts([leader(309)], {309: self.NOV5}, {}, set())
+        self.assertEqual(acts, [("no_cell", {"profile": 309, "name": "L309", "unit": 14,
+                                             "date": "2026-11-05"})])
+
+    def test_still_running_a_cell_owes(self):
+        self.assertEqual(verifix_sync.no_cell_acts([leader(309)], {309: self.NOV5}, {}, {309}), [])
+
+    def test_never_had_a_cell_is_left_to_leader_load(self):
+        self.assertEqual(verifix_sync.no_cell_acts([leader(309)], {}, {}, set()), [])
+
+    def test_marked_once(self):
+        p = leader(309, {"nocell_from": "2026-11-05"})
+        self.assertEqual(verifix_sync.no_cell_acts([p], {309: self.NOV5}, {}, set()), [])
+
+    def test_a_cell_again_counts_again_from_its_day(self):
+        p = leader(309, {"nocell_from": "2026-11-05"})
+        acts = verifix_sync.no_cell_acts([p], {309: self.NOV5}, {309: self.NOV20}, {309})
+        self.assertEqual(acts[0][0], "cell_back")
+        self.assertEqual((acts[0][1]["date"], acts[0][1]["back"]), ("2026-11-05", "2026-11-20"))
+
+    def test_ended_and_other_roles_untouched(self):
+        self.assertEqual(verifix_sync.no_cell_acts(
+            [leader(1, ended=self.NOV5), leader(2, role="supervisor")],
+            {1: self.NOV5, 2: self.NOV5}, {}, set()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

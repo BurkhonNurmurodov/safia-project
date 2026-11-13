@@ -919,9 +919,11 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
         if not seats:
             # Nobody seated now. Ruling 6: only «dismissed with a date» is a
             # departure — and that is the dismissal's own two-read path, which
-            # releases the person's cells. A seat that MOVED to another cell
-            # (a positive fact) is released here; anything else (missing, a
-            # status or job change, moved out of every cell) waits for a person.
+            # releases the person's cells. A seat still WORKING who is no longer
+            # this cell's seat — moved to another cell, out of every cell, or
+            # off a leader's job (2026-11-13, Jozilov Diyor: «watch for verifix
+            # always») — is released here; a seat missing from the list or in
+            # another status waits for a person.
             holds = cur_owner or (mmode != "manual" and cur_mgr)
             if not holds:
                 continue
@@ -929,7 +931,7 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             pe = ctx.by_emp.get(prev) if prev else None
             if pe is not None and pe["status"] == "D" and pe.get("dismissed"):
                 continue
-            if pe is not None and pe["status"] == "W" and prev in ctx.seated:
+            if pe is not None and pe["status"] == "W":
                 if cur_owner:
                     pl.act("owner", cap="seat_moves", cell=c.id, code=c.verifix_code, to=None,
                            why="seat_moved")
@@ -1122,7 +1124,49 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             continue
         pl.item("new_unit", f"emp:{e['id']}", {"vfx": verifix_org.who(e),
                                                "name": verifix_org.profile_name(e["name"])})
+    _no_cell(db, ctx, pl)
     return pl
+
+
+def _no_cell(db: Session, ctx: Ctx, pl: Plan) -> None:
+    """A leader who runs NO cell owes nothing (2026-11-13, Jozilov Diyor: moved
+    by Verifix to a cell with two seats, his old cell released, and every day
+    since counted as a miss for the unit he left). Only a leader who HAD a cell
+    — a «Boshqaruvchi» link released since — and runs none now, with nothing
+    waiting for them: stopped counting from the release day (act `no_cell`).
+    One who runs a cell again counts again (act `cell_back`), the days between
+    taken out. A person's own cutoff is never touched."""
+    from app.models import CellLinkEvent as E
+    from sqlalchemy import func
+    released = dict(db.query(E.prev, func.max(E.effective_from)).filter(
+        E.field == "leader_id", E.prev.isnot(None), E.applied_at.isnot(None),
+        or_(E.value.is_(None), E.value != E.prev)).group_by(E.prev).all())
+    linked = dict(db.query(E.value, func.max(E.effective_from)).filter(
+        E.field == "leader_id", E.value.isnot(None)).group_by(E.value).all())
+    running = {c.leader_id for c in ctx.cells if c.leader_id and c.archived_at is None}
+    waiting = {v for (v,) in db.query(E.value).filter(
+        E.field == "leader_id", E.value.isnot(None), E.applied_at.is_(None)).all()}
+    for kind, kw in no_cell_acts(ctx.profiles, released, linked, running | waiting):
+        pl.act(kind, **kw)
+
+
+def no_cell_acts(profiles, released: dict, linked: dict, holding: set) -> list:
+    """The `_no_cell` decision, pure: [(kind, kwargs)]. `released` / `linked`
+    = profile id → the last day a «Boshqaruvchi» link left / reached them,
+    `holding` = the ids running a live cell now or with one waiting."""
+    out = []
+    for p in profiles:
+        if p.role != "leader" or p.ended_on:
+            continue
+        meta = p.vfx_meta or {}
+        base = {"profile": p.id, "name": p.name, "unit": p.manager_id}
+        if p.id not in holding and p.id in released and not meta.get("nocell_from"):
+            out.append(("no_cell", {**base, "date": released[p.id].isoformat()}))
+        elif p.id in holding and meta.get("nocell_from"):
+            back = linked.get(p.id)
+            out.append(("cell_back", {**base, "date": meta["nocell_from"],
+                                      "back": back.isoformat() if back else None}))
+    return out
 
 
 def _folded(name: str) -> str:
@@ -1304,6 +1348,34 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
         c = cells[a["cell"]]
         cell_links.record(db, c, "leader_id", a["to"], src="verifix", by="Verifix",
                           effective_from=_today(), mark=True)
+    elif k == "no_cell":
+        p = db.query(RoleProfile).filter_by(id=a["profile"]).first()
+        have = leader_cutoffs.record(leader_cutoffs.load(db), p.id, p.name)
+        # A person's cutoff stands, whatever its date; only the sync's own moves.
+        if have is None or ((have.set_by or "") == BY and str(have.from_date)[:10] > a["date"]):
+            reason = f"Verifix: no cell from {a['date']}"
+            leader_cutoffs.set_cutoff(db, leader_id=p.id, leader_name=p.name, from_date=a["date"],
+                                      manager_id=p.manager_id, reason=reason, actor=BY)
+            leader_cutoffs.drop_pending_reviews(db, p.id, a["date"])
+            notes.append(("cutoff", p.id, {"name": p.name, "unit": p.manager_id,
+                                           "from": a["date"], "reason": reason}))
+        p.vfx_meta = {**(p.vfx_meta or {}), "nocell_from": a["date"]}
+    elif k == "cell_back":
+        from app.services import leader_exclusions
+        p = db.query(RoleProfile).filter_by(id=a["profile"]).first()
+        have = leader_cutoffs.record(leader_cutoffs.load(db), p.id, p.name)
+        if have is not None and (have.set_by or "") == BY and str(have.from_date)[:10] == a["date"]:
+            leader_cutoffs.lift(db, leader_id=p.id, leader_name=p.name)
+            # The cutoff has no ceiling: the days with no cell stay out as days.
+            d, end = date.fromisoformat(a["date"]), date.fromisoformat(a["back"] or a["date"])
+            while d < end:
+                leader_exclusions.exclude(db, leader_id=p.id, leader_name=p.name,
+                                          date=d.isoformat(), manager_id=p.manager_id,
+                                          reason="Verifix: no cell", score=None, actor=BY)
+                d += timedelta(days=1)
+        meta = dict(p.vfx_meta or {})
+        meta.pop("nocell_from", None)
+        p.vfx_meta = meta
     elif k == "tie_gone":
         p = db.query(RoleProfile).filter_by(id=a["profile"]).first()
         if p is None or p.vfx_employee_id:
@@ -1362,6 +1434,7 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
             leader_cutoffs.lift(db, leader_id=p.id, leader_name=p.name)
         meta = dict(p.vfx_meta or {})
         meta.pop("cut_from", None)
+        meta.pop("nocell_from", None)   # the lift took it too: `_no_cell` looks again
         p.vfx_meta = meta
         p.ended_on = None
         notes.append(("vfx_leader_returned", p.manager_id, {"leader": p.name}))
