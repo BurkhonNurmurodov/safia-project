@@ -476,3 +476,12 @@ window left a brigadir judged on a record or two («0/1»).
   line reads «soch bilan: 50 ta qoldi (400 tadan) · 88% bartaraf etilgan» —
   left = actionable − done, the very records the cell's link opens — instead of
   done/actionable. Key `overview.sr.qLeft`; the cell's figure is unchanged.
+- **The cell prints «solved/total · %»** (the operator, after the «left»
+  wording had shipped: «now it should be like that 0/50, did he solved this
+  problems or not» → «In the cell, with %»): «0/50 · 0%», hair included, all
+  time, on ONE line — which reverses the 2026-09-16 call that kept the count
+  in the tooltip. A phone drops the dot («0/50 0%», 11px) and below 360px the %
+  too; the colour still states the band. The hover box follows the same
+  wording, per reading: «soch bilan: 0/50 bartaraf etilgan · 0%» over the
+  «sochsiz» line (key `overview.sr.qSolved`; `qLeft` and the «left» wording
+  are gone).

@@ -14,8 +14,8 @@
 //   exactly it. A payload from before the change still names its month
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
-//   and the cell's hover box prints both readings as what is LEFT: «soch
-//   bilan: 50 ta qoldi (400 tadan)» over the «sochsiz» line (the operator's call,
+//   printed as «solved/total · %» («0/50 · 0%») — and the cell's hover box
+//   splits the count into «soch bilan» and «sochsiz» (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -32,7 +32,8 @@
 //   are FLAT band colours, never a gradient — these are verdicts, not
 //   intensities — and the figures sit centred in the fill, because the colour
 //   does the comparing now and centred digits cost nothing. Every row is ONE
-//   line high and carries ONE figure per cell, so nothing beside the value can
+//   line high and carries ONE figure per cell (the quality cell prints its
+//   count on the same line, before its %), so nothing beside the value can
 //   double the board's height or compete with it. The cell is the загрузка
 //   heatmap's cell — same saturated hues, same auto-contrast ink, same square
 //   full-bleed rectangle ruled by a 1px line — because one platform should not
@@ -443,17 +444,14 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
   };
 
-  // The quality cell's hover box, one line per reading, and each says what is
-  // LEFT — the records still unresolved — out of all that needed action, then
-  // the share resolved: «with hair: 50 left of 400 · 88% resolved» (the cell's
-  // figure) over «without hair: 30 left of 250 · 88% resolved» (the operator,
-  // 2026-11-13: «show how much left … 50 left with hair and 30 without hair»;
-  // it printed done/actionable before). «Left» is what the cell's link opens.
-  // A reading with no record of its own says so with «—».
+  // The quality cell's hover box, one line per reading: solved out of all that
+  // needed action, then the share — «with hair: 0/50 solved · 0%» (the cell's
+  // own figure) over «without hair: 0/30 solved · 0%». A reading with no
+  // record of its own says so with «—».
   const qualityTitle = (r) => {
     const line = (c, labelKey) => (c && !c.reason && isNum(c.value)
-      ? fill(t("overview.sr.qLeft"), {
-        label: t(labelKey), left: c.actionable - c.done, total: c.actionable, pct: pctText(c.value),
+      ? fill(t("overview.sr.qSolved"), {
+        label: t(labelKey), done: c.done, total: c.actionable, pct: pctText(c.value),
       })
       : `${t(labelKey)}: —`);
     const all = r.quality_hair;
@@ -588,13 +586,21 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
-              {/* The percentage is the figure. «done/actionable» was printed
-                  beside it and is not (the operator's call, 2026-09-16) — it
-                  stays on the cell as its tooltip, where it costs no width. */}
-              {/* The overall rate, hair included; the hover box spells out
-                  both readings — with hair and without — count and %. */}
-              {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r), qualityTarget(r))}
+              {/* «solved/total · %» — the count IS printed in the cell (the
+                  operator, 2026-11-13: «it should be like that 0/50, did he
+                  solve these problems or not»; it had lived in the tooltip
+                  alone since 2026-09-16). Hair included, all time. One line:
+                  a phone drops the dot, and below 360px the % too — the
+                  cell's colour still states the band. The hover box splits
+                  the count into with hair and without. */}
+              {figCell(r.quality_hair, resolvedTone, (c) => (
+                <span className="whitespace-nowrap max-sm:text-[11px]">
+                  {c.done}/{c.actionable}
+                  <span className="max-[359px]:hidden">
+                    <span className="max-sm:hidden"> ·</span> {pctText(c.value)}
+                  </span>
+                </span>
+              ), qualityTitle(r), qualityTarget(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );
