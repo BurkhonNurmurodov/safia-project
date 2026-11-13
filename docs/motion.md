@@ -185,11 +185,13 @@ the viewport.
 mode, the `/gamification` design preview, the camera page, and the wall
 screens (`/live`, the launcher), which carry motion of their own.
 
-### How it was checked
+### How it is checked — `frontend/tools/motion`
 
-No local app (the standing rule). A static harness bundled the real templates
-with the project's own Vite plugins and was driven in headless Chrome over
-CDP: 114 assertions — desktop, a 390px touch phone, reduced motion, a
+No local app (the standing rule). **`node frontend/tools/motion/run.mjs`** —
+kept in the repo since 2026-11-13, see its README; run it after touching the
+motion rules or a template's enter/leave wiring. It bundles the real templates
+with the project's own Vite plugins and drives them in headless Chrome over
+CDP: 116 assertions — desktop, a 390px touch phone, reduced motion, a
 development build under StrictMode, the light theme — plus frames caught in
 slow motion (animations and timers stretched by the same factor). It asserts
 the things an eye cannot: the real dialog is gone and focus is back on the
