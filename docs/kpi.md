@@ -40,11 +40,12 @@ tasks 40/41 name it.
   `turnover.ranked` (standing, owner or not) is what all five rankings and the
   board list by, while `owned` still decides who a figure counts toward — such
   a row's owner is «—», its figure counts toward nobody, and the «N ta egasi»
-  counts skip it. **Still not on the board**: 1711, 1811, 4712–4714 and
-  4721–4727. Verifix holds each of these twice, an old CLOSED division that
-  carries the code and a new open one where people work whose code is only
-  in its name; `verifix_org.cell_nodes` takes the coded, closed one, so the
-  cell is never created on /cells. Not fixed yet. `GET /api/leaders-kpi?month&factory
+  counts skip it. 1711, 1811, 4712–4714 and 4721–4727 were not on /cells at
+  all — Verifix holds each twice and the cell sync took the closed coded
+  record; from v4.497.0 it takes the open one and creates them (docs/verifix.md,
+  «A unit Verifix re-made is the OPEN record»). Created in November, they
+  stand on October's map with no «Egasi» (the links start the day they are
+  made); October's frozen turnover list does not have them. `GET /api/leaders-kpi?month&factory
   &shift&managers` (`routers/leaders_kpi.py`) is the ONE read every tab draws
   from: `rows[]` (`concerns` / `turnover` / `foreign` / `compliance` / `audit`
   each `{…figure, score, points}` or null, `total`, `pct`, `rank` — ties share

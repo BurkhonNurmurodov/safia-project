@@ -274,6 +274,19 @@ once, and followed through the tie from then on; history is never affected.
   owes a checklist. `routers/verifix_sync.py` is the admin API; the page is
   «Verifix sinxron» (`/panel/verifixsync`, tools group, admin-only,
   NOT grantable — it moves people and access).
+- **A unit Verifix re-made is the OPEN record** (2026-11-12, after HR's
+  October KPI file listed cells /cells lacked). Verifix holds 1711, 1811,
+  4712–4714 and 4721–4727 twice: the old division, CLOSED and empty, still
+  carries the code; the new one, open with everybody in it, carries the number
+  only in its name. `cell_nodes` used to take the coded one, skip the open twin
+  as «code_taken», and so never create the cell. Now a coded node that is
+  closed with nobody working in it gives way to an open name-coded twin (the
+  closed one is reported as «twin»), and the pass creates the cell the usual
+  way (no brigadir, out of the загрузка; its «Egasi» from the Verifix seat).
+  Dry run on production the same day: exactly those 12 codes, none on /cells,
+  no department among them. `brigadirs_kpi` and `verifix_scope` read the same
+  nodes, so those units now credit their brigadir over them in Verifix and count
+  in the reports' cell totals.
 - **A cell's brigadir, «Boshqaruvchi» and «Egasi» are DATED**
   (`cell_link_events`, append-only: field, value, prev, `effective_from` — the
   shift-day the change lands on — `effective_at`, `src` verifix | manual |

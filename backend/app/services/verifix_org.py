@@ -496,6 +496,16 @@ def cell_nodes(divs: dict, emps: dict, jobs: dict) -> dict:
         if not keep:
             continue
         k = code_key(code)
+        old = nodes.get(k)
+        if (old and old["src"] == "code" and not old["open"] and not old["workers"]
+                and any(n["open"] for n in keep)):
+            # Verifix re-made the unit: its coded division is closed and empty
+            # and an open one carries the number only in its name — 1711, 1811
+            # and the 47xx dispatch zones (2026-11-12). The open one is the cell.
+            unsure[old["id"]] = "twin"
+            del nodes[k]
+            if named_like.get(code) == old["code"]:
+                del named_like[code]
         if k in nodes or k in dup_keys:
             skipped += [{**n, "why": "code_taken", "other": (nodes.get(k) or {}).get("code") or code}
                         for n in keep]
