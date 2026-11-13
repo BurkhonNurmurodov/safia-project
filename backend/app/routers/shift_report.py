@@ -374,6 +374,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                                           with_cells is None or m.id in with_cells),
                     shift_report.quality_cell(quality_hair.get(m.id)),
                     shift_report.since_cell(q_since.get(m.id)),
+                    shift_report.work_cell(quality_hair.get(m.id), q_since.get(m.id)),
                 )
                 for m in groups[s]
             ],

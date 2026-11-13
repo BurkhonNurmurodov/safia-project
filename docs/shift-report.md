@@ -616,3 +616,43 @@ it was solved, and asked what to count: «Written since 1 October».
   solved is in neither number. The «31/142» wording of the bullet above lived
   for a few minutes. Frontend-only.
 
+## The quality cell prints solved ÷ had to solve (2026-11-13)
+
+The operator, on a screenshot where Rakhimova Kamola's cell read 70% and its
+box «21/76»: «the percentage should be for unsolved like 21 out of 76, it
+should be red … the number of unsolved problems are more, that's why … can we
+take like this, what do you think?» — told yes, with two warnings (below) —
+«Yes, change it».
+
+- **THE STANDING figure of «Sifat nazorati %» on «Smena kunligi»** is
+  `quality_work` (`shift_report.work_cell`): solved = the records FILED since
+  `QUALITY_SINCE` (1 October 2026) that are `done`; total = every record NOT
+  solved today, all time, hair included, + solved. 21/76 = 28%. It is the hover
+  box's own fraction, reads 100% exactly when nothing is left unsolved, and
+  rises when ANY open record is solved. Blank (`no_records`) for a unit with
+  nothing unsolved and nothing solved since the day.
+- **The all-time closure rate left the cell and stays in the box**: the box is
+  «01.10 dan beri bartaraf etilgan / bartaraf etilishi kerak edi  21/76» over
+  «Barcha vaqt bo'yicha  70%» (`quality_hair`). The header caption reads
+  «01.10 dan beri» instead of «barcha vaqt».
+- **Same bands, same legend, same link** (the brigadir's unresolved records,
+  all time, «Soch bilan» — the «unsolved» half of the total). Sorting sorts by
+  the new figure.
+- **What the operator was told and accepted**: (1) on the day it shipped almost
+  every brigadir turns red or yellow, because years of old solved records no
+  longer carry the rate — if that is too harsh the answer is the column's
+  bands (`StatusBandsModal`), not this formula; (2) the day is FIXED, so the
+  solved count only accumulates and the rate drifts upward month after month —
+  moving `QUALITY_SINCE` forward (a quarter, a month) is what keeps it strict.
+- **«Solved since» is «filed since, and solved»** — the register has no solve
+  date — so a record filed before October and solved already is in neither
+  number, and one filed before October and solved NOW leaves the total without
+  joining the solved.
+- **Only this board.** «Brigadirlar reytingi», «Hisobotlar» and the KPIs keep
+  their own without-hair closure rate over their own period.
+- Payload: `quality_work {value, done, total, reason}` per row, beside
+  `quality` / `quality_hair` / `quality_since`. A bundle from before reads
+  `quality_hair` and keeps printing the all-time rate until it reloads; a
+  server from before sends no `quality_work` and the new bundle does the same.
+- Tests: `WorkCell` in `tests/test_quality_baseline.py`.
+

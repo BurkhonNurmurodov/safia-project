@@ -87,5 +87,39 @@ class Fold(unittest.TestCase):
         self.assertEqual(got, {1: {"done": 0, "total": 24}})
 
 
+class WorkCell(unittest.TestCase):
+    """`shift_report.work_cell` — the board's quality figure, solved ÷ had to
+    solve. Skipped where the module's own imports are not installed."""
+
+    def setUp(self):
+        try:
+            from app.services import shift_report
+        except Exception as exc:  # noqa: BLE001 — a bare python without the deps
+            self.skipTest(f"shift_report not importable: {exc}")
+        self.cell = shift_report.work_cell
+
+    def test_solved_since_over_unsolved_plus_solved(self):
+        # 183 records all time, 128 solved (70%) → 55 unsolved; 21 solved since.
+        got = self.cell({"done": 128, "actionable": 183}, {"done": 21, "actionable": 30})
+        self.assertEqual((got["done"], got["total"], got["value"]), (21, 76, 0.2763))
+        self.assertIsNone(got["reason"])
+
+    def test_nothing_left_is_a_hundred(self):
+        got = self.cell({"done": 40, "actionable": 40}, {"done": 7, "actionable": 7})
+        self.assertEqual((got["done"], got["total"], got["value"]), (7, 7, 1.0))
+
+    def test_solving_an_old_record_raises_it(self):
+        before = self.cell({"done": 10, "actionable": 20}, {"done": 5, "actionable": 9})
+        after = self.cell({"done": 11, "actionable": 20}, {"done": 5, "actionable": 9})
+        self.assertGreater(after["value"], before["value"])
+
+    def test_nothing_to_judge_is_blank(self):
+        for a, s in ((None, None), ({"done": 12, "actionable": 12}, None),
+                     ({"done": 0, "actionable": 0}, {"done": 0, "actionable": 0})):
+            got = self.cell(a, s)
+            self.assertIsNone(got["value"])
+            self.assertEqual(got["reason"], "no_records")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,11 @@ One row per brigadir, six columns, and not one of them is a new measurement:
     Davomat           /workers' «Davomat issiqlik xaritasi» figure, for TODAY so
                       far — off the stored live Verifix read
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
-    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, ALL
+    Hal qilingan %    from 2026-11-13 the cell prints `quality_work` — solved
+                      since 1 October ÷ had to solve (`work_cell`). The line
+                      below describes `quality_hair`, the figure it replaced,
+                      which now rides in the cell's hover box: the «Sifat va
+                      shikoyatlar» register's closure rate, ALL
                       TIME (`quality_window`) — the column prints the OVERALL rate, every
                       record, hair too (`quality_hair`); the rate with hair
                       records left out (`quality`) rides beside it for the
@@ -114,6 +118,37 @@ def since_cell(acc: Optional[dict]) -> dict:
     `fold_quality` answer in the box's own words; a unit with none reads 0/0."""
     acc = acc or {}
     return {"done": int(acc.get("done") or 0), "total": int(acc.get("actionable") or 0)}
+
+
+def work_cell(all_acc: Optional[dict], since_acc: Optional[dict]) -> dict:
+    """THE figure the board's quality cell prints from 2026-11-13: solved ÷ had
+    to solve — «21/76 = 28%».
+
+    The operator, on a brigadir whose cell read 70% while 55 problems stood
+    unsolved: «the percentage should be for unsolved like 21 out of 76, it
+    should be red … the number of unsolved problems are more». The all-time
+    closure rate is carried by years of old solved records; this one is the
+    work in front of the unit:
+
+        solved = the records filed since `QUALITY_SINCE` that are solved
+        total  = every record NOT solved today, all time + solved
+
+    so it is the hover box's own fraction, it reads 100% exactly when nothing
+    is left unsolved, and solving ANY open record raises it (an old one leaves
+    the total, a recent one joins the solved). Hair is counted. `all_acc` /
+    `since_acc` are `fold_quality` answers over every record and over the
+    records filed since the day.
+
+    Blank (`no_records`) where there is nothing to judge: a unit with nothing
+    unsolved and nothing solved since the day — which includes a unit no
+    record was ever filed against."""
+    a = all_acc or {}
+    left = max(0, int(a.get("actionable") or 0) - int(a.get("done") or 0))
+    done = int((since_acc or {}).get("done") or 0)
+    total = left + done
+    if not total:
+        return _blank("no_records", done=0, total=0)
+    return {"value": _ratio(done / total), "done": done, "total": total, "reason": None}
 
 
 def quality_window(day: date) -> tuple[str, str, str]:
@@ -336,7 +371,8 @@ def att_cell(acc: Optional[dict], has_cells: bool) -> dict:
 
 def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         att: Optional[dict] = None, quality_hair: Optional[dict] = None,
-        quality_since: Optional[dict] = None) -> dict:
+        quality_since: Optional[dict] = None,
+        quality_work: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -350,5 +386,9 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         # «31/55»: of the records filed since `QUALITY_SINCE`, how many are
         # solved — the cell's hover box.
         "quality_since": quality_since or since_cell(None),
+        # «28%» — THE cell's figure: solved since the day ÷ had to solve
+        # (`work_cell`). `quality_hair`, the all-time rate, is its box's
+        # second line now.
+        "quality_work": quality_work or _blank("no_records", done=0, total=0),
         "concerns": {"open": int(open_concerns or 0)},
     }

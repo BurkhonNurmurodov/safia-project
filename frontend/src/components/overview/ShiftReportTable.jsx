@@ -12,13 +12,14 @@
 //   a record or two). The span is the one the SERVER counted (`quality_from` /
 //   `quality_to` on the payload) and the cell's link opens the Quality page on
 //   exactly it. A payload from before the change still names its month
-//   (`quality_month`) and is captioned and linked by that. The figure is the
-//   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
-//   printed as a percentage alone — and the cell's hover box is a small
-//   «31/55»: solved from 1 October, out of that plus what is unsolved (the operator's call,
-//   2026-11-13; two lanes side by side stood here for an hour first and he
-//   asked for one column). The cell opens the Quality page «Soch bilan», the
-//   reading it counted.
+//   (`quality_month`) and is captioned and linked by that. The FIGURE, from
+//   the evening of 2026-11-13, is `quality_work`: solved since 1 October ÷ had
+//   to solve (that plus everything unsolved today, hair included) — «21/76 =
+//   28%» — printed as a percentage alone; the hover box spells out the
+//   fraction and keeps the all-time rate (`quality_hair`) the cell printed
+//   before. `qualityOpen` below is the whole record. The cell opens the
+//   Quality page «Soch bilan» on the brigadir's unresolved records — the
+//   «unsolved» half of the total.
 // - Its scope is the PAGE's filter bar: the shared plant, and the `shift` the
 //   page hands it. A supervisor pick is never read — the page has no such
 //   control, so one left standing on another page would narrow the board with
@@ -119,7 +120,9 @@ const SORT_VALUE = {
   att: (r) => r.att?.value,
   compl: (r) => r.compl?.value,
   // the figure the column prints: the overall rate, hair included
-  quality: (r) => r.quality_hair?.value,
+  // the figure the column prints: solved ÷ had to solve (`quality_work`); a
+  // payload from before it still carries the all-time rate
+  quality: (r) => (r.quality_work ?? r.quality_hair)?.value,
   concerns: (r) => r.concerns?.open,
 };
 // The first press on a column puts its WORST rows on top: the lowest
@@ -294,7 +297,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const multi = groups.length > 1;
   const missing = rows.filter((r) => r.load?.reason || r.compl?.reason).length;
   const anyPartial = rows.some((r) => r.load?.partial && !r.load?.reason);
-  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, r.quality_hair?.reason]))]
+  const reasons = [...new Set(rows.flatMap((r) => [r.load?.reason, r.att?.reason, r.compl?.reason, (r.quality_work ?? r.quality_hair)?.reason]))]
     .filter((k) => REASON_ICON[k]);
 
   const picked = !!data?.picked;
@@ -470,32 +473,40 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       { label: t("overview.sr.hairWithout"), left: rest },
     ];
   };
-  // THE hover box: «Solved from 01.10 / had to solve  31/55» (the operator,
-  // 2026-11-13: «the problems take overall but solutions from 1 october», then
-  // «but the problems take unsolved one» → «31 / 55»). The FIRST number is the
-  // solved ones among the problems FILED since the server's day
-  // (`quality_since_from`, 1 October; `quality_since.done`). The SECOND is
-  // everything he had to solve: what is NOT solved today, all time, hair
-  // included (`quality_hair.actionable − done`), plus that first number — so
-  // it reads N/N exactly when nothing is left. The register has no solve
-  // date, so «solved from 01.10» can only mean «filed since, and solved»: a
-  // September problem solved in October is in neither number. The column's
-  // header hint says so in words. A payload without the field — an older
-  // server — falls back to the «left: hair / without hair» box below.
+  // THE quality cell and its hover box, from 2026-11-13 (the operator, on a
+  // brigadir whose cell read 70% with 55 problems unsolved: «the percentage
+  // should be for unsolved like 21 out of 76, it should be red»). The CELL
+  // prints `quality_work` — solved since the server's day (`quality_since_from`,
+  // 1 October) ÷ had to solve, where «had to solve» is everything NOT solved
+  // today, all time, hair included, plus that solved count; the server folds
+  // it (backend `shift_report.work_cell`), this file only paints. The BOX
+  // spells the fraction out — «Solved from 01.10 / had to solve  21/76» — and
+  // under it the all-time closure rate the cell used to print («All time
+  // 70%», `quality_hair`), so that figure is not lost. The register has no
+  // solve date, so «solved from 01.10» means «filed since, and solved»; the
+  // header hint says so. A payload without `quality_work` — an older server —
+  // keeps the all-time rate in the cell and the «left: hair / without hair»
+  // box below.
   const qFrom = data?.quality_since_from || "";
+  const qWork = !!qFrom && rows.some((r) => r.quality_work);
+  const qualityCell = (r) => (qWork ? r.quality_work : r.quality_hair);
   const qualityOpen = (r) => {
-    const c = r.quality_since;
+    const w = r.quality_work;
+    if (!qWork || !w || w.reason || !isNum(w.value)) return null;
     const all = r.quality_hair;
-    if (!qFrom || !c || !all || all.reason || !isNum(all.value)) return null;
     return {
       caption: fill(t("overview.sr.qSince"), { date: ddmm(qFrom) }),
-      text: `${c.done}/${Math.max(0, all.actionable - all.done) + c.done}`,
+      text: `${w.done}/${w.total}`,
+      allTime: all && !all.reason && isNum(all.value) ? pctText(all.value) : null,
     };
   };
   // Its spoken form, for the link's aria-label.
   const qualityTitle = (r) => {
     const open = qualityOpen(r);
-    if (open) return `${open.caption}: ${open.text}`;
+    if (open) {
+      return [`${open.caption}: ${open.text}`,
+        open.allTime ? `${t("overview.sr.qAllTime")}: ${open.allTime}` : null].filter(Boolean).join("\n");
+    }
     const rows = qualityRows(r);
     return rows
       ? `${t("overview.sr.qLeftTitle")}: ${rows.map((x) => `${x.label} ${x.left}`).join(", ")}`
@@ -505,9 +516,17 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const open = qualityOpen(r);
     if (open) {
       return (
-        <div className="flex items-baseline justify-between gap-6 whitespace-nowrap">
-          <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
-          <span className="text-sm font-semibold tabular-nums">{open.text}</span>
+        <div className="whitespace-nowrap">
+          <div className="flex items-baseline justify-between gap-6">
+            <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
+            <span className="text-sm font-semibold tabular-nums">{open.text}</span>
+          </div>
+          {open.allTime && (
+            <div className="mt-1 flex items-baseline justify-between gap-6">
+              <span className="font-medium" style={{ color: "var(--text-3)" }}>{t("overview.sr.qAllTime")}</span>
+              <span className="font-semibold tabular-nums">{open.allTime}</span>
+            </div>
+          )}
         </div>
       );
     }
@@ -658,14 +677,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
-              {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The hover box says «31/55»: solved
-                  from 1 October, out of what he had to solve — that plus
-                  what is still unsolved (`qualityOpen`). Counts
-                  were printed in
-                  the cell itself for a few minutes on 2026-11-13 and the
-                  operator took them back out, as on 2026-09-16. */}
-              {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
+              {/* The percentage is the figure: solved from 1 October ÷ had
+                  to solve (`qualityCell`). The hover box spells the fraction
+                  out («21/76») over the all-time rate (`qualityOpen`). Counts
+                  were printed in the cell itself for a few minutes on
+                  2026-11-13 and the operator took them back out, as on
+                  2026-09-16. */}
+              {figCell(qualityCell(r), resolvedTone, (c) => pctText(c.value),
                 qualityTitle(r), qualityTarget(r), qualityTip(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
@@ -765,12 +783,14 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
-                cap: qAll ? t("overview.sr.capQualityAll")
+                cap: qWork ? fill(t("overview.sr.capQualitySince"), { date: ddmm(qFrom) })
+                  : qAll ? t("overview.sr.capQualityAll")
                   : qMonth ? fill(t("overview.sr.capQualityMonth"), { month: qMonth })
                   : t("overview.sr.capQuality"),
                 // On a phone the short form is the caption; with none yet,
                 // `HeadLabel` falls back to the full one.
-                capShort: qAll ? t("overview.sr.capQualityAllShort") : qMonth || undefined,
+                capShort: qWork ? fill(t("overview.sr.capQualitySinceShort"), { date: ddmm(qFrom) })
+                  : qAll ? t("overview.sr.capQualityAllShort") : qMonth || undefined,
               }],
               ["concerns", t("overview.sr.hintConcerns"), {
                 full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"),
