@@ -102,6 +102,31 @@ class Hours(unittest.TestCase):
         self.assertIsNone(ims.peak_window([0.0] * 24))
 
 
+class FirstDay(unittest.TestCase):
+    """`OPEN_FROM` — None until the operator names the day."""
+
+    def test_closed_until_the_day_comes(self):
+        for day, want in ((None, False), (TODAY + timedelta(days=1), False),
+                          (TODAY, True), (ago(30), True)):
+            with mock.patch.object(ims, "OPEN_FROM", day):
+                self.assertIs(ims.is_open(), want, day)
+        with mock.patch.object(ims, "OPEN_FROM", TODAY):
+            self.assertFalse(ims.is_open(ago(1)))
+
+    def test_only_an_admin_passes_the_gate_before_it(self):
+        with mock.patch.object(ims, "OPEN_FROM", None):
+            ims._reader_only({"role": "admin"})
+            for role in ("supervisor", "idle-owner", "shift-manager", "top-manager"):
+                with self.assertRaises(HTTPException) as cm:
+                    ims._reader_only({"role": role})
+                self.assertEqual((cm.exception.status_code, cm.exception.detail), (403, "not_open_yet"))
+        with mock.patch.object(ims, "OPEN_FROM", TODAY):
+            for role in ims.READER_ROLES:
+                ims._reader_only({"role": role})
+            with self.assertRaises(HTTPException):
+                ims._reader_only({"role": "leader"})
+
+
 ADMIN = {"role": "admin", "sub": "1"}
 SUP1 = {"role": "supervisor", "role_id": 1, "sub": "101"}
 SUP2 = {"role": "supervisor", "role_id": 2, "sub": "102"}
@@ -147,9 +172,10 @@ class Page(unittest.TestCase):
             db.query(getattr(m, name)).delete()
         db.commit()
         self.forget()
-        # The reminders' first day is a real date; the stops here are dated from
-        # today backwards, so every test but the one about that day moves it away.
-        floor = mock.patch.object(ims, "REMIND_FROM", date(2020, 1, 1))
+        # The page's first day is the operator's to name (None until then, and the
+        # page the admins' alone). The stops here are dated from today backwards,
+        # so every test but the ones about that day runs with it long past.
+        floor = mock.patch.object(ims, "OPEN_FROM", date(2020, 1, 1))
         floor.start()
         self.addCleanup(floor.stop)
 
@@ -608,11 +634,41 @@ class Page(unittest.TestCase):
         self.overdue_plan(SUP1, "s1", days=ims.REMIND_DAYS + 1)
         self.assertNotIn(self.stop["s1"], self.waits(SUP1))
 
-    def test_nothing_from_before_the_reminders_began_waits(self):
-        with mock.patch.object(ims, "REMIND_FROM", ago(3)):
+    def test_nothing_from_before_the_first_day_waits(self):
+        with mock.patch.object(ims, "OPEN_FROM", ago(3)):
             self.assertEqual(self.waits(SUP1), {self.stop["s3"]: "unanswered"})   # s4 is 5 days old
-        with mock.patch.object(ims, "REMIND_FROM", TODAY + timedelta(days=1)):
-            self.assertEqual(self.waits(SUP1), {})
+        with mock.patch.object(ims, "OPEN_FROM", TODAY):
+            self.assertEqual(self.waits(SUP1), {})                                # open, nothing filed yet
+
+    # ── the admins' alone until its first day ────────────────────────────────
+
+    def test_only_admins_until_the_first_day(self):
+        for day in (None, TODAY + timedelta(days=1)):
+            with mock.patch.object(ims, "OPEN_FROM", day):
+                for who in (SUP1, self.OWNER, self.SM, self.TOP):
+                    for door in (self.read, self.listed, self.tahlil):
+                        self.refused(403, door, who)
+                    self.refused(403, self.write, who, "s3")
+                    self.refused(403, ims.waiting_count, db=self.db, payload=who)
+                    self.assertIsNone(ims.waiting(self.db, who), who["role"])
+                # an admin reads, writes and analyses as ever
+                self.assertEqual(len(self.listed(ADMIN)["stops"]), 5)
+                self.assertEqual(self.tahlil(ADMIN)["total"]["stops"], 5)
+                self.assertEqual(self.write(ADMIN, "s3", text=f"admin, {day}")["status"], "done")
+                self.assertEqual(ims.waiting_count(db=self.db, payload=ADMIN)["total"], 0)
+        # the day itself: the page is its roles' again
+        with mock.patch.object(ims, "OPEN_FROM", TODAY):
+            self.assertEqual(len(self.listed(SUP1)["stops"]), 4)
+            self.assertEqual(self.write(SUP1, "s3")["author_role"], "supervisor")
+
+    def test_no_reminder_before_the_first_day(self):
+        self.holder("supervisor:1", 501)
+        for day in (None, TODAY + timedelta(days=1)):
+            with mock.patch.object(ims, "OPEN_FROM", day):
+                out, dm = self.remind(shifts=[1])
+            self.assertEqual((out["asked"], out["sent"]), (0, 0))
+            dm.assert_not_called()
+        self.assertEqual(self.ledger(), {})       # nothing recorded: the first day asks afresh
 
     def test_the_page_carries_the_same_list(self):
         s = self.stop

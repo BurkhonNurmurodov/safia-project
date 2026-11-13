@@ -20,6 +20,8 @@ number the page does not show.
   when two copies of the app overlap or a missed job is caught up.
 * **Nothing waits → nothing is sent.** Never a «0» message; the day is still
   recorded, so it is not asked again.
+* **Not before the page's first day** (`idle_solutions.OPEN_FROM`, None until
+  the operator names it): until then nobody is asked and nothing is written.
 
 It is one notification key (`idle_solution_reminder`, category «idle»): the
 person who turned that category's Telegram off keeps the bell row and gets no
@@ -205,11 +207,12 @@ def run(now: Optional[datetime] = None, *, shifts: Optional[list[int]] = None) -
 
     `shifts` overrides the clock (the tests, and a pass run by hand)."""
     from app.database import SessionLocal
-    from app.routers.idle_solutions import TZ, waiting
+    from app.routers.idle_solutions import TZ, is_open, waiting
     now = now or datetime.now(TZ)
     slots = open_shifts(now) if shifts is None else list(shifts)
     out = {"slots": slots, "asked": 0, "sent": 0, "quiet": 0, "nobody": 0}
-    if not slots:
+    # before the page's first day nobody has been told anything: nobody is asked
+    if not slots or not is_open(now.date()):
         return out
     today = now.date()
     db = SessionLocal()

@@ -26,6 +26,15 @@ reader» — the stops of the last `REMIND_DAYS` days they wrote nothing to, and
 stops carrying their own overdue plan. The page's «Sizni kutmoqda» list, the
 number on the menu row (`GET /waiting`) and the daily Telegram reminder
 (`services/idle_solution_reminder`) all read it, so the three cannot disagree.
+
+**The ADMINS' alone until its first day (2026-11-13, the operator: «we did not
+announce it yet … till then only admins have to see it»).** `OPEN_FROM` is that
+day — he names it; until then it is None. Before it nobody but an admin reads
+or writes here (`_reader_only`), nothing waits on anybody (`waiting`) and no
+reminder goes out. On it, and after: the page is its five roles' again, and the
+day is also the first one a stop can wait from — nobody is chased for what was
+filed before they were told. The menu row and the route keep the same day in
+`frontend/src/config/idleSolutions.js`: SET BOTH IN ONE COMMIT.
 """
 import statistics
 from datetime import date, datetime, timedelta, timezone
@@ -61,11 +70,15 @@ TOP_REPEATS = 20
 # reminder. The look-back equals the page's own default period, so the three
 # agree with the list a reader opens.
 REMIND_DAYS = 14        # a stop asks for its answer this long; an overdue plan is named this long
-# The day the reminders began. A stop filed before it never «waits» on anybody:
-# everybody has written their own answer only since 2026-11-13, and nobody is
-# chased for the weeks before that. It never moves LATER.
-REMIND_FROM = date(2026, 11, 14)
 MAX_PLAN_DAYS = 90      # a plan's date is at most this far ahead
+
+# THE FIRST DAY — the page opens to its roles, and stops begin to wait.
+# None = not announced yet: the page, its menu row, the number on it and every
+# reminder are the admins' alone (the operator, 2026-11-13; he names the day).
+# A stop filed before it never «waits» on anybody. Once the day has come it
+# never moves LATER. The frontend's twin is `config/idleSolutions.js`
+# (`OPEN_FROM`) — set both in one commit.
+OPEN_FROM: Optional[date] = None
 
 STATUSES = ("open", "doing", "done")
 MAX_DAYS = 124
@@ -117,12 +130,22 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
     return _downtime_page(token, db)
 
 
+def is_open(today: Optional[date] = None) -> bool:
+    """Has the page's first day come (`OPEN_FROM`)? Before it — and while no
+    day is named — the page is the admins' alone."""
+    return OPEN_FROM is not None and (today or datetime.now(TZ).date()) >= OPEN_FROM
+
+
 def _reader_only(payload: dict) -> None:
     """The page's five roles: admins, category owners (their own categories,
     locked by `idle_scope`), shift-managers, top-managers and supervisors (own
-    unit). Each of them reads AND writes."""
-    if payload.get("role") not in READER_ROLES:
+    unit). Each of them reads AND writes — the four beside admins only from the
+    page's first day (`is_open`)."""
+    role = payload.get("role")
+    if role not in READER_ROLES:
         raise HTTPException(status_code=403, detail="Admin only")
+    if role != "admin" and not is_open():
+        raise HTTPException(status_code=403, detail="not_open_yet")
 
 
 def _fmt_dt(v):
@@ -369,7 +392,7 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     once:
 
       * unanswered — a stop of the last REMIND_DAYS days (never before
-        REMIND_FROM) that the reader sees on the page and wrote nothing to;
+        OPEN_FROM) that the reader sees on the page and wrote nothing to;
       * overdue    — a stop carrying the reader's OWN plan whose date passed, no
         more than REMIND_DAYS ago, and is still not done.
 
@@ -382,11 +405,13 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     from app.services.leader_bot import _in_ids
     if payload.get("role") not in EXPECTED_ROLES:
         return None
+    today = today or _today()
+    if not is_open(today):
+        return None                 # not announced yet: nothing waits on anybody
     viewer = identity.viewer_profile_key(db, payload)
     if not viewer:
         return None
-    today = today or _today()
-    a = max(REMIND_FROM, today - timedelta(days=REMIND_DAYS - 1))
+    a = max(OPEN_FROM, today - timedelta(days=REMIND_DAYS - 1))
     units = {u.id for u in _scope_units(
         db, payload, shift, _own_unit(payload, list(manager_id or [])), factory)}
     in_view = _in_view(idle_scope.viewer_categories(db, payload))

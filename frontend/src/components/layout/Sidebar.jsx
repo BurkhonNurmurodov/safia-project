@@ -17,6 +17,7 @@ import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
+import { idleSolutionsOpen } from "../../config/idleSolutions";
 import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
 import { useLauncher } from "../../hooks/useLauncher";
 import useLeaveRef from "../../hooks/useLeaveRef";
@@ -80,11 +81,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // they wrote nothing to and their own plans past their date
   // (`routers/idle_solutions.waiting`, the page's «Sizni kutmoqda» list and the
   // daily reminder read the same answer). Asked only of the two roles the page
-  // itself asks; the page drops this query the moment a solution is saved.
+  // itself asks, and only from the page's first day (config/idleSolutions.js);
+  // the page drops this query the moment a solution is saved.
   const { data: idleWaiting } = useQuery({
     queryKey: ["idle-solutions-waiting"],
     queryFn: () => api.get("/api/idle-solutions/waiting").then(r => r.data),
-    enabled: ["supervisor", "idle-owner"].includes(auth?.role),
+    enabled: idleSolutionsOpen() && ["supervisor", "idle-owner"].includes(auth?.role),
     staleTime: 120_000,
     refetchInterval: 300_000,
   });

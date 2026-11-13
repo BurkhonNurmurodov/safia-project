@@ -1129,9 +1129,10 @@ told, and a plan («Rejada» / «Bajarilmoqda») was a promise with no day on it
     than `REMIND_DAYS` ago. Done or moved ahead, it waits no more. Such a stop
     may lie outside the look-back and outside the period on screen —
     `_plan_stops` reads it on its own day through the bar modal's reader.
-  **`REMIND_FROM` (2026-11-14) is the first day**: a stop filed before it never
-  «waits» on anybody — everybody has written their own answer only since
-  13 November, and nobody is chased for the weeks before. It never moves LATER.
+  **A stop filed before the page's first day never «waits» on anybody** —
+  nobody is chased for what was filed before they were told. That day is
+  `OPEN_FROM` (the section below; for one release it was `REMIND_FROM`,
+  2026-11-14, before the operator said the page was not announced yet).
   Three readers of the one function, so they cannot disagree:
   the page's «Sizni kutmoqda» list (`todo` in `GET /stops`), the number on the
   menu row (`GET /api/idle-solutions/waiting` → `Sidebar.jsx` `BADGES`, asked
@@ -1186,12 +1187,42 @@ told, and a plan («Rejada» / «Bajarilmoqda») was a promise with no day on it
   before it is dropped) and `placeholder` words an empty trigger;
   `SegmentedToggle` showed its pill on the last active segment when the value
   matched no option — it now shows none.
-- Tests: `backend/tests/test_idle_solutions.py` (58: a plan's date and its
-  limits, overdue until done or moved, what waits on each role, the first day,
-  the page carrying the same list, the reminder told once a day, each shift in
-  its own hours, the four languages).
+- Tests: `backend/tests/test_idle_solutions.py` (a plan's date and its limits,
+  overdue until done or moved, what waits on each role, the first day, the page
+  carrying the same list, the reminder told once a day, each shift in its own
+  hours, the four languages).
 - Not built: a reminder to a shift-manager about a brigadir who answers nothing
   (escalation), «done on time / late» in Tahlil, the waiting list in the bell's
   «Sizdan kutilmoqda» queue, a switch for the reminder on the «Kutish mas'uli»
   page (today: the constant, or each person's own notification settings).
 
+## «Kutish yechimlari» — the ADMINS' alone until its first day (`OPEN_FROM`, 2026-11-13)
+
+The operator, an hour after the reminders shipped: «we did not announce it yet
+… show just for admins … I am going to say the final date, till then only
+admins have to see it». The page had been open to five roles since 3 November
+and the first reminders would have gone out the next morning at 10:00.
+
+- **`OPEN_FROM` in `routers/idle_solutions.py` is the page's first day** — `None`
+  until he names it. `is_open()` is the one question; before the day:
+  - `_reader_only` refuses everybody but an admin on EVERY endpoint of the page,
+    reading and writing (`403 not_open_yet`) — shift- and top-managers, brigadirs
+    and cause owners alike;
+  - `waiting()` answers None: nothing waits on anybody, so the menu number is 0;
+  - the reminder's pass returns before asking anybody and writes no ledger row.
+- **On the day, with no further deploy**: the page is its five roles' again, the
+  reminders start, and the day is also the first one a stop can wait FROM (it
+  replaced `REMIND_FROM`). Once it has come it never moves later.
+- **The frontend's twin is `config/idleSolutions.js`** (`OPEN_FROM`, a
+  "YYYY-MM-DD" string): the menu row's `roles` (so the sidebar and the header
+  search drop it), the route's `RequireRoles` and the sidebar's count query all
+  ask it. It only keeps the app from offering a page the server would refuse —
+  the server is the lock. **Naming the day = setting BOTH constants in ONE
+  commit.** A tab open across midnight into the day gains the row on its next
+  load.
+- A cause owner still lands on `/downtime` and keeps `/idle-cell`; nothing else
+  of theirs changed. A tab still on the bundle before this one shows the row
+  until it reloads, and the page then says it could not read its data.
+- Tests: `FirstDay` (the gate by itself) and `Page.test_only_admins_until_the_first_day`,
+  `test_no_reminder_before_the_first_day` in `backend/tests/test_idle_solutions.py`;
+  every other test runs with the day long past (`setUp` patches it).

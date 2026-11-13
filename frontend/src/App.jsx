@@ -202,6 +202,7 @@ import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { usesLauncher } from "./utils/launcherRoles";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
+import { idleSolutionsRoles } from "./config/idleSolutions";
 import { useTranslit } from "./utils/transliterate";
 import { inTelegram } from "./utils/session";
 
@@ -651,7 +652,7 @@ function AppWithLang() {
             <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
-            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", "shift-manager", "top-manager", "supervisor", "idle-owner"]}><IdleSolutions /></RequireRoles></AuthGate>} />
+            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", ...idleSolutionsRoles()]}><IdleSolutions /></RequireRoles></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
