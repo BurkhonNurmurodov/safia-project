@@ -471,4 +471,8 @@ window left a brigadir judged on a record or two («0/1»).
   date), which now matters for every record instead of a month of them.
 - Only this board. «Brigadirlar reytingi» / «Hisobotlar» count their own
   picked period, without hair, as before.
-
+- **The hover box states what is LEFT** (the operator, later the same day: «show
+  how much left out of smth … 50 left with hair and 30 without hair»): each
+  line reads «soch bilan: 50 ta qoldi (400 tadan) · 88% bartaraf etilgan» —
+  left = actionable − done, the very records the cell's link opens — instead of
+  done/actionable. Key `overview.sr.qLeft`; the cell's figure is unchanged.

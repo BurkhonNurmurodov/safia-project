@@ -14,8 +14,8 @@
 //   exactly it. A payload from before the change still names its month
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
-//   and the cell's hover box prints both readings with their counts: «soch
-//   bilan · 20/40 · 50%» over «sochsiz · 12/15 · 80%» (the operator's call,
+//   and the cell's hover box prints both readings as what is LEFT: «soch
+//   bilan: 50 ta qoldi (400 tadan)» over the «sochsiz» line (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -443,13 +443,19 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
   };
 
-  // The quality cell's hover box, one line per reading: «soch bilan · 20/40 ·
-  // 50%» (the figure in the cell) over «sochsiz · 12/15 · 80%». A reading with
-  // no record of its own — a month of nothing but hair — says so with «—».
+  // The quality cell's hover box, one line per reading, and each says what is
+  // LEFT — the records still unresolved — out of all that needed action, then
+  // the share resolved: «with hair: 50 left of 400 · 88% resolved» (the cell's
+  // figure) over «without hair: 30 left of 250 · 88% resolved» (the operator,
+  // 2026-11-13: «show how much left … 50 left with hair and 30 without hair»;
+  // it printed done/actionable before). «Left» is what the cell's link opens.
+  // A reading with no record of its own says so with «—».
   const qualityTitle = (r) => {
     const line = (c, labelKey) => (c && !c.reason && isNum(c.value)
-      ? `${t(labelKey)} · ${c.done}/${c.actionable} · ${pctText(c.value)}`
-      : `${t(labelKey)} · —`);
+      ? fill(t("overview.sr.qLeft"), {
+        label: t(labelKey), left: c.actionable - c.done, total: c.actionable, pct: pctText(c.value),
+      })
+      : `${t(labelKey)}: —`);
     const all = r.quality_hair;
     if (!all || all.reason || !isNum(all.value)) return undefined;
     return [line(all, "overview.sr.hairWith"), line(r.quality, "overview.sr.hairWithout")].join("\n");
