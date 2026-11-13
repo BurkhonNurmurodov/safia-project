@@ -263,6 +263,9 @@ try:
     # …then «Konteynerlar» only: the two pages back, «Ojidaniya» closed for her (once).
     from app.startup import dilafruz_containers_only
     dilafruz_containers_only()
+    # The 13 Nov leader window edits count from 13 Nov, not every night (once).
+    from app.startup import date_window_edits_nov13
+    date_window_edits_nov13()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
     add_attendance_upload_source()

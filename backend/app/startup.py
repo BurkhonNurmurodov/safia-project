@@ -10332,3 +10332,70 @@ def dilafruz_containers_only() -> None:
                          f"<pre>{esc(str(exc)[:600])}</pre>")
     finally:
         db.close()
+
+
+# ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
+# Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
+# (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every
+# earlier night of these three shift-2 leaders (unit Ergashev Muxriddin) was
+# re-judged against them. None of the three had a window of their own before
+# (no window edit of theirs since the register began, 23 Aug).
+WINDOWS_NOV13_FLAG = "oneshot:date_window_edits_nov13"
+_NOV13_WIN = {1: ("21:30", "22:00"), 2: ("20:00", "20:20"), 3: ("20:00", "05:00"),
+              4: ("20:00", None), 5: ("20:00", "23:00"), 6: ("20:00", "05:00"),
+              7: ("03:00", "05:00"), 8: ("20:00", "05:00"), 9: ("00:00", "01:00"),
+              10: ("03:00", None), 11: ("20:00", "21:00"), 12: ("03:00", "05:00"),
+              13: ("03:00", None)}
+# Davlatov 270 · Abdusamatov 271 · Murodjonov 315; only Davlatov's task 4 differs.
+_NOV13_LEADERS = {270: {4: ("20:00", "05:00")}, 271: {}, 315: {}}
+
+
+def date_window_edits_nov13() -> None:
+    """Record each of those edits as counting from 13 Nov (before = no own
+    window), then re-derive the verdicts, so the nights before 13 Nov are judged
+    by the unit's hours again. A pair whose live window no longer matches, or
+    that already carries a dated change, is skipped and named. Once."""
+    import json
+
+    from app.models import LeaderTaskLeaderSetting, LeaderTaskRuleChange
+    from app.services import leader_ai, leader_rule_eras
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=WINDOWS_NOV13_FLAG).first():
+            return
+        dated, skipped = 0, []
+        for lid, own in _NOV13_LEADERS.items():
+            for tid, (lo, hi) in {**_NOV13_WIN, **own}.items():
+                row = (db.query(LeaderTaskLeaderSetting)
+                       .filter_by(leader_id=lid, task_id=tid).first())
+                if (row is None or (row.win_from, row.win_to) != (lo, hi)
+                        or db.query(LeaderTaskRuleChange).filter_by(
+                            level="leader", scope_id=lid, task_id=tid).first()):
+                    skipped.append(f"{lid}/{tid}")
+                    continue
+                for field, val in (("win_from", lo), ("win_to", hi)):
+                    if val is not None:
+                        db.add(LeaderTaskRuleChange(
+                            task_id=tid, level="leader", scope_id=lid,
+                            field=field, before=None, after=val,
+                            from_day="2026-11-13",
+                            by="system (one-shot 2026-11-13)"))
+                dated += 1
+        db.commit()
+        leader_rule_eras._forget()
+        moved = leader_ai.sync_date_flags(db, list(_NOV13_WIN))
+        db.add(AppSetting(key=WINDOWS_NOV13_FLAG, value=json.dumps(
+            {"dated": dated, "skipped": skipped, "moved": moved})))
+        db.commit()
+        print(f"[startup] 13 Nov windows dated: {dated}, skipped {skipped}, "
+              f"verdicts moved {moved}")
+        _dm_admins_plain(
+            "✅ <b>13-noyabr oyna o'zgarishlari endi 13-noyabrdan hisoblanadi</b>\n"
+            f"Uch lider, {dated} ta vazifa; qayta baholangan javoblar: {moved}."
+            + (f"\nO'tkazib yuborildi: {', '.join(skipped)}" if skipped else ""))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] 13 Nov windows failed: {exc}")
+    finally:
+        db.close()

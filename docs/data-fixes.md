@@ -365,3 +365,20 @@ grant), so it is closed for her profile alone and every other guest keeps
 what the role opens. The deny shows on the Permissions tab like any entry;
 taking it off there gives the page back. Same «exactly one match» rule and
 admin DM as the first.
+
+## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
+
+On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three
+shift-2 leaders of Ergashev Muxriddin's unit — Davlatov Shoxruxjon (270),
+Abdusamatov Firdavs (271), Murodjonov Jamoliddin (315) — the 39 `ltask.window_set`
+rows of the register. They were written minutes before a window write could be
+dated (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so
+every earlier night of theirs was re-judged against the new windows. None of
+the three had a window of their own before (no window edit of theirs since the
+register began, 23 Aug), so the fix records each as a `LeaderTaskRuleChange`
+from 2026-11-13 with `before` = none, and re-derives the verdicts: the nights
+before 13 Nov are judged by the unit's hours again. A pair whose live window no
+longer matches the logged one, or that already carries a dated change, is
+skipped and named. The flag row `oneshot:date_window_edits_nov13` holds
+`{dated, skipped, moved}`; the admins are DMed. The function is a one-shot and
+can go once the flag is set; its rows are history and stay.
