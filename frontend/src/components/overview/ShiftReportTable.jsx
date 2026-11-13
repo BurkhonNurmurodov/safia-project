@@ -15,7 +15,7 @@
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   printed as a percentage alone — and the cell's hover box is a small
-//   «solved 31/55» of the problems filed since 1 October (the operator's call,
+//   «31/142»: solved from 1 October, out of all problems (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -470,13 +470,16 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       { label: t("overview.sr.hairWithout"), left: rest },
     ];
   };
-  // THE hover box: «Problems since 01.10 — Solved 31/55» (the operator,
-  // 2026-11-13: «can you show the solved ones from october» → «Written since 1
-  // October»): of the brigadir's problems FILED since that day, hair included,
-  // how many are solved. The day is the server's (`quality_since_from`) and
-  // the caption prints it. It replaced, within the hour, «solved since the
-  // month's start» (a list the server still keeps, off screen). A payload
-  // without it — an older server — falls back to the «left: hair / without
+  // THE hover box: «Solved from 01.10 / all problems  31/142» (the operator,
+  // 2026-11-13: «the problems take overall but solutions from 1 october»).
+  // The SECOND number is every problem the brigadir has, all time, hair
+  // included — the cell's own total (`quality_hair.actionable`). The FIRST is
+  // the solved ones among the problems FILED since the server's day
+  // (`quality_since_from`, 1 October; `quality_since.done`): the register has
+  // no solve date, so «solved since» can only mean «filed since, and solved» —
+  // a September problem solved in October is in the total and not in the
+  // first number. The column's header hint says so in words. A payload without
+  // the field — an older server — falls back to the «left: hair / without
   // hair» box below.
   const qFrom = data?.quality_since_from || "";
   const qualityOpen = (r) => {
@@ -485,14 +488,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     if (!qFrom || !c || !all || all.reason || !isNum(all.value)) return null;
     return {
       caption: fill(t("overview.sr.qSince"), { date: ddmm(qFrom) }),
-      label: t("overview.sr.qSolved"),
-      text: `${c.done}/${c.total}`,
+      text: `${c.done}/${all.actionable}`,
     };
   };
   // Its spoken form, for the link's aria-label.
   const qualityTitle = (r) => {
     const open = qualityOpen(r);
-    if (open) return `${open.caption}: ${open.label} ${open.text}`;
+    if (open) return `${open.caption}: ${open.text}`;
     const rows = qualityRows(r);
     return rows
       ? `${t("overview.sr.qLeftTitle")}: ${rows.map((x) => `${x.label} ${x.left}`).join(", ")}`
@@ -502,12 +504,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const open = qualityOpen(r);
     if (open) {
       return (
-        <div className="whitespace-nowrap">
-          <div className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</div>
-          <div className="mt-1 flex items-baseline justify-between gap-6">
-            <span className="font-medium">{open.label}</span>
-            <span className="font-semibold tabular-nums">{open.text}</span>
-          </div>
+        <div className="flex items-baseline justify-between gap-6 whitespace-nowrap">
+          <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
+          <span className="text-sm font-semibold tabular-nums">{open.text}</span>
         </div>
       );
     }
@@ -659,8 +658,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The hover box says «Solved 31/55» of
-                  the problems filed since 1 October (`qualityOpen`). Counts
+                  included, all time. The hover box says «31/142»: solved
+                  from 1 October, out of all problems (`qualityOpen`). Counts
                   were printed in
                   the cell itself for a few minutes on 2026-11-13 and the
                   operator took them back out, as on 2026-09-16. */}

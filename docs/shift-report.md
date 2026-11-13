@@ -595,4 +595,15 @@ it was solved, and asked what to count: «Written since 1 October».
   eight times in a day. `quality_baseline.board` still answers «solved since
   the month's start» if it is asked for back; nothing on screen reads it. The
   section above describes that count, not what the box shows.
+- **…with the total taken OVERALL** (the operator, minutes later: «no the
+  problems take overall but solutions from 1 october»): the box is one line,
+  «01.10 dan beri bartaraf etilgan / barcha muammolar  31/142». The second
+  number is every problem of the brigadir, all time, hair included
+  (`quality_hair.actionable`, the cell's own total); the first is still
+  `quality_since.done`. **The first number is «filed since 1 October AND
+  solved», not «solved since 1 October»** — the register has no solve date —
+  so a September problem solved in October sits in the total and not in the
+  first number, and the fraction cannot reach N/N while older problems exist.
+  The header hint spells that out; the operator was told. A frontend-only
+  change: `quality_since.total` still rides on the payload, unused.
 
