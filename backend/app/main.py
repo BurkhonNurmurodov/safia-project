@@ -274,6 +274,9 @@ async def lifespan(app: FastAPI):
     # The guest Fozilova Dilafruz gets «Smena kunligi» + «Zagruzka fayli» (once).
     from app.startup import grant_dilafruz_pages
     later(grant_dilafruz_pages)
+    # …then «Konteynerlar» only: the two pages back, «Ojidaniya» closed for her (once).
+    from app.startup import dilafruz_containers_only
+    later(dilafruz_containers_only)
     # The operator's list of cells NOT counted in the загрузка (once).
     later(untick_cells_in_load)
     run(add_attendance_upload_source)

@@ -10217,3 +10217,65 @@ def grant_dilafruz_pages() -> None:
                          f"<pre>{esc(str(exc)[:600])}</pre>")
     finally:
         db.close()
+
+
+# The operator, 2026-11-13 (later the same day): Dilafruz gets «Konteynerlar»
+# and nothing else — «Smena kunligi» and «Zagruzka fayli» (granted above) are
+# taken back, and «Ojidaniya» (/downtime), which reached her outside those
+# grants, is closed for her profile alone with a page DENY, so other guests
+# keep whatever their role opens. Same lookup and same «exactly one» rule as
+# `grant_dilafruz_pages`; runs once (flag); the admins are told either way.
+DILAFRUZ_CONTAINERS_FLAG = "oneshot:guest_dilafruz_containers_nov13"
+
+
+def _dilafruz_profiles(db) -> list:
+    from app.services.people import fold_name
+    return [p for p in db.query(RoleProfile).filter(RoleProfile.role == "guest").all()
+            if any(_DILAFRUZ_TOKENS <= set(fold_name(n).split())
+                   for n in (p.name, p.name_uz_cyrl, p.name_ru, p.name_en) if n)]
+
+
+def dilafruz_containers_only() -> None:
+    import html
+
+    from app import capabilities
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DILAFRUZ_CONTAINERS_FLAG).first():
+            return
+        found = _dilafruz_profiles(db)
+        if len(found) != 1:
+            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Dilafruz containers: {len(found)} guest profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Fozilova Dilafruz — «Konteynerlar» berilmadi</b>\n"
+                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda: «Konteynerlar» yoqing; «Smena "
+                "kunligi», «Zagruzka fayli», «Ojidaniya» o'chiring.")
+            return
+        prof = found[0]
+        key = f"guest:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key],
+            grants={"page.view.containers": "all"},
+            revokes=["page.view.shift-daily", "page.view.production"],
+            denies=["page.view.downtime"],
+            actor_name="system (one-shot 2026-11-13)")
+        db.add(AppSetting(key=DILAFRUZ_CONTAINERS_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] Dilafruz containers: {key} → containers only")
+        _dm_admins_plain(
+            "✅ <b>Fozilova Dilafruz — faqat «Konteynerlar»</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            "Berildi: «Konteynerlar». Olib tashlandi: «Smena kunligi», "
+            "«Zagruzka fayli», «Ojidaniya».")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Dilafruz containers failed: {exc}")
+        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — «Konteynerlar» berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()

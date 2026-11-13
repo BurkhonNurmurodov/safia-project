@@ -351,3 +351,17 @@ fayli». No action grant, no SAP-codes grant, no role change. She is found by
 folded name among `role_profiles` guests; anything but exactly ONE match
 grants nothing. The admins get a DM either way, naming the profile and her
 guest request's status.
+
+## …then Dilafruz sees «Konteynerlar» only (`startup.dilafruz_containers_only`, 2026-11-13)
+
+The same afternoon the operator moved her to the new containers page
+(`docs/shift-report.md` «Konteynerlar»): «make it visible for her too, and
+remove these pages — make it just one containers». A second one-shot (flag
+`oneshot:guest_dilafruz_containers_nov13`, `later`, after the first) on her
+guest profile, through `apply_profile_perms`: grants `page.view.containers`;
+revokes the two grants above; and DENIES `page.view.downtime` — «Ojidaniya»
+reached her outside those grants (the guest role's Access row or an older
+grant), so it is closed for her profile alone and every other guest keeps
+what the role opens. The deny shows on the Permissions tab like any entry;
+taking it off there gives the page back. Same «exactly one match» rule and
+admin DM as the first.
