@@ -498,3 +498,9 @@ window left a brigadir judged on a record or two («0/1»).
   no fraction, no % (the cell carries the %; the without-hair % is printed
   nowhere now). `figTd` takes a `tipNode` for it and the text form stays the
   link's aria-label. Keys `overview.sr.qProblems` / `qSolved`.
+- **Three rows** (the operator: «can you take overall» → «Overall + hair + no
+  hair»): «Umumiy» (every record — the cell's figure), «Faqat soch» (the hair
+  category alone, computed on the page as overall − without hair) and
+  «Sochsiz»; the lower two add up to the first. The «Soch bilan» label is gone
+  (`overview.sr.hairWith` removed; `qOverall` / `qHairOnly` added) — it read as
+  «hair problems only» while it counted everything.

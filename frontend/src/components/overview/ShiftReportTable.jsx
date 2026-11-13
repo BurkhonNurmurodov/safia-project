@@ -15,7 +15,7 @@
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   printed as a percentage alone — and the cell's hover box is a small
-//   table, problems and solved, for «soch bilan» and «sochsiz» (the operator's call,
+//   table, problems and solved — overall, hair only, without hair (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -454,15 +454,22 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   // The quality cell's hover box is a small TABLE (the operator, 2026-11-13:
   // «should be easy — if they have a problem like 50, and how much did they
-  // solve, and same with hair and without hair»): a row per reading, two plain
-  // numbers each — the problems that needed action and how many are solved.
-  // No fraction and no % to decode; the cell itself carries the %. A reading
-  // with no record of its own reads 0 and 0.
+  // solve, and same with hair and without hair»), two plain numbers a row —
+  // the problems that needed action and how many are solved. THREE rows (his
+  // next call, «Overall + hair + no hair»): «Umumiy» is every record — the
+  // figure the cell judges — and it splits into «Faqat soch» (the hair
+  // category alone: overall minus the rest) and «Sochsiz», so the two lower
+  // rows add up to the first. No fraction and no % to decode; the cell itself
+  // carries the %. A reading with no record of its own reads 0 and 0.
   const qualityRows = (r) => {
     const all = r.quality_hair;
     if (!all || all.reason || !isNum(all.value)) return null;
-    return [["overview.sr.hairWith", all], ["overview.sr.hairWithout", r.quality]]
-      .map(([key, c]) => ({ label: t(key), total: c?.actionable ?? 0, done: c?.done ?? 0 }));
+    const rest = { total: r.quality?.actionable ?? 0, done: r.quality?.done ?? 0 };
+    return [
+      { label: t("overview.sr.qOverall"), total: all.actionable, done: all.done },
+      { label: t("overview.sr.qHairOnly"), total: Math.max(0, all.actionable - rest.total), done: Math.max(0, all.done - rest.done) },
+      { label: t("overview.sr.hairWithout"), ...rest },
+    ];
   };
   // Its spoken form, for the link's aria-label.
   const qualityTitle = (r) => qualityRows(r)
@@ -624,7 +631,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
                   included, all time. The counts stay in the hover box, a
-                  small table: problems and solved, with hair and without —
+                  small table: problems and solved — overall, hair only and
+                  without hair —
                   they were printed in the cell for a few minutes on
                   2026-11-13 and the operator took them back out, as on
                   2026-09-16. */}
