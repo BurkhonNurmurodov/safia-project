@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight } from "lucide-react";
@@ -125,7 +126,10 @@ export default function Containers() {
   );
 }
 
-// The TV: the board alone over the whole screen (the app's shell hidden), its
+// The TV: the board alone over the whole screen (the app's shell hidden),
+// PORTALED to <body> — Layout's page wrapper carries a transform (its enter
+// animation), which makes a `fixed` child fixed to the wrapper, not the
+// screen: rendered in place it was a 74px strip inside the shell. Its
 // own header — what is shown, the clock, when it was read — and everything
 // scaled to the screen with CSS zoom, so a 1080p TV reads it from across the
 // floor without a second set of sizes in the components.
@@ -137,9 +141,15 @@ function TvFrame({ day, isLive, shift, t, onExit, children }) {
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
+  // The page under the overlay must not scroll along with it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   const now = tashkentNow();
   const clockText = `${hourLabel(Math.floor(now.min / 60))}:${String(now.min % 60).padStart(2, "0")}`;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[200] overflow-auto" style={{ background: "var(--bg-base)" }}>
       <div style={{ zoom }} className="p-5">
         <div className="flex items-center gap-3 mb-5">
@@ -161,7 +171,8 @@ function TvFrame({ day, isLive, shift, t, onExit, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -281,14 +292,16 @@ function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = fals
       ) : !keys.length ? (
         <div className="text-sm mt-3" style={{ color: "var(--text-3)" }}>{t("production.hourly.noneThisHour")}</div>
       ) : (
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 mt-3">
+        <div className="flex items-end gap-6 mt-3">
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3 min-w-0 flex-1">
           {keys.map((k) => (
             <div key={k} className="min-w-0">
               <div className="text-[12px] truncate max-w-[180px]" style={{ color: "var(--text-3)" }} title={t(`production.cont.${k}`)}>{t(`production.cont.${k}`)}</div>
               <div className={`${tv ? "text-4xl" : "text-3xl"} font-bold tabular-nums leading-tight`} style={{ color: "var(--text-1)" }}>{fmt(counts[k])}</div>
             </div>
           ))}
-          <div className="ml-auto text-right">
+          </div>
+          <div className="shrink-0 text-right pl-4" style={{ borderLeft: "1px solid var(--border)" }}>
             <div className="text-[12px]" style={{ color: "var(--text-3)" }}>{t("production.cont.total")}</div>
             <div className={`${tv ? "text-4xl" : "text-3xl"} font-bold tabular-nums leading-tight`}
               style={{ color: next ? "var(--brand-text)" : "var(--text-1)" }}>{fmt(sum)}</div>
