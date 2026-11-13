@@ -15,7 +15,7 @@
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   printed as a percentage alone — and the cell's hover box is a small
-//   «31/142»: solved from 1 October, out of all problems (the operator's call,
+//   «31/55»: solved from 1 October, out of that plus what is unsolved (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -470,17 +470,18 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       { label: t("overview.sr.hairWithout"), left: rest },
     ];
   };
-  // THE hover box: «Solved from 01.10 / all problems  31/142» (the operator,
-  // 2026-11-13: «the problems take overall but solutions from 1 october»).
-  // The SECOND number is every problem the brigadir has, all time, hair
-  // included — the cell's own total (`quality_hair.actionable`). The FIRST is
-  // the solved ones among the problems FILED since the server's day
-  // (`quality_since_from`, 1 October; `quality_since.done`): the register has
-  // no solve date, so «solved since» can only mean «filed since, and solved» —
-  // a September problem solved in October is in the total and not in the
-  // first number. The column's header hint says so in words. A payload without
-  // the field — an older server — falls back to the «left: hair / without
-  // hair» box below.
+  // THE hover box: «Solved from 01.10 / had to solve  31/55» (the operator,
+  // 2026-11-13: «the problems take overall but solutions from 1 october», then
+  // «but the problems take unsolved one» → «31 / 55»). The FIRST number is the
+  // solved ones among the problems FILED since the server's day
+  // (`quality_since_from`, 1 October; `quality_since.done`). The SECOND is
+  // everything he had to solve: what is NOT solved today, all time, hair
+  // included (`quality_hair.actionable − done`), plus that first number — so
+  // it reads N/N exactly when nothing is left. The register has no solve
+  // date, so «solved from 01.10» can only mean «filed since, and solved»: a
+  // September problem solved in October is in neither number. The column's
+  // header hint says so in words. A payload without the field — an older
+  // server — falls back to the «left: hair / without hair» box below.
   const qFrom = data?.quality_since_from || "";
   const qualityOpen = (r) => {
     const c = r.quality_since;
@@ -488,7 +489,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     if (!qFrom || !c || !all || all.reason || !isNum(all.value)) return null;
     return {
       caption: fill(t("overview.sr.qSince"), { date: ddmm(qFrom) }),
-      text: `${c.done}/${all.actionable}`,
+      text: `${c.done}/${Math.max(0, all.actionable - all.done) + c.done}`,
     };
   };
   // Its spoken form, for the link's aria-label.
@@ -658,8 +659,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The hover box says «31/142»: solved
-                  from 1 October, out of all problems (`qualityOpen`). Counts
+                  included, all time. The hover box says «31/55»: solved
+                  from 1 October, out of what he had to solve — that plus
+                  what is still unsolved (`qualityOpen`). Counts
                   were printed in
                   the cell itself for a few minutes on 2026-11-13 and the
                   operator took them back out, as on 2026-09-16. */}

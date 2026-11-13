@@ -606,4 +606,13 @@ it was solved, and asked what to count: «Written since 1 October».
   first number, and the fraction cannot reach N/N while older problems exist.
   The header hint spells that out; the operator was told. A frontend-only
   change: `quality_since.total` still rides on the payload, unused.
+- **STANDING STATE — «31/55», solved from 1 October out of what he had to
+  solve** (the operator, next: «but the problems take unsolved one» → «31 /
+  55»): the box is «01.10 dan beri bartaraf etilgan / bartaraf etilishi kerak
+  edi  31/55». First number = `quality_since.done` (filed since 1 October and
+  solved). Second = what is NOT solved today, all time, hair included
+  (`quality_hair.actionable − done`) + that first number, so it reads N/N
+  exactly when nothing is left. A problem filed before October and already
+  solved is in neither number. The «31/142» wording of the bullet above lived
+  for a few minutes. Frontend-only.
 
