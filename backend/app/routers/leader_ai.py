@@ -524,8 +524,9 @@ def _levels(cfg, rev):
     # A day before a DATED rule change reads the rule it was filed under
     # (services/leader_rule_eras), exactly as the reviewer judged it.
     return leader_rule_eras.levels(
-        getattr(cfg, "eras", None) or {}, rev.task_id, rev.manager_id,
-        rev.shift, rev.date, own, sup, defs.get(rev.task_id))
+        getattr(cfg, "eras", None), rev.task_id, rev.manager_id,
+        rev.shift, rev.date, own, sup, defs.get(rev.task_id),
+        leader_id=rev.leader_id)
 
 
 def _window(cfg, rev) -> tuple[str, str]:

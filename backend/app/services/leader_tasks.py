@@ -21,7 +21,7 @@ from app.models import (
 # The photo window's shape, defaults and re-derivation live with the reviewer
 # that reads them — this module only stores and displays them. Safe as a
 # top-level import: leader_ai names this module in comments only.
-from app.services import leader_ai, one_process
+from app.services import leader_ai, leader_rule_eras, one_process
 
 CHANNEL_SETTING_KEY = "leader_tasks_channel"
 
@@ -1054,7 +1054,8 @@ def effective_leader_config(db: Session, prof, shift: int | None = None,
                 db, leader_id=prof.id, manager_id=prof.manager_id, day=day,
                 task_id=td.id, own=r, sup=s, unit_sh=unit_sh)
         tr, ts, ttd = leader_rule_eras.levels(eras, td.id, prof.manager_id,
-                                              shift, day, r, s, td)
+                                              shift, day, r, s, td,
+                                              leader_id=prof.id)
         enabled = s.enabled if s else def_enabled(td)
         min_media = s.min_media if s else def_min_media(td)
         weight = s.weight if s else td.default_weight
@@ -1490,7 +1491,8 @@ def window_shift_problems(db: Session, lo: str | None, hi: str | None,
 
 def set_window(db: Session, *, task_id: int, win_from: str | None,
                win_to: str | None, manager_id: int | None = None,
-               leader_id: int | None = None, rejudge: bool = True) -> None:
+               leader_id: int | None = None, rejudge: bool = True,
+               from_day: str | None = None, by: str | None = None) -> None:
     """Write the proof-photo window at one level of the chain. A blank end
     clears that end alone and falls back to the level above (and, at the global
     level, to the shift default) — which is why both inputs are optional.
@@ -1538,6 +1540,11 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
         row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
         if not row:
             return
+    # Counts from `from_day` on; the days before keep the old hours
+    # (services/leader_rule_eras).
+    leader_rule_eras.record(db, row, {"win_from": lo, "win_to": hi},
+                            task_id=task_id, from_day=from_day, by=by,
+                            manager_id=manager_id, leader_id=leader_id)
     row.win_from, row.win_to = lo, hi
     # Same rule as set_criteria: a leader row left overriding nothing goes.
     if leader_id is not None and _leader_row_bare(row):
@@ -1557,7 +1564,8 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
 
 def set_date_check(db: Session, *, task_id: int, date_check: bool | None,
                    manager_id: int | None = None, leader_id: int | None = None,
-                   rejudge: bool = True) -> None:
+                   rejudge: bool = True, from_day: str | None = None,
+                   by: str | None = None) -> None:
     """Write "is the date checked for this task" at one level of the chain.
 
     See `_set_chain_flag` for the shape both halves of the date rule share; this
@@ -1565,12 +1573,14 @@ def set_date_check(db: Session, *, task_id: int, date_check: bool | None,
     moot (nothing is compared, so there is no hour question either).
     """
     _set_chain_flag(db, task_id=task_id, attr="date_check", value=date_check,
-                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge,
+                    from_day=from_day, by=by)
 
 
 def set_time_check(db: Session, *, task_id: int, time_check: bool | None,
                    manager_id: int | None = None, leader_id: int | None = None,
-                   rejudge: bool = True) -> None:
+                   rejudge: bool = True, from_day: str | None = None,
+                   by: str | None = None) -> None:
     """Write "is the CLOCK checked, or is the day enough" at one level.
 
     The other half of the same rule, written through the same helper on purpose:
@@ -1579,12 +1589,14 @@ def set_time_check(db: Session, *, task_id: int, time_check: bool | None,
     absent row means — which is a silent change to what a task requires.
     """
     _set_chain_flag(db, task_id=task_id, attr="time_check", value=time_check,
-                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge,
+                    from_day=from_day, by=by)
 
 
 def set_day_check(db: Session, *, task_id: int, day_check: bool | None,
                   manager_id: int | None = None, leader_id: int | None = None,
-                  rejudge: bool = True) -> None:
+                  rejudge: bool = True, from_day: str | None = None,
+                  by: str | None = None) -> None:
     """Write "is the DAY checked" at one level of the chain.
 
     The third of the rule's three flags, through the same helper for the same
@@ -1594,12 +1606,14 @@ def set_day_check(db: Session, *, task_id: int, day_check: bool | None,
     change to what a task requires.
     """
     _set_chain_flag(db, task_id=task_id, attr="day_check", value=day_check,
-                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge,
+                    from_day=from_day, by=by)
 
 
 def set_date_plus(db: Session, *, task_id: int, date_plus: int | None,
                   manager_id: int | None = None, leader_id: int | None = None,
-                  rejudge: bool = True) -> None:
+                  rejudge: bool = True, from_day: str | None = None,
+                  by: str | None = None) -> None:
     """Write the date TOLERANCE — how many days after the report's a proof may
     also be dated — at one level of the chain.
 
@@ -1633,6 +1647,9 @@ def set_date_plus(db: Session, *, task_id: int, date_plus: int | None,
         if not row:
             return
         v = 0 if v is None else v       # the floor of the chain is never "inherit"
+    leader_rule_eras.record(db, row, {"date_plus": v}, task_id=task_id,
+                            from_day=from_day, by=by,
+                            manager_id=manager_id, leader_id=leader_id)
     row.date_plus = v
     if leader_id is not None and _leader_row_bare(row):
         db.delete(row)
@@ -1683,7 +1700,8 @@ def _sup_row(db: Session, manager_id: int, task_id: int, *,
 
 def _set_chain_flag(db: Session, *, task_id: int, attr: str,
                     value: bool | None, manager_id: int | None = None,
-                    leader_id: int | None = None, rejudge: bool = True) -> None:
+                    leader_id: int | None = None, rejudge: bool = True,
+                    from_day: str | None = None, by: str | None = None) -> None:
     """Write one tri-state BOOLEAN rule at one level of the global → supervisor →
     leader chain. None clears the level and falls back to the level above; at the
     GLOBAL level None is stored as True, because that level is the chain's floor
@@ -1720,6 +1738,9 @@ def _set_chain_flag(db: Session, *, task_id: int, attr: str,
             return
         # The floor of the chain is never "inherit".
         v = True if v is None else v
+    leader_rule_eras.record(db, row, {attr: v}, task_id=task_id,
+                            from_day=from_day, by=by,
+                            manager_id=manager_id, leader_id=leader_id)
     setattr(row, attr, v)
     # Same rule as set_criteria/set_window: a leader row left overriding nothing
     # goes, so the matrix's "overridden" mark keeps meaning something.
@@ -1731,7 +1752,8 @@ def _set_chain_flag(db: Session, *, task_id: int, attr: str,
 
 
 def set_deadline(db: Session, *, task_id: int, deadline: str | None,
-                 manager_id: int | None = None, leader_id: int | None = None) -> None:
+                 manager_id: int | None = None, leader_id: int | None = None,
+                 from_day: str | None = None, by: str | None = None) -> None:
     """Write the informational submission deadline at one level of the chain.
     Blank clears that level and falls back to the level above (blank
     everywhere ⇒ the tab shows the day's filing deadline instead).
@@ -1773,6 +1795,9 @@ def set_deadline(db: Session, *, task_id: int, deadline: str | None,
         row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
         if not row:
             return
+    leader_rule_eras.record(db, row, {"deadline": v}, task_id=task_id,
+                            from_day=from_day, by=by,
+                            manager_id=manager_id, leader_id=leader_id)
     row.deadline = v
     db.commit()
 

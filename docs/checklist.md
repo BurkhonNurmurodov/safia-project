@@ -112,6 +112,34 @@ tabs over one config, not the 22×13 brigadir×task matrix it was for a year.
   `LangTextInput`), the column modal's second inline save, the archive channel
   at the top of the page (now a bottom disclosure), the second toast system.
 
+## A change of a task's hours counts FROM A DAY (`leader_task_rule_changes`, 2026-11-13)
+
+The operator: «we changed the task time for some leaders and it affected their
+historical scores — the change should count from a selected date, that date
+included; today's change from today». A window / deadline / date-rule write
+used to re-judge EVERY stored verdict of the task (`sync_date_flags` has no
+date bound).
+
+- **The task editor on `/panel/ltasks` carries «Vaqt o'zgarishi qaysi kundan»**
+  — today by default, any past day, never a future one (the live row is what
+  every undated reader takes). It governs the window, the deadline and the
+  date rule; a body without `from_day` (an older tab) counts from today.
+- **Each write keeps what it replaced**: one `LeaderTaskRuleChange` row per
+  changed field (level, scope, task, `before`, `after`, `from_day`, who), at
+  every level — global, unit, LEADER. `leader_rule_eras.record` writes it from
+  inside the setters (`set_window`, `set_deadline`, `_set_chain_flag`,
+  `set_date_plus`); a write with no day (a code pass) is not recorded.
+- **`leader_rule_eras.levels` is the one reader**: walking the writes newest
+  first, each one that starts after the day is undone; the first that already
+  counts stops the walk. So the newest write wins from its own day on, and an
+  undated correction made since still counts for every day it reaches. All
+  four day-readers pass through it (`effective_leader_config`, `date_rule_for`,
+  `sync_date_flags`, `routers/leader_ai._levels`). Eras apply on top.
+- **Repairing an edit made BEFORE this existed** (it has no `before`): save the
+  OLD hours from a day before the first checklist day, then the NEW hours from
+  the day they really started.
+- **Never delete a row** — every boot re-derives against them.
+
 ## Temporary task hours (`leader_temp_hours`, from 28 Sep 2026)
 
 From **2026-09-28** (the operator's request) a cell whose shift is moved for a

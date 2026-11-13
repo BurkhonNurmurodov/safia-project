@@ -613,7 +613,7 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         from app.services import leader_rule_eras
         own, sup, td = leader_rule_eras.levels(
             leader_rule_eras.load(db), task_id, manager_id, shift, date,
-            own, sup, td)
+            own, sup, td, leader_id=leader_id)
     win = resolve_window(shift, own, sup, td)
     if date:
         # A night whose hours were moved is judged by the hours it was worked
@@ -3443,7 +3443,8 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
                 day=rev.date, task_id=rev.task_id, own=levels[0], sup=levels[1])
             levels = (o, sp, levels[2])
         levels = leader_rule_eras.levels(eras, rev.task_id, rev.manager_id,
-                                         rev.shift, rev.date, *levels)
+                                         rev.shift, rev.date, *levels,
+                                         leader_id=rev.leader_id)
         win = resolve_window(rev.shift, *levels)
         if rev.leader_id in temp:
             win = leader_temp_hours.window_on(db, rev.leader_id, rev.date,

@@ -3058,6 +3058,27 @@ class LeaderTaskConfigAudit(Base):
     after      = Column(JSONB, nullable=True)    # payload-shaped new state
 
 
+class LeaderTaskRuleChange(Base):
+    """One field of a task's HOURS or DATE RULE changed at one level, counting
+    from `from_day` (inclusive). A day before it is judged by `before` — the
+    value the field held when the change was written — so an admin edit of a
+    window, a deadline or the date rule never re-scores the days before it
+    (services/leader_rule_eras). History every boot re-derives against: never
+    delete a row."""
+    __tablename__ = "leader_task_rule_changes"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    task_id  = Column(Integer, nullable=False)
+    level    = Column(String, nullable=False)       # global | unit | leader
+    scope_id = Column(Integer, nullable=True)       # manager_id | leader_id | NULL
+    field    = Column(String, nullable=False)       # win_from, win_to, deadline, …
+    before   = Column(JSONB, nullable=True)
+    after    = Column(JSONB, nullable=True)
+    from_day = Column(String(10), nullable=False)   # ISO, the first day on `after`
+    at       = Column(DateTime(timezone=True), server_default=func.now())
+    by       = Column(String, nullable=True)
+
+
 class UserActivity(Base):
     """One row per (Telegram account, profile, day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average

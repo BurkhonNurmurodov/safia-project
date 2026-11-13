@@ -100,6 +100,9 @@ const clip = (s, n = 46) => {
   return v.length > n ? `${v.slice(0, n)}…` : v;
 };
 
+// Today on the plant's clock — the default first day of a time change.
+const tashkentToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tashkent" });
+
 // Apply now vs stage to the target's next shift day.
 function WhenBar({ when, setWhen, nextDate, t }) {
   return (
@@ -1290,12 +1293,12 @@ export default function LeaderTasksAdmin() {
     const from = draft?.win_from || "";
     const to = draft?.win_to || "";
     if (from === (stored?.win_from || "") && to === (stored?.win_to || "")) return undefined;
-    return winMut.mutateAsync({ ...ids, win_from: from, win_to: to });
+    return winMut.mutateAsync({ ...ids, win_from: from, win_to: to, from_day: draft.from_day });
   };
   const saveDeadline = (draft, stored, ids) => {
     const v = draft?.deadline || "";
     if (v === (stored?.deadline || "")) return undefined;
-    return dlMut.mutateAsync({ ...ids, deadline: v });
+    return dlMut.mutateAsync({ ...ids, deadline: v, from_day: draft.from_day });
   };
   // The draft opens on the value IN FORCE, so a draft still equal to what this
   // level inherits goes out as null ("keep inheriting") and only a divergence
@@ -1328,7 +1331,7 @@ export default function LeaderTasksAdmin() {
       const out = inh === undefined ? v : (v === inh ? null : v);
       if (out === (stored?.[key] ?? null)) continue;
       try {
-        await mut.mutateAsync({ ...ids, [key]: out });
+        await mut.mutateAsync({ ...ids, [key]: out, from_day: draft.rule_from });
       } catch {
         return false;
       }
@@ -1393,6 +1396,9 @@ export default function LeaderTasksAdmin() {
     return {
       tid, lvl,
       when: "now",
+      // The first day a change of the hours / date rule counts from; the days
+      // before it keep the old rule (backend services/leader_rule_eras).
+      rule_from: tashkentToday(),
       // The numbers and the status open on the value IN FORCE, as they always
       // have; the texts open on this level's OWN value, with what they inherit
       // as the placeholder, so a blank field reads as "inherited" rather than
@@ -1431,8 +1437,8 @@ export default function LeaderTasksAdmin() {
     try {
       await saveCriteria(criteria, stored.criteria, ids);
       await saveDescription(description, stored.description, ids);
-      await saveWindow({ win_from, win_to }, stored, ids);
-      await saveDeadline({ deadline }, stored, ids);
+      await saveWindow({ win_from, win_to, from_day: edit.rule_from }, stored, ids);
+      await saveDeadline({ deadline, from_day: edit.rule_from }, stored, ids);
       if (!await saveDateRule(edit, stored, inh, ids)) return;
       // Never at the Standart level: the backend refuses a global camera
       // (CAMERA_IS_PILOT) and the control is not offered there either.
@@ -2601,6 +2607,12 @@ export default function LeaderTasksAdmin() {
               {editInh?.deadline ? t("admin.ltasks.deadlineInherit").replace("{t}", editInh.deadline)
                 : t("admin.ltasks.deadlineDay")}
             </div>
+          </FormField>
+          <FormField label={t("admin.ltasks.ruleFrom")} hint={t("admin.ltasks.ruleFromHint")}>
+            <DateRangePicker single max={tashkentToday()}
+              dateFrom={edit.rule_from} dateTo={edit.rule_from}
+              setDateFrom={(v) => setEdit((c) => ({ ...c, rule_from: v || tashkentToday() }))}
+              setDateTo={() => {}} triggerClassName="px-3 py-2 text-sm" />
           </FormField>
           <TaskExamples ids={editExR.ids} own={editExOwn} fromLabel={exFromLabel(editExR.level)}
             scopeNote={editExNote()} busy={exAddMut.isPending}

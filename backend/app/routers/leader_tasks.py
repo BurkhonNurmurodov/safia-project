@@ -10,7 +10,7 @@ for the /leaders detail modal — page-access gated with the same row scoping as
 """
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import requests
@@ -118,6 +118,22 @@ def _log_cfg(*, task_id: int, level: str, mgr=None, lead=None,
         unit_name=mgr.name if mgr is not None else None,
         details=lines,
     )
+
+
+def _rule_from(v: str | None) -> str:
+    """The first day a write of a task's hours or date rule counts from
+    (inclusive). Blank = today; a future day is refused — the live row is what
+    every undated reader takes, so it can only hold a value already in force.
+    The days before it keep the old value (services/leader_rule_eras)."""
+    today = datetime.now(timezone(timedelta(hours=5))).date().isoformat()
+    day = (v or "").strip()[:10] or today
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad_date")
+    if day > today:
+        raise HTTPException(status_code=400, detail="future_date")
+    return day
 
 
 def _applied(out: dict) -> list[tuple]:
@@ -988,11 +1004,13 @@ class WindowIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/window")
 def put_window(body: WindowIn, db: Session = Depends(get_db),
-               _: dict = Depends(_LEADERS_ADMIN)):
+               admin: dict = Depends(_LEADERS_ADMIN)):
     """Set when a proof photo for this task may have been taken.
 
     Applies at once and — unlike criteria — verdicts ALREADY written are
@@ -1025,11 +1043,13 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
         raise HTTPException(
             status_code=400,
             detail=f"window_outside_shift|{shift or '?'}|{lo}-{hi}|{s_lo}-{s_hi}")
-    win = {"win_from": body.win_from, "win_to": body.win_to}
+    day = _rule_from(body.from_day)
+    win = {"win_from": body.win_from, "win_to": body.win_to,
+           "from_day": day, "by": _actor(admin)}
     # A blank end INHERITS the level above; «—» says so, where a blank cell in
     # the register would read as "no window at all".
     shown = [("window", f"{body.win_from.strip() or '—'} — "
-                        f"{body.win_to.strip() or '—'}")]
+                        f"{body.win_to.strip() or '—'}"), ("date", day)]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -1077,17 +1097,21 @@ class DeadlineIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/deadline")
 def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
-                 _: dict = Depends(_LEADERS_ADMIN)):
+                 admin: dict = Depends(_LEADERS_ADMIN)):
     if body.deadline.strip() and leader_ai.hhmm(body.deadline) is None:
         raise HTTPException(status_code=400, detail="bad_time")
     td = db.query(LeaderTaskDef).filter_by(id=body.task_id).first()
     if not td:
         raise HTTPException(status_code=404, detail="Unknown task")
-    shown = [("deadline", body.deadline.strip() or "—")]
+    day = _rule_from(body.from_day)
+    dated = {"from_day": day, "by": _actor(admin)}
+    shown = [("deadline", body.deadline.strip() or "—"), ("date", day)]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -1097,7 +1121,7 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
                 raise HTTPException(status_code=400, detail="no_rows")
             for lid in ids:
                 set_deadline(db, task_id=body.task_id, deadline=body.deadline,
-                             leader_id=lid)
+                             leader_id=lid, **dated)
         else:
             ids = [i for (i,) in db.query(Manager.id).filter(
                 Manager.id.in_(body.manager_ids),
@@ -1106,7 +1130,7 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
                 raise HTTPException(status_code=400, detail="no_rows")
             for mid in ids:
                 set_deadline(db, task_id=body.task_id, deadline=body.deadline,
-                             manager_id=mid)
+                             manager_id=mid, **dated)
         _log_cfg(task_id=body.task_id, task_name=td.name_uz, count=len(ids),
                  level="leader" if body.leader_ids is not None else "unit",
                  extra=shown)
@@ -1114,7 +1138,7 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
     mgr = _need_manager(db, body.manager_id)
     lead = _need_leader(db, body.leader_id)
     set_deadline(db, task_id=body.task_id, deadline=body.deadline,
-                 manager_id=body.manager_id, leader_id=body.leader_id)
+                 manager_id=body.manager_id, leader_id=body.leader_id, **dated)
     _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
              level=("leader" if lead is not None
                     else "unit" if mgr is not None else "global"),
@@ -1138,11 +1162,13 @@ class DateCheckIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/date-check")
 def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
-                   _: dict = Depends(_LEADERS_ADMIN)):
+                   admin: dict = Depends(_LEADERS_ADMIN)):
     """Exempt a task from the date question, or put it back under it.
 
     Applies at once and — exactly like the window — re-derives the verdicts
@@ -1154,7 +1180,7 @@ def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
     way, because the clock the model read stays on the row.
     """
     return _write_date_rule(db, body, setter=set_date_check, kw="date_check",
-                            value=body.date_check)
+                            value=body.date_check, admin=admin)
 
 
 class TimeCheckIn(BaseModel):
@@ -1173,11 +1199,13 @@ class TimeCheckIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/time-check")
 def put_time_check(body: TimeCheckIn, db: Session = Depends(get_db),
-                   _: dict = Depends(_LEADERS_ADMIN)):
+                   admin: dict = Depends(_LEADERS_ADMIN)):
     """Judge a task by the DAY alone, or put its hours back under the window.
 
     The middle setting of the date rule, and the answer to the proof that has a
@@ -1199,7 +1227,7 @@ def put_time_check(body: TimeCheckIn, db: Session = Depends(get_db),
     old photos if that matters for a particular day.
     """
     return _write_date_rule(db, body, setter=set_time_check, kw="time_check",
-                            value=body.time_check)
+                            value=body.time_check, admin=admin)
 
 
 class DayCheckIn(BaseModel):
@@ -1219,11 +1247,13 @@ class DayCheckIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/day-check")
 def put_day_check(body: DayCheckIn, db: Session = Depends(get_db),
-                  _: dict = Depends(_LEADERS_ADMIN)):
+                  admin: dict = Depends(_LEADERS_ADMIN)):
     """Judge a task by the HOUR alone, or put its day back under comparison.
 
     The answer to the proof whose only readable clock is a phone status bar:
@@ -1245,7 +1275,7 @@ def put_day_check(body: DayCheckIn, db: Session = Depends(get_db),
     strict answer.
     """
     return _write_date_rule(db, body, setter=set_day_check, kw="day_check",
-                            value=body.day_check)
+                            value=body.day_check, admin=admin)
 
 
 class DatePlusIn(BaseModel):
@@ -1264,11 +1294,13 @@ class DatePlusIn(BaseModel):
     leader_id: int | None = None
     manager_ids: list[int] | None = None
     leader_ids: list[int] | None = None
+    # The first day the change counts from (inclusive); blank = today.
+    from_day: str | None = None
 
 
 @router.put("/admin/leader-tasks/date-plus")
 def put_date_plus(body: DatePlusIn, db: Session = Depends(get_db),
-                  _: dict = Depends(_LEADERS_ADMIN)):
+                  admin: dict = Depends(_LEADERS_ADMIN)):
     """Let a task's proof also be dated the days AFTER the report's day.
 
     Applies at once and re-derives the verdicts ALREADY written from their
@@ -1278,11 +1310,11 @@ def put_date_plus(body: DatePlusIn, db: Session = Depends(get_db),
     the new tolerance; narrowing it back restores them.
     """
     return _write_date_rule(db, body, setter=set_date_plus, kw="date_plus",
-                            value=body.date_plus)
+                            value=body.date_plus, admin=admin)
 
 
 def _write_date_rule(db: Session, body, *, setter, kw: str,
-                     value: bool | None) -> dict:
+                     value: bool | None, admin: dict) -> dict:
     """The four-way write all three flags of the date rule share — global, one
     supervisor, one leader, or a fan-out over a filtered matrix — with ONE
     re-derivation at the end.
@@ -1297,7 +1329,9 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
         raise HTTPException(status_code=404, detail="Unknown task")
     # TRI-STATE, and the register has to keep it one: null is «inherit the level
     # above», which is a different instruction from False.
-    shown = [(kw, "inherit" if value is None else value)]
+    day = _rule_from(body.from_day)
+    dated = {"from_day": day, "by": _actor(admin)}
+    shown = [(kw, "inherit" if value is None else value), ("date", day)]
     if body.leader_ids is not None or body.manager_ids is not None:
         if body.leader_ids is not None:
             ids = [i for (i,) in db.query(RoleProfile.id).filter(
@@ -1307,7 +1341,7 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
                 raise HTTPException(status_code=400, detail="no_rows")
             for lid in ids:
                 setter(db, task_id=body.task_id, **{kw: value},
-                       leader_id=lid, rejudge=False)
+                       leader_id=lid, rejudge=False, **dated)
         else:
             ids = [i for (i,) in db.query(Manager.id).filter(
                 Manager.id.in_(body.manager_ids),
@@ -1316,7 +1350,7 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
                 raise HTTPException(status_code=400, detail="no_rows")
             for mid in ids:
                 setter(db, task_id=body.task_id, **{kw: value},
-                       manager_id=mid, rejudge=False)
+                       manager_id=mid, rejudge=False, **dated)
         # Once, after the whole fan-out — the re-derivation is per task, not per
         # row written (same reason as put_window).
         leader_ai.sync_date_flags(db, [body.task_id])
@@ -1327,7 +1361,7 @@ def _write_date_rule(db: Session, body, *, setter, kw: str,
     mgr = _need_manager(db, body.manager_id)
     lead = _need_leader(db, body.leader_id)
     setter(db, task_id=body.task_id, **{kw: value},
-           manager_id=body.manager_id, leader_id=body.leader_id)
+           manager_id=body.manager_id, leader_id=body.leader_id, **dated)
     _log_cfg(task_id=body.task_id, task_name=td.name_uz, mgr=mgr, lead=lead,
              level=("leader" if lead is not None
                     else "unit" if mgr is not None else "global"),
