@@ -7,8 +7,8 @@ One row per brigadir, six columns, and not one of them is a new measurement:
     Davomat           /workers' «Davomat issiqlik xaritasi» figure, for TODAY so
                       far — off the stored live Verifix read
     Bajarilish %      the same page's «Compl. %», for YESTERDAY
-    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, THIS
-                      MONTH — the column prints the OVERALL rate, every
+    Hal qilingan %    the «Sifat va shikoyatlar» register's closure rate, ALL
+                      TIME (`quality_window`) — the column prints the OVERALL rate, every
                       record, hair too (`quality_hair`); the rate with hair
                       records left out (`quality`) rides beside it for the
                       cell's hover box
@@ -92,30 +92,36 @@ def report_days(now: datetime, shift: Optional[int],
     return today, today - timedelta(days=1)
 
 
+# The floor of «all time» — the twin of `ALL_TIME_FROM` in
+# frontend/src/components/ui/DateRangePicker.jsx, the Quality page's «Barcha
+# vaqt». The register holds nothing older, and the cell's link opens that page
+# on this very span, so the board and the list behind it count one window.
+QUALITY_FROM = "2015-01-01"
+
+
 def quality_window(day: date) -> tuple[str, str, str]:
-    """(month, first, next_first) — the CURRENT MONTH, as the three ISO strings
-    the quality register is cut by.
+    """("", first, after_last) — ALL TIME up to `day`, as the ISO strings the
+    quality register is cut by (`first <= date < after_last`).
 
-    From 2026-09-18 (the operator's directive) «Hal qilingan %» is the closure
-    rate of the month in progress, not of the whole register: a rate carrying
-    every record ever filed moves by a fraction of a point whatever a unit does
-    this week, so it stated how the register has gone rather than how the unit
-    is going.
+    From 2026-11-13 (the operator: «we have to go all time with hair, right now
+    I see the problems, it's kinda low» → «Count all time») the column counts
+    every record the register holds. It was the MONTH IN PROGRESS from
+    2026-09-18, because a whole-register rate moves by a fraction of a point
+    whatever a unit does this week; thirteen days into a month that left a
+    brigadir judged on one or two records, which is what the operator saw. The
+    trade is his: the count is the brigadir's whole record, and it moves slowly.
 
-    `QualityComplaint.date` is an ISO "YYYY-MM-DD" STRING, so the cut is a plain
-    string range — `first <= date < next_first` orders exactly as the dates do —
-    and a row carrying no date, one no month can place, falls outside it.
+    `day` is the plant's own date, never a picked shift-day: a record's status
+    is today's status, so «all time as of last Tuesday» is not a figure the
+    register can state.
 
-    ONE month for the whole board, and the CALENDAR month of the plant's wall
-    clock rather than a shift frame: the register's own date is a calendar date,
-    and on the first morning of a month two shift groups would otherwise read
-    two different months for one register. It rides on the payload so the header
-    names the month the figures were actually counted over — never the browser's
-    own idea of «this month», which is the drift `deck-window` already answers.
+    The first value was the month («2026-11») and is "" now: a tab still on a
+    bundle that captions the column with it prints no month rather than a month
+    the figures were not counted over. `QualityComplaint.date` is an ISO
+    "YYYY-MM-DD" STRING, so the cut is a plain string range, and a row carrying
+    no date falls outside it — as it does on the Quality page's «Barcha vaqt».
     """
-    first = day.replace(day=1)
-    nxt = (first + timedelta(days=32)).replace(day=1)
-    return first.strftime("%Y-%m"), first.isoformat(), nxt.isoformat()
+    return "", QUALITY_FROM, (day + timedelta(days=1)).isoformat()
 
 
 def _blank(reason: str, **extra) -> dict:
@@ -242,10 +248,10 @@ def compl_cell(totals: Optional[dict], clock: Optional[dict] = None) -> dict:
 
 
 def fold_quality(counts: Iterable[tuple]) -> dict[int, dict]:
-    """{manager_id: {"done": n, "actionable": N}} over the month handed in.
+    """{manager_id: {"done": n, "actionable": N}} over the window handed in.
 
     The window is the router's — this module never queries — so a unit that
-    had nothing filed this month, or nothing but `SKIP_CATEGORY` records, is
+    had nothing filed in it, or nothing but `SKIP_CATEGORY` records, is
     simply absent, and reads the blank `no_records` rather than a 0% it did
     not earn.
 
@@ -266,11 +272,11 @@ def fold_quality(counts: Iterable[tuple]) -> dict[int, dict]:
 
 
 def quality_cell(acc: Optional[dict]) -> dict:
-    """«Hal qilingan %» — resolved ÷ actionable over the month, with both counts
-    beside it: «0%» of one record and «0%» of forty are different facts.
+    """«Hal qilingan %» — resolved ÷ actionable over the window, with both
+    counts beside it: «0%» of one record and «0%» of forty are different facts.
 
-    A month in progress starts every unit at `no_records`, and that blank is the
-    honest answer — «nothing filed yet» is not «nothing resolved»."""
+    A unit nothing was ever filed against reads `no_records`, and that blank is
+    the honest answer — «nothing filed» is not «nothing resolved»."""
     if not acc or not acc.get("actionable"):
         return _blank("no_records", done=0, actionable=0)
     return {

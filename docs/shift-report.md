@@ -118,6 +118,9 @@ morning, with «XATO» wherever a brigadir had entered nothing.
   file under. At 09:00 shift 2's today is the night that has just ended; shift
   1's today flips at its own 08:00, so before it the board shows the last
   finished day shift. A unit with no shift reads the calendar date.
+- **SUPERSEDED 2026-11-13 — the column counts ALL TIME now; see «Sifat
+  nazorati % counts all time» at the end of this file.** What follows is the
+  rule it replaced, kept for its reasoning.
 - **«Bartaraf etilgan %» is the MONTH IN PROGRESS** (the operator's directive,
   2026-09-18), `shift_report.quality_window` — which is the one place the cut
   lives. It was the whole register, and a rate carrying every record ever filed
@@ -438,3 +441,34 @@ when you bring the cursor … and percentage should be related to it». So:
 - **Only this board.** «Brigadirlar reytingi», «Hisobotlar», «Brigadirlar KPI»
   and every KPI weight keep the without-hair rate — `SKIP_CATEGORY` still means
   what it meant for them.
+
+## «Sifat nazorati %» counts all time (2026-11-13)
+
+The operator, the same day the column took hair in: «we have a problem we have
+to go all time with hair, right now I see the problems, it's kinda low» — and,
+asked which he meant, «Count all time». Thirteen days into November the month
+window left a brigadir judged on a record or two («0/1»).
+
+- **The window is the whole register**: `shift_report.quality_window` returns
+  `QUALITY_FROM` (2015-01-01, the twin of the frontend's `ALL_TIME_FROM`, the
+  Quality page's «Barcha vaqt») up to the PLANT's date. The day stepper's
+  picked shift-day no longer moves it — a record's status is today's status, so
+  «all time as of last Tuesday» is not a figure the register can state.
+- **This reverses the 2026-09-18 directive** (the month in progress), whose
+  reason still holds and is the cost: an all-time rate moves by a fraction of a
+  point whatever a unit does this week. The operator was told so in the
+  question and chose it.
+- **Payload**: `quality_from` / `quality_to` (both inclusive) name the span;
+  `quality_month` stays on the payload as "" so a tab on an older bundle
+  captions the column «sifat» with no month, and its cell is plain (no link),
+  rather than naming a month nothing was cut by.
+- **The board**: the caption reads «barcha vaqt» (phone: «jami»), the hint says
+  all time, and the cell opens the Quality page on exactly that span, «Soch
+  bilan», the brigadir's unresolved records.
+- Both readings — with hair (the cell) and without (its hover box) — are over
+  the same all-time window. A unit moved between brigadirs keeps the
+  attribution rule's history (`quality_attribution`: the record's cell on ITS
+  date), which now matters for every record instead of a month of them.
+- Only this board. «Brigadirlar reytingi» / «Hisobotlar» count their own
+  picked period, without hair, as before.
+

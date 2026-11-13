@@ -6,11 +6,13 @@
 //
 // Rules it keeps, so nobody has to rediscover them:
 // - The day stepper beside it does NOT reach it. Each column has its own fixed
-//   window and prints it — with the date — in its own header. «Bartaraf etilgan
-//   %» covers the CURRENT MONTH (the operator's call, 2026-09-18), and the
-//   month it names is the one the SERVER counted (`quality_month` on the
-//   payload) — a month derived from the browser's clock is how the header and
-//   the figures would come to name two different windows. The figure is the
+//   window and prints it — with the date — in its own header. «Sifat nazorati
+//   %» covers ALL TIME (the operator's call, 2026-11-13; it was the current
+//   month from 2026-09-18, and thirteen days into one a brigadir was judged on
+//   a record or two). The span is the one the SERVER counted (`quality_from` /
+//   `quality_to` on the payload) and the cell's link opens the Quality page on
+//   exactly it. A payload from before the change still names its month
+//   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   and the cell's hover box prints both readings with their counts: «soch
 //   bilan · 20/40 · 50%» over «sochsiz · 12/15 · 80%» (the operator's call,
@@ -326,6 +328,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // a month nothing has counted yet.
   const qm = Number(String(data?.quality_month || "").slice(5, 7));
   const qMonth = qm >= 1 && qm <= 12 ? t(`cal.m${qm - 1}`) : "";
+  // The quality column counts ALL TIME: the payload names the span itself.
+  const qAll = !qMonth && !!data?.quality_from && !!data?.quality_to;
 
   const onSort = (k) => setSort((s) => {
     const first = FIRST_DIR[k] || "asc";
@@ -344,7 +348,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const canQuality = may("quality");
   const canConcerns = may("concerns");
   const canStaff = may("staff");
-  const qSpan = monthSpan(data?.quality_month);
+  const qSpan = qAll
+    ? { from: data.quality_from, to: data.quality_to }
+    : monthSpan(data?.quality_month);
   const prodPage = t("nav.production");
 
   const productionTarget = (cell, r, date) => {
@@ -681,12 +687,12 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
-                cap: qMonth
-                  ? fill(t("overview.sr.capQualityMonth"), { month: qMonth })
+                cap: qAll ? t("overview.sr.capQualityAll")
+                  : qMonth ? fill(t("overview.sr.capQualityMonth"), { month: qMonth })
                   : t("overview.sr.capQuality"),
-                // On a phone the month alone is the caption; with none yet,
+                // On a phone the short form is the caption; with none yet,
                 // `HeadLabel` falls back to the full one.
-                capShort: qMonth || undefined,
+                capShort: qAll ? t("overview.sr.capQualityAllShort") : qMonth || undefined,
               }],
               ["concerns", t("overview.sr.hintConcerns"), {
                 full: t("overview.sr.colConcerns"), short: t("overview.sr.colConcernsShort"),

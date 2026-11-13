@@ -155,9 +155,11 @@ def get_shift_report(
     picked = min(day, now.date()) if day else None
     ids, note = _scope(db, payload, factory, manager_id)
     # The quality window rides on the payload from the first line, so an empty
-    # board still states which month its (absent) closure rates would have been
+    # board still states the span its (absent) closure rates would have been
     # counted over, and the header never has to guess it off the browser clock.
-    month, _m_from, _m_to = shift_report.quality_window(picked or now.date())
+    # ALL TIME up to the plant's date (`quality_window` says why) — the picked
+    # shift-day does not move it.
+    month, _m_from, _m_to = shift_report.quality_window(now.date())
     if empty_scope(ids):
         return _empty(now, note, month, picked)
     units = _units(db, ids, shift)
@@ -189,7 +191,12 @@ def _empty(now, note, month: str, picked=None) -> dict:
         "picked": picked is not None,
         "generated_at": now.isoformat(timespec="seconds"),
         "note": note,
+        # "" from 2026-11-13: the column counts all time, and an older bundle
+        # captions it with this — no month beats a month nothing was cut by.
         "quality_month": month,
+        # the span the quality column WAS counted over, both days inclusive
+        "quality_from": shift_report.QUALITY_FROM,
+        "quality_to": now.date().isoformat(),
         "shifts": [],
     }
 
@@ -214,7 +221,7 @@ def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int],
                 if not units:
                     return
                 windows = cell_hours.defaults(s)
-                month = shift_report.quality_window(picked or now.date())[0]
+                month = shift_report.quality_window(now.date())[0]
                 key = _key(units, note, month, now, windows, picked)
                 t0 = time.monotonic()
                 _cache_put(key, t0, _compute(s, units, note, now, windows, picked))
@@ -233,7 +240,7 @@ def _refresh_later(ids: Optional[list[int]], note, shift: Optional[int],
 
 def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     """The board for `units` at `now` — every figure from the page that owns it."""
-    month, m_from, m_to = shift_report.quality_window(picked or now.date())
+    month, m_from, m_to = shift_report.quality_window(now.date())
     out = _empty(now, note, month, picked)
     unit_ids = [m.id for m in units]
 
@@ -248,13 +255,13 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
             return None
         return production._build_dashboard(db, mid, day)["totals"]
 
-    # ── Hal qilingan % — the quality register for the CURRENT MONTH
-    # (`shift_report.quality_window`, which is also what says why), WITHOUT the
-    # hair category (`SKIP_CATEGORY`, ditto), attributed exactly as the Quality
-    # page attributes it: `quality_attribution` — the record's cell on its date,
-    # else «Отв. бригадир» resolved against EVERY live unit.
-    # The column prints the rate twice — hair aside, and every record (hair
-    # too) — from ONE read and one resolver (`unit_rows_both`).
+    # ── Hal qilingan % — the quality register over ALL TIME
+    # (`shift_report.quality_window`, which is also what says why), attributed
+    # exactly as the Quality page attributes it: `quality_attribution` — the
+    # record's cell on its date, else «Отв. бригадир» resolved against EVERY
+    # live unit. Folded twice — every record (hair too, the figure the cell
+    # prints) and hair aside (`SKIP_CATEGORY`, for its hover box) — from ONE
+    # read and one resolver (`unit_rows_both`).
     q_every, q_kept = quality_attribution.unit_rows_both(
         db, m_from, m_to, shift_report.SKIP_CATEGORY)
     quality = shift_report.fold_quality(q_kept)
