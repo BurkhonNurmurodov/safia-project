@@ -970,7 +970,8 @@ top-manager do not hold.
   «Men yozmaganlar». Everybody else opens the form with «+ Yechim yozish» and
   filters by «Yechimsizlar». A stop answered inside that filter stays where it is
   until the list is asked for again — saving never pulls the row out from under
-  the reader.
+  the reader. (The list these sit in was rebuilt the same day — the next section;
+  the rules of this bullet are unchanged.)
 - **The form leads with «Bajarildi»** — the question is what was DONE; «Bajarilmoqda»
   and «Rejada» are one tap away. `idle_category_solutions.done_at`
   (`startup.add_idle_solution_done_at`) is WHEN a row became done: set on a done
@@ -1022,8 +1023,9 @@ first in one sentence and only then drawn:
   page's waiting minutes (`_downtime`'s, as on «Muammolar»); a cell's, an hour's
   and a weekday's are the filed stops' OWN lengths (`stop_minutes`, worded
   «to'xtab turdi»).
-- The period's stops are exactly the «Muammolar» tab's (one inclusion rule), so
-  the two tabs count alike.
+- The period's stops are exactly the «Muammolar» tab's — every filed stop of the
+  units in reach (`_scope_units`), minutes or not — so the two tabs count alike;
+  `responders` is every unit that had one.
 - `_cell_detail(with_hc=False)` skips the headcount read for this page — it shows
   no «Odam soni»; the events are the very same rows.
 - Tests: `backend/tests/test_idle_solutions.py` (who answers which stop, a
@@ -1031,3 +1033,69 @@ first in one sentence and only then drawn:
 - Not built: a notice to the brigadir / owner when a stop waits for them, a
   deadline on a «Rejada» row, Tahlil for a brigadir's own unit.
 
+## «Kutish yechimlari» — «Muammolar» is ONE flat list of stops, built for a brigadir's phone (`/idle-solutions`, 2026-11-13)
+
+The operator, hours after the section above shipped: «can we rebuild the problem
+part and make it more convineint for suprvisors to see and write also». The tab
+was still the cause accordion of 3 November — a cause → inside it a block per
+brigadir → three stops and «yana N ta» — under four KPI tiles and a brigadir
+table. A brigadir had to open every cause to find their own stops, and the form
+sat three levels down.
+
+- **`GET /api/idle-solutions/stops`** — every filed stop in reach as one flat
+  list, newest first, each with the solutions written to it (`mine`, `state`).
+  People and owners are named ONCE (`units`, `owners` maps), `no_owner` lists the
+  causes on the list nobody answers for, `total_minutes` is `_downtime`'s for the
+  scope, `legacy` the older stop-less rows. `can_write` and `expects_me` as before.
+- **A stop is listed whether or not its unit shows waiting MINUTES for the
+  cause.** The accordion listed a stop only under a (cause, unit) that had
+  minutes, and minutes need the cell's headcount typed — so a stop in a cell
+  nobody typed «Bugungi fakt» for was a problem nobody could see or answer.
+  `_scope_units` is the unit scope: `_downtime`'s own opening lines (unarchived,
+  the picked shift, the viewer's plant, the picked brigadirs), kept in step BY
+  HAND — change one, change the other. Tahlil reads the same stops.
+- `GET /analysis` (the accordion's payload) is KEPT for a tab opened before the
+  change; no current bundle calls it. Remove it with its tests once nobody can
+  be holding a 4.505 bundle.
+- **`components/idle/SolutionStops.jsx`**, top to bottom:
+  - ONE card (`KPICard` + `SplitBar` / `SplitLegend`): for the brigadir and the
+    cause's owner «Sizdan yechim kutilmoqda» — the stops without THEIR OWN
+    answer, against the ones they wrote; for everybody else all the stops,
+    answered against not. An admin also gets one amber line naming the causes
+    with no owner and a button to `/panel/idleowners`.
+  - The list: a day header («Bugun», «Kecha», then date and weekday) with its
+    count, and under it each stop — its cause, cell (`CellLink`), clock, minutes,
+    the brigadir where the reader sees several units, the leader's own comment,
+    the solutions already written, and ONE button. The toggle leads with «Men
+    yozmaganlar» for the two asked roles (their default) and with «Hammasi» for
+    the rest. 20 a page (`Pagination`); the page scrolls back to the list's head.
+  - Two `FilterPanel` sections of its own, «Sabab» and «Yacheyka» (client-side,
+    offered from what the period holds). The card on top counts what the filters
+    leave.
+  - The older cause- and brigadir-wide rows in a closed «Umumiy yechimlar» card
+    at the bottom — they answer no stop and have no place in the list.
+- **The sheet** (`Writer`, one `Modal`): the comment and the cell's leader, the
+  cause's owner, what was written (its author changes status and words there),
+  «Siz nima qildingiz?», the reader's own last three texts for that cause as
+  chips that ADD to the text, the status. **«Saqlash va keyingisi» walks the
+  stops still waiting**, in the list's order, starting from the one opened — the
+  dialog stays up and its content changes; «Keyingisi» skips, and never past a
+  draft. Two footer buttons, so they fit a phone. The keyboard is not raised by
+  itself on a phone (`autoFocus` on fine pointers only): it would cover the
+  comment the reader came to answer.
+- A row's AUTHOR marks their own «Rejada» / «Bajarilmoqda» row done in one tap
+  from the list; an admin changes somebody else's row inside the sheet.
+- Tahlil's «Muammolarda ochish» now opens the list on that cause AND that cell,
+  every stop of it — the whole story of a repeating problem on one screen.
+- A brigadir has no tabs and no shift or brigadir filter: the page IS their list.
+- **The sheet is keyed `sheet-N`, never a bare number.** `useToast`'s node is
+  keyed 1, 2, 3 … and sits beside it; two siblings sharing a key made React keep
+  BOTH sheets on screen after the first save — the old one frozen over the new.
+  Found only by saving in the running app; no lint sees it.
+- Gone from this tab, on purpose: the cause ranking and the brigadir table (both
+  are Tahlil's «Kutish qayerdan kelyapti?»), the «Jami kutish» / «Eng katta
+  sabab» tiles.
+- Tests: `backend/tests/test_idle_solutions.py` (the flat list, each role's
+  reach, a stop without minutes, the stop-less rows).
+- Not built: a text search over the comments, the waiting count on the nav row,
+  a Telegram reminder to the brigadir / owner.

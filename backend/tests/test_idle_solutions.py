@@ -196,6 +196,26 @@ class Page(unittest.TestCase):
         return ims.analysis(date_from=ago(days), date_to=TODAY, shift=None, factory=None,
                             manager_id=[], db=self.db, payload=payload)
 
+    def listed(self, payload, days=30):
+        return ims.stops(date_from=ago(days), date_to=TODAY, shift=None, factory=None,
+                         manager_id=[], db=self.db, payload=payload)
+
+    def bare_stop(self):
+        """A stop in a cell nobody typed a headcount for: no waiting MINUTES
+        come of it, and it is a problem all the same."""
+        from app import models as m
+        cell = m.Cell(verifix_code="9103", sap_code="A3", manager_id=1, in_load=True)
+        self.db.add(cell)
+        self.db.flush()
+        iv = m.CellOjidaniyaInterval(cell_id=cell.id, date=ago(1).isoformat(), category="Cat E",
+                                     start="11:00", end="11:20", stopped=True,
+                                     note="note bare", status="approved")
+        self.db.add(iv)
+        self.db.commit()
+        self.forget()
+        self.stop["bare"] = iv.id
+        return iv.id
+
     def tahlil(self, payload, days=30):
         return ims.analytics(date_from=ago(days), date_to=TODAY, shift=None, factory=None,
                              manager_id=[], db=self.db, payload=payload)
@@ -244,6 +264,69 @@ class Page(unittest.TestCase):
     def test_an_owner_reads_their_own_causes(self):
         self.assertEqual(set(self.events(self.read(self.OWNER))),
                          {self.stop[k] for k in ("s1", "s2", "s3", "s5")})
+
+    # ── the flat list («Muammolar») ──────────────────────────────────────────
+
+    def test_the_list_is_flat_and_newest_first(self):
+        got = self.listed(ADMIN)
+        self.assertEqual([s["id"] for s in got["stops"]],
+                         [self.stop[k] for k in ("s3", "s5", "s4", "s2", "s1")])
+        first = got["stops"][0]
+        self.assertEqual((first["cell"], first["category"], first["manager_id"], first["note"],
+                          first["state"], first["mine"], first["solutions"]),
+                         ("9101", "Cat B", 1, "note s3", "none", False, []))
+        self.assertTrue(got["can_write"])
+        self.assertGreater(got["total_minutes"], 0)
+
+    def test_the_list_names_units_and_owners_once(self):
+        got = self.listed(ADMIN)
+        self.assertEqual(got["units"], {"1": {"manager_name": "Unit 1", "shift": 1},
+                                        "2": {"manager_name": "Unit 2", "shift": 1}})
+        self.assertEqual(list(got["owners"]), ["Cat B"])
+        self.assertEqual(got["owners"]["Cat B"]["name"], "Owner B")
+        self.assertEqual(got["no_owner"], ["Cat C"])
+
+    def test_each_reader_lists_their_own_reach(self):
+        ids = lambda who: {s["id"] for s in self.listed(who)["stops"]}       # noqa: E731
+        self.assertEqual(ids(SUP1), {self.stop[k] for k in ("s1", "s2", "s3", "s4")})
+        self.assertEqual(ids(SUP2), {self.stop["s5"]})
+        self.assertEqual(ids(self.OWNER), {self.stop[k] for k in ("s1", "s2", "s3", "s5")})
+        self.assertEqual(ids(self.STRANGER), set())
+        self.assertEqual(len(ids(self.SM)), 5)
+        self.assertTrue(self.listed(SUP1)["expects_me"])
+        self.assertFalse(self.listed(self.TOP)["expects_me"])
+        self.refused(403, self.listed, {"role": "leader", "role_id": 1, "sub": "9"})
+
+    def test_the_list_says_which_stops_wait_for_the_reader(self):
+        self.write(SUP1, "s1", status="open")
+        self.write(self.OWNER, "s2")
+        mine = {s["id"]: s for s in self.listed(SUP1)["stops"]}
+        self.assertEqual((mine[self.stop["s1"]]["mine"], mine[self.stop["s1"]]["state"]), (True, "open"))
+        self.assertEqual((mine[self.stop["s2"]]["mine"], mine[self.stop["s2"]]["state"]), (False, "done"))
+        row = mine[self.stop["s1"]]["solutions"][0]
+        self.assertEqual((row["mine"], row["can_edit"], row["author_role"]), (True, True, "supervisor"))
+        theirs = {s["id"]: s for s in self.listed(self.OWNER)["stops"]}
+        self.assertFalse(theirs[self.stop["s1"]]["solutions"][0]["can_edit"])
+
+    def test_a_stop_without_minutes_is_still_a_problem(self):
+        bare = self.bare_stop()
+        self.assertIn(bare, {s["id"] for s in self.listed(SUP1)["stops"]})
+        self.assertIn(bare, {s["id"] for s in self.listed(ADMIN)["stops"]})
+        # the cause accordion listed a stop only under a cause with minutes
+        self.assertNotIn(bare, self.events(self.read(ADMIN)))
+        self.assertEqual(self.write(SUP1, "bare")["category"], "Cat E")
+        self.assertEqual(self.tahlil(ADMIN)["funnel"]["stops"], 6)  # Tahlil counts what the list shows
+
+    def test_the_older_stopless_rows_ride_along(self):
+        self.write(self.OWNER, None, category="Cat B", text="for the whole cause")
+        body = ims.SolutionBody(category="Cat C", manager_id=2, text="for unit 2", status="open")
+        ims.add_solution(body=body, db=self.db, payload=ADMIN)
+        got = {r["text"]: r for r in self.listed(ADMIN)["legacy"]}
+        self.assertEqual((got["for the whole cause"]["manager_id"], got["for the whole cause"]["manager_name"]),
+                         (None, None))
+        self.assertEqual(got["for unit 2"]["manager_name"], "Unit 2")
+        self.assertEqual({r["text"] for r in self.listed(SUP1)["legacy"]}, {"for the whole cause"})
+        self.assertEqual({r["text"] for r in self.listed(self.OWNER)["legacy"]}, {"for the whole cause"})
 
     # ── writing ──────────────────────────────────────────────────────────────
 
@@ -363,6 +446,9 @@ class Page(unittest.TestCase):
         owner = got["owners"][0]
         self.assertEqual((owner["name"], owner["categories"], owner["stops"], owner["own"]),
                          ("Owner B", ["Cat B"], 4, 1))
+        # every unit that had a stop, the one furthest behind first
+        self.assertEqual([(r["manager_name"], r["stops"], r["answered"], r["own"]) for r in got["responders"]],
+                         [("Unit 1", 4, 3, 3), ("Unit 2", 1, 1, 1)])
 
     def test_the_repeating_place_is_named(self):
         self.answered_world()

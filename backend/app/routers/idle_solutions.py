@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from app import identity
 from app.database import get_db
-from app.models import Cell, CellOjidaniyaInterval, IdleCategorySolution
+from app.models import Cell, CellOjidaniyaInterval, IdleCategorySolution, Manager
 from app.permissions import _oauth2, require_page
 from app.services import action_log, idle_intervals, idle_scope
 from app.services.factory_scope import empty_scope, scoped_manager_ids
@@ -142,6 +142,30 @@ def _own_unit(payload: dict, manager_id: List[int]) -> List[int]:
         mine = payload.get("role_id")
         return [mine] if mine is not None else [-1]
     return manager_id
+
+
+def _scope_units(db: Session, payload: dict, shift: Optional[int],
+                 manager_id: List[int], factory: Optional[int]) -> list:
+    """The units these filters reach — the very list `_downtime` reads (its
+    opening lines, kept in step by hand): unarchived, the picked shift, the
+    viewer's plant and the picked brigadirs. A unit with no waiting MINUTES in
+    the period is in it all the same: a filed stop is a problem whether or not
+    its cell's headcount was typed that day."""
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    if empty_scope(scoped):
+        return []
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if shift:
+        q = q.filter(Manager.shift == shift)
+    if scoped is not None:
+        q = q.filter(Manager.id.in_(scoped))
+    return sorted(q.all(), key=lambda m: m.name or "")
+
+
+def _in_view(lock: Optional[list]) -> set:
+    """The causes this viewer reads: every one but cleaning, cut to an owner's own."""
+    return {c for c in idle_scope.CATEGORIES
+            if c not in EXCLUDED and (lock is None or c in set(lock))}
 
 
 def _period(date_from: Optional[date], date_to: Optional[date]) -> tuple[date, date]:
@@ -378,6 +402,79 @@ def analysis(
     }
 
 
+@router.get("/stops")
+def stops(
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(_reader),
+):
+    """The «Muammolar» tab (2026-11-13): EVERY filed stop in reach as one flat
+    list, newest first, each with the solutions written to it — the page a
+    brigadir opens to see what waits for them and write it.
+
+    Unlike `/analysis` (the cause accordion it replaced, kept for a tab from
+    before) a stop is listed whether or not its unit shows waiting MINUTES for
+    that cause: the minutes need the cell's headcount typed, the problem does
+    not. `mine` on a stop is «this reader has written their own answer», and the
+    two roles `expects_me` marks are asked for one on every stop they see.
+    """
+    _reader_only(payload)
+    manager_id = _own_unit(payload, manager_id)
+    d_from, d_to = _period(date_from, date_to)
+
+    units = _scope_units(db, payload, shift, manager_id, factory)
+    names = {u.id: u.name for u in units}
+    lock = idle_scope.viewer_categories(db, payload)
+    in_view = _in_view(lock)
+
+    rows = []
+    for (c, m), lst in _stops(db, list(names), d_from, d_to).items():
+        if c in in_view:
+            rows.extend({**s, "category": c, "manager_id": m} for s in lst)
+    rows.sort(key=lambda s: (s["date"], s["start"] or "", s["id"] or 0), reverse=True)
+
+    viewer = identity.viewer_profile_key(db, payload)
+    is_admin = payload.get("role") == "admin"
+    by_event: dict[int, list] = {}
+    legacy = []         # the older cause- and brigadir-wide rows: no stop to sit under
+    for r in _solutions(db, [s["id"] for s in rows]):
+        if r.event_id is not None:
+            by_event.setdefault(r.event_id, []).append(r)
+        elif r.category in in_view and (r.manager_id is None or r.manager_id in names):
+            legacy.append(r)
+    for s in rows:
+        es = by_event.get(s["id"], [])
+        s["solutions"] = [_item(i, viewer, is_admin) for i in es]
+        s["state"] = _state(es)
+        s["mine"] = any(viewer and i.author_key == viewer for i in es)
+
+    mrows, _ = _minute_rows(db, payload, d_from, d_to, shift, manager_id, factory)
+    labels = idle_scope.owner_labels(db)
+    order = {c: i for i, c in enumerate(idle_scope.CATEGORIES)}
+    seen = sorted({s["category"] for s in rows}, key=lambda c: order.get(c, 99))
+    with_stops = {s["manager_id"] for s in rows}
+    return {
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+        "stops": rows,
+        # named once each, not on every stop
+        "units": {str(u.id): {"manager_name": u.name, "shift": u.shift}
+                  for u in units if u.id in with_stops},
+        "owners": {c: labels[c] for c in seen if c in labels},
+        "no_owner": [c for c in seen if c not in labels],
+        "total_minutes": round(_aggregate(mrows)["total"], 1),
+        "legacy": [{**_item(i, viewer, is_admin), "manager_name": names.get(i.manager_id)}
+                   for i in legacy[:SHOW_LAST]],
+        "cat_locked": lock,
+        "is_admin": is_admin,
+        "can_write": True,
+        "expects_me": payload.get("role") in EXPECTED_ROLES,
+    }
+
+
 # ── Tahlil ────────────────────────────────────────────────────────────────────
 
 def _days(a: date, b: date):
@@ -515,9 +612,12 @@ def analytics(
     # whether a problem came back. Judged as of today, never past AFTER_DAYS.
     stops_to = min(max(today, d_to), d_to + timedelta(days=AFTER_DAYS))
     asof = min(today, stops_to)
-    filed = _stops(db, list(cur["unit_name"]), d_from, stops_to)
-    in_view = set(c for c in idle_scope.CATEGORIES
-                  if c not in EXCLUDED and (lock is None or c in set(lock)))
+    # Every unit in reach, with minutes in the period or without: the stops are
+    # exactly the «Muammolar» tab's (`stops()`), so the two tabs count alike.
+    names = {u.id: {"manager_id": u.id, "manager_name": u.name, "shift": u.shift}
+             for u in _scope_units(db, payload, shift, manager_id, factory)}
+    filed = _stops(db, list(names), d_from, stops_to)
+    in_view = _in_view(lock)
 
     again: dict[tuple, list] = {}       # (cell, cause) -> the days it was filed, ascending
     stops: list = []                    # the period's stops, exactly the Muammolar tab's
@@ -527,7 +627,7 @@ def analytics(
         for s in lst:
             day = date.fromisoformat(s["date"])
             again.setdefault((s["cell_id"], c), []).append(day)
-            if day <= d_to and m in cur["cat_units"].get(c, {}):
+            if day <= d_to:
                 stops.append({**s, "day": day, "category": c, "manager_id": m})
     for lst in again.values():
         lst.sort()
@@ -578,7 +678,7 @@ def analytics(
         mine = [s for s in stops if s["manager_id"] == m]
         top = max(cur["unit_cat"][m].items(), key=lambda kv: kv[1])[0]
         by_unit.append({
-            **cur["unit_name"][m], "minutes": round(v, 1), "prev_minutes": round(pv, 1),
+            **(names.get(m) or cur["unit_name"][m]), "minutes": round(v, 1), "prev_minutes": round(pv, 1),
             "share": round(100 * v / total, 1) if total else 0.0,
             "stops": len(mine), "answered": sum(1 for s in mine if s["sols"]),
             # the brigadir's OWN answers — everybody writes their own
@@ -598,7 +698,7 @@ def analytics(
     by_cell = sorted(cells.values(), key=lambda a: (-a["stop_minutes"], -a["stops"]))[:TOP_CELLS]
     by_cell = [{
         "cell_id": a["cell_id"], "cell": a["cell"], "manager_id": a["manager_id"],
-        "manager_name": cur["unit_name"].get(a["manager_id"], {}).get("manager_name"),
+        "manager_name": names.get(a["manager_id"], {}).get("manager_name"),
         "stops": a["stops"], "days": len(a["days"]), "stop_minutes": round(a["stop_minutes"], 1),
         "top_category": max(a["cats"].items(), key=lambda kv: kv[1])[0],
     } for a in by_cell]
@@ -611,6 +711,18 @@ def analytics(
         w = weekdays[s["day"].weekday()]
         w["stop_minutes"] = round(w["stop_minutes"] + float(s["minutes"] or 0), 1)
         w["stops"] += 1
+
+    # Who wrote their own answer: every unit that had a stop, minutes or not.
+    wrote: dict = {}
+    for s in stops:
+        m = s["manager_id"]
+        w = wrote.setdefault(m, {"stops": 0, "answered": 0, "own": 0})
+        w["stops"] += 1
+        w["answered"] += 1 if s["sols"] else 0
+        w["own"] += 1 if f"supervisor:{m}" in s["authors"] else 0
+    responders = sorted(({**names.get(m, {"manager_id": m, "manager_name": None, "shift": None}), **w}
+                         for m, w in wrote.items()),
+                        key=lambda r: (r["own"] / r["stops"], -r["stops"]))
 
     # Who answers for what: each cause's owner, their stops and their OWN answers.
     owners: dict = {}
@@ -650,7 +762,7 @@ def analytics(
         repeats.append({
             "cell_id": cell_id, "cell": newest["cell"], "category": c,
             "manager_id": newest["manager_id"],
-            "manager_name": cur["unit_name"].get(newest["manager_id"], {}).get("manager_name"),
+            "manager_name": names.get(newest["manager_id"], {}).get("manager_name"),
             "days": len(p["days"]), "stops": len(rows_),
             "stop_minutes": round(sum(float(s["minutes"] or 0) for s in rows_), 1),
             "answered": sum(1 for s in rows_ if s["sols"]), "back_n": back_n,
@@ -689,7 +801,7 @@ def analytics(
             "median_days": int(statistics.median_low(waits)) if waits else None,
             "same_day": sum(1 for w in waits if w == 0),
         },
-        "owners": owners_out,
+        "responders": responders, "owners": owners_out,
         "repeats": repeats[:TOP_REPEATS], "repeats_n": len(repeats),
         "cat_locked": lock,
     }

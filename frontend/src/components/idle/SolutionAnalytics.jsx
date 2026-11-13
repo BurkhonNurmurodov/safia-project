@@ -484,7 +484,9 @@ function Answers({ A, T, data }) {
   const answered = f.stops - f.unanswered;
   const sp = data.speed;
   const person = (n) => shortPerson(tl(n) || n || "");
-  const units = [...data.by_unit].filter((u) => u.stops > 0)
+  // `responders` is every unit that had a stop; a payload from before it falls
+  // back to the units that had minutes
+  const units = [...(data.responders || data.by_unit)].filter((u) => u.stops > 0)
     .sort((a, b) => (a.own / a.stops) - (b.own / b.stops) || b.stops - a.stops)
     .map((u) => ({
       key: u.manager_id, own: u.own, stops: u.stops,
@@ -579,7 +581,7 @@ function Results({ A, T, data, label, onOpenCause }) {
                 </div>
                 {onOpenCause && (
                   <div className="mt-2">
-                    <Button size="sm" variant="secondary" onClick={() => onOpenCause(r.category)}>{A.open}</Button>
+                    <Button size="sm" variant="secondary" onClick={() => onOpenCause(r.category, r.cell)}>{A.open}</Button>
                   </div>
                 )}
               </li>
