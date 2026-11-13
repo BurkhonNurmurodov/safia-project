@@ -49,7 +49,7 @@ from sqlalchemy.orm import Session
 from app.models import AppSetting, QualityComplaint, QualitySyncMeta
 from app.services.turnover import (   # the shared month arithmetic and cell reading
     PAST_FROM, START_MONTH, cell_map, code_key, last_day, local, month_start,
-    now_aware, options, owned, ym,
+    now_aware, options, owned, ranked, ym,
 )
 
 LINKS_FROM = date(2026, 10, 12)   # the dated cell links begin here (cell_links)
@@ -214,12 +214,12 @@ def aggregate(rows: list[dict], cmap: dict[str, dict], r: dict, scope: Optional[
                 "count": p["count"], "all": p["all"], "kinds": dict(p["kinds"]),
                 "score": sc, "points": points_of(sc, r)}
 
-    # The ranking: one row per OWNED cell (an owner on the month's last day,
-    # standing on it) — the operator, 2026-10-14. Worst first: the most
-    # complaints, then the code, the order HR reads it in.
+    # The ranking: one row per cell standing on the month's last day, owner or
+    # not (`turnover.ranked`, 2026-11-12). Worst first: the most complaints,
+    # then the code, the order HR reads it in.
     ranking = []
     for k, c in cmap.items():
-        if not owned(c) or (any_scope and not _in_scope(c, scope)):
+        if not ranked(c) or (any_scope and not _in_scope(c, scope)):
             continue
         ranking.append(cell_row(k, c))
     ranking.sort(key=lambda x: (-x["count"], x["code"] or ""))
@@ -237,7 +237,7 @@ def aggregate(rows: list[dict], cmap: dict[str, dict], r: dict, scope: Optional[
     by_score = {str(s): 0 for s in range(1, 6)}
     for x in ranking:
         by_score[str(x["score"])] += 1
-    owners = {x["owner_id"] for x in ranking}
+    owners = {x["owner_id"] for x in ranking if x["owner_id"]}
     return {
         "totals": {
             **tot,

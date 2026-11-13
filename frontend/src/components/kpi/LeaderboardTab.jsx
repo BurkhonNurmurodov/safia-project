@@ -1,4 +1,4 @@
-// «Liderlar KPI» — the leaderboard: one row per OWNED cell, its owner named,
+// «Liderlar KPI» — the leaderboard: one row per cell (owner or not, 2026-11-12), its owner named,
 // best total first (2026-10-19 redesign, the operator: «more rich … definitely
 // use that web chart»). Top to bottom: one muted line of what the month is
 // (and the rules behind «Qanday hisoblanadi?»), the podium of the three best

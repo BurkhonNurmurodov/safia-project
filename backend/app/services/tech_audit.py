@@ -49,7 +49,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AppSetting
 from app.services.turnover import (
-    PAST_FROM, cell_map, code_key, last_day, local, now_aware, options, owned, unit_code, ym,
+    PAST_FROM, cell_map, code_key, last_day, local, now_aware, options, owned, ranked, unit_code, ym,
 )
 
 AUDIT_TYPE = "Технический аудит"
@@ -238,7 +238,7 @@ def aggregate(audits: list[dict], cmap: dict[str, dict], r: dict, scope: Optiona
 
     ranking = []
     for k, c in cmap.items():
-        if not owned(c) or (any_scope and not _in_scope(c, scope)):
+        if not ranked(c) or (any_scope and not _in_scope(c, scope)):
             continue
         vals = per.get(k) or []
         pct = mean1(vals)
@@ -260,7 +260,7 @@ def aggregate(audits: list[dict], cmap: dict[str, dict], r: dict, scope: Optiona
         by_score[str(x["score"])] = by_score.get(str(x["score"]), 0) + 1
     return {
         "totals": {
-            **tot, "owners": len({x["owner_id"] for x in ranking}), "owned_cells": len(ranking),
+            **tot, "owners": len({x["owner_id"] for x in ranking if x["owner_id"]}), "owned_cells": len(ranking),
             "scored_cells": len(scored), "no_audit_cells": len(ranking) - len(scored),
             # The month over the ranking's cells: the mean of every audit they had.
             "pct": mean1(pooled), "ranked_audits": len(pooled), "by_score": by_score,

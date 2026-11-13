@@ -58,7 +58,7 @@ const uz = {
   rulesTitle: "Qanday hisoblanadi",
   rules: [
     ["Nima hisoblanadi", "«Sifat» reyestridagi «инородный предмет» turidagi shikoyatlar: sanasi shu oyda, «yacheyka aybdormi» ustunida «ha», aybdor yacheyka kodi /cells'dagi yacheykaga mos. Ayb belgisi «yo'q» yoki bo'sh bo'lsa, shikoyat ro'yxatda ko'rinadi, lekin hisoblanmaydi."],
-    ["Kimga hisoblanadi", "Ball yacheykaniki va u oy oxiridagi egasiga («Egasi» — Verifix shu yacheykaga o'tqazgan lider) hisoblanadi. Reytingda har bir egali yacheyka alohida qator: uch yacheykasi bor lider — uch qator. Egasi yo'q yacheyka hech kimga hisoblanmaydi va alohida aytiladi. «Xodimlar ishdan bo'shashi» va «Ishchi havotirlari» xuddi shu ro'yxatni ko'rsatadi."],
+    ["Kimga hisoblanadi", "Ball yacheykaniki va u oy oxiridagi egasiga («Egasi» — Verifix shu yacheykaga o'tqazgan lider) hisoblanadi. Reytingda har bir yacheyka alohida qator: uch yacheykasi bor lider — uch qator. Egasi yo'q yacheyka ham reytingda, lekin hech kimga hisoblanmaydi. «Xodimlar ishdan bo'shashi» va «Ishchi havotirlari» xuddi shu ro'yxatni ko'rsatadi."],
     ["Ball", "Aybli shikoyat yo'q — 5 ball, 1 ta — 4, 2–3 ta — 3, 4–5 ta — 2, 6 va undan ko'p — 1. KPI bali = ball × 25% (eng ko'pi 1,25)."],
     ["Oy", "Oy sifat reyestrining hozirgi holatidan o'qiladi — hech narsa muzlatilmaydi. Reyestrda shikoyat o'zgartirilsa (sana, ayb belgisi, yacheyka), o'sha oy keyingi yuklashda o'zgaradi."],
     ["Qayerdan kelgan", "HR'ning 2026-yil iyul fayli: «Инородные предметы» varag'i sifat reyestrining yot jism qatorlarining nusxasi edi, har bir yacheyka uchun qo'lda sanalgan. Bu sahifa o'sha sanashni reyestrning o'zidan oladi."],
@@ -152,7 +152,7 @@ const uz_cyrl = {
   rulesTitle: "Қандай ҳисобланади",
   rules: [
     ["Нима ҳисобланади", "«Сифат» реестридаги «инородный предмет» туридаги шикоятлар: санаси шу ойда, «ячейка айбдорми» устунида «ҳа», айбдор ячейка коди /cells'даги ячейкага мос. Айб белгиси «йўқ» ёки бўш бўлса, шикоят рўйхатда кўринади, лекин ҳисобланмайди."],
-    ["Кимга ҳисобланади", "Балл ячейканики ва у ой охиридаги эгасига («Эгаси» — Verifix шу ячейкага ўтқазган лидер) ҳисобланади. Рейтингда ҳар бир эгали ячейка алоҳида қатор: уч ячейкаси бор лидер — уч қатор. Эгаси йўқ ячейка ҳеч кимга ҳисобланмайди ва алоҳида айтилади. «Ходимлар ишдан бўшаши» ва «Ишчи ҳавотирлари» худди шу рўйхатни кўрсатади."],
+    ["Кимга ҳисобланади", "Балл ячейканики ва у ой охиридаги эгасига («Эгаси» — Verifix шу ячейкага ўтқазган лидер) ҳисобланади. Рейтингда ҳар бир ячейка алоҳида қатор: уч ячейкаси бор лидер — уч қатор. Эгаси йўқ ячейка ҳам рейтингда, лекин ҳеч кимга ҳисобланмайди. «Ходимлар ишдан бўшаши» ва «Ишчи ҳавотирлари» худди шу рўйхатни кўрсатади."],
     ["Балл", "Айбли шикоят йўқ — 5 балл, 1 та — 4, 2–3 та — 3, 4–5 та — 2, 6 ва ундан кўп — 1. KPI бали = балл × 25% (энг кўпи 1,25)."],
     ["Ой", "Ой сифат реестрининг ҳозирги ҳолатидан ўқилади — ҳеч нарса музлатилмайди. Реестрда шикоят ўзгартирилса (сана, айб белгиси, ячейка), ўша ой кейинги юклашда ўзгаради."],
     ["Қаердан келган", "HR'нинг 2026 йил июль файли: «Инородные предметы» вараги сифат реестрининг ёт жисм қаторларининг нусхаси эди, ҳар бир ячейка учун қўлда саналган. Бу саҳифа ўша санашни реестрнинг ўзидан олади."],
@@ -246,7 +246,7 @@ const ru = {
   rulesTitle: "Как считается",
   rules: [
     ["Что считается", "Жалобы типа «инородный предмет» из реестра «Качество»: дата в этом месяце, в столбце «есть ли вина цеха» — «да», код виновного цеха совпадает с ячейкой в /cells. Если отметка «нет» или пустая — жалоба видна в списке, но не считается."],
-    ["Кому засчитывается", "Балл принадлежит ячейке и засчитывается её владельцу на последний день месяца («Владелец» — лидер, которого Verifix посадил в эту ячейку). В рейтинге каждая ячейка с владельцем — отдельная строка: у лидера с тремя ячейками три строки. Ячейка без владельца никому не засчитывается и названа отдельно. «Текучесть кадров» и «Опасения рабочих» показывают тот же список."],
+    ["Кому засчитывается", "Балл принадлежит ячейке и засчитывается её владельцу на последний день месяца («Владелец» — лидер, которого Verifix посадил в эту ячейку). В рейтинге каждая ячейка — отдельная строка: у лидера с тремя ячейками три строки; ячейка без владельца тоже в рейтинге, но никому не засчитывается. Ячейка без владельца никому не засчитывается и названа отдельно. «Текучесть кадров» и «Опасения рабочих» показывают тот же список."],
     ["Балл", "Нет жалоб по вине — 5 баллов, 1 — 4, 2–3 — 3, 4–5 — 2, 6 и больше — 1. Балл KPI = балл × 25% (максимум 1,25)."],
     ["Месяц", "Месяц читается из текущего состояния реестра качества — ничего не замораживается. Если жалобу в реестре поправили (дату, отметку вины, ячейку), месяц изменится при следующей загрузке."],
     ["Откуда взято", "Июльский файл HR за 2026 год: лист «Инородные предметы» был копией строк реестра качества про инородные предметы, посчитанных вручную по каждой ячейке. Эта страница берёт тот же подсчёт из самого реестра."],
@@ -340,7 +340,7 @@ const en = {
   rulesTitle: "How it is calculated",
   rules: [
     ["What counts", "Complaints of type «инородный предмет» in the «Quality» register: dated in this month, «is the cell at fault» = yes, the faulting cell's code matching a cell in /cells. With the flag «no» or blank the complaint is listed but not counted."],
-    ["Who gets it", "The score is the cell's and is credited to its owner on the month's last day («Owner» — the leader Verifix seats in the cell). The ranking is one row per owned cell: a leader with three cells is three rows. A cell with no owner counts toward nobody and is named. «Staff turnover» and «Worker concerns» list the same cells."],
+    ["Who gets it", "The score is the cell's and is credited to its owner on the month's last day («Owner» — the leader Verifix seats in the cell). The ranking is one row per cell: a leader with three cells is three rows. A cell with no owner is ranked too, and counts toward nobody. «Staff turnover» and «Worker concerns» list the same cells."],
     ["Score", "No at-fault complaint — 5, one — 4, 2–3 — 3, 4–5 — 2, 6 or more — 1. KPI points = score × 25% (1.25 at most)."],
     ["The month", "A month is read from the Quality register as it stands now — nothing is frozen. A complaint corrected in the register (date, fault flag, cell) moves its month on the next refresh."],
     ["Where it comes from", "HR's July 2026 file: its «Инородные предметы» sheet was a copy of the Quality register's foreign-object rows, counted by hand per cell. This page takes that count from the register itself."],

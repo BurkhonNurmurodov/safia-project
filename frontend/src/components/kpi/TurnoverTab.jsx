@@ -119,7 +119,7 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
       footer={notices.length ? <Notes notes={notices} label={fill(TK.notesN, { n: notices.length })} /> : null}
       mobile={ranking.length ? ranking.map((x) => (
         <MobileRow key={x.key} onClick={() => openCell(x)}
-          title={<span className="tabular-nums">{x.code} · {tl(x.owner)}</span>}
+          title={<span className="tabular-nums">{x.code} · {x.owner ? tl(x.owner) : "—"}</span>}
           sub={x.brigadir ? tl(x.brigadir) : ""}
           foot={fill(TT.exWorkingLeft, { w: n0(x.working), l: n0(x.left) })}
           right={<><span className="text-sm font-semibold tabular-nums" style={{ color: toneInk(scoreTone(x.score)) }}>{pct1(x.rate)}</span><ScoreChip score={x.score} size="sm" /></>} />
@@ -142,7 +142,7 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
             <td className="px-3 py-2 tabular-nums"><CellLink id={x.id}>{x.code}</CellLink></td>
             <td className="px-3 py-2 whitespace-nowrap">
               <button type="button" className="font-medium text-left hover:underline underline-offset-2 focus-visible:underline outline-none"
-                style={{ color: "var(--text-1)" }} onClick={(e) => { e.stopPropagation(); openCell(x); }}>{tl(x.owner)}</button>
+                style={{ color: "var(--text-1)" }} onClick={(e) => { e.stopPropagation(); openCell(x); }}>{x.owner ? tl(x.owner) : "—"}</button>
             </td>
             <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{x.brigadir ? tl(x.brigadir) : "—"}</td>
             <td className="px-3 py-2 text-right tabular-nums">{n0(x.working)}</td>

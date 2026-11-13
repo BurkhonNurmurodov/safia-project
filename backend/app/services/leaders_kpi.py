@@ -25,6 +25,8 @@ The operator's rulings (2026-10-19, asked one by one):
 * **One row per CELL, its owner named** — the reading all three pages shared
   since 2026-10-14 (`turnover.cell_map` + `turnover.owned`: an owner on the
   month's last day, standing on it). An owner of three cells is three rows.
+  From 2026-11-12 every cell standing that day is a row, owner or not
+  (`turnover.ranked`) — the operator, «all 80» of HR's cells.
 * **One MONTH for every tab.** The concerns KPI is re-read by calendar month
   (its free date range went with the page); the current month reads «so far».
 * **The total is out of 5.0 and a missing KPI counts 0** — honest about what
@@ -68,7 +70,7 @@ from sqlalchemy.orm import Session
 from app.models import AppSetting
 from app.services import category_compliance as cc, foreign_objects, tech_audit, turnover
 from app.services.turnover import (
-    PAST_FROM, cell_map, last_day, local, month_start, now_aware, options, owned, ym,
+    PAST_FROM, cell_map, last_day, local, month_start, now_aware, options, ranked, ym,
 )
 
 MAX_POINTS = 5.0
@@ -261,7 +263,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
 
     rows: list[dict] = []
     for k, c in cmap.items():
-        if not owned(c) or not _scope_ok(c, scope):
+        if not ranked(c) or not _scope_ok(c, scope):
             continue
         t = trank.get(k)
         f = frank.get(k)
@@ -310,7 +312,7 @@ def board(db: Session, payload: dict, m: date, scope: Optional[dict] = None,
         return round(sum(vals) / len(vals), 2) if vals else None
 
     totals = {
-        "owners": len({r["owner_id"] for r in rows}), "cells": len(rows),
+        "owners": len({r["owner_id"] for r in rows if r["owner_id"]}), "cells": len(rows),
         "avg_total": avg([r["total"] for r in rows]),
         "best": max((r["total"] for r in rows), default=None),
         "by_kpi": {

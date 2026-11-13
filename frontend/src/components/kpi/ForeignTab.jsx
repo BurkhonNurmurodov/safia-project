@@ -102,7 +102,7 @@ export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, on
       footer={notices.length ? <Notes notes={notices} label={fill(TK.notesN, { n: notices.length })} /> : null}
       mobile={ranking.length ? ranking.map((x) => (
         <MobileRow key={x.key} onClick={() => openCell(x)}
-          title={<span className="tabular-nums">{x.code} · {tl(x.owner)}</span>}
+          title={<span className="tabular-nums">{x.code} · {x.owner ? tl(x.owner) : "—"}</span>}
           sub={x.brigadir ? tl(x.brigadir) : ""}
           foot={x.count ? kindsText(x.kinds, TF, tx) : null}
           right={<><span className="text-sm font-semibold tabular-nums" style={{ color: toneInk(scoreTone(x.score)) }}>{n0(x.count)}</span><ScoreChip score={x.score} size="sm" /></>} />
@@ -125,7 +125,7 @@ export default function ForeignTab({ T: TF, TK, tl, tx, data, mLabel, needle, on
             <td className="px-3 py-2 whitespace-nowrap">
               <button type="button" className="font-medium text-left hover:underline underline-offset-2 focus-visible:underline outline-none"
                 style={{ color: "var(--text-1)" }} onClick={(e) => { e.stopPropagation(); openCell(x); }}>
-                {tl(x.owner)}
+                {x.owner ? tl(x.owner) : "—"}
               </button>
             </td>
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{x.brigadir ? tl(x.brigadir) : "—"}</td>

@@ -32,9 +32,19 @@ tasks 40/41 name it.
   `routers/worker_concerns` helpers: `BUCKET`, `_viewer_lock`,
   `_apply_scope_and_filters`, `_owner`) — joined PER OWNED CELL
   (`turnover.cell_map` + `turnover.owned` on the month's LAST day, the 14 Oct
-  reading all three KPIs already listed by). One row per cell with an owner
-  («Egasi») on that day, standing on it, in scope — the owner named on the
-  row, an owner of three cells three rows. `GET /api/leaders-kpi?month&factory
+  reading all three KPIs already listed by). One row per cell standing on
+  that day, in scope — the owner named on the row, an owner of three cells
+  three rows. **A cell with no «Egasi» is a row too** (2026-11-12, the
+  operator, «all 80», after HR's October file listed 80 cells our board did
+  not; until then «do not include the ones without owner», 14 Oct):
+  `turnover.ranked` (standing, owner or not) is what all five rankings and the
+  board list by, while `owned` still decides who a figure counts toward — such
+  a row's owner is «—», its figure counts toward nobody, and the «N ta egasi»
+  counts skip it. **Still not on the board**: 1711, 1811, 4712–4714 and
+  4721–4727. Verifix holds each of these twice, an old CLOSED division that
+  carries the code and a new open one where people work whose code is only
+  in its name; `verifix_org.cell_nodes` takes the coded, closed one, so the
+  cell is never created on /cells. Not fixed yet. `GET /api/leaders-kpi?month&factory
   &shift&managers` (`routers/leaders_kpi.py`) is the ONE read every tab draws
   from: `rows[]` (`concerns` / `turnover` / `foreign` / `compliance` / `audit`
   each `{…figure, score, points}` or null, `total`, `pct`, `rank` — ties share

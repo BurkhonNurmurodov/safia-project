@@ -670,7 +670,7 @@ def aggregate(rows: list[dict], cmap: dict[str, dict], r: dict, ladder: Ladder,
         return (x["rate"] is None, x["rate"] if x["rate"] is not None else 0, -x["counted"], x["code"] or "")
 
     ranking = [cell_row(k, c) for k, c in cmap.items()
-               if tv.owned(c) and not (any_scope and not _in_scope(c, scope))]
+               if tv.ranked(c) and not (any_scope and not _in_scope(c, scope))]
     ranking.sort(key=order)
     cells = [cell_row(k, c) for k, c in cmap.items()
              if not (any_scope and not _in_scope(c, scope)) and not (c.get("archived") and not per.get(k))]
@@ -680,7 +680,7 @@ def aggregate(rows: list[dict], cmap: dict[str, dict], r: dict, ladder: Ladder,
     for x in ranking:
         if x["score"] is not None:
             by_score[str(x["score"])] += 1
-    owners = {x["owner_id"] for x in ranking}
+    owners = {x["owner_id"] for x in ranking if x["owner_id"]}
     plant = figures({"all": tot["people"], "counted": tot["counted"], "compliant": tot["compliant"],
                      "verdicts": tot["verdicts"]})
     return {

@@ -379,6 +379,13 @@ def owned(c: dict) -> bool:
     return bool(c.get("owner_id")) and not c.get("archived")
 
 
+def ranked(c: dict) -> bool:
+    """A cell the leaders' KPI rankings list: standing on the day, owner or
+    not — the operator, 2026-11-12 («all 80»: HR's file lists the cells with no
+    owner too). Its figure still counts toward nobody while it has no owner."""
+    return not c.get("archived")
+
+
 OWNER_FIELDS = ("owner_id", "owner", "owner_kind")
 
 
@@ -825,13 +832,13 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
         return [{"key": c["key"], "id": c["id"], "code": c["code"], "working": c["working"],
                  "left": c["left"], "archived": c.get("archived")} for c in cs]
 
-    # The ranking: one row per OWNED cell (`owned` — an owner on the month's
-    # last day, standing on it), its own rate and score, credited to its owner
-    # (the operator, 2026-10-14: «rank per cell … do not include the ones
-    # without owner»). Worst rate first, the order HR reads it in.
+    # The ranking: one row per cell standing on the month's last day (`ranked`
+    # — with no owner too, from 2026-11-12; owned cells only until then), its
+    # own rate and score, credited to its owner if it has one. Worst rate
+    # first, the order HR reads it in.
     ranking = []
     for k, c in cmap.items():
-        if not owned(c):
+        if not ranked(c):
             continue
         x = cell(k)
         if any_scope and not _scope_ok(x, scope):
@@ -846,7 +853,8 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
     # `ranking`.
     by_owner: dict[int, list[dict]] = defaultdict(list)
     for x in ranking:
-        by_owner[x["owner_id"]].append(x)
+        if x.get("owner_id"):
+            by_owner[x["owner_id"]].append(x)
     out_leaders = []
     for oid, cs in by_owner.items():
         cs = sorted(cs, key=lambda c: c.get("code") or "")

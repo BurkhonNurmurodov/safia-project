@@ -89,7 +89,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
   };
 
   const rankingTable = (
-    <TableCard head={head(<Count>{fill(T.countLine, { o: n0(new Set(rows.map((x) => x.owner_id)).size), c: n0(rows.length) })}</Count>)}
+    <TableCard head={head(<Count>{fill(T.countLine, { o: n0(new Set(rows.map((x) => x.owner_id).filter(Boolean)).size), c: n0(rows.length) })}</Count>)}
       footer={notices.length ? <Notes notes={notices} label={fill(T.notesN, { n: notices.length })} /> : null}
       mobile={ranking.length ? ranking.map((x) => (
         <MobileRow key={x.key} onClick={() => onExplain("audit", x)}
