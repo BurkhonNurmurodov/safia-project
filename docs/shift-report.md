@@ -504,3 +504,7 @@ window left a brigadir judged on a record or two («0/1»).
   «Sochsiz»; the lower two add up to the first. The «Soch bilan» label is gone
   (`overview.sr.hairWith` removed; `qOverall` / `qHairOnly` added) — it read as
   «hair problems only» while it counted everything.
+- **A third column, «Qolgan»** (the operator, on a screenshot of the three
+  rows: «I like it but it should be like how many of the problems left which
+  not solved»): problems − solved per row, the records the cell's link opens.
+  Key `overview.sr.qLeft`. The table box may grow past the text tooltip's 18rem.

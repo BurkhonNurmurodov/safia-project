@@ -454,8 +454,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   // The quality cell's hover box is a small TABLE (the operator, 2026-11-13:
   // «should be easy — if they have a problem like 50, and how much did they
-  // solve, and same with hair and without hair»), two plain numbers a row —
-  // the problems that needed action and how many are solved. THREE rows (his
+  // solve, and same with hair and without hair»), three plain numbers a row —
+  // the problems that needed action, how many are solved and how many are
+  // LEFT («it should be like how many of the problems left which not solved»). THREE rows (his
   // next call, «Overall + hair + no hair»): «Umumiy» is every record — the
   // figure the cell judges — and it splits into «Faqat soch» (the hair
   // category alone: overall minus the rest) and «Sochsiz», so the two lower
@@ -473,7 +474,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   };
   // Its spoken form, for the link's aria-label.
   const qualityTitle = (r) => qualityRows(r)
-    ?.map((x) => `${x.label}: ${t("overview.sr.qProblems")} ${x.total}, ${t("overview.sr.qSolved")} ${x.done}`)
+    ?.map((x) => `${x.label}: ${t("overview.sr.qProblems")} ${x.total}, ${t("overview.sr.qSolved")} ${x.done}, ${t("overview.sr.qLeft")} ${x.total - x.done}`)
     .join("\n");
   const qualityTip = (r) => {
     const rows = qualityRows(r);
@@ -486,6 +487,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
             <th />
             <th className={`${num} font-medium`}>{t("overview.sr.qProblems")}</th>
             <th className={`${num} font-medium`}>{t("overview.sr.qSolved")}</th>
+            <th className={`${num} font-medium`}>{t("overview.sr.qLeft")}</th>
           </tr>
         </thead>
         <tbody>
@@ -494,6 +496,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               <td className="pt-1 text-left font-medium first-letter:uppercase">{x.label}</td>
               <td className={`${num} pt-1 font-semibold`}>{x.total}</td>
               <td className={`${num} pt-1 font-semibold`}>{x.done}</td>
+              {/* What is still NOT solved — the records the cell's link opens. */}
+              <td className={`${num} pt-1 font-semibold`}>{x.total - x.done}</td>
             </tr>
           ))}
         </tbody>
@@ -695,7 +699,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       {tip && createPortal(
         <div
           role="tooltip"
-          className="pointer-events-none fixed z-[300] max-w-[18rem] whitespace-pre-line rounded-lg px-2.5 py-1.5 text-xs font-medium shadow-lg"
+          className={`pointer-events-none fixed z-[300] whitespace-pre-line rounded-lg px-2.5 py-1.5 text-xs font-medium shadow-lg ${tip.node ? "max-w-[calc(100vw-1rem)]" : "max-w-[18rem]"}`}
           style={{
             left: tip.x, top: tip.y - 6, transform: "translate(-50%, -100%)",
             background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--border)",
