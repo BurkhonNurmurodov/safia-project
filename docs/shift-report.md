@@ -491,3 +491,10 @@ window left a brigadir judged on a record or two («0/1»).
   box's wording — «soch bilan: 0/50 bartaraf etilgan · 0%» over the «sochsiz»
   line. So the standing state is: % in the cell (hair included, all time),
   both counts on hover.
+- **The hover box is a small table** (the operator: «should be easy — if they
+  have a problem like 50, and how much did they solve, and same with hair and
+  without hair» → «Hover box, simpler words»): columns «Muammolar» ·
+  «Bartaraf etilgan», a row «Soch bilan» and a row «Sochsiz», plain numbers —
+  no fraction, no % (the cell carries the %; the without-hair % is printed
+  nowhere now). `figTd` takes a `tipNode` for it and the text form stays the
+  link's aria-label. Keys `overview.sr.qProblems` / `qSolved`.

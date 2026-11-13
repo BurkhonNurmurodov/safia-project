@@ -14,8 +14,8 @@
 //   exactly it. A payload from before the change still names its month
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
-//   printed as a percentage alone — and the cell's hover box states the
-//   count, solved/total, for «soch bilan» and for «sochsiz» (the operator's call,
+//   printed as a percentage alone — and the cell's hover box is a small
+//   table, problems and solved, for «soch bilan» and «sochsiz» (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -398,19 +398,28 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     window.addEventListener("scroll", off, true);
     return () => window.removeEventListener("scroll", off, true);
   }, [tip]);
-  const showTip = (e, text) => {
+  const showTip = (e, text, node) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setTip({ text, x: r.left + r.width / 2, y: r.top });
+    setTip({ text, node, x: r.left + r.width / 2, y: r.top });
   };
 
-  const figTd = ({ tone, paint, title, target, children }) => {
+  // `tipNode` draws the box's content in place of the `title` text (the
+  // quality cell's little table); `title` then stays its spoken form, and the
+  // «opens on …» line still follows.
+  const figTd = ({ tone, paint, title, tipNode, target, children }) => {
     const hint = target ? fill(t("overview.sr.goto"), { page: target.page }) : null;
     const fullTitle = [title, hint].filter(Boolean).join("\n") || undefined;
+    const node = tipNode ? (
+      <>
+        {tipNode}
+        {hint && <div className="mt-1.5">{hint}</div>}
+      </>
+    ) : null;
     return (
       <td
         className={`${TD_FIG} ${target ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
         style={{ ...(paint ?? toneFill(tone)), ...RULE }}
-        onMouseEnter={fullTitle ? (e) => showTip(e, fullTitle) : undefined}
+        onMouseEnter={fullTitle ? (e) => showTip(e, fullTitle, node) : undefined}
         onMouseLeave={fullTitle ? () => setTip(null) : undefined}
       >
         {target ? (
@@ -443,26 +452,54 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
   };
 
-  // The quality cell's hover box, one line per reading: solved out of all that
-  // needed action, then the share — «with hair: 0/50 solved · 0%» (the cell's
-  // own figure) over «without hair: 0/30 solved · 0%». A reading with no
-  // record of its own says so with «—».
-  const qualityTitle = (r) => {
-    const line = (c, labelKey) => (c && !c.reason && isNum(c.value)
-      ? fill(t("overview.sr.qSolved"), {
-        label: t(labelKey), done: c.done, total: c.actionable, pct: pctText(c.value),
-      })
-      : `${t(labelKey)}: —`);
+  // The quality cell's hover box is a small TABLE (the operator, 2026-11-13:
+  // «should be easy — if they have a problem like 50, and how much did they
+  // solve, and same with hair and without hair»): a row per reading, two plain
+  // numbers each — the problems that needed action and how many are solved.
+  // No fraction and no % to decode; the cell itself carries the %. A reading
+  // with no record of its own reads 0 and 0.
+  const qualityRows = (r) => {
     const all = r.quality_hair;
-    if (!all || all.reason || !isNum(all.value)) return undefined;
-    return [line(all, "overview.sr.hairWith"), line(r.quality, "overview.sr.hairWithout")].join("\n");
+    if (!all || all.reason || !isNum(all.value)) return null;
+    return [["overview.sr.hairWith", all], ["overview.sr.hairWithout", r.quality]]
+      .map(([key, c]) => ({ label: t(key), total: c?.actionable ?? 0, done: c?.done ?? 0 }));
+  };
+  // Its spoken form, for the link's aria-label.
+  const qualityTitle = (r) => qualityRows(r)
+    ?.map((x) => `${x.label}: ${t("overview.sr.qProblems")} ${x.total}, ${t("overview.sr.qSolved")} ${x.done}`)
+    .join("\n");
+  const qualityTip = (r) => {
+    const rows = qualityRows(r);
+    if (!rows) return null;
+    const num = "pl-4 text-right tabular-nums";
+    return (
+      <table className="border-separate border-spacing-0 whitespace-nowrap">
+        <thead>
+          <tr style={{ color: "var(--text-3)" }}>
+            <th />
+            <th className={`${num} font-medium`}>{t("overview.sr.qProblems")}</th>
+            <th className={`${num} font-medium`}>{t("overview.sr.qSolved")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((x) => (
+            <tr key={x.label}>
+              <td className="pt-1 text-left font-medium first-letter:uppercase">{x.label}</td>
+              <td className={`${num} pt-1 font-semibold`}>{x.total}</td>
+              <td className={`${num} pt-1 font-semibold`}>{x.done}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
   };
 
-  const figCell = (cell, toneFn, render, extraTitle, target) => {
+  const figCell = (cell, toneFn, render, extraTitle, target, tipNode) => {
     const blank = !!cell?.reason;
     return figTd({
       tone: cellTone(cell, toneFn),
       title: blank ? t(`overview.sr.reason.${cell.reason}`) : extraTitle,
+      tipNode: blank ? null : tipNode,
       target,
       children: blank ? <Blank reason={cell.reason} />
         : isNum(cell?.value) ? render(cell)
@@ -586,12 +623,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The count stays in the hover box, split
-                  into with hair and without («0/50 solved · 0%» per line) — it
-                  was printed in the cell for a few minutes on 2026-11-13 and
-                  the operator took it back out, as on 2026-09-16. */}
+                  included, all time. The counts stay in the hover box, a
+                  small table: problems and solved, with hair and without —
+                  they were printed in the cell for a few minutes on
+                  2026-11-13 and the operator took them back out, as on
+                  2026-09-16. */}
               {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r), qualityTarget(r))}
+                qualityTitle(r), qualityTarget(r), qualityTip(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );
@@ -655,7 +693,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
             background: "var(--bg-card)", color: "var(--text-1)", border: "1px solid var(--border)",
           }}
         >
-          {tip.text}
+          {tip.node ?? tip.text}
         </div>,
         document.body,
       )}
