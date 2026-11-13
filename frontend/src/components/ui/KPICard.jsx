@@ -9,13 +9,20 @@ const hexA = (hex, a) => {
 
 export default function KPICard({
   label, value, sub, accent = false, danger = false, tooltip, onValueClick,
-  icon: Icon, color, valueColor,
+  icon: Icon, color, valueColor, size = "md", unit, children, className = "",
 }) {
   // `color` (a #hex from the palette) tints the icon chip + value; it takes
   // precedence over the legacy accent/danger coloring but leaves them intact
   // for existing callers that pass neither icon nor color. `valueColor` (any
   // CSS colour, e.g. a `--status-*` token) paints the value instead — a 500
   // shade on the light card is below AA for text, the chip keeps the hue.
+  // `size="lg"` is the ONE figure a KPI row is read for (32px against the
+  // row's 24px) — at most one card per row. `unit` prints what the number
+  // counts, quieter than the number. `children` is the figure's own visual —
+  // a meter against its target, a split bar, a short list of who is behind
+  // it — drawn between the value and `sub`, so a card states its number and
+  // shows what it is made of without a second card. `className` lands on the
+  // card itself — its place in the row's grid (a span), never its skin.
   const textStyle = valueColor
     ? { color: valueColor }
     : color
@@ -27,7 +34,7 @@ export default function KPICard({
         : { color: "var(--text-1)" };
 
   return (
-    <div className="relative rounded-xl p-4 max-sm:flex max-sm:flex-col max-sm:active:bg-[var(--bg-inner)]" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div className={`relative rounded-xl p-4 min-w-0 max-sm:flex max-sm:flex-col max-sm:active:bg-[var(--bg-inner)] ${className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between gap-2">
         {/* Phone: sentence case without the wide tracking — uppercase spaced
             11px breaks a two-word label into a stack of fragments on a
@@ -58,7 +65,9 @@ export default function KPICard({
         )}
       </div>
       <div
-        className={`max-sm:mt-auto text-2xl ${String(value ?? "").length > 7 ? "max-sm:text-lg" : "max-sm:text-xl"} font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
+        className={`max-sm:mt-auto ${size === "lg"
+          ? "text-[32px] leading-none mt-1.5 max-sm:text-2xl max-sm:leading-tight"
+          : `text-2xl ${String(value ?? "").length > 7 ? "max-sm:text-lg" : "max-sm:text-xl"}`} font-bold font-mono ${danger && !color ? "text-red-400" : ""}`}
         style={textStyle}
       >
         {onValueClick ? (
@@ -72,8 +81,10 @@ export default function KPICard({
             {value ?? "—"}
           </button>
         ) : (value ?? "—")}
+        {unit && <span className="ml-1.5 text-xs font-sans font-medium" style={{ color: "var(--text-3)" }}>{unit}</span>}
       </div>
-      {sub && <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
+      {children && <div className="mt-2.5">{children}</div>}
+      {sub && <div className={`text-[11px] ${children ? "mt-2" : "mt-0.5"}`} style={{ color: "var(--text-3)" }}>{sub}</div>}
     </div>
   );
 }

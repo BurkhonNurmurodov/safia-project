@@ -6,6 +6,7 @@ import Tooltip from "../ui/Tooltip";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import DateRangePicker from "../ui/DateRangePicker";
 import { SectionHead } from "../ui/DataTable";
+import { SkeletonBlock } from "../ui/Skeleton";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { useFactorySection } from "../ui/FactorySelect";
 import { useFactorySupervisors } from "../../context/FactoryContext";
@@ -27,7 +28,13 @@ import api from "../../utils/api";
 // plant / shift / supervisor inside the shared FilterPanel, active narrowings
 // surfacing as chips. `period={false}` drops the period where it would change
 // nothing («Tarkib» is today's lists).
-export function WorkersPage({ titleKey, period = true, children }) {
+//
+// `right` sits at the row's far end: what moves the WHOLE page and is not a
+// filter of the records — the «Jami / Zagruzka» population switch, «Tarkib»'s
+// read line and refresh. It is said ONCE here; until 2026-11-13 the switch was
+// repeated in the header of every card it drove (six of them on «Davomat»),
+// and the cards that did not carry it silently ignored it.
+export function WorkersPage({ titleKey, period = true, right, children }) {
   const { dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -103,33 +110,53 @@ export function WorkersPage({ titleKey, period = true, children }) {
             },
           ]}
         />
+        {right && (
+          <div className="ml-auto flex items-center justify-end gap-x-3 gap-y-2 flex-wrap min-w-0">{right}</div>
+        )}
       </div>
       {children}
     </Layout>
   );
 }
 
-// Chart card that composes the canonical SectionHead (+ optional info icon).
-export function ChartCard({ icon, title, info, right, children, className = "" }) {
+// THE chart card of the three pages: the canonical SectionHead (+ an optional
+// info icon after the title, a `subtitle` under it) over a body. The card is a
+// flex column, so in a stretched grid row a body may take `flex-1` and two
+// neighbours end on one line whatever each one holds.
+export function ChartCard({ icon, title, info, subtitle, right, children, className = "", bodyClassName = "p-4" }) {
   const head = info ? (
     <span className="inline-flex items-center gap-1">{title}<Tooltip text={info} /></span>
   ) : title;
   return (
-    <div className={`rounded-2xl overflow-hidden ${className}`}
+    <div className={`rounded-2xl overflow-hidden flex flex-col min-w-0 ${className}`}
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <SectionHead icon={icon} title={head} right={right} />
-      <div className="p-4">{children}</div>
+      <SectionHead icon={icon} title={head} subtitle={subtitle} right={right} />
+      <div className={`flex-1 flex flex-col min-w-0 ${bodyClassName}`}>{children}</div>
     </div>
   );
 }
 
+// The headline tiles while their figures load — the size the real ones take,
+// so nothing under them moves when the answer lands.
+export function TileSkeletons({ n = 4 }) {
+  return Array.from({ length: n }).map((_, i) => (
+    <div key={i} className="rounded-xl p-4 h-[168px] max-sm:h-[150px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SkeletonBlock className="h-3 w-24 mb-4" />
+      <SkeletonBlock className="h-8 w-20 mb-4" />
+      <SkeletonBlock className="h-1.5 w-full mb-3" />
+      <SkeletonBlock className="h-3 w-2/3" />
+    </div>
+  ));
+}
+
 // WHICH people — every role, or only the zagruzka-counted ones. One definition
-// so the segments can never drift between the cards (and the pages: «Davomat»
-// and «Tarkib» share the `workers_scope` state) that carry it.
-export function ScopeSwitch({ scope, setScope, t }) {
+// so the segments can never drift between the pages that carry it («Davomat»
+// and «Tarkib» share the `workers_scope` state). `size="md"` is the toolbar's
+// 38px baseline, where it lives.
+export function ScopeSwitch({ scope, setScope, t, size = "md" }) {
   return (
     <SegmentedToggle
-      size="sm" value={scope} onChange={setScope}
+      size={size} value={scope} onChange={setScope}
       options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />
   );
 }

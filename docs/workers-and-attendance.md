@@ -205,6 +205,54 @@ rows (group `people`, in that order): `/workers/attendance`
   in the background and polled every 30 s until it lands. No change column: a
   running month against a whole one says nothing.
 
+## The three «Odam soni» pages, redesigned (2026-11-13)
+
+The operator: «act like ui/ux expert and improve the design of Attendance,
+Movements and Composition screens». Every figure, endpoint and rule above is
+unchanged; what changed is what each page leads with and how it is drawn.
+
+- **One population switch, in the toolbar.** «Jami / Zagruzka» sits at the far
+  end of the one filter row (`WorkersPage`'s `right` slot) and moves the WHOLE
+  page. It used to be repeated in the header of six cards on «Davomat» (each
+  beside a second «Ro'yxatda / Kelgan / Farq» switch), and the KPI row ignored
+  it. Now «Zagruzka» recomputes the tiles, the day chart, the heatmap and the
+  table from each day's `z_*` halves. «Ro'yxatda / Kelgan / Farq» survives
+  only as the table's ROLE-column option, the one place it changed anything
+  the other columns did not already show.
+- **«Davomat» reads top to bottom**: four tiles — the rate (32px, a meter
+  against the 90% line, `ATT_FAMILY.ok`), the list split came / leave / absent,
+  «Below 90%» naming the three lowest brigadirs, the shortfall naming the
+  three units most under the reported headcount (the last two sort the table
+  and scroll to it); then **«Kunlik davomat»** — the plant's rate per day off
+  the heatmap's own cells, each point in its band, the live days dashed, a
+  readout UNDER the chart (rate, list, came, absent, who came by role; idle =
+  latest day) — beside **«Lavozimlar bo'yicha»** (came / on the list per role,
+  tail folded); the heatmap; the brigadir table with an inline list bar and a
+  pinned «Jami» row, a card list + a row dialog on a phone; Verifix's months.
+  **Removed**: the role donut, the stacked-area role trend (both now the role
+  card + readout) and the 560px treemap (its sizes are the table's list bar).
+  The day chart reads a second `/headcount` only when the period is under 7
+  days (`padChartParams`); folded into weeks / months past 92 days.
+- **«O'zgarishlar»**: two request types are blue (exchange) and purple (role
+  change) — they were the palette's red and green and read as a traffic light;
+  tiles split requests by type, exchanged workers by brigadir / task, name the
+  three biggest role transitions and «Tasdiqlanmagan» (pending, sorts the
+  table); requests by day over the whole period (empty days are 0); «Sent to
+  tasks»; **«Kim berdi, kim oldi»** — lent out left, received right, one scale
+  (received comes from the targets, joined by `target_manager_id`, which
+  `requests-analysis` now sends on a «→ brigadir» target, name as fallback);
+  the transition matrix with column totals (the «by new role» chart it
+  duplicated is gone) and an «Other transitions» row when the 20-pair cut
+  drops some; a sortable table with lent / received / pending.
+- **«Tarkib»**: one toolbar row (read time, refresh icon, switch); five tiles,
+  each share with its bar (women / men, under 25, under a year, the top
+  district) — the gender donut is gone, its split is the «Ayollar» tile; age,
+  tenure and place in ONE row; the place list's «others» fold is slate.
+- New template `components/ui/Meter.jsx` (`Meter`, `SplitBar`, `SplitLegend`,
+  `FigureList`); `KPICard` gained `size="lg"`, `unit`, `children`, `className`.
+- Every page now says when its data FAILED (red `EmptyState` + retry) instead
+  of «no data».
+
 ## «Tarkib» — who is on the lists (`/workers/composition`, 2026-10-23)
 
 The operator: «In this Workers can we have analysis of woman/man share, workers

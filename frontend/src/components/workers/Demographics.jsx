@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  Briefcase, CalendarClock, Cake, Grid3x3, MapPin, RefreshCw, UserRound, Users, Venus,
+  Briefcase, CalendarClock, Cake, Grid3x3, MapPin, RefreshCw, UserRound, Users,
 } from "lucide-react";
 import KPICard from "../ui/KPICard";
 import Button from "../ui/Button";
@@ -10,9 +10,10 @@ import EmptyState from "../ui/EmptyState";
 import Tooltip from "../ui/Tooltip";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
-import TableCard, { SectionHead, Th } from "../ui/DataTable";
+import TableCard, { Th } from "../ui/DataTable";
+import { SplitBar, SplitLegend } from "../ui/Meter";
 import { RankedList } from "../ui/AnalysisBoard";
-import { SkeletonCard, SkeletonChart } from "../ui/Skeleton";
+import { SkeletonChart } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
@@ -24,14 +25,21 @@ import { surnameInitial } from "../../utils/personName";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import { FOLD_COLOR } from "../../utils/chartPalette";
 import api from "../../utils/api";
+import { WorkersPage, ChartCard, ScopeSwitch, TileSkeletons } from "./WorkersPage";
 import { TXT, fill } from "./demographicsText";
 
 /* «Tarkib» — who is on the brigadirs' lists today: gender, age, years at
  * Safia and where people live, from Verifix (backend services/workforce.py).
  * A snapshot of TODAY (Verifix keeps only today's placement), so the page's
- * period does not reach it — pages/workers/WorkersComposition.jsx offers no
- * period control
- * — while plant, shift, brigadir and the page's role switch do.
+ * period does not reach it — no period control is drawn — while plant, shift,
+ * brigadir and the page's role switch do.
+ *
+ * It draws the whole page, frame included (WorkersPage), because what stands
+ * at the far end of the toolbar is its own: which read the figures are from,
+ * the population switch and the admin's refresh — one row, not a second one
+ * under the filters. Then the five answers in the order asked (how many, how
+ * many women, how old, how long here, where from), the three distributions
+ * side by side, and the breakdown they are made of.
  *
  * Colours: men / women are the categorical blue and pink of
  * utils/chartPalette (validated for colour-blind separation on both themes),
@@ -51,22 +59,12 @@ const niceMax = (v) => {
   return 10 * mag;
 };
 
-function ChartCard({ icon, title, info, right, children }) {
-  const head = info ? <span className="inline-flex items-center gap-1">{title}<Tooltip text={info} /></span> : title;
-  return (
-    <div className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <SectionHead icon={icon} title={head} right={right} />
-      <div className="p-4 flex-1 flex flex-col">{children}</div>
-    </div>
-  );
-}
-
 function Foot({ children }) {
   return <div className="text-[11px] mt-2" style={{ color: "var(--text-3)" }}>{children}</div>;
 }
 
-export default function Demographics({ params, ready, scope, scopeSwitch }) {
-  const { lang } = useLang();
+export default function Demographics({ params, ready, scope, setScope }) {
+  const { lang, t } = useLang();
   const T = TXT[lang] || TXT.uz;
   const { tl, tx } = useTranslit();
   const { auth } = useAuth();
@@ -142,21 +140,6 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
     { key: "M", label: T.men, color: MEN, n: d.gender.M },
     { key: "none", label: T.gNone, color: FOLD_COLOR, n: d.gender.none },
   ].filter((p) => p.n > 0) : [];
-  const donutOptions = {
-    chart: { ...baseChart, type: "donut" },
-    labels: genderParts.map((p) => p.label),
-    colors: genderParts.map((p) => p.color),
-    legend: legendCfg,
-    dataLabels: { enabled: true, formatter: (v) => `${Math.round(v)}%`, style: { fontSize: "11px" }, dropShadow: { enabled: false } },
-    stroke: { width: 2, colors: [cardBg] },
-    plotOptions: { pie: { donut: { size: "64%", labels: {
-      show: true, value: { color: legendColor, fontSize: "20px", fontWeight: 600 },
-      total: { show: true, label: T.women, color: legendColor, formatter: () => `${pct(d?.gender.F || 0, total) ?? 0}%` },
-    } } } },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${T.people} · ${pct(v, total)}%` } },
-    theme: chartTheme,
-  };
-
   // Oldest at the top, men to the left — a population pyramid.
   const ageBands = useMemo(() => [...(d?.age?.bands || [])].reverse(), [d]);
   const ageMax = niceMax(Math.max(1, ...ageBands.map((b) => Math.max(b.M, b.F))));
@@ -219,10 +202,12 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
     const list = (lvl === "region" ? placeData?.regions : placeData?.districts) || [];
     const top = list.slice(0, TOP).map((r) => ({ key: r.key, label: r.label, region: r.region, total: r.n, n: r.n }));
     const rest = list.slice(TOP).reduce((a, r) => a + r.n, 0);
-    if (rest) top.push({ key: "__rest", total: rest, n: rest, rest: true });
+    // The fold is slate, never the measure's gold: «everything else» must not
+    // read as the largest place on the list.
+    if (rest) top.push({ key: "__rest", total: rest, n: 0, fold: rest, rest: true });
     return top;
   }, [placeData, lvl]);
-  const placed = placeRows.reduce((a, r) => a + r.n, 0);
+  const placed = placeRows.reduce((a, r) => a + r.total, 0);
   const placeUnknown = (lvl === "region" ? placeData?.region_unknown : placeData?.district_unknown) || 0;
   const placeMax = Math.max(1, ...placeRows.map((r) => r.total));
 
@@ -270,124 +255,140 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
     [items, needle],
   );
 
-  // ── states ─────────────────────────────────────────────────────────────────
-  const head = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4">
+  // ── the frame ──────────────────────────────────────────────────────────────
+  // The toolbar's far end, in the order things arrive: the population switch
+  // is there from the first frame and keeps the edge; the read line and the
+  // refresh land to its LEFT once the answer is in, so nothing already on
+  // screen moves.
+  const right = (
+    <>
       {toast.node}
-      <div className="flex items-center gap-1.5 text-xs min-w-0" style={{ color: "var(--text-3)" }}>
-        <span>{T.snapshot}</span>
-        <span aria-hidden>·</span>
-        <span className="tabular-nums">{read?.running ? T.readRunning : read?.at ? fill(T.readAt, { at: atText(read.at) }) : T.readNever}</span>
-        <Tooltip text={T.privacy} />
-      </div>
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        {scopeSwitch}
-        {isAdmin && read?.configured && (
-          <Button size="md" variant="secondary" onClick={refresh} loading={starting || !!read?.running}
-            title={T.refresh} aria-label={T.refresh}>
-            <RefreshCw size={14} /><span className="max-sm:hidden">{T.refresh}</span>
-          </Button>
-        )}
-      </div>
+      {d && (
+        <span className="flex items-center gap-1.5 text-xs min-w-0" style={{ color: "var(--text-3)" }}>
+          <span className="truncate">{T.snapshot}</span>
+          <span aria-hidden>·</span>
+          <span className="tabular-nums whitespace-nowrap">
+            {read?.running ? T.readRunning : read?.at ? fill(T.readAt, { at: atText(read.at) }) : T.readNever}
+          </span>
+          <Tooltip text={T.privacy} />
+        </span>
+      )}
+      {isAdmin && read?.configured && (
+        <Button size="lg" variant="secondary" onClick={refresh} loading={starting || !!read?.running}
+          title={T.refresh} aria-label={T.refresh}>
+          <RefreshCw size={15} />
+        </Button>
+      )}
+      <ScopeSwitch scope={scope} setScope={setScope} t={t} />
+    </>
+  );
+  const frame = (body) => (
+    <WorkersPage titleKey="nav.workersComposition" period={false} right={right}>
       {read?.error && (
-        <div className="basis-full text-xs" style={{ color: "var(--status-warn)" }}>
+        <div className="-mt-1 mb-4 text-xs" style={{ color: "var(--status-warn)" }}>
           {fill(T.readFailed, { at: atText(read.error_at) })}
         </div>
       )}
-    </div>
+      {body}
+    </WorkersPage>
+  );
+  const card = (node) => (
+    <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>{node}</div>
   );
 
+  // ── states ─────────────────────────────────────────────────────────────────
   if (q.isError) {
-    return (
-      <EmptyState tone="danger" title={T.loadError} message={T.loadErrorMsg} showUploadLink={false} height="h-64"
-        action={<Button variant="secondary" onClick={() => q.refetch()}>{T.retry}</Button>} />
-    );
+    return frame(card(
+      <EmptyState tone="danger" title={T.loadError} message={T.loadErrorMsg} showUploadLink={false} height="h-56"
+        action={<Button variant="secondary" onClick={() => q.refetch()}>{T.retry}</Button>} />,
+    ));
   }
   if (!d) {
-    return (
+    return frame(
       <>
-        <div className="h-[38px] mb-4" />
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
-          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 lg:gap-4 mb-4 lg:mb-6"><TileSkeletons n={5} /></div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+          <SkeletonChart className="h-[380px] rounded-2xl" /><SkeletonChart className="h-[380px] rounded-2xl" />
+          <SkeletonChart className="h-[380px] rounded-2xl max-xl:lg:col-span-2" />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4"><SkeletonChart /><div className="lg:col-span-2"><SkeletonChart /></div></div>
-      </>
+      </>,
     );
   }
   if (!read?.at) {
-    return (
-      <>
-        {head}
-        <EmptyState height="h-64" showUploadLink={false} icon={Users}
-          title={read?.configured ? T.neverTitle : T.notConfiguredTitle}
-          message={read?.configured ? T.neverMsg : T.notConfiguredMsg} />
-      </>
-    );
+    return frame(card(
+      <EmptyState height="h-56" showUploadLink={false} icon={Users}
+        title={read?.configured ? T.neverTitle : T.notConfiguredTitle}
+        message={read?.configured ? T.neverMsg : T.notConfiguredMsg} />,
+    ));
   }
   if (!total) {
-    return (
-      <>
-        {head}
-        <EmptyState height="h-64" showUploadLink={false} icon={Users} title={T.emptyTitle} message={T.emptyMsg} />
-      </>
-    );
+    return frame(card(
+      <EmptyState height="h-56" showUploadLink={false} icon={Users} title={T.emptyTitle} message={T.emptyMsg} />,
+    ));
   }
 
   const topRegion = s?.top_place ? (d.place.live.districts.find((x) => x.key === s.top_place)?.region) : null;
   const numCell = "px-3 py-2 text-right tabular-nums";
+  // The two charts stand beside the nine-row place list: tall enough to end
+  // where it ends on a desktop, a phone's own height where each is a row.
+  const chartH = phone ? 320 : 392;
 
-  return (
+  const newShare = s.ten_known ? pct(s.new, s.ten_known) : null;
+  const youngShare = s.age_known ? pct(s.young, s.age_known) : null;
+  const placeShare = s.top_place_label ? pct(s.top_place_n, total) : null;
+  // One share of the whole, as a bar with its name: the part in gold (the
+  // page's single-measure accent), the rest in the slate of «everything else».
+  const share = (p, label) => (p == null ? null : (
     <>
-      {head}
+      <SplitBar parts={[
+        { key: "part", label, value: p, text: `${p}%`, color: ONE },
+        { key: "rest", label: T.others, value: 100 - p, text: `${100 - p}%`, color: FOLD_COLOR },
+      ]} />
+      <SplitLegend className="mt-2" parts={[{ key: "part", label, text: `${p}%`, color: ONE }]} />
+    </>
+  ));
 
-      {/* KPI row — how many, then the four questions in the order asked. */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
-        <KPICard icon={Users} color="#3b82f6" label={T.kPeople} value={String(total)}
+  return frame(
+    <>
+      {/* The five answers, in the order asked: how many, how many women, how
+          old, how long here, where from. A share carries its split — the
+          gender donut that used to stand under this row said only what the
+          «Women» tile's bar now does. */}
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 lg:gap-4 mb-4 lg:mb-6">
+        <KPICard className="max-sm:col-span-2" size="lg" label={T.kPeople} value={total.toLocaleString("ru-RU")}
           sub={fill(T.kPeopleSub, { n: d.groups.unit.length })}
           tooltip={scope === "zagruzka" ? T.kPeopleTipZag : T.kPeopleTipAll} />
-        <KPICard icon={Venus} color={WOMEN} label={T.kWomen}
-          value={`${pct(d.gender.F, total) ?? 0}%`}
-          sub={fill(T.kWomenSub, { f: d.gender.F, m: d.gender.M })} tooltip={T.kWomenTip} />
-        <KPICard icon={Cake} color="#14b8a6" label={T.kAge}
-          value={s.age_mean != null ? s.age_mean.toFixed(1) : "—"}
-          sub={s.age_known ? fill(T.kAgeSub, { med: Math.round(s.age_median), young: pct(s.young, s.age_known) }) : undefined}
-          tooltip={T.kAgeTip} />
-        <KPICard icon={CalendarClock} color="#C8973F" label={T.kTenure} value={months(s.ten_median)}
-          sub={s.ten_known ? fill(T.kTenureSub, { pct: pct(s.new, s.ten_known) }) : undefined}
-          tooltip={T.kTenureTip} />
-        <KPICard icon={MapPin} color="#a855f7" label={T.kPlace}
-          value={s.top_place_label ? placeText(s.top_place_label) : "—"}
-          sub={s.top_place_label ? fill(T.kPlaceSub, { pct: pct(s.top_place_n, total), region: regionName(topRegion) }) : undefined}
-          tooltip={T.kPlaceTip} />
+        <KPICard label={T.kWomen} value={`${pct(d.gender.F, total) ?? 0}%`} tooltip={T.kWomenTip}>
+          <SplitBar parts={genderParts.map((p) => ({ key: p.key, label: p.label, value: p.n, color: p.color }))} />
+          <SplitLegend className="mt-2"
+            parts={genderParts.map((p) => ({ key: p.key, label: p.label, text: p.n.toLocaleString("ru-RU"), color: p.color }))} />
+        </KPICard>
+        <KPICard label={T.kAge} value={s.age_mean != null ? s.age_mean.toFixed(1) : "—"} tooltip={T.kAgeTip}
+          sub={s.age_known ? fill(T.kAgeMedian, { med: Math.round(s.age_median) }) : undefined}>
+          {share(youngShare, T.colYoung)}
+        </KPICard>
+        <KPICard label={T.kTenure} value={months(s.ten_median)} tooltip={T.kTenureTip}>
+          {share(newShare, T.colNew)}
+        </KPICard>
+        <KPICard label={T.kPlace} value={s.top_place_label ? placeText(s.top_place_label) : "—"} tooltip={T.kPlaceTip}
+          sub={topRegion ? regionName(topRegion) : undefined}>
+          {share(placeShare, T.kPlaceShare)}
+        </KPICard>
       </div>
 
-      {/* Gender · age */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        <ChartCard icon={Venus} title={T.gender} info={T.genderTip}>
-          <div className="flex-1 grid place-items-center">
-            <div className="w-full max-w-[320px]">
-              <ReactApexChart key={`g-${lang}-${chartTheme.mode}`} type="donut" height={260}
-                series={genderParts.map((p) => p.n)} options={donutOptions} />
-            </div>
-          </div>
+      {/* Age · tenure · place — three distributions, one row. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6 mb-4 lg:mb-6">
+        <ChartCard icon={Cake} title={T.pyramid} info={T.pyramidTip} bodyClassName="px-2 pt-2 pb-3">
+          <ReactApexChart key={`p-${lang}-${chartTheme.mode}-${ageMax}-${phone}`} type="bar" height={chartH}
+            series={pyramidSeries} options={pyramidOptions} />
+          {d.age.unknown > 0 && <div className="px-2"><Foot>{fill(T.ageUnknown, { n: d.age.unknown })}</Foot></div>}
         </ChartCard>
-        <div className="lg:col-span-2">
-          <ChartCard icon={Cake} title={T.pyramid} info={T.pyramidTip}>
-            <ReactApexChart key={`p-${lang}-${chartTheme.mode}-${ageMax}`} type="bar" height={300}
-              series={pyramidSeries} options={pyramidOptions} />
-            {d.age.unknown > 0 && <Foot>{fill(T.ageUnknown, { n: d.age.unknown })}</Foot>}
-          </ChartCard>
-        </div>
-      </div>
-
-      {/* Tenure · place */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <ChartCard icon={CalendarClock} title={T.tenure} info={T.tenureTip}>
-          <ReactApexChart key={`t-${lang}-${chartTheme.mode}-${phone}`} type="bar" height={phone ? 320 : 360}
+        <ChartCard icon={CalendarClock} title={T.tenure} info={T.tenureTip} bodyClassName="px-2 pt-2 pb-3">
+          <ReactApexChart key={`t-${lang}-${chartTheme.mode}-${phone}`} type="bar" height={chartH}
             series={[{ name: T.people, data: tenBands.map((b) => b.n) }]} options={tenureOptions} />
-          {d.tenure.unknown > 0 && <Foot>{fill(T.tenureUnknown, { n: d.tenure.unknown })}</Foot>}
+          {d.tenure.unknown > 0 && <div className="px-2"><Foot>{fill(T.tenureUnknown, { n: d.tenure.unknown })}</Foot></div>}
         </ChartCard>
-        <ChartCard icon={MapPin} title={T.place} info={T.placeTip}
+        <ChartCard icon={MapPin} title={T.place} info={T.placeTip} className="max-xl:lg:col-span-2"
           right={(
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <SegmentedToggle size="sm" value={src} onChange={setSrc}
@@ -403,14 +404,14 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
               title: r.rest ? T.others : (lvl === "district" && r.region ? `${placeName(r)} · ${regionName(r.region)}` : placeName(r)),
             }))}
             max={placeMax}
-            parts={[{ key: "n", label: T.people, color: ONE }]}
+            parts={[{ key: "n", label: T.people, color: ONE }, { key: "fold", label: T.people, color: FOLD_COLOR }]}
             unit={T.people}
             extra={(r) => (lvl === "district" && !r.rest && r.region
               ? <span className="text-[11px] truncate max-w-[40%]" style={{ color: "var(--text-3)" }}>{regionName(r.region)}</span>
               : null)}
             value={(r) => (
               <span className="text-xs font-bold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>
-                {fill(T.placeShare, { n: r.n, pct: pct(r.n, placed + placeUnknown) })}
+                {fill(T.placeShare, { n: r.total, pct: pct(r.total, placed + placeUnknown) })}
               </span>
             )}
           />
@@ -489,6 +490,6 @@ export default function Demographics({ params, ready, scope, scopeSwitch }) {
           )}
         </tbody>
       </TableCard>
-    </>
+    </>,
   );
 }

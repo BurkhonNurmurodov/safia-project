@@ -3,7 +3,6 @@ import { Clock } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Tooltip from "../ui/Tooltip";
 import { SkeletonBlock, SKELETON_NAME_WIDTHS } from "../ui/Skeleton";
-import { ScopeSwitch } from "./WorkersPage";
 import { fmtCell } from "../reports/reportsUtil";
 import api from "../../utils/api";
 
@@ -14,15 +13,16 @@ import api from "../../utils/api";
 // served by `GET /api/workers/verifix-kinds`. The page's period picks WHICH
 // months (every month it touches, the newest three) and each column is the
 // whole month, the running one «so far»; plant / shift / brigadir narrow it
-// like everything else here, and the page's «Jami / Zagruzka» switch picks all
-// workers or the direct ones. A month no read has landed for is «—», and the
-// footer says it is on its way.
+// like everything else here, and the page's «Jami / Zagruzka» switch (in the
+// page's toolbar — `scope` arrives as a prop) picks all workers or the direct
+// ones. A month no read has landed for is «—», and the footer says it is on
+// its way.
 
 const ROWS = ["vkPresence", "vkAbsence", "vkFree", "vkDayOff", "vkEarlyLeave", "vkLate"];
 const hours = (min) => (min == null ? null : Math.round(min / 60));
 
-export default function VerifixKindsCard({ fparams, ready, scope, setScope, t, className = "" }) {
-  const { data } = useQuery({
+export default function VerifixKindsCard({ fparams, ready, scope, t, className = "" }) {
+  const { data: answer, isError } = useQuery({
     queryKey: ["workers-verifix-kinds", fparams],
     queryFn: () => api.get("/api/workers/verifix-kinds", { params: fparams }).then((r) => r.data),
     enabled: ready,
@@ -31,6 +31,9 @@ export default function VerifixKindsCard({ fparams, ready, scope, setScope, t, c
     refetchInterval: (q) => (q.state.data?.months?.some((m) => !m.read) ? 30_000 : false),
   });
 
+  // A read that failed is an answer with nothing in it — the card says «no
+  // figures», it does not pulse as if one were still on its way.
+  const data = answer ?? (isError ? { months: [], kinds: [], units: 0 } : undefined);
   const months = data?.months || [];
   const kinds = Object.fromEntries((data?.kinds || []).map((k) => [k.key, k]));
   const half = scope === "zagruzka" ? "direct" : "total";
@@ -54,8 +57,39 @@ export default function VerifixKindsCard({ fparams, ready, scope, setScope, t, c
   const empty = data && (!months.length || !data.units);
 
   return (
-    <TableCard icon={Clock} title={title} className={className}
-      right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}
+    <TableCard icon={Clock} title={title} className={className} mobileMaxHeight="none"
+      mobile={(
+        <div>
+          {!data && ROWS.map((k, i) => (
+            <div key={k} className="px-4 py-3" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+              <SkeletonBlock className={`h-4 ${SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length]} mb-2.5`} />
+              <SkeletonBlock className="h-3 w-1/2" />
+            </div>
+          ))}
+          {empty && (
+            <div className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-3)" }}>{t("workers.vk.empty")}</div>
+          )}
+          {data && !empty && ROWS.map((k, i) => (
+            <div key={k} className="px-4 py-3" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+              <div className="text-sm" style={{ color: "var(--text-1)" }}>{t(`workers.vk.${k}`)}</div>
+              <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+                {months.map((m, j) => {
+                  const v = hours(kinds[k]?.[half]?.[j]);
+                  return (
+                    <span key={m.ym} className="whitespace-nowrap">
+                      {monthName(m.ym)}{m.through ? ` · ${t("workers.vk.through").replace("{d}", m.through)}` : ""}{" "}
+                      <b className={j === last ? "font-bold" : "font-medium"} style={{ color: v == null ? "var(--text-3)" : "var(--text-1)" }}>
+                        {fmtCell(v, "int")}
+                      </b>
+                      {v != null && ` ${t("workers.vk.unit")}`}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       footer={notes.length > 0 && !empty ? (
         <div className="flex flex-col gap-0.5 text-[11px]" style={{ color: "var(--text-3)" }}>
           {notes.map((n) => <span key={n}>{n}</span>)}

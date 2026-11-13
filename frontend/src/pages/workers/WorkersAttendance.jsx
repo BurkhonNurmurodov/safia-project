@@ -1,117 +1,136 @@
-import { useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
-import {
-  AlertTriangle, ClipboardList, Grid3x3, LayoutGrid, PieChart, Radio, TrendingUp,
-  UserCheck, UserMinus, Users,
-} from "lucide-react";
+import { AlertTriangle, Briefcase, CalendarDays, ClipboardList, Grid3x3, Radio, Users } from "lucide-react";
 import KPICard from "../../components/ui/KPICard";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
+import Button from "../../components/ui/Button";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TableCard, { Th } from "../../components/ui/DataTable";
+import { Meter, SplitBar, SplitLegend, FigureList } from "../../components/ui/Meter";
+import { RankedList, StackBar } from "../../components/ui/AnalysisBoard";
 import HeatmapChart from "../../components/charts/HeatmapChart";
-import { SkeletonCard, SkeletonChart } from "../../components/ui/Skeleton";
-import { WorkersPage, ChartCard, ScopeSwitch } from "../../components/workers/WorkersPage";
+import { SkeletonBlock, SkeletonChart, SKELETON_NAME_WIDTHS } from "../../components/ui/Skeleton";
+import { WorkersPage, ChartCard, ScopeSwitch, TileSkeletons } from "../../components/workers/WorkersPage";
 import VerifixKindsCard from "../../components/workers/VerifixKindsCard";
 import { chartBase } from "../../components/workers/chartBase";
 import { useFilters } from "../../context/FilterContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
+import useElementWidth from "../../hooks/useElementWidth";
 import { useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useChartTheme } from "../../hooks/useChartTheme";
-import { padChartParams } from "../../utils/chartRange";
+import { padChartParams, ticksForWidth, axisLabelPx } from "../../utils/chartRange";
+import { bucketTrend, bucketTick, bucketTitle } from "../../utils/trendBuckets";
+import { surnameInitial } from "../../utils/personName";
 import { fmtLongDate } from "../Staff";
 import api from "../../utils/api";
-import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
-import { ATT_SEGMENTS } from "../../utils/statusBands";
+import { FOLD_COLOR } from "../../utils/chartPalette";
+import { ATT_SEGMENTS, ATT_FAMILY, attTone, TONE_HEX } from "../../utils/statusBands";
 
 // «Davomat» — the first of «Odam soni»'s three pages (/workers/attendance; the
 // three were one page's tabs until 2026-11-03, see components/workers/
 // WorkersPage.jsx): of the people on each brigadir's list, how many came.
+//
+// The page is read in the order the question is asked (the redesign of
+// 2026-11-13, docs/workers-and-attendance.md «Davomat is read top to bottom»):
+//   1. is attendance all right?   the four headline tiles
+//   2. when did it slip?          attendance by day, and by role beside it
+//   3. where exactly?             the brigadir × day heatmap
+//   4. the numbers behind it      one row per brigadir
+//   5. Verifix's own monthly hours
+// One population switch («Jami / Zagruzka») moves ALL of it and lives in the
+// toolbar; nothing on the page carries a second copy.
 
-// ── palette ──────────────────────────────────────────────────────────────────
-// Role identity hues follow the shared generic-first category order (see
-// utils/chartPalette): red, green, blue, … — one fixed hue per role, stable
-// across every chart on the page.
-const ROLE_COLORS = {
-  Konditer:    CATEGORY_COLORS[0], // red
-  Fasovshik:   CATEGORY_COLORS[1], // green
-  Zagatovitel: CATEGORY_COLORS[2], // blue
-  Other:       FOLD_COLOR,
-};
-const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-counted roles
-// Extra (non-zagruzka) roles — every other real job title — continue the shared
-// order after the three fixed zagruzka hues (yellow, orange, purple, …).
-// Used only by the role-share donut + trend.
-const ROLE_EXTRA_COLORS = CATEGORY_COLORS.slice(3);
-const PRESENT_COLOR  = "#22c55e";   // явка / actual present (green) — used by the attendance table
-const ABSENT_COLOR   = "#f59e0b";   // did not come — amber, the same "gap" hue the shortfall column uses
-// Folded small-role band in the attendance trend reuses the shared FOLD_COLOR
-// slate: "everything else" is a bucket, so it must not compete for a hue.
+const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // the zagruzka-counted roles
 
-// Per-supervisor identity hues for the treemap — the shared generic-first
-// categorical palette (every block is coloured, so hues read as identity, not
-// status); large enough that colours stay unique for the realistic brigadir
-// count (cycles past 18).
-const SUP_COLORS = CATEGORY_COLORS;
-
-// The attendance heatmap reuses the fleet HeatmapChart, so it takes the same
-// banded {from,color} segments. Traffic-light, on the same 90 / 75 breaks as
-// the table's rate column (`rateColor`) so a cell and its row's % never
-// disagree about whether a day was good. It was a single-hue green ramp while
-// the metric was present ÷ period-union — which was ~100 % for everybody, so
-// every shade meant "fine"; a real attended ÷ on-the-list rate is a status, and a
-// 60 % day must not read as green. Shades within a hue rank days inside a band.
-// The scale itself is `ATT_SEGMENTS` in utils/statusBands — the shift
-// dashboard's «Bugungi davomat» paints today's cell with it, so a unit-day
-// wears one colour on both pages.
+// Three parts of one list, the same three wherever a list is drawn (the
+// headline bar, a table row, a role). Came is the good half; a no-show is the
+// amber the shortfall column already wears; leave is the slate of «neither»:
+// it is excused, and the rate counts it as attended.
+const CAME_COLOR = "#22c55e";
+const ABSENT_COLOR = "#f59e0b";
+const LEAVE_COLOR = FOLD_COLOR;
+const LINE_COLOR = "#C8973F";          // the one metric on the day chart (single-metric accent)
+const TOP_ROLES = 7;                   // the roles card names this many, the tail is one row
+const CHIP_ROLES = 4;                  // …and the day readout this many
+// INK for a band on the card — the `--status-*` tokens hold AA on both themes,
+// which the raw 500 shades (fine as a FILL) do not: yellow on white is 1.9:1.
+const TONE_INK = { ok: "var(--status-ok)", warn: "var(--status-warn)", bad: "var(--status-bad)" };
 
 // A count of PEOPLE prints whole — over a period it is an average per day, and
 // «139.8 workers» reads as a fraction of a person rather than a headcount.
-const fmtN = (v) => (v == null ? "—" : String(Math.round(v) || 0));
+const fmtN = (v) => (v == null ? "—" : (Math.round(v) || 0).toLocaleString("ru-RU"));
+const round1 = (v) => Math.round(v * 10) / 10;
 const parseDate = (s) => { const [d, m, y] = s.split("."); return new Date(+y, +m - 1, +d); };
-// Traffic-light hue for an attendance percentage.
-const rateColor = (p) => (p == null ? "var(--text-2)" : p >= 90 ? "#22c55e" : p >= 75 ? "#eab308" : "#ef4444");
+const isoOf = (s) => s.split(".").reverse().join("-");
+// The band of a whole percent — `attTone` judges the fraction it is handed.
+const toneOf = (p) => (p == null ? null : attTone(p / 100));
+const inkOf = (p) => TONE_INK[toneOf(p)] || "var(--text-2)";
 
-// The page's two measurement switches, repeated in the header of every card
-// they drive. Order follows the order the question is asked in: WHICH people
-// (role set) then WHICH number about them (on the list, turned up, or the
-// difference between the two — those who did not come). The state
-// behind them is shared, so flipping either one here moves the whole page.
-// Wraps to a second line rather than shrinking the segments — SectionHead is
-// already a flex-wrap row, and at 390px two toggles plus a title do not fit
-// one line in any typography that stays readable.
-function ModeSwitches({ scope, setScope, measure, setMeasure, t }) {
+// The bucket under the pointer, spelled out UNDER the chart — never over it,
+// where a tooltip covers the very days being compared. Idle, it holds the
+// latest day: the shift-day still being worked is the one most often wanted.
+// Its own state, behind a handle, so a hover re-renders these two lines and
+// not the page (which would hand ApexCharts new options on every mouse move).
+// ONE fixed template — same slots, same order, every number width-pinned — so
+// the card never changes size under the pointer.
+const DayReadout = forwardRef(function DayReadout({ points, title, tag, stats, roles }, ref) {
+  const [idx, setIdx] = useState(null);
+  useImperativeHandle(ref, () => ({ show: setIdx }), []);
+  const p = points[idx ?? points.length - 1] || points[points.length - 1];
+  if (!p) return null;
+  // A number starts right after its label; the pinned width trails it (with
+  // its note, when it has one), so the next label never shifts under the pointer.
+  const pin = (text, color, w, note) => (
+    <span className="inline-block text-left" style={{ minWidth: w }}>
+      <b className="tabular-nums font-semibold" style={{ color: color || "var(--text-1)" }}>{text}</b>
+      {note && <> {note}</>}
+    </span>
+  );
+  const live = tag(p);
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
-      <ScopeSwitch scope={scope} setScope={setScope} t={t} />
-      <SegmentedToggle
-        size="sm" value={measure} onChange={setMeasure}
-        options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")], ["diff", t("workers.msDiff")]]} />
+    <div className="border-t mt-1 pt-3 px-2 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-3)" }} aria-live="off">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="font-semibold" style={{ color: "var(--text-1)" }}>{title(p)}</span>
+        {live && <span className="font-medium" style={{ color: "var(--brand-text)" }}>{live}</span>}
+        <span className="ml-auto inline-flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          {stats(p).map((s) => (
+            <span key={s.key} className="whitespace-nowrap">
+              {s.label} {pin(s.value, s.color, s.w, s.note)}
+            </span>
+          ))}
+        </span>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 min-h-[18px]">
+        {roles(p).map((r) => (
+          <span key={r.key} className="whitespace-nowrap">{r.label} {pin(r.value, "var(--text-2)", "2.4em")}</span>
+        ))}
+      </div>
     </div>
   );
-}
+});
 
 export default function WorkersAttendance() {
   const { params, ready } = useFilters();
   const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
-  const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
-  // The page's two measurement switches, shared by every card they drive (the
-  // control is repeated in each card header, the STATE is one — flipping it
-  // anywhere moves the whole page, which is the point of it).
-  //   scope   — WHICH people: every role, or only the four zagruzka-counted ones
-  //   measure — WHICH number about them: on the list, actually turned up, or
-  //             the difference between the two (on the list but did not come)
-  // These replace the old treeMode/roleMode pair, which were two independent
-  // states meaning the same thing on one page.
-  const [scope, setScope]     = usePersistentState("workers_scope", "all");        // "all" | "zagruzka"
+  const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  // WHICH people the whole page is about — every role, or the zagruzka-counted
+  // ones. One state, shared with «Tarkib».
+  const [scope, setScope] = usePersistentState("workers_scope", "all");            // "all" | "zagruzka"
+  // WHICH number the table's ROLE columns print: on the list, turned up, or the
+  // difference. The table's own option — every other surface shows the list
+  // and those who came TOGETHER, so nothing else needs the switch.
   const [measure, setMeasure] = usePersistentState("workers_measure", "roster");   // "roster" | "came" | "diff"
   const [sort, setSort] = usePersistentState("workers_sort", { key: null, dir: "asc" });
-  const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
-  const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
+  const readout = useRef(null);                          // the day chart's readout under it
+  const tableRef = useRef(null);
+  const [chartRef, chartW] = useElementWidth();
+  const zag = scope === "zagruzka";
+  const pct = ATT_FAMILY.ok;                            // green from here — the line a rate is judged by
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tx(r));
 
@@ -120,24 +139,37 @@ export default function WorkersAttendance() {
   // on «All factories» the key is absent and the calls are byte-identical to
   // what they were before factories existed.
   const fparams = useFactoryParams(params);
-  const { data: headcount = [], isLoading } = useQuery({
+  // `isPending`, not `isLoading`: the query waits for the filters to be ready,
+  // and a query that has not started yet has no rows either — «no data» must
+  // not flash before the first answer.
+  const { data: headcount = [], isPending, isError, refetch } = useQuery({
     queryKey: ["headcount", fparams],
     queryFn: () => api.get("/api/workers/headcount", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
+  // The day chart never shows fewer than 7 days, so a short period reads the
+  // same rows over the padded window. From 7 days up the params are the SAME
+  // object, the key is the same and this is the request above, not a second.
   const chartParams = useMemo(() => padChartParams(fparams), [fparams]);
+  const { data: wide } = useQuery({
+    queryKey: ["headcount", chartParams],
+    queryFn: () => api.get("/api/workers/headcount", { params: chartParams }).then((r) => r.data),
+    enabled: ready,
+  });
+  // Who came by ROLE, day by day — the readout's second line.
   const { data: trend } = useQuery({
     queryKey: ["worker-trend", chartParams],
     queryFn: () => api.get("/api/workers/trend", { params: chartParams }).then((r) => r.data),
     enabled: ready,
   });
 
+  const isLoading = isPending && !isError;
+
   // ── today, read live ───────────────────────────────────────────────────────
   // Each unit's CURRENT shift-day is on the page before its brigadir closes it,
   // read off the live Verifix read (backend `_live_rows`); its `daily` entry
-  // carries `live` + `read_at`. date → the oldest read behind that date's
-  // figures — every surface showing one of these days says it is «so far».
-  // date → { at: the oldest read behind it, n: how many units it is live for }
+  // carries `live` + `read_at`. date → { at: the oldest read behind it, n: how
+  // many units it is live for } — every surface showing one says «so far».
   const liveDays = useMemo(() => {
     const acc = {};
     headcount.forEach((m) => (m.daily || []).forEach((d) => {
@@ -159,306 +191,258 @@ export default function WorkersAttendance() {
     [liveDays, lang]); // eslint-disable-line react-hooks/exhaustive-deps
   const liveDates = Object.keys(liveDays).sort((a, b) => parseDate(a) - parseDate(b));
 
-  // ── headcount aggregates ───────────────────────────────────────────────────────
-  const totalWorkers  = headcount.reduce((s, m) => s + m.total, 0);
-  // Attendance = (came + on leave) ÷ on the list, summed over the period then
-  // divided (not an average of per-brigadir rates, which would weigh a
-  // 37-worker cell the same as a 125-worker one). avgOnList / avgCame are the
-  // same pair per average day, which is what the KPI sub-line spells out.
-  // Leave is ATTENDED: «О» is отпуск, booked by the company and standing on the
-  // list for weeks, so counting it as a no-show marked a brigadir down every
-  // one of those days for somebody nobody expected. The backend applies the
-  // same rule to `att_rate` (the table column) — one formula, four surfaces.
-  const rosterSum     = headcount.reduce((s, m) => s + (m.roster_sum || 0), 0);
-  const cameSum       = headcount.reduce((s, m) => s + (m.came_sum || 0), 0);
-  const leaveSum      = headcount.reduce((s, m) => s + (m.leave_sum || 0), 0);
-  const attendedSum   = cameSum + leaveSum;
-  const attRate       = rosterSum ? Math.round((attendedSum / rosterSum) * 100) : null;
-  const avgOnList     = headcount.reduce((s, m) => s + (m.avg_roster || 0), 0);
-  const avgCame       = headcount.reduce((s, m) => s + (m.avg_came || 0), 0);
-  const avgAbsent     = headcount.reduce((s, m) => s + (m.avg_absent || 0), 0);
-  const avgLeave      = headcount.reduce((s, m) => s + (m.avg_leave || 0), 0);
-  const withOfficial  = headcount.filter((m) => m.official_hc != null);
-  const officialSum   = withOfficial.reduce((s, m) => s + (m.official_hc || 0), 0);
-  const presentOfOff  = withOfficial.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
-  const shortfall     = Math.max(0, Math.round((officialSum - presentOfOff) * 10) / 10);
-  const mismatchMgrs  = headcount.filter((m) => (m.mismatch_days || 0) > 0);
+  // ── one brigadir, for the population on screen ─────────────────────────────
+  // «Jami» reads the backend's own per-day averages. «Zagruzka» is the same
+  // arithmetic over the `z_*` halves of each day (the zagruzka-counted titles;
+  // a payload from before the split falls back to the whole list), so the
+  // tiles, the day chart, the heatmap and the table are about ONE population.
+  // Leave is ATTENDED: «О» is отпуск, booked by the company and standing on
+  // the list for weeks — the rate is (came + on leave) ÷ on the list, summed
+  // over the period and then divided, never an average of daily rates.
+  const figs = useMemo(() => headcount.map((m) => {
+    const gap = m.official_hc != null ? round1(m.official_hc - (m.avg_daily_hc || 0)) : null;
+    if (!zag) {
+      return {
+        ...m, gap, onList: m.avg_roster || 0, came: m.avg_came || 0, absent: m.avg_absent || 0,
+        leave: m.avg_leave || 0, rSum: m.roster_sum || 0, aSum: (m.came_sum || 0) + (m.leave_sum || 0),
+        rate: m.att_rate ?? null,
+      };
+    }
+    const days = m.daily || [];
+    const n = days.length || 1;
+    let r = 0, c = 0, l = 0;
+    days.forEach((d) => {
+      r += d.z_roster ?? d.roster ?? 0; c += d.z_came ?? d.came ?? 0; l += d.z_on_leave ?? d.on_leave ?? 0;
+    });
+    return {
+      ...m, gap, onList: round1(r / n), came: round1(c / n), absent: round1((r - c) / n), leave: round1(l / n),
+      rSum: r, aSum: c + l, rate: r ? Math.round(((c + l) / r) * 100) : null,
+    };
+  }), [headcount, zag]);
 
-  // per-supervisor derived rate + shortfall. `rate` is the backend's
-  // (came + on leave) ÷ on-the-list for the period; the old avg_daily_hc ÷
-  // total was present over "everyone who came at least once", i.e. 100 % on
-  // any single-day range.
-  const rows = useMemo(() => headcount.map((m) => {
-    const gap = m.official_hc != null ? Math.round((m.official_hc - (m.avg_daily_hc || 0)) * 10) / 10 : null;
-    return { ...m, rate: m.att_rate ?? null, gap };
-  }), [headcount]);
+  // ── the plant, for the headline tiles ──────────────────────────────────────
+  const T = useMemo(() => {
+    const sum = (k) => figs.reduce((s, f) => s + (f[k] || 0), 0);
+    const rSum = sum("rSum"), aSum = sum("aSum");
+    return {
+      onList: sum("onList"), came: sum("came"), absent: sum("absent"), leave: sum("leave"),
+      rSum, aSum, rate: rSum ? Math.round((aSum / rSum) * 100) : null,
+    };
+  }, [figs]);
+  const uniqueWorkers = headcount.reduce((s, m) => s + (m.total || 0), 0);
+  const rated = figs.filter((f) => f.rate != null);
+  const below = rated.filter((f) => f.rate < pct).sort((a, b) => a.rate - b.rate);
+  // Штат gap — a different comparison (reported vs present, not list vs came),
+  // always over the zagruzka-counted roles, whatever the switch says.
+  const withOfficial = figs.filter((m) => m.official_hc != null);
+  const shortfall = Math.max(0, withOfficial.reduce((s, m) => s + (m.official_hc - (m.avg_daily_hc || 0)), 0));
+  const shortUnits = figs.filter((m) => (m.gap ?? 0) > 2).sort((a, b) => b.gap - a.gap);
+  const mismatchN = headcount.filter((m) => (m.mismatch_days || 0) > 0).length;
 
+  // ── sorting ────────────────────────────────────────────────────────────────
   function onSort(key) {
     setSort((p) => (p.key === key
       ? (p.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" })
       : { key, dir: key === "name" ? "asc" : "desc" }));
   }
-  // `measure` resolved to the per-role reader the role columns use. It must sit
-  // ABOVE this memo — the memo body reads it at render, so declaring it with
-  // its siblings in «the two switches, resolved» below is a TDZ crash. «Farq»
-  // is derived client-side — the backend emits both role maps over the SAME
-  // keys, so roster − came needs no third field (and roster ⊇ came keeps it
-  // non-negative); round1 kills the float dust the subtraction leaves.
-  const round1  = (v) => Math.round(v * 10) / 10;
+  // A tile that counts brigadirs puts them first in the table and takes the
+  // reader there — from «how many» to «who» in one press.
+  function showInTable(key, dir) {
+    setSort({ key, dir });
+    const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    tableRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+  }
+  // What a ROLE column prints. «Farq» is derived here — the backend emits both
+  // role maps over the same keys, and roster ⊇ came keeps it non-negative.
   const roleVal = (m, r) =>
     measure === "roster" ? (m.avg_roster_by_role?.[r] ?? 0)
     : measure === "came" ? (m.avg_came_by_role?.[r] ?? 0)
     : round1((m.avg_roster_by_role?.[r] ?? 0) - (m.avg_came_by_role?.[r] ?? 0));
   const sortedRows = useMemo(() => {
-    if (!sort.key) return rows;
+    if (!sort.key) return figs;
     const dir = sort.dir === "asc" ? 1 : -1;
     // Any key that is not one of the fixed columns is a ROLE column, and those
     // sort by whichever measure their cells are currently showing.
     const val = {
-      name: (m) => tl(m.name) || "", onList: (m) => m.avg_roster || 0,
-      came: (m) => m.avg_came || 0, absent: (m) => m.avg_absent || 0,
+      name: (m) => tl(m.name) || "", onList: (m) => m.onList, came: (m) => m.came, absent: (m) => m.absent,
       rate: (m) => m.rate ?? -1, official: (m) => m.official_hc ?? -1, gap: (m) => m.gap ?? -999,
     }[sort.key] || ((m) => roleVal(m, sort.key));
-    return [...rows].sort((a, b) => {
+    return [...figs].sort((a, b) => {
       const av = val(a), bv = val(b);
       return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * dir;
     });
-  }, [rows, sort, tl, measure]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [figs, sort, tl, measure]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── shared chart pieces ────────────────────────────────────────────────────────
-  const { baseChart, axisLabels, legendCfg, gridCfg } = chartBase({ labelColor, legendColor, gridColor });
-
-  // Dynamic role set for the donut, the trend and the table's role columns.
-  // `avg_*_by_role` carries every present job title; `scope` switches between
-  // all of them and the zagruzka subset.
-  //
-  // The role CATALOG and its hue order are read off the ROSTER numbers whatever
-  // the active measure is. Derive them from the measure instead and a role would
-  // change colour and jump position the moment you flip Ro'yxatda/Kelgan — the
-  // one thing the palette rule forbids. Roster ⊇ came, so it is also the
-  // complete list: a role nobody turned up for still keeps its slot.
-  const rosterTotalsMap = useMemo(() => {
+  // ── roles ──────────────────────────────────────────────────────────────────
+  // The role CATALOG and its order are read off the ROSTER numbers (roster ⊇
+  // came, so it is the complete list: a role nobody turned up for keeps its
+  // slot). «Zagruzka» is the four counted roles, «Jami» adds every other title.
+  const roleTotals = useMemo(() => {
     const acc = {};
-    headcount.forEach((m) => Object.entries(m.avg_roster_by_role || {})
-      .forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
+    headcount.forEach((m) => {
+      Object.entries(m.avg_roster_by_role || {}).forEach(([r, n]) => { (acc[r] ||= { roster: 0, came: 0 }).roster += n; });
+      Object.entries(m.avg_came_by_role || {}).forEach(([r, n]) => { (acc[r] ||= { roster: 0, came: 0 }).came += n; });
+    });
     return acc;
   }, [headcount]);
   const extraRoles = useMemo(
-    () => Object.keys(rosterTotalsMap).filter((r) => !ROLES.includes(r)).sort((a, b) => rosterTotalsMap[b] - rosterTotalsMap[a]),
-    [rosterTotalsMap],
-  );
-  const roleColor = (r) => ROLE_COLORS[r] ?? ROLE_EXTRA_COLORS[Math.max(0, extraRoles.indexOf(r)) % ROLE_EXTRA_COLORS.length];
-  const activeRoles = scope === "all" ? [...ROLES, ...extraRoles] : ROLES;
-
-  // ── the two switches, resolved ───────────────────────────────────────────────
-  // Every measured surface below reads `roleVal` (declared above the sort memo)
-  // and sums the roles `scope` selected. All three measures are per-day averages
-  // over the same confirmed days as the KPI row, so a treemap block and its own
-  // table row carry the SAME number instead of two that have to be reconciled.
-  const measureLabel = measure === "roster" ? t("workers.msRoster")
-    : measure === "came" ? t("workers.msCame") : t("workers.msDiff");
-  // On «Jami» the value is read straight off the row rather than re-summed from
-  // the roles — it is the very number the table and the KPI cards already show
-  // (avg_absent IS roster − came on the backend, i.e. the Kelmadi column).
-  const mgrValue = (m) => (scope === "all"
-    ? (measure === "roster" ? (m.avg_roster || 0)
-      : measure === "came" ? (m.avg_came || 0) : (m.avg_absent || 0))
-    : round1(ROLES.reduce((s, r) => s + roleVal(m, r), 0)));
-  // Iterates the ROSTER keys — the complete role catalog (roster ⊇ came) — so
-  // «Kelgan» and «Farq» still see a role nobody turned up for.
-  const roleTotalsMap = useMemo(() => {
-    const acc = {};
-    headcount.forEach((m) => Object.keys(m.avg_roster_by_role || {})
-      .forEach((r) => { acc[r] = (acc[r] || 0) + roleVal(m, r); }));
-    Object.keys(acc).forEach((r) => { acc[r] = Math.round(acc[r] * 10) / 10; });
-    return acc;
-  }, [headcount, measure]); // eslint-disable-line react-hooks/exhaustive-deps
-  // One prop bundle so the four card headers carry identical controls, and one
-  // remount key — ApexCharts keeps stale series when the shape changes under it.
-  const switchProps = { scope, setScope, measure, setMeasure, t };
-  const modeKey = `${scope}-${measure}`;
-
-  // Workforce composition donut — each role's share of the whole workforce.
-  const donutRoles = activeRoles.filter((r) => (roleTotalsMap[r] || 0) > 0);
-  const roleTotals = donutRoles.map((r) => roleTotalsMap[r] || 0);
-  const donutTotal = round1(roleTotals.reduce((s, n) => s + n, 0));
-  const donutOptions = {
-    chart: { ...baseChart, type: "donut" },
-    labels: donutRoles.map(roleLabel),
-    colors: donutRoles.map(roleColor),
-    legend: { ...legendCfg, position: "bottom" },
-    dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%`, style: { fontSize: "11px" } },
-    stroke: { width: 0 },
-    plotOptions: { pie: { donut: { size: "64%", labels: {
-      show: true,
-      value: { color: legendColor },
-      total: { show: true, label: measureLabel, color: legendColor, formatter: () => fmtN(donutTotal) },
-    } } } },
-    // The number is a per-day average now, not a period headcount — the tooltip
-    // says so rather than leaving a decimal to be read as a people count.
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmtN(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
-    theme: chartTheme,
-  };
-
-  // Workforce treemap — one block per brigadir in their own identity hue, sized
-  // by the number the two switches resolve to (see `mgrValue`). Hue is keyed to
-  // the brigadir's position in the stable backend order so it survives BOTH
-  // switches; data is value-sorted for a tidier layout.
-  const treePoints = headcount
-    .map((m, i) => ({
-      x: tl(m.name),
-      y: Math.round(mgrValue(m)),
-      color: SUP_COLORS[i % SUP_COLORS.length],
-    }))
-    .filter((d) => d.y > 0)
-    .sort((a, b) => b.y - a.y);
-  const treemapSeries = [{ data: treePoints.map(({ x, y }) => ({ x, y })) }];
-  const treemapOptions = {
-    chart: { ...baseChart, type: "treemap" },
-    colors: treePoints.map((d) => d.color),
-    legend: { show: false },
-    dataLabels: {
-      enabled: true,
-      style: { fontSize: "13px", fontWeight: 600, colors: ["#fff"] },
-      formatter: (text, op) => [text, fmtN(op.value)],
-    },
-    plotOptions: { treemap: { distributed: true, enableShades: false } },
-    stroke: { width: 2, colors: [cardBg] },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmtN(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
-    theme: chartTheme,
-  };
-
-  // Attendance trend by role (stacked area, min-7-day window).
-  // Drop roles that are all-zero across the window: a zero top-of-stack series
-  // still paints its translucent gradient down to the baseline, tinting the whole
-  // chart its colour ("green shadow everywhere" when Zagatovitel has no attendance).
-  // Which slice of the payload the measure switch is showing. `series_roster`
-  // is the newer half — fall back to `series` so the page still renders against
-  // a backend that has not been restarted yet. «Farq» is derived here per role
-  // per day (roster − came; roster ⊇ came keeps it non-negative, and against
-  // the un-restarted fallback both sources coincide so it degrades to zeros).
-  const trendRoster = trend?.series_roster || trend?.series || {};
-  const trendCame   = trend?.series || {};
-  const trendSrc = measure === "roster" ? trendRoster
-    : measure === "came" ? trendCame
-    : Object.fromEntries(Object.entries(trendRoster).map(([r, arr]) => [
-        r, arr.map((v, i) => Math.max(0, (v || 0) - ((trendCame[r] || [])[i] || 0))),
-      ]));
-  const trendRoles = trend
-    ? activeRoles.filter((r) => (trendSrc[r] || []).some((v) => v > 0))
-    : [];
-  // ONE order everywhere — window total (desc), computed ONCE (never per-day):
-  // it is the stack order (largest band sits on the stable baseline), the legend
-  // order and the chip order, so nothing has to be re-searched between them and
-  // chips keep their positions as you hover across days.
-  // Ordered by the ROSTER totals, not by the active measure: flipping
-  // Ro'yxatda/Kelgan must change the band HEIGHTS and nothing else, or the two
-  // states cannot be compared by eye — which is the only reason for the switch.
-  const trendRoleOrder = [...trendRoles].sort((a, b) => {
-    const sum = (r) => ((trend.series_roster || trend.series)[r] || []).reduce((n, v) => n + (v || 0), 0);
-    return sum(b) - sum(a);
-  });
-  // Past ~5 bands the top ribbons are a few px tall — unreadable ink. Keep the
-  // top 4 and fold the tail into one slate "others" band; the folded roles keep
-  // their numbers in the panel's muted breakdown and in the role-share donut.
-  const foldRoles = trendRoleOrder.length > 5 ? trendRoleOrder.slice(4) : [];
-  const keptRoles = foldRoles.length ? trendRoleOrder.slice(0, 4) : trendRoleOrder;
-  const foldData = foldRoles.length
-    ? (trend?.dates || []).map((_, i) => foldRoles.reduce((n, r) => n + ((trendSrc[r] || [])[i] || 0), 0))
-    : null;
-  const trendSeries = [
-    ...keptRoles.map((r) => ({ name: roleLabel(r), data: trendSrc[r] || [] })),
-    ...(foldData ? [{ name: t("workers.othersFold"), data: foldData }] : []),
+    () => Object.keys(roleTotals).filter((r) => !ROLES.includes(r)).sort((a, b) => roleTotals[b].roster - roleTotals[a].roster),
+    [roleTotals]);
+  const activeRoles = zag ? ROLES : [...ROLES, ...extraRoles];
+  // By size, once — the roles card, the day readout and nothing else re-sorts.
+  const roleOrder = activeRoles.filter((r) => (roleTotals[r]?.roster || 0) > 0)
+    .sort((a, b) => roleTotals[b].roster - roleTotals[a].roster);
+  const roleKey = roleOrder.join("|");
+  const roleRows = useMemo(() => {
+    const row = (key, label, roster, came) => {
+      const total = Math.round(roster), c = Math.min(total, Math.round(came));
+      return { key, label, title: label, total, came: c, away: total - c };
+    };
+    const rows = roleOrder.map((r) => row(r, roleLabel(r), roleTotals[r].roster, roleTotals[r].came));
+    if (rows.length <= TOP_ROLES + 1) return rows;
+    const tail = roleOrder.slice(TOP_ROLES);
+    return [
+      ...rows.slice(0, TOP_ROLES),
+      { ...row("__rest", t("workers.rolesRest"),
+          tail.reduce((s, r) => s + roleTotals[r].roster, 0), tail.reduce((s, r) => s + roleTotals[r].came, 0)),
+        title: tail.map(roleLabel).join(" · ") },
+    ];
+  }, [roleKey, roleTotals, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const roleListTotal = roleRows.reduce((s, r) => s + r.total, 0);
+  const roleMax = Math.max(1, ...roleRows.map((r) => r.total));
+  const listParts = [
+    { key: "came", label: t("workers.came"), color: CAME_COLOR },
+    { key: "leave", label: t("workers.onLeave"), color: LEAVE_COLOR },
+    { key: "away", label: t("workers.absent"), color: ABSENT_COLOR },
   ];
-  const trendColors = [...keptRoles.map(roleColor), ...(foldData ? [FOLD_COLOR] : [])];
-  // The trend tooltip renders BELOW the chart (see .att-trend CSS) so it never
-  // covers the plot. This builds the day's breakdown as a full-width horizontal
-  // strip — date, colored role chips (zero-value roles dropped, sorted desc),
-  // then the day total — for a given x-index. Colors come from CSS vars so it
-  // adapts to theme. Reused by the hover callback and the idle/leave default.
-  // ONE fixed template — same chips, same order, every day; only the numbers
-  // change. Every role in `trendRoleOrder` is always shown (0 included) and each
-  // value is pinned to a fixed width, so the strip never reflows → the card keeps
-  // its size and nothing below shifts when you hover across days.
-  const trendTipHtml = (idx) => {
-    if (idx == null || !trend?.dates?.length) return "";
-    const dateStr = trend.dates[idx] ?? "";
-    // Long formatted date in plain ink — the old brand-gold DD.MM.YYYY read as a
-    // link; this is a state readout ("which day am I looking at"), not a control.
-    const date = dateStr ? fmtLongDate(parseDate(dateStr), t, lang) : "";
-    // A day still being worked, read live: its figures are «so far».
-    const liveTag = trend?.live && dateStr in trend.live
-      ? `<span style="color:var(--brand-text);font-weight:500">${t("workers.live.soFar").replace("{time}", trend.live[dateStr] || "—")}</span>`
-      : "";
-    const items = keptRoles.map((r) => ({
-      name: roleLabel(r), color: roleColor(r), val: (trendSrc[r] || [])[idx] ?? 0,
+
+  // ── attendance by day ──────────────────────────────────────────────────────
+  // The plant's own rate per day, off the very cells the heatmap paints — so a
+  // point, the column under it and the headline figure are one arithmetic. A
+  // long period is folded into weeks or months (utils/trendBuckets): the rate
+  // of a bucket is its sums divided, its counts are per-day averages.
+  const chart = useMemo(() => {
+    const byDate = new Map();
+    (wide || []).forEach((m) => (m.daily || []).forEach((d) => {
+      const a = byDate.get(d.date) || { date: d.date, iso: isoOf(d.date), roster: 0, came: 0, leave: 0, live: null };
+      a.roster += zag ? d.z_roster ?? d.roster ?? 0 : d.roster || 0;
+      a.came   += zag ? d.z_came ?? d.came ?? 0 : d.came || 0;
+      a.leave  += zag ? d.z_on_leave ?? d.on_leave ?? 0 : d.on_leave || 0;
+      if (d.live) a.live = !a.live || (d.read_at && d.read_at < a.live) ? (d.read_at || a.live || "") : a.live;
+      byDate.set(d.date, a);
     }));
-    if (foldData) items.push({ name: t("workers.othersFold"), color: FOLD_COLOR, val: foldData[idx] ?? 0 });
-    const total = items.reduce((n, it) => n + it.val, 0);
-    const num = (v, w) => `<b style="color:var(--text-1);display:inline-block;min-width:${w};text-align:right;font-variant-numeric:tabular-nums">${v}</b>`;
-    const chips = items.map((it) => `
-      <span style="display:inline-flex;align-items:center;gap:5px">
-        <span style="width:9px;height:9px;border-radius:2px;background:${it.color};flex:none"></span>
-        <span style="color:var(--text-3)">${it.name}</span>
-        ${num(Math.round(it.val), "2.4em")}</span>`).join("");
-    // Muted per-role detail of the folded tail — same roles every day and each
-    // value width-pinned, so the strip keeps the no-reflow contract on hover.
-    const foldDetail = foldRoles.length ? `
-      <span style="color:var(--text-4)">${foldRoles.map((r) =>
-        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${Math.round((trendSrc[r] || [])[idx] ?? 0)}</span>`).join(" · ")}</span>` : "";
-    return `<span style="color:var(--text-1);font-weight:600">${date}</span>${liveTag}${chips}${foldDetail}
-      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(Math.round(total), "2.8em")}</span>`;
-  };
-  const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
-  const trendDefaultHtml = trendTipHtml(trendDefaultIdx >= 0 ? trendDefaultIdx : null);
-  trendDefault.current = trendDefaultHtml;                  // keep the leave-handler current
-  const trendOptions = {
+    const days = [...byDate.values()].sort((a, b) => (a.iso < b.iso ? -1 : 1));
+    const tIdx = Object.fromEntries((trend?.dates || []).map((d, i) => [d, i]));
+    const { grain, points } = bucketTrend(days.map((d) => ({ day: d.iso, open: 0, opened: 0, closed: 0 })));
+    let k = 0;
+    const pts = points.map((p) => {
+      const b = { day: p.day, from: p.from, to: p.to, n: 0, roster: 0, came: 0, leave: 0, live: null, ti: [] };
+      while (k < days.length && days[k].iso <= p.to) {
+        const d = days[k++];
+        b.n += 1; b.roster += d.roster; b.came += d.came; b.leave += d.leave;
+        if (d.live != null) b.live = d.live;
+        if (tIdx[d.date] != null) b.ti.push(tIdx[d.date]);
+      }
+      b.rate = b.roster ? ((b.came + b.leave) / b.roster) * 100 : null;
+      return b;
+    });
+    return { grain, pts };
+  }, [wide, trend, zag]);
+  const { baseChart, axisLabels, gridCfg } = chartBase({ labelColor, legendColor, gridColor });
+  const cats = chart.pts.map((p) => bucketTick(p.day, chart.grain));
+  const rates = chart.pts.map((p) => (p.rate == null ? null : round1(p.rate)));
+  const known = rates.filter((v) => v != null);
+  // A LINE may zoom (a bar may not): the axis opens a step under the lowest
+  // day, never above the line the days are judged by, and steps by 10.
+  const yMin = known.length ? Math.max(0, Math.min(pct - 10, Math.floor((Math.min(...known) - 3) / 10) * 10)) : 0;
+  const ySpan = 100 - yMin;
+  const yStep = ySpan <= 70 ? 10 : ySpan % 20 === 0 ? 20 : ySpan % 30 === 0 ? 30 : 10;
+  // The line is named by the axis whenever a tick falls on it; only where the
+  // steps skip it does it carry a label of its own.
+  const lineOnTick = (pct - yMin) % yStep === 0;
+  // The days still being worked close the axis: their stretch is dashed.
+  let liveTail = 0;
+  if (chart.grain === "day") for (let i = chart.pts.length - 1; i >= 0 && chart.pts[i].live != null; i--) liveTail += 1;
+  const dots = known.length <= 45;
+  const dayOptions = {
     chart: {
-      ...baseChart, type: "area", stacked: true, zoom: { enabled: false },
-      // On mouse-out restore the panel to the latest day so it's never blank.
-      events: { mouseLeave: () => { if (trendTip.current) trendTip.current.innerHTML = trendDefault.current; } },
+      ...baseChart, type: "line", zoom: { enabled: false }, parentHeightOffset: 0,
+      events: { mouseLeave: () => readout.current?.show(null) },
     },
+    stroke: { curve: "straight", width: 2.5 },
+    colors: [LINE_COLOR],
+    markers: {
+      size: dots ? 4 : 0, strokeWidth: 0, hover: { sizeOffset: 2 },
+      // Each day wears the band it fell in — the heatmap's verdict, on the line.
+      discrete: dots ? rates.map((v, i) => (v == null ? null : {
+        seriesIndex: 0, dataPointIndex: i, size: 4, strokeColor: "transparent",
+        fillColor: TONE_HEX[toneOf(Math.round(v))],
+      })).filter(Boolean) : [],
+    },
+    ...(liveTail && chart.pts.length > liveTail ? { forecastDataPoints: { count: liveTail, dashArray: 5 } } : {}),
     dataLabels: { enabled: false },
-    // Solid bands with a card-colour seam between neighbours. Stacked bands
-    // never overlap, so translucent gradients bought nothing and multiplied
-    // into a grey-brown wash that matched no legend swatch; the 2px seam (not
-    // a coloured stroke) is what separates adjacent bands.
-    stroke: { curve: "smooth", width: 2, colors: [cardBg] },
-    fill: { type: "solid", opacity: 1 },
-    colors: trendColors,
     xaxis: {
-      // Horizontal short ticks (DD.MM) — rotated full dates cost more reading
-      // effort than the year, which the panel date already carries, adds.
-      categories: trend?.dates || [],
-      labels: { ...axisLabels, rotate: 0, formatter: (val) => String(val || "").slice(0, 5) },
-      tickAmount: Math.min(trend?.dates?.length || 0, 6),
+      categories: cats,
+      // Thinned to the card's measured width, never to a fixed count.
+      tickAmount: ticksForWidth(chartW, cats.length, axisLabelPx(cats)),
+      labels: { ...axisLabels, rotate: 0, rotateAlways: false, hideOverlappingLabels: true },
+      axisBorder: { color: gridColor }, axisTicks: { show: false }, tooltip: { enabled: false },
     },
-    yaxis: { labels: axisLabels },
-    legend: legendCfg, grid: gridCfg, theme: chartTheme,
-    // Apex's own tooltip box is hidden via .att-trend CSS; this callback is used
-    // only as the hover-index source — it writes the breakdown into the panel
-    // under the chart and returns nothing visible.
+    yaxis: {
+      min: yMin, max: 100, tickAmount: ySpan / yStep,
+      labels: { ...axisLabels, formatter: (v) => `${Math.round(v)}%` },
+    },
+    annotations: {
+      yaxis: [{
+        y: pct, borderColor: TONE_HEX.ok, strokeDashArray: 4,
+        ...(lineOnTick ? {} : { label: {
+          text: `${pct}%`, position: "left", textAnchor: "start", offsetX: 4, borderWidth: 0,
+          style: { color: TONE_HEX.ok, background: "transparent", fontSize: "10px" },
+        } }),
+      }],
+    },
+    grid: { ...gridCfg, padding: { left: 6, right: 12 } },
+    legend: { show: false }, theme: chartTheme,
+    // Apex's own box is hidden (.att-trend); the callback is only the source
+    // of the hovered index, written to the readout under the chart.
     tooltip: {
       theme: tooltipTheme,
-      custom: ({ dataPointIndex }) => {
-        if (trendTip.current) trendTip.current.innerHTML = trendTipHtml(dataPointIndex);
-        return "";
-      },
+      custom: ({ dataPointIndex }) => { readout.current?.show(dataPointIndex); return ""; },
     },
   };
+  // The readout's roles: the largest few by name, the rest as one figure —
+  // who CAME, per day (a bucket of days: the average of its days).
+  const chipRoles = roleOrder.length > CHIP_ROLES + 1 ? roleOrder.slice(0, CHIP_ROLES) : roleOrder;
+  const restRoles = roleOrder.slice(chipRoles.length);
+  const cameOf = (p, roleKeys) => (p.ti.length && trend?.series
+    ? Math.round(p.ti.reduce((s, i) => s + roleKeys.reduce((n, r) => n + ((trend.series[r] || [])[i] || 0), 0), 0) / p.ti.length)
+    : null);
+  const readoutProps = {
+    title: (p) => bucketTitle(p, chart.grain, (iso) => fmtLongDate(new Date(`${iso}T00:00:00`), t, lang), t)
+      + (chart.grain === "day" ? "" : ` · ${t("workers.perDay")}`),
+    tag: (p) => (chart.grain === "day" && p.live != null ? t("workers.live.soFar").replace("{time}", p.live || "—") : null),
+    stats: (p) => {
+      const n = p.n || 1;
+      const absent = (p.roster - p.came) / n, leave = p.leave / n;
+      return [
+        { key: "rate", label: t("workers.kpi.attRate"), value: p.rate == null ? "—" : `${Math.round(p.rate)}%`, color: inkOf(p.rate == null ? null : Math.round(p.rate)), w: "2.6em" },
+        { key: "list", label: t("workers.onList"), value: fmtN(p.roster / n), w: "2.9em" },
+        { key: "came", label: t("workers.came"), value: fmtN(p.came / n), w: "2.9em" },
+        { key: "absent", label: t("workers.absent"), value: fmtN(absent), w: "8em",
+          note: `(${fmtN(leave)} ${t("workers.onLeaveShort")})` },
+      ];
+    },
+    roles: (p) => [
+      ...chipRoles.map((r) => ({ key: r, label: roleLabel(r), value: fmtN(cameOf(p, [r])) })),
+      ...(restRoles.length ? [{ key: "__rest", label: t("workers.rolesRest"), value: fmtN(cameOf(p, restRoles)) }] : []),
+    ],
+  };
 
-  // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
-  // cols). Each cell is that day's (came + on leave) ÷ on-the-list (same metric
-  // as the `rate` column, which the backend computes the same way), and the
-  // counts behind it ride along for the hover text.
-  // HeatmapChart reads `net_util` as a 0–1 fraction and renders it as a %;
-  // days with no list stay null → shown as "—".
-  //
-  // The grid follows the page's `scope` switch like every other measured
-  // surface: «Jami» is the whole list, «Zagruzka» the zagruzka-counted titles
-  // only (`z_*`, the same halves the backend sends for that day). Same metric
-  // either way — (came + on leave) ÷ on-the-list — so the views are comparable
-  // and a cell never changes meaning, only its population.
+  // ── the heatmap ────────────────────────────────────────────────────────────
+  // Reuses the fleet HeatmapChart (supervisor rows × day cols). Each cell is
+  // that day's (came + on leave) ÷ on-the-list — the rate column's own metric —
+  // and the counts behind it ride along for the hover text. HeatmapChart reads
+  // `net_util` as a 0–1 fraction; days with no list stay null → «—».
   const heatDates = useMemo(() => {
     const set = new Set();
     headcount.forEach((m) => (m.daily || []).forEach((d) => set.add(d.date)));
@@ -467,14 +451,11 @@ export default function WorkersAttendance() {
   const heatManagers = useMemo(() => headcount.map((m) => m.name), [headcount]);
   const heatData = useMemo(() => {
     const out = {};
-    const zag = scope === "zagruzka";
     headcount.forEach((m) => {
       const byDate = Object.fromEntries((m.daily || []).map((d) => [d.date, d]));
       const row = {};
       heatDates.forEach((dt) => {
         const d = byDate[dt];
-        // Pre-`z_*` payloads (a cached response from before the split) fall back
-        // to the whole-list numbers rather than rendering an empty grid.
         const roster   = d && (zag ? d.z_roster   ?? d.roster   : d.roster);
         const came     = d && (zag ? d.z_came     ?? d.came     : d.came);
         const absent   = d && (zag ? d.z_absent   ?? d.absent   : d.absent);
@@ -487,7 +468,7 @@ export default function WorkersAttendance() {
       out[m.name] = row;
     });
     return out;
-  }, [headcount, heatDates, scope]);
+  }, [headcount, heatDates, zag]);
   // Hover breakdown for a heatmap cell — the percentage says how bad, these say
   // how many, which is the number a supervisor is actually asked about.
   const heatTitle = (cell) => {
@@ -501,108 +482,328 @@ export default function WorkersAttendance() {
     return parts.join(" · ") + (cell.live ? `\n${liveText(cell.read_at)}` : "");
   };
   // …and the same breakdown on TAP, because `title` is a hover affordance and
-  // this platform is read on a phone: without it the counts behind a cell would
-  // exist only for people on a desktop.
+  // this platform is read on a phone.
   const [dayCell, setDayCell] = useState(null);   // { name, date, cell }
+  // A brigadir's whole row, on a phone — where the table is a list of cards
+  // and the role columns have nowhere to stand.
+  const [unitRow, setUnitRow] = useState(null);
 
+  // ── the table's pieces ─────────────────────────────────────────────────────
+  const listMax = Math.max(1, ...figs.map((f) => Math.round(f.onList)));
+  // One list as a bar: its length is the list against the largest one on the
+  // page, its split who came, who is on leave and who did not come.
+  const listBar = (f) => {
+    const total = Math.round(f.onList), came = Math.min(total, Math.round(f.came));
+    const leave = Math.min(total - came, Math.round(f.leave));
+    return { total, came, leave, away: total - came - leave };
+  };
+  const totalRow = {
+    onList: T.onList, came: T.came, absent: T.absent, leave: T.leave, rate: T.rate,
+    official: withOfficial.reduce((s, m) => s + (m.official_hc || 0), 0),
+  };
   const numCell = "px-3 py-2 text-right tabular-nums";
+  const sumCell = `${numCell} sticky bottom-0 font-semibold`;
+  const sumStyle = { background: "var(--bg-inner)", color: "var(--text-1)" };
+  const lower = (s) => String(s).toLocaleLowerCase();
+  const failed = isError && headcount.length === 0;
+  const empty = !isLoading && !failed && headcount.length === 0;
+  const colCount = 9 + activeRoles.length;
 
   // ── render ─────────────────────────────────────────────────────────────────────
   return (
-    <WorkersPage titleKey="nav.workersAttendance">
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
-        {isLoading ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />) : (
-          <>
-            {/* The attendance pair, in the order the question is asked:
-                how many were on the list → how many came → how many did
-                not → what that is as a rate. */}
-            <KPICard icon={Users} color="#3b82f6" label={t("workers.kpi.onList")}
-              value={fmtN(avgOnList)}
-              sub={`${headcount.length} ${t("workers.kpi.supervisors")} · ${totalWorkers} ${t("workers.kpi.uniqueShort")}`}
-              tooltip={t("workers.tip.onList")} />
-            <KPICard icon={UserCheck} color="#22c55e" label={t("workers.kpi.came")}
-              value={fmtN(avgCame)} tooltip={t("workers.tip.came")} />
-            <KPICard icon={UserMinus} color={ABSENT_COLOR} label={t("workers.kpi.absent")}
-              value={fmtN(avgAbsent)}
-              sub={Math.round(avgLeave) >= 1 ? `${fmtN(avgLeave)} ${t("workers.onLeaveShort")}` : undefined}
-              tooltip={t("workers.tip.absent")} />
-            <KPICard icon={TrendingUp} color="#14b8a6" label={t("workers.kpi.attRate")}
-              value={attRate == null ? "—" : `${attRate}%`}
-              sub={rosterSum ? `${attendedSum} / ${rosterSum}` : undefined}
-              tooltip={t("workers.tip.attRate")} />
-            {/* Штат gap — a different comparison (plan vs actual, not list
-                vs came) but it carries the verifix/official mismatch alarm,
-                so it stays in the headline row rather than living only in
-                the table. */}
-            <KPICard icon={AlertTriangle} color="#a855f7" label={t("workers.kpi.shortfall")}
-              value={fmtN(shortfall)}
-              sub={mismatchMgrs.length ? `${mismatchMgrs.length} ${t("workers.mismatchWarn")}` : undefined}
-              tooltip={t("workers.tip.shortfall")} />
-          </>
-        )}
-      </div>
-
-      {/* The shift-day still being worked is counted in, read live — say
-          so once, under the figures it moves. */}
-      {!isLoading && liveDates.length > 0 && (
-        <div className="-mt-3 mb-6 flex items-start gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
-          <Radio size={13} className="shrink-0 mt-px" style={{ color: "var(--brand)" }} aria-hidden />
-          <span>
-            {t("workers.live.note").replace("{days}", liveDates
-              .map((d) => `${d.slice(0, 5)} (${liveDays[d].at || "—"})`).join(", "))}
-          </span>
+    <WorkersPage titleKey="nav.workersAttendance"
+      right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}>
+      {failed ? (
+        // A failure is not «no closed days»: it says so, and offers the way back.
+        <div className="rounded-2xl p-4 mb-6" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState tone="danger" height="h-56" title={t("workers.loadError")} message={t("workers.loadErrorMsg")} showUploadLink={false}
+            action={<Button variant="secondary" onClick={() => refetch()}>{t("common.retry")}</Button>} />
         </div>
-      )}
-
-      {/* Role-share donut + attendance trend (compact pair). Both switches
-          drive both charts — role set adds/removes the non-zagruzka roles,
-          measure swaps the roster numbers for the ones who turned up. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-        <ChartCard icon={PieChart} title={t("workers.roleShare")} info={`${t("workers.info.composition")} ${t("workers.info.original")}`}
-          right={<ModeSwitches {...switchProps} />}>
-          {isLoading ? <SkeletonChart className="h-72" />
-            : roleTotals.some((n) => n > 0) ? <ReactApexChart key={modeKey} type="donut" series={roleTotals} options={donutOptions} height={330} />
-            : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
-        </ChartCard>
-
-        <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={`${t("workers.info.trend")} ${t("workers.info.original")}`}
-          right={<ModeSwitches {...switchProps} />}>
-          {!trend ? <SkeletonChart className="h-72" />
-            : trend?.dates?.length ? (
+      ) : empty ? (
+        <div className="rounded-2xl p-4 mb-6" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState height="h-56" title={t("workers.empty.title")} message={t("workers.empty.msg")} showUploadLink={false} />
+        </div>
+      ) : (
+        <>
+          {/* 1 · Is attendance all right? Read left to right: the rate against
+              its line, what the list is made of, who is under the line, who
+              is short of the reported headcount. */}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4 mb-4 lg:mb-6">
+            {isLoading ? <TileSkeletons /> : (
               <>
-                <div className="att-trend">
-                  <ReactApexChart key={modeKey} type="area" series={trendSeries} options={trendOptions} height={330} />
-                </div>
-                {/* Hover breakdown lives here — under the chart, never over it. */}
-                <div key={modeKey} ref={trendTip}
-                  className="att-trend-panel flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-3 mt-1 text-xs"
-                  style={{ borderColor: "var(--border)" }}
-                  dangerouslySetInnerHTML={{ __html: trendDefaultHtml }} />
+                <KPICard size="lg" label={t("workers.kpi.attRate")} tooltip={t("workers.tip.attRate")}
+                  value={T.rate == null ? "—" : `${T.rate}%`} valueColor={inkOf(T.rate)}
+                  sub={(
+                    <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span className="tabular-nums whitespace-nowrap">{fmtN(T.aSum)} / {fmtN(T.rSum)}</span>
+                      {/* The shift-day still being worked is counted in, read
+                          live — said once, under the figure it moves. */}
+                      {liveDates.length > 0 && (
+                        <span className="inline-flex items-start gap-1 min-w-0"
+                          title={t("workers.live.note").replace("{days}", liveDates
+                            .map((d) => `${d.slice(0, 5)} (${liveDays[d].at || "—"})`).join(", "))}>
+                          <Radio size={11} className="flex-shrink-0 mt-[3px]" style={{ color: "var(--brand)" }} aria-hidden />
+                          {t("workers.live.short").replace("{days}", liveDates.map((d) => d.slice(0, 5)).join(", "))}
+                        </span>
+                      )}
+                    </span>
+                  )}>
+                  <Meter value={T.rate} target={pct} targetLabel={`${pct}%`} color={TONE_HEX[toneOf(T.rate)] || FOLD_COLOR}
+                    label={`${t("workers.kpi.attRate")}: ${T.rate ?? "—"}%, ${pct}%`} />
+                </KPICard>
+
+                <KPICard label={t("workers.kpi.onList")} tooltip={t("workers.tip.onList")} value={fmtN(T.onList)}
+                  sub={zag
+                    ? `${figs.length} ${t("workers.kpi.supervisors")}`
+                    : `${figs.length} ${t("workers.kpi.supervisors")} · ${fmtN(uniqueWorkers)} ${t("workers.kpi.uniqueShort")}`}>
+                  <SplitBar parts={[
+                    { key: "came", label: t("workers.came"), value: Math.round(T.came), color: CAME_COLOR },
+                    { key: "leave", label: t("workers.onLeave"), value: Math.round(T.leave), color: LEAVE_COLOR },
+                    { key: "away", label: t("workers.absent"), value: Math.max(0, Math.round(T.absent) - Math.round(T.leave)), color: ABSENT_COLOR },
+                  ]} />
+                  <SplitLegend className="mt-2" parts={[
+                    { key: "came", label: t("workers.came"), text: fmtN(T.came), color: CAME_COLOR },
+                    { key: "absent", label: t("workers.absent"), text: fmtN(T.absent), color: ABSENT_COLOR,
+                      sub: Math.round(T.leave) >= 1 ? `(${fmtN(T.leave)} ${t("workers.onLeaveShort")})` : null },
+                  ]} />
+                </KPICard>
+
+                <KPICard label={t("workers.kpi.below").replace("{p}", pct)} tooltip={t("workers.tip.below").replace("{p}", pct)}
+                  value={String(below.length)} unit={`/ ${rated.length} ${t("workers.kpi.supervisors")}`}
+                  valueColor={!below.length ? TONE_INK.ok : below.some((f) => toneOf(f.rate) === "bad") ? TONE_INK.bad : TONE_INK.warn}
+                  onValueClick={below.length ? () => showInTable("rate", "asc") : undefined}
+                  sub={below.length > 3 ? t("workers.kpi.more").replace("{n}", below.length - 3) : undefined}>
+                  <FigureList empty={t("workers.kpi.belowNone").replace("{p}", pct)}
+                    rows={below.slice(0, 3).map((f) => ({
+                      key: f.manager_id, label: surnameInitial(tl(f.name)), title: tl(f.name),
+                      value: `${f.rate}%`, color: inkOf(f.rate),
+                    }))} />
+                </KPICard>
+
+                <KPICard label={t("workers.kpi.shortfall")} tooltip={t("workers.tip.shortfall")}
+                  value={fmtN(shortfall)} unit={t("workers.tmUnit")}
+                  valueColor={shortUnits.length ? TONE_INK.warn : undefined}
+                  onValueClick={shortUnits.length ? () => showInTable("gap", "desc") : undefined}
+                  sub={mismatchN ? `${mismatchN} ${t("workers.mismatchWarn")}` : undefined}>
+                  <FigureList empty={t("workers.kpi.shortNone")}
+                    rows={shortUnits.slice(0, 3).map((f) => ({
+                      key: f.manager_id, label: surnameInitial(tl(f.name)), title: tl(f.name),
+                      value: `−${fmtN(f.gap)}`,
+                    }))} />
+                </KPICard>
               </>
-            )
-            : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
-        </ChartCard>
-      </div>
+            )}
+          </div>
 
-      {/* Workforce treemap — full width, big & readable (one block per brigadir) */}
-      <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={`${t("workers.info.treemap")} ${t("workers.info.original")}`} className="mb-6"
-        right={<ModeSwitches {...switchProps} />}>
-        {isLoading ? <SkeletonChart className="h-96" />
-          : treePoints.length ? <ReactApexChart key={modeKey} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
-          : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
-      </ChartCard>
+          {/* 2 · When did it slip — and which roles are missing. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-4 lg:mb-6">
+            <ChartCard className="lg:col-span-2" icon={CalendarDays} title={t("workers.daily.title")}
+              subtitle={chart.grain === "week" ? t("workers.daily.subWeek") : chart.grain === "month" ? t("workers.daily.subMonth") : undefined}
+              info={`${t("workers.daily.info").replace("{p}", pct)} ${t("workers.info.original")}`}
+              bodyClassName="px-2 pt-2 pb-3">
+              {!wide ? <SkeletonChart className="h-[360px] m-2" />
+                : known.length ? (
+                  <>
+                    <div ref={chartRef} className="att-trend">
+                      <ReactApexChart key={`${scope}-${chart.grain}-${cats.length}`} type="line" height={300}
+                        series={[{ name: t("workers.kpi.attRate"), data: rates }]} options={dayOptions} />
+                    </div>
+                    <DayReadout ref={readout} points={chart.pts} {...readoutProps} />
+                  </>
+                )
+                : <EmptyState height="h-[360px]" title={t("workers.empty.title")} message={t("workers.empty.msg")} showUploadLink={false} />}
+            </ChartCard>
 
-      {/* Attendance heatmap (full width) — same component as the fleet heatmap */}
-      <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={`${t("workers.info.heatmap")} ${t("workers.info.original")}`} className="mb-6"
-        right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}>
-        {isLoading ? <SkeletonChart className="h-72" />
-          : heatManagers.length && heatDates.length
-            ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData}
-                mode="actual" segments={ATT_SEGMENTS} cellTitle={heatTitle} dateMarks={liveMarks}
-                onCellClick={(name, date, v, cell) => cell?.roster && setDayCell({ name, date, cell })} />
-            : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
-      </ChartCard>
+            <ChartCard icon={Briefcase} title={t("workers.byRole")}
+              info={`${t("workers.info.byRole")} ${t("workers.info.original")}`}>
+              {isLoading ? <SkeletonChart className="h-[330px]" />
+                : roleRows.length ? (
+                  <div className="flex-1 flex flex-col">
+                    <RankedList
+                      rows={roleRows} max={roleMax} unit={t("workers.tmUnit")}
+                      parts={listParts.filter((p) => p.key !== "leave")}
+                      extra={(r) => (
+                        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                          {roleListTotal ? `${Math.round((r.total / roleListTotal) * 100)}%` : ""}
+                        </span>
+                      )}
+                      value={(r) => (
+                        <span className="text-xs tabular-nums whitespace-nowrap min-w-[5.5em] text-right" style={{ color: "var(--text-3)" }}>
+                          <b className="font-bold" style={{ color: "var(--text-1)" }}>{fmtN(r.came)}</b> / {fmtN(r.total)}
+                        </span>
+                      )}
+                    />
+                    <div className="mt-auto pt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-[2px]" style={{ background: CAME_COLOR }} />{t("workers.came")}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-[2px]" style={{ background: ABSENT_COLOR }} />{t("workers.absent")}
+                      </span>
+                      <span className="ml-auto">{t("workers.perDay")}</span>
+                    </div>
+                  </div>
+                )
+                : <EmptyState height="h-[330px]" title={t("workers.empty.title")} message={t("workers.empty.msg")} showUploadLink={false} />}
+            </ChartCard>
+          </div>
+
+          {/* 3 · Where exactly — brigadir × day, the fleet heatmap's own grid. */}
+          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={`${t("workers.info.heatmap")} ${t("workers.info.original")}`} className="mb-4 lg:mb-6">
+            {isLoading ? <SkeletonChart className="h-72" />
+              : heatManagers.length && heatDates.length
+                ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData}
+                    mode="actual" segments={ATT_SEGMENTS} cellTitle={heatTitle} dateMarks={liveMarks}
+                    onCellClick={(name, date, v, cell) => cell?.roster && setDayCell({ name, date, cell })} />
+                : <EmptyState title={t("workers.empty.title")} message={t("workers.empty.msg")} showUploadLink={false} />}
+          </ChartCard>
+
+          {/* 4 · The numbers behind it — one row per brigadir. The list as a
+              bar stands where the treemap did: its length is the brigade
+              against the largest one, its split who came. */}
+          <div ref={tableRef} className="scroll-mt-4 mb-4 lg:mb-6">
+            <TableCard icon={ClipboardList} title={t("workers.summary")} mobileMaxHeight="none"
+              right={(
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* The switch drives the ROLE columns only. Ro'yxatda / Keldi /
+                      Kelmadi stay side by side whatever is selected — comparing
+                      them is the whole job of those three columns. */}
+                  <span className="text-[11px] max-sm:hidden" style={{ color: "var(--text-3)" }}>{t("workers.roleCols")}</span>
+                  <SegmentedToggle className="max-sm:hidden"
+                    size="sm" value={measure} onChange={setMeasure}
+                    options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")], ["diff", t("workers.msDiff")]]} />
+                  <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>{isLoading ? "" : figs.length}</span>
+                </div>
+              )}
+              mobile={(
+                <div>
+                  {isLoading && SKELETON_NAME_WIDTHS.map((w, i) => (
+                    <div key={i} className="px-4 py-3" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+                      <SkeletonBlock className={`h-4 ${w} mb-2.5`} />
+                      <SkeletonBlock className="h-2.5 w-full mb-2.5" />
+                      <SkeletonBlock className="h-3 w-2/3" />
+                    </div>
+                  ))}
+                  {sortedRows.map((m, i) => (
+                    <button key={m.manager_id} type="button" onClick={() => setUnitRow(m)}
+                      className="block w-full text-left px-4 py-3 active:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:bg-[var(--bg-inner)]"
+                      style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{tl(m.name)}</span>
+                        <span className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: inkOf(m.rate) }}>
+                          {m.rate == null ? "—" : `${m.rate}%`}
+                        </span>
+                      </div>
+                      <div className="mt-2"><StackBar row={listBar(m)} max={listMax} parts={listParts} unit={t("workers.tmUnit")} /></div>
+                      <div className="mt-2 flex items-baseline justify-between gap-3 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+                        <span className="whitespace-nowrap">S{m.shift} · {fmtN(m.onList)} {lower(t("workers.onList"))}</span>
+                        <span className="truncate">
+                          {fmtN(m.came)} {lower(t("workers.came"))} · {fmtN(m.absent)} {lower(t("workers.absent"))}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}>
+              <thead>
+                <tr>
+                  <Th label={t("workers.name")} k="name" sort={sort} onSort={onSort} />
+                  <Th label={t("overview.shift")} align="center" />
+                  <Th label={t("workers.days")} align="right" hint={t("workers.tip.daysCol")} />
+                  <Th label={t("workers.onList")} k="onList" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.onList")} />
+                  <Th label={t("workers.came")} k="came" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.came")} />
+                  <Th label={t("workers.absent")} k="absent" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.absent")} />
+                  <Th label={t("workers.attRate")} k="rate" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.attRate")} />
+                  <Th label={t("workers.official")} k="official" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.officialCol")} />
+                  <Th label={t("workers.shortfall")} k="gap" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.shortfall")} />
+                  {/* Role columns follow the page's population: «Zagruzka» keeps
+                      the four counted roles, «Jami» appends every other title. */}
+                  {activeRoles.map((r) => (
+                    <Th key={r} k={r} sort={sort} onSort={onSort} align="right" label={roleLabel(r)} />
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && SKELETON_NAME_WIDTHS.map((w, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-2"><SkeletonBlock className={`h-3.5 ${w}`} /></td>
+                    {Array.from({ length: colCount - 1 }).map((_, j) => (
+                      <td key={j} className="px-3 py-2"><SkeletonBlock className="h-3.5 w-8 ml-auto" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {sortedRows.map((m) => (
+                  <tr key={m.manager_id}>
+                    <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
+                    <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{m.shift}</td>
+                    <td className={numCell} style={{ color: "var(--text-3)" }}>{m.days ?? 0}</td>
+                    <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>
+                      <span className="inline-flex items-center justify-end gap-2.5">
+                        <span className="w-24 flex-shrink-0"><StackBar row={listBar(m)} max={listMax} parts={listParts} unit={t("workers.tmUnit")} /></span>
+                        <span className="min-w-[2.2em]">{fmtN(m.onList)}</span>
+                      </span>
+                    </td>
+                    <td className={numCell} style={{ color: "var(--text-2)" }}>{fmtN(m.came)}</td>
+                    {/* The leave share sits beside the number because "8
+                        missing" and "8 missing, 6 of them on leave" are
+                        different problems. */}
+                    <td className={numCell} style={{ color: "var(--text-2)" }}>
+                      {fmtN(m.absent)}
+                      {Math.round(m.leave || 0) > 0 && (
+                        <span className="ml-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                          ({fmtN(m.leave)} {t("workers.onLeaveShort")})
+                        </span>
+                      )}
+                    </td>
+                    <td className={numCell} style={{ color: inkOf(m.rate), fontWeight: 700 }}>
+                      {m.rate == null ? "—" : `${m.rate}%`}
+                    </td>
+                    <td className={numCell} style={{ color: "var(--text-2)" }}>{fmtN(m.official_hc)}</td>
+                    <td className={numCell} style={{ color: (m.gap ?? 0) > 2 ? TONE_INK.warn : "var(--text-2)" }}>
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        {(m.gap ?? 0) > 2 && <AlertTriangle size={11} aria-hidden />}
+                        {m.gap == null ? "—" : (Math.round(m.gap) > 0 ? `−${fmtN(m.gap)}` : "0")}
+                      </span>
+                    </td>
+                    {activeRoles.map((r) => {
+                      const v = Math.round(roleVal(m, r));
+                      return <td key={r} className={numCell} style={{ color: v ? "var(--text-2)" : "var(--text-4)" }}>{v}</td>;
+                    })}
+                  </tr>
+                ))}
+                {/* The plant — pinned under the rows, whatever they are sorted by. */}
+                {!isLoading && figs.length > 1 && (
+                  <tr>
+                    <td className="px-3 py-2 sticky bottom-0 font-semibold" style={sumStyle}>{t("workers.total")}</td>
+                    <td className="px-3 py-2 sticky bottom-0" style={sumStyle} />
+                    <td className="px-3 py-2 sticky bottom-0" style={sumStyle} />
+                    <td className={sumCell} style={sumStyle}>{fmtN(totalRow.onList)}</td>
+                    <td className={sumCell} style={sumStyle}>{fmtN(totalRow.came)}</td>
+                    <td className={sumCell} style={sumStyle}>
+                      {fmtN(totalRow.absent)}
+                      {Math.round(totalRow.leave) > 0 && (
+                        <span className="ml-1 text-[11px] font-normal" style={{ color: "var(--text-3)" }}>
+                          ({fmtN(totalRow.leave)} {t("workers.onLeaveShort")})
+                        </span>
+                      )}
+                    </td>
+                    <td className={sumCell} style={{ ...sumStyle, color: inkOf(totalRow.rate) }}>
+                      {totalRow.rate == null ? "—" : `${totalRow.rate}%`}
+                    </td>
+                    <td className={sumCell} style={sumStyle}>{withOfficial.length ? fmtN(totalRow.official) : "—"}</td>
+                    <td className={sumCell} style={sumStyle}>{withOfficial.length ? (Math.round(shortfall) > 0 ? `−${fmtN(shortfall)}` : "0") : "—"}</td>
+                    {activeRoles.map((r) => (
+                      <td key={r} className={sumCell} style={sumStyle}>
+                        {fmtN(figs.reduce((s, m) => s + roleVal(m, r), 0))}
+                      </td>
+                    ))}
+                  </tr>
+                )}
+              </tbody>
+            </TableCard>
+          </div>
+        </>
+      )}
 
       {/* One day of one brigadir, spelled out — the tap target behind every
           heatmap cell. Four numbers, no chrome: the cell already said the
@@ -612,127 +813,91 @@ export default function WorkersAttendance() {
         title={dayCell ? tl(dayCell.name) : ""}
         subtitle={dayCell
           ? fmtLongDate(parseDate(dayCell.date), t, lang)
-            // Which population these four numbers are about. The header
+            // Which population these four numbers are about. The toolbar
             // switch is not visible from inside the modal, so a narrowed
             // grid must say so here or the counts read as the whole list.
-            + (scope === "zagruzka" ? ` · ${t("workers.tmZagruzka")}` : "")
+            + (zag ? ` · ${t("workers.tmZagruzka")}` : "")
             // A day still being worked: the four numbers are «so far».
             + (dayCell.cell.live ? ` · ${liveText(dayCell.cell.read_at)}` : "")
           : ""}>
         {dayCell && (() => {
           const c = dayCell.cell;
-          const pct = Math.round(((c.came + (c.on_leave || 0)) / c.roster) * 100);
-          const line = (label, value, color, extra) => (
-            <div className="flex items-baseline justify-between gap-3 py-1.5">
-              <span className="text-xs" style={{ color: "var(--text-3)" }}>{label}</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color }}>
-                {value}
-                {extra && <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-4)" }}>{extra}</span>}
-              </span>
-            </div>
-          );
+          const p = Math.round(((c.came + (c.on_leave || 0)) / c.roster) * 100);
           return (
-            <>
-              <div className="text-center pb-2">
-                <div className="text-3xl font-bold tabular-nums" style={{ color: rateColor(pct) }}>{pct}%</div>
-                <div className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("workers.attRate")}</div>
-                {/* The fraction the % came from. Leave counts as attended,
-                    so «84 came, 16 absent» no longer adds up to the number
-                    above it on its own — without this line the reader is
-                    left to guess which of the four counts it was over. */}
-                <div className="text-[11px] tabular-nums mt-0.5" style={{ color: "var(--text-4)" }}>
-                  {c.on_leave > 0
-                    ? `${c.came} + ${c.on_leave} / ${c.roster}`
-                    : `${c.came} / ${c.roster}`}
-                </div>
-              </div>
-              <div style={{ borderTop: "1px solid var(--border)" }}>
-                {line(t("workers.onList"), c.roster, "var(--text-1)")}
-                {line(t("workers.came"), c.came, PRESENT_COLOR)}
-                {line(t("workers.absent"), c.absent, c.absent > 0 ? ABSENT_COLOR : "var(--text-3)",
-                  c.on_leave > 0 ? `${c.on_leave} ${t("workers.onLeaveShort")}` : null)}
-              </div>
-            </>
+            <ListFigures t={t} rate={p} fraction={c.on_leave > 0 ? `${c.came} + ${c.on_leave} / ${c.roster}` : `${c.came} / ${c.roster}`}
+              onList={c.roster} came={c.came} absent={c.absent} leave={c.on_leave} />
           );
         })()}
       </Modal>
 
-      {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
-      <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-6"
-        right={(
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {/* The switches drive the ROLE columns only. Ro'yxatda / Keldi /
-                Kelmadi stay side by side whatever is selected — comparing
-                them is the whole job of those three columns. */}
-            <ModeSwitches {...switchProps} />
-            <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{headcount.length}</span>
-          </div>
-        )}>
-        <thead>
-          <tr>
-            <Th label={t("workers.name")} k="name" sort={sort} onSort={onSort} />
-            <Th label={t("overview.shift")} align="center" />
-            <Th label={t("workers.days")} align="right" hint={t("workers.tip.daysCol")} />
-            <Th label={t("workers.onList")} k="onList" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.onList")} />
-            <Th label={t("workers.came")} k="came" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.came")} />
-            <Th label={t("workers.absent")} k="absent" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.absent")} />
-            <Th label={t("workers.attRate")} k="rate" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.attRate")} />
-            <Th label={t("workers.official")} k="official" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.officialCol")} />
-            <Th label={t("workers.shortfall")} k="gap" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.shortfall")} />
-            {/* Role columns follow the switches: «Zagruzka» keeps the four
-                counted roles, «Jami» appends every other job title present. */}
-            {activeRoles.map((r) => (
-              <Th key={r} k={r} sort={sort} onSort={onSort} align="right"
-                label={<span style={{ color: roleColor(r) }}>{roleLabel(r)}</span>} />
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sortedRows.length === 0 && (
-            <tr><td colSpan={9 + activeRoles.length}>
-              <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />
-            </td></tr>
-          )}
-          {sortedRows.map((m) => (
-            <tr key={m.manager_id}>
-              <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
-              <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{m.shift}</td>
-              <td className={numCell} style={{ color: "var(--text-3)" }}>{m.days ?? 0}</td>
-              <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{fmtN(m.avg_roster)}</td>
-              <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmtN(m.avg_came)}</td>
-              {/* Absences are only worth ink when there are any; the leave
-                  share sits beside the number because "8 missing" and "8
-                  missing, 6 of them on leave" are different problems. */}
-              <td className={numCell} style={{ color: (m.avg_absent || 0) > 0 ? ABSENT_COLOR : "var(--text-3)" }}>
-                {fmtN(m.avg_absent)}
-                {Math.round(m.avg_leave || 0) > 0 && (
-                  <span className="ml-1 text-[10px]" style={{ color: "var(--text-4)" }}>
-                    ({fmtN(m.avg_leave)} {t("workers.onLeaveShort")})
+      {/* One brigadir's row, spelled out — a phone's way to the role columns. */}
+      <Modal open={!!unitRow} onClose={() => setUnitRow(null)} maxWidth="max-w-sm"
+        icon={<Users size={16} />}
+        title={unitRow ? tl(unitRow.name) : ""}
+        subtitle={unitRow
+          ? `S${unitRow.shift} · ${unitRow.days ?? 0} ${lower(t("workers.days"))}${zag ? ` · ${t("workers.tmZagruzka")}` : ""} · ${t("workers.perDay")}`
+          : ""}>
+        {unitRow && (
+          <>
+            <ListFigures t={t} rate={unitRow.rate} fraction={`${fmtN(unitRow.aSum)} / ${fmtN(unitRow.rSum)}`}
+              onList={fmtN(unitRow.onList)} came={fmtN(unitRow.came)} absent={fmtN(unitRow.absent)} leave={Math.round(unitRow.leave)}
+              extra={[
+                [t("workers.official"), fmtN(unitRow.official_hc), "var(--text-1)"],
+                [t("workers.shortfall"), unitRow.gap == null ? "—" : (Math.round(unitRow.gap) > 0 ? `−${fmtN(unitRow.gap)}` : "0"),
+                  (unitRow.gap ?? 0) > 2 ? TONE_INK.warn : "var(--text-1)"],
+              ]} />
+            <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+              <div className="flex items-baseline justify-between gap-3 mb-1.5 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
+                <span>{t("workers.byRole")}</span>
+                <span className="normal-case tracking-normal font-normal">{t("workers.came")} / {lower(t("workers.onList"))}</span>
+              </div>
+              {activeRoles.filter((r) => (unitRow.avg_roster_by_role?.[r] ?? 0) > 0).map((r) => (
+                <div key={r} className="flex items-baseline justify-between gap-3 py-1 text-xs">
+                  <span className="truncate" style={{ color: "var(--text-2)" }}>{roleLabel(r)}</span>
+                  <span className="tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                    <b className="font-semibold" style={{ color: "var(--text-1)" }}>{fmtN(unitRow.avg_came_by_role?.[r] ?? 0)}</b>
+                    {" / "}{fmtN(unitRow.avg_roster_by_role?.[r] ?? 0)}
                   </span>
-                )}
-              </td>
-              <td className={numCell} style={{ color: rateColor(m.rate), fontWeight: 600 }}>
-                {m.rate == null ? "—" : `${m.rate}%`}
-              </td>
-              <td className={numCell} style={{ color: "var(--text-2)" }}>{fmtN(m.official_hc)}</td>
-              <td className={numCell} style={{ color: (m.gap ?? 0) > 2 ? "#f59e0b" : "var(--text-2)" }}>
-                <span className="inline-flex items-center gap-1 justify-end">
-                  {(m.gap ?? 0) > 2 && <AlertTriangle size={11} />}
-                  {m.gap == null ? "—" : (Math.round(m.gap) > 0 ? `−${fmtN(m.gap)}` : "0")}
-                </span>
-              </td>
-              {activeRoles.map((r) => (
-                <td key={r} className={numCell} style={{ color: roleColor(r) }}>{fmtN(roleVal(m, r))}</td>
+                </div>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </TableCard>
+            </div>
+          </>
+        )}
+      </Modal>
 
-      {/* Verifix's own monthly time kinds (Явка, Отсутствие, …) — moved here
-          from «Hisobotlar» on 2026-11-04; whole months, so they sit after
-          everything the period reads day by day. */}
-      <VerifixKindsCard fparams={fparams} ready={ready} scope={scope} setScope={setScope} t={t} className="mb-8" />
+      {/* 5 · Verifix's own monthly time kinds (Явка, Отсутствие, …) — whole
+          months, so they sit after everything the period reads day by day. */}
+      <VerifixKindsCard fparams={fparams} ready={ready} scope={scope} t={t} className="mb-8 xl:max-w-[880px]" />
     </WorkersPage>
+  );
+}
+
+// A list's figures in a dialog — the rate, the fraction it came from, then the
+// counts. Leave counts as attended, so «84 came, 16 absent» does not add up to
+// the rate on its own: the fraction line says which counts it was over.
+function ListFigures({ t, rate, fraction, onList, came, absent, leave, extra = [] }) {
+  const line = (label, value, color, note) => (
+    <div key={label} className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className="text-xs" style={{ color: "var(--text-3)" }}>{label}</span>
+      <span className="text-sm font-semibold tabular-nums" style={{ color }}>
+        {value}
+        {note && <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-3)" }}>{note}</span>}
+      </span>
+    </div>
+  );
+  return (
+    <>
+      <div className="text-center pb-2">
+        <div className="text-3xl font-bold tabular-nums" style={{ color: inkOf(rate) }}>{rate == null ? "—" : `${rate}%`}</div>
+        <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("workers.kpi.attRate")}</div>
+        <div className="text-[11px] tabular-nums mt-0.5" style={{ color: "var(--text-3)" }}>{fraction}</div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--border)" }}>
+        {line(t("workers.onList"), onList, "var(--text-1)")}
+        {line(t("workers.came"), came, "var(--text-1)")}
+        {line(t("workers.absent"), absent, "var(--text-1)", leave > 0 ? `${leave} ${t("workers.onLeaveShort")}` : null)}
+        {extra.map(([label, value, color]) => line(label, value, color))}
+      </div>
+    </>
   );
 }

@@ -914,8 +914,15 @@ def get_requests_analysis(
             ttype = payload.get("target_type") or "task"
             label = (payload.get("target_manager_name") if ttype == "supervisor"
                      else payload.get("task_name")) or "—"
+            # A «→ brigadir» destination also names the unit by its id, so the
+            # page can put what a brigadir RECEIVED beside what they lent out
+            # without joining two spellings of one name (an older request
+            # carries no id: the page falls back to the name there).
             tgt = targets.setdefault((ttype, label),
-                                     {"label": label, "type": ttype, "docs": 0, "workers": 0})
+                                     {"label": label, "type": ttype, "docs": 0, "workers": 0,
+                                      "manager_id": None})
+            if ttype == "supervisor" and tgt["manager_id"] is None:
+                tgt["manager_id"] = payload.get("target_manager_id")
             tgt["docs"]    += 1
             tgt["workers"] += n_emp
             s["_targets"][label] = s["_targets"].get(label, 0) + n_emp
