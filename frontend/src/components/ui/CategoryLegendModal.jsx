@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { CATS, catColor, iconFor } from "../idle/categories";
 
 /**
@@ -34,6 +35,7 @@ import { CATS, catColor, iconFor } from "../idle/categories";
  */
 export default function CategoryLegendModal({ catNames = [], catColors = [], onClose }) {
   const { t } = useLang();
+  const leaveRef = useLeaveRef(); // opens and closes like Modal (motion system, index.css)
   const code = (name) => name.replace(/^Cat\s*/i, "");
 
   // Every canonical category, plus anything the caller carries that this build
@@ -50,12 +52,13 @@ export default function CategoryLegendModal({ catNames = [], catColors = [], onC
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      ref={leaveRef}
+      className="modal-backdrop fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
       onClick={onClose}
     >
       <div
-        className="rounded-2xl w-full max-w-md shadow-2xl"
+        className="modal-card rounded-2xl w-full max-w-md shadow-2xl"
         style={{
           background: "var(--bg-card)",
           border: "1px solid var(--border-md)",

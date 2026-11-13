@@ -14,6 +14,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Columns3, Eye, EyeOff, GripVertical, Lock } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 const PANEL_WIDTH = 272;
 
@@ -69,6 +70,7 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
   const [dragKey, setDragKey] = useState(null);
   const ref = useRef(null);     // trigger wrapper
   const popRef = useRef(null);  // portaled panel
+  const setPop = useLeaveRef(popRef);
   const rowRefs = useRef({});   // row key → element (drag hit-testing)
 
   const byKey = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, c])), [columns]);
@@ -186,8 +188,8 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
 
       {open && pos && createPortal(
         <div
-          ref={popRef}
-          className="rounded-xl p-2"
+          ref={setPop}
+          className="pop rounded-xl p-2"
           style={{
             position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
             width: PANEL_WIDTH,

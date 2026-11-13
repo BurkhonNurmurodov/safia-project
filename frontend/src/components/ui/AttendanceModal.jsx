@@ -7,6 +7,7 @@ import { useFilters } from "../../context/FilterContext";
 import { fmtTime } from "../../utils/formatters";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 // Single-date mode:  { managerId, date, managerName, onClose }
 // Date-range mode:   { managerId, dateFrom, dateTo, managerName, onClose }
@@ -15,6 +16,7 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [nameAsc, setNameAsc] = useState(true);
+  const leaveRef = useLeaveRef(); // opens and closes like Modal (motion system, index.css)
 
   const isRange = !date && (dateFrom || dateTo);
   // A "range" spanning a single day (dateFrom === dateTo) has no meaningful days-present count.
@@ -45,8 +47,8 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
     : date;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-3xl flex flex-col"
+    <div ref={leaveRef} className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
+      <div className="modal-card rounded-2xl w-full max-w-3xl flex flex-col"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "min(80dvh, 100%)" }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>

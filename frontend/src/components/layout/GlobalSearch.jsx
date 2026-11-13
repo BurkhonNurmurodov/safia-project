@@ -16,6 +16,7 @@ import { useGuardedNavigate } from "../../hooks/useLeaveGuard";
 import { useTranslit } from "../../utils/transliterate";
 import { searchFold, matchScore } from "../../utils/searchFold";
 import useIsMobile from "../../hooks/useIsMobile";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { ALL_LINKS, NAV_GROUPS, adminPath } from "../../config/navLinks";
 import { usesLauncher } from "../../utils/launcherRoles";
 import { nameCase } from "../people/peopleUtil";
@@ -89,6 +90,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const inputRef = useRef(null);
   const boxRef = useRef(null);
   const listRef = useRef(null);
+  const leaveList = useLeaveRef(); // the results drop out of the box and ease back
 
   const isAdmin = auth?.role === "admin";
   const can = (page) => canAccessPage(auth?.role, page, access, capPages, deniedPages);
@@ -300,10 +302,11 @@ export default function GlobalSearch({ drawer = false, onPick }) {
 
       {open && (
         <div
+          ref={leaveList}
           // Keeps the input focused through a press anywhere in the list —
           // its scrollbar included — so a press there never closes it.
           onMouseDown={(e) => e.preventDefault()}
-          className={`absolute left-0 top-full mt-1.5 z-[45] w-full rounded-xl overflow-hidden ${drawer ? "" : "min-w-[380px]"}`}
+          className={`pop absolute left-0 top-full mt-1.5 z-[45] w-full rounded-xl overflow-hidden ${drawer ? "" : "min-w-[380px]"}`}
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)",
                    boxShadow: "0 12px 32px rgba(0,0,0,0.28)" }}
         >

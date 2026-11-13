@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 // One marker per blocking reason — the grid cells, their tooltips and this
 // modal must always agree, so the maps live here and both chart components
@@ -44,14 +45,16 @@ export const PENDING_TITLE_KEYS = {
 export default function PendingInfoModal({ managerName, date, reason, onClose }) {
   const { t } = useLang();
   const { tl } = useTranslit();
+  const leaveRef = useLeaveRef(); // opens and closes like Modal (motion system, index.css)
   return createPortal(
     <div
-      className="fixed inset-0 z-[210] flex items-center justify-center p-4"
+      ref={leaveRef}
+      className="modal-backdrop fixed inset-0 z-[210] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
       onClick={onClose}
     >
       <div
-        className="rounded-2xl w-full max-w-sm shadow-2xl"
+        className="modal-card rounded-2xl w-full max-w-sm shadow-2xl"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
         onClick={e => e.stopPropagation()}
       >

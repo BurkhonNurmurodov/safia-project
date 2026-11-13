@@ -3,6 +3,7 @@ import { createElement, isValidElement, useCallback, useEffect, useEffectEvent, 
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import ConfirmDialog from "./ConfirmDialog";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { DialogDraftContext, isTopLayer, trapTab, useDialogLayer } from "./dialogLayers";
 
 // `icon` may be an ELEMENT (<Sparkles size={16} />) or the COMPONENT itself
@@ -80,6 +81,9 @@ export default function Modal({
     return v && v !== key ? v : en;
   };
   const backdropRef = useRef(null);
+  // Closing is instant for the logic below; the backdrop and card fade out as
+  // a lifeless copy (utils/leave.js), so nothing here waits on an animation.
+  const setBackdrop = useLeaveRef(backdropRef);
   const cardRef = useRef(null);
   const ownFocusRef = useRef(null);
   const editedRef = useRef(false);
@@ -172,7 +176,7 @@ export default function Modal({
     <>
       {createPortal(
         <div
-          ref={backdropRef}
+          ref={setBackdrop}
           className="modal-backdrop fixed inset-0 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
           onClick={() => dismissable && onClose?.()}

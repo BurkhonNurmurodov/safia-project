@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { ChevronLeft, ChevronRight, CalendarDays, X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useMarkDraft } from "./dialogLayers";
@@ -175,6 +176,9 @@ export default function DateRangePicker({
   const wrapRef    = useRef(null);
   const triggerRef = useRef(null);
   const popRef     = useRef(null);
+  // One calendar is open at a time — a desktop popover or a phone sheet — and
+  // whichever it is eases out when it closes (motion system, index.css).
+  const setPop     = useLeaveRef(popRef);
   const [pos, setPos] = useState(null);
   const isMobile  = window.innerWidth < 640;
 
@@ -192,7 +196,7 @@ export default function DateRangePicker({
     const spaceBelow = vh - rect.bottom - 8;
     const openUp = spaceBelow < h && rect.top - 8 > spaceBelow;
     const top = openUp ? Math.max(8, rect.top - 8 - h) : rect.bottom + 8;
-    return { top, left, width };
+    return { top, left, width, up: openUp };
   }
 
   useEffect(() => {
@@ -446,10 +450,10 @@ export default function DateRangePicker({
           the content region and the sheet landed in the wrong place. ── */}
       {open && (month || year) && createPortal(
         isMobile ? (
-          <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end"
+          <div ref={setPop} data-popover-portal className="sheet-backdrop fixed inset-0 z-[300] flex flex-col justify-end"
             style={{ background: "rgba(0,0,0,0.6)" }}
             onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
-            <div className="rounded-t-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
+            <div className="sheet rounded-t-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
               <div className="flex items-center justify-between px-4 pt-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
                 <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t(year ? "filter.selectYear" : "filter.selectMonth")}</span>
                 <button onClick={() => setOpen(false)} style={{ color: "var(--text-3)" }}><X size={18} /></button>
@@ -458,7 +462,7 @@ export default function DateRangePicker({
             </div>
           </div>
         ) : (
-          <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl overflow-hidden"
+          <div ref={setPop} data-popover-portal data-side={pos?.up ? "top" : undefined} className="pop rounded-xl shadow-2xl overflow-hidden"
             style={{
               position: "fixed", top: pos?.top ?? 0, left: pos?.left ?? 0,
               width: pos?.width ?? 320, visibility: pos ? "visible" : "hidden",
@@ -469,9 +473,12 @@ export default function DateRangePicker({
         ), document.body)}
 
       {open && !month && !year && isMobile && createPortal(
-        <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
+        <div ref={setPop} data-popover-portal className="sheet-backdrop fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={e => { if (e.target===e.currentTarget) setOpen(false); }}>
-          <div className="rounded-t-2xl flex flex-col max-h-[90dvh]"
+          {/* `relative`: the grab handle below is positioned against the SHEET.
+              Without it the handle resolved against the screen and sat at the
+              top of the viewport — and would jump there once the rise ended. */}
+          <div className="sheet relative rounded-t-2xl flex flex-col max-h-[90dvh]"
             style={{ background:"var(--bg-card)", border:"1px solid var(--border-md)" }}>
 
             {/* Handle + header */}
@@ -565,7 +572,7 @@ export default function DateRangePicker({
 
       {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
       {open && !month && !year && !isMobile && createPortal(
-        <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl flex overflow-hidden"
+        <div ref={setPop} data-popover-portal data-side={pos?.up ? "top" : undefined} className="pop rounded-xl shadow-2xl flex overflow-hidden"
           style={{
             position:"fixed",
             top: pos?.top ?? 0,

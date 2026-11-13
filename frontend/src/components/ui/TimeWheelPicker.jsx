@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Clock } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 // Samsung-style wheel time picker, opened as a popup/bottom-sheet. Two snapping
 // columns (hours | minutes) at 1-minute granularity, constrained to a valid
@@ -131,6 +132,9 @@ function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
 
   // Manual (typed) entry — the wheels' equal twin, never a separate validator.
   const [manual, setManual] = useState(false);
+  // Rises from the bottom edge on a phone, settles in as a card from sm up,
+  // and leaves the way it came (motion system, index.css `.sheet-card`).
+  const leaveRef = useLeaveRef();
   const [hStr, setHStr]     = useState("");
   const [mStr, setMStr]     = useState("");
   const hourRef = useRef(null);
@@ -227,12 +231,13 @@ function WheelDialog({ lo, hi, value, title, onConfirm, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center"
+      ref={leaveRef}
+      className="sheet-backdrop fixed inset-0 z-[120] flex items-end sm:items-center justify-center"
       style={{ background: "rgba(0,0,0,0.6)", paddingBottom: "calc(var(--tg-safe-bottom, 0px))" }}
       onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[280px] rounded-t-2xl sm:rounded-2xl overflow-hidden"
+        className="sheet-card w-full sm:max-w-[280px] rounded-t-2xl sm:rounded-2xl overflow-hidden"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 -8px 40px rgba(0,0,0,0.35)" }}>
         {/* header */}
         <div className="px-5 py-3 text-center text-sm font-semibold border-b"

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Bell, CheckCircle2, Settings, X } from "lucide-react";
@@ -114,6 +115,8 @@ export default function NotificationBell() {
 function NotifPanel({ anchorRef, onClose, onSettings }) {
   const { t, lang } = useLang();
   const panelRef = useRef(null);
+  // Drops out of the bell and eases back when it closes (index.css `.pop`).
+  const setPanel = useLeaveRef(panelRef);
   const [pos, setPos] = useState(null);
 
   // Fetched fresh on every open, and NOT refetched while open: a list that
@@ -219,12 +222,13 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
   if (!pos) return null;
   return createPortal(
     <div
-      ref={panelRef}
+      ref={setPanel}
       role="dialog"
       aria-label={t("notif.title")}
       tabIndex={-1}
-      className="rounded-xl shadow-2xl flex flex-col outline-none"
+      className="pop rounded-xl shadow-2xl flex flex-col outline-none"
       style={{
+        transformOrigin: "100% 0",
         position: "fixed",
         zIndex: PANEL_Z,
         top: pos.top,

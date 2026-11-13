@@ -83,6 +83,9 @@
   --text-4:     #4b5563;
   --input-bg:   #12151f;
   --hover-bg:   rgba(255,255,255,0.05);
+  /* A control held down: the wash laid over it while pressed (motion system,
+     Tier 2). One step past --hover-bg, so a press reads through a hover. */
+  --press-wash: rgba(255,255,255,0.10);
   --scrollbar:  #2e3347;
   /* Loading placeholders (components/ui/Skeleton.jsx). A token, not a
      white-alpha utility: 6% white vanishes on the light theme's white cards. */
@@ -144,6 +147,7 @@
   --text-4:     #9ca3af;
   --input-bg:   #f0ece4;
   --hover-bg:   rgba(0,0,0,0.04);
+  --press-wash: rgba(0,0,0,0.09);
   --scrollbar:  #cbd5e1;
   --skeleton:   rgba(0,0,0,0.07);
 
@@ -336,6 +340,150 @@ body.sidebar-open { overflow: hidden; }
   .nav-grp-items, .nav-grp-chev { transition: none !important; }
 }
 
+/* ── Motion system (Tier 2 · surfaces, press, leaving) ────────────────────
+   Tier 1 above animates the shell. This tier is what every floating surface
+   and every control shares. Record: docs/motion.md.
+
+   · ENTER — a class on the surface: `.pop` (menus, dropdowns, popovers),
+             `.modal-backdrop` + `.modal-card` (dialogs), `.sheet-backdrop` +
+             `.sheet` (a phone's bottom sheets), `.tip` (tooltips), `.toast-in`,
+             `.fade-in` (a bare dimmer).
+   · LEAVE — `useLeaveRef` (hooks/useLeaveRef.js) on the same element. React
+             still removes it at once — focus, Escape and the page under it
+             behave as if it were gone, because it is. A lifeless copy wearing
+             `data-leaving` plays the exit below and is removed
+             (utils/leave.js). A surface with no rule of its own fades; reduced
+             motion makes no copy at all.
+   · PRESS — every button dips while it is held. `.btn` (Button.jsx) adds a
+             wash; `.press` gives the dip to something that is not a button,
+             `.press-none` takes it away.
+
+   Only opacity and transforms move. Entrances are short and exits shorter:
+   something leaving must never keep the reader waiting. The new enter
+   keyframes name only `from` and run with no fill, so the element's own style
+   is the resting state and nothing lingers afterwards to trap a fixed child
+   or re-stack the surface. */
+:root {
+  --ease-in:    cubic-bezier(.4, 0, 1, 1);     /* things leaving */
+  --ease-sheet: cubic-bezier(.32, .72, 0, 1);  /* a sheet rising from an edge */
+}
+
+/* Floating panel — drops 4px out of its trigger; `data-side="top"` is one
+   that opened upward, so it rises instead. */
+@keyframes popIn  { from { opacity: 0; transform: translateY(var(--pop-y, -4px)) scale(.97); } }
+@keyframes popOut { to   { opacity: 0; transform: translateY(var(--pop-y, -4px)) scale(.98); } }
+.pop { animation: popIn .14s var(--ease-out); transform-origin: 50% 0; }
+.pop[data-side="top"] { --pop-y: 4px; transform-origin: 50% 100%; }
+
+/* Bottom sheet — the dimmer fades while the sheet rises from the edge.
+   `.sheet-card` is a sheet on a phone and a centred card from 640px up. */
+@keyframes sheetUp   { from { transform: translateY(100%); } }
+@keyframes sheetDown { to   { transform: translateY(100%); } }
+.sheet-backdrop { animation: modalFade .24s var(--ease-out); }
+.sheet, .sheet-card { animation: sheetUp .28s var(--ease-sheet); }
+@media (min-width: 640px) {
+  .sheet-card { animation: modalPop .2s var(--ease-out); }
+}
+
+/* Tooltip, bare dimmer. */
+@keyframes tipIn { from { opacity: 0; transform: translateY(2px); } }
+.tip { animation: tipIn .1s var(--ease-out); }
+.fade-in { animation: modalFade .2s var(--ease-out); }
+
+/* A toast at the bottom edge rises into place rather than dropping onto it. */
+@keyframes toastInUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.toast-in[data-pos="bottom"] { animation-name: toastInUp; --toast-y: 8px; }
+
+/* Leaving. The copy replays nothing it was mounted with — an entrance run
+   again inside a surface on its way out would flash it — and takes no input.
+   Then each shape leaves its own way; anything else simply fades. */
+@keyframes leaveFade   { to { opacity: 0; } }
+@keyframes modalPopOut { to { transform: scale(.97); } }
+@keyframes toastOut    { to { opacity: 0; transform: translateY(var(--toast-y, -8px)) scale(.98); } }
+[data-leaving] { pointer-events: none !important; animation: leaveFade .12s var(--ease-in) both !important; }
+[data-leaving] *, [data-leaving] *::before, [data-leaving] *::after { animation: none !important; }
+.modal-backdrop[data-leaving] { animation: leaveFade .15s var(--ease-in) both !important; }
+[data-leaving] .modal-card { animation: modalPopOut .15s var(--ease-in) both !important; }
+.sheet-backdrop[data-leaving] { animation: leaveFade .2s var(--ease-in) both !important; }
+/* A sheet whose dimmer is a separate element (FilterSheet's blurs the page,
+   and a blur cannot see through a fading parent): the root keeps time and
+   moves nothing, the dimmer inside it fades. */
+@keyframes leaveHold { to { --leave-hold: 1; } }
+.sheet-root[data-leaving] { animation: leaveHold .2s linear both !important; }
+[data-leaving] .fade-in { animation: leaveFade .2s var(--ease-in) both !important; }
+[data-leaving] .sheet, [data-leaving] .sheet-card { animation: sheetDown .2s var(--ease-in) both !important; }
+@media (min-width: 640px) {
+  [data-leaving] .sheet-card { animation: modalPopOut .15s var(--ease-in) both !important; }
+}
+.pop[data-leaving] { animation: popOut .1s var(--ease-in) both !important; }
+.tip[data-leaving] { animation: leaveFade .08s linear both !important; }
+.toast-in[data-leaving] { animation: toastOut .16s var(--ease-in) both !important; }
+
+/* Press. A button dips under the finger and springs back: the answer to «did
+   my tap register» that a touch screen, with no hover, otherwise never gives.
+   The dip is the `scale` property, so it composes with whatever transform or
+   translate already places the control. A full-width row moves less — 3% of a
+   row is a lurch, 3% of a button is a press. Both rules sit in layers so a
+   utility on one control still wins; the controls excluded by name carry a
+   press of their own (the /kelish cell, the assessment verdict, the launcher
+   tile). An inline link (`.cell-link`) is untouched: transforms do not apply
+   to inline boxes. */
+@layer base {
+  :where(button, [role="button"], .press) { transition: scale .18s var(--ease-out); }
+}
+@layer components {
+  @media (prefers-reduced-motion: no-preference) {
+    :where(button, [role="button"], .press):where(:not(:disabled, [aria-disabled="true"], .press-none, .kelish-hit, .aq-verdict, .app-tile)):active { scale: .97; }
+    :where(button, [role="button"], .press):where(.w-full):where(:not(:disabled, [aria-disabled="true"], .press-none, .kelish-hit, .aq-verdict, .app-tile)):active { scale: .985; }
+  }
+}
+/* A control whose own transition names colours or opacity would snap its dip
+   — Tailwind's lists leave `scale` out. Unlayered, so these outrank the
+   utility they complete; its duration and easing still apply. */
+:where(button, [role="button"], .press):where(.transition-colors) {
+  transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, scale;
+}
+:where(button, [role="button"], .press):where(.transition-opacity) { transition-property: opacity, scale; }
+
+/* Button.jsx — the wash is an inset shadow wider than any button: it paints
+   over the fill and under the label, follows the radius, and needs no
+   pseudo-element (callers hang tap pads on those). A solid fill darkens, so
+   its white label only gains contrast; a neutral one takes the theme's wash.
+   Hover is for pointers that have one — on touch it would stick after a tap. */
+.btn {
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .15s ease, box-shadow .12s ease, scale .18s var(--ease-out);
+  --btn-hover: var(--hover-bg);
+  --btn-press: var(--press-wash);
+}
+.btn-solid { --btn-hover: rgba(0,0,0,.07); --btn-press: rgba(0,0,0,.16); }
+@media (hover: hover) {
+  .btn:not(:disabled, [aria-disabled="true"], :focus-visible):hover { box-shadow: inset 0 0 0 100vmax var(--btn-hover); }
+}
+.btn:not(:disabled, [aria-disabled="true"]):active { box-shadow: inset 0 0 0 100vmax var(--btn-press); }
+
+/* SegmentedToggle — ONE gold pill that slides to the chosen segment instead
+   of a fill that jumps between them. Under the labels, never in their way. */
+.seg-ind {
+  position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none;
+  transition: transform .26s var(--ease-io), width .26s var(--ease-io), height .26s var(--ease-io), background-color .2s ease;
+}
+/* The labels keep time with it. A segment being LEFT drops its white ink at
+   once, before the pill is gone from under it; the one being CHOSEN waits for
+   the pill to come close — a transition takes its timing from the state it
+   is going to, so the two rules below are the two directions. */
+.seg-btn { transition: color .1s ease, scale .18s var(--ease-out); }
+.seg-btn:where([aria-pressed="true"], [aria-selected="true"]) { transition: color .1s ease .15s, scale .18s var(--ease-out); }
+
+/* The sidebar's rows answer a finger too (hover never fires on touch). */
+.nav-item:active:not([aria-current="page"]) { background: var(--hover-bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop, .sheet, .sheet-card, .sheet-backdrop, .tip, .fade-in { animation: none !important; }
+  .seg-ind, .seg-btn { transition: none !important; }
+  .btn { transition: none; }
+}
+
 
 /* ── Checkboxes — bigger, gold when selected ──────────
    Custom-drawn so they look identical on every device /
@@ -357,9 +505,14 @@ input[type="checkbox"] {
   background-repeat: no-repeat;
   background-size: 90% 90%;
   cursor: pointer;
-  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, scale .12s ease;
   vertical-align: middle;
   --cb-color: var(--brand);
+}
+/* A box dips while it is pressed, like every other control — on the press
+   only, never on mount: a page of ticked boxes must not all pop at once. */
+@media (prefers-reduced-motion: no-preference) {
+  input[type="checkbox"]:active:not(:disabled) { scale: .9; }
 }
 input[type="checkbox"]:hover:not(:disabled) { border-color: var(--cb-color); }
 input[type="checkbox"]:checked,

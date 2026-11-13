@@ -19,6 +19,7 @@ import { canAccessPage } from "../../config/pages";
 import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
 import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
 import { useLauncher } from "../../hooks/useLauncher";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import GlobalSearch from "./GlobalSearch";
 
 // Grouped sidebar. ALL_LINKS (config/navLinks.js) stays THE register and
@@ -45,6 +46,7 @@ let savedNavScroll = 0;
 
 export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const [hovered, setHovered] = useState(false);
+  const leaveDim = useLeaveRef();
   const location = useLocation();
   const { auth } = useAuth();
   const { t }    = useLang();
@@ -251,10 +253,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   return (
     <>
-      {/* Backdrop — mobile only */}
+      {/* Backdrop — mobile only. It fades with the drawer's slide instead of
+          cutting in and out around it (motion system, index.css). */}
       {open && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          ref={leaveDim}
+          className="fade-in fixed inset-0 z-30 bg-black/50 md:hidden"
           onClick={onClose}
         />
       )}

@@ -20,6 +20,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, ChevronDown, Check, Flame } from "lucide-react";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 export const STATUSES = ["todo", "doing", "done"];
 
@@ -54,6 +55,7 @@ export function useDropdown(minHeight = 150) {
   const [dropStyle, setDropStyle] = useState({});
   const triggerRef = useRef(null);
   const listRef = useRef(null);
+  const setList = useLeaveRef(listRef); // hand THIS to the list: it eases out on close
 
   function computeDropStyle() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -94,17 +96,17 @@ export function useDropdown(minHeight = 150) {
     else { setDropStyle(computeDropStyle()); setOpen(true); }
   }
 
-  return { open, setOpen, dropStyle, triggerRef, listRef, toggle };
+  return { open, setOpen, dropStyle, triggerRef, listRef, setList, toggle };
 }
 
 // Inline, editable status pill (portal dropdown ⇒ never clipped by the table).
 export function StatusSelect({ status, statusLabel, saving, editable, onChange }) {
-  const { open, setOpen, dropStyle, triggerRef, listRef, toggle } = useDropdown();
+  const { open, setOpen, dropStyle, triggerRef, setList, toggle } = useDropdown();
   const color = STATUS_COLOR[status] || "var(--text-3)";
 
   const dropdown = open
     ? createPortal(
-        <div ref={listRef} style={{ ...dropStyle, ...dropCard }}>
+        <div ref={setList} className="pop" data-side={dropStyle.bottom != null ? "top" : undefined} style={{ ...dropStyle, ...dropCard }}>
           {STATUSES.map((s) => {
             const c = STATUS_COLOR[s] || "var(--text-3)";
             const isSel = s === status;

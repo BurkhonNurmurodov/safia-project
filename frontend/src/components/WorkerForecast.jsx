@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import useLeaveRef from "../hooks/useLeaveRef";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -215,15 +216,16 @@ function InfoCard({ label, icon: Icon, accent, primary, value, unit, badge, badg
 
 // ── prediction-vs-actual modal ────────────────────────────────────────────────
 function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
+  const leaveRef = useLeaveRef(); // opens and closes like Modal (motion system, index.css)
   const f = cell.forecast;
   const a = cell.actual;
   const delta = (a != null && f != null) ? a - f : null;
   const within = (a != null && cell.band_lo != null && cell.band_hi != null)
     ? a >= cell.band_lo && a <= cell.band_hi : null;
   return createPortal(
-    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4"
+    <div ref={leaveRef} className="modal-backdrop fixed inset-0 z-[210] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-sm shadow-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
+      <div className="modal-card rounded-2xl w-full max-w-sm shadow-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
           <div>

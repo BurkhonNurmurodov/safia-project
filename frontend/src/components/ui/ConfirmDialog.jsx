@@ -4,6 +4,7 @@ import { AlertTriangle, Trash2, XCircle } from "lucide-react";
 import Button from "./Button";
 import { useLang } from "../../context/LangContext";
 import { isTopLayer, useDialogLayer } from "./dialogLayers";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 // `icon` may be an ELEMENT (<Sparkles size={16} />) or the COMPONENT itself
 // (Sparkles). SectionHead / TableCard / EmptyState take the component and render
@@ -71,6 +72,7 @@ export default function ConfirmDialog({
 }) {
   const { t } = useLang();
   const backdropRef = useRef(null);
+  const setBackdrop = useLeaveRef(backdropRef); // fades out as it closes
   const cardRef = useRef(null);
   const cancelRef = useRef(null);
   const [typed, setTyped] = useState("");
@@ -132,7 +134,7 @@ export default function ConfirmDialog({
 
   return createPortal(
     <div
-      ref={backdropRef}
+      ref={setBackdrop}
       className="modal-backdrop fixed inset-0 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
       onClick={() => !loading && onCancel?.()}

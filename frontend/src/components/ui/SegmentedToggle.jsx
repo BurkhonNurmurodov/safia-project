@@ -40,6 +40,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  * off-screen, at which point nothing looks selected and the user cannot tell
  * where they are.
  *
+ * THE PILL SLIDES. The selected fill is ONE element (`.seg-ind`, index.css)
+ * laid under the labels and moved to the chosen segment, so a change of value
+ * is seen travelling from where it was to where it is — not a fill vanishing
+ * in one place and appearing in another. It is measured from the selected
+ * button after every render and whenever the track or a label resizes, and it
+ * only GLIDES when the value changed: a resize or a label growing re-seats it
+ * at once. Until it has a measurement — the first frame, a toggle mounted
+ * inside something hidden — the selected segment carries its own fill, as it
+ * always did, so a segment is never selected and unmarked.
+ *
  * Props:
  *   value     – the currently selected option value (compared with ===)
  *   onChange  – (value) => void, called with the clicked option's value
@@ -91,6 +101,10 @@ export default function SegmentedToggle({
   const activeRef = useRef(null);
   const btnRefs = useRef([]);
   const [edges, setEdges] = useState({ start: false, end: false });
+  // The sliding pill: where the selected segment sits inside the track, or
+  // null while that cannot be measured. `anim` is whether to glide there.
+  const [ind, setInd] = useState(null);
+  const lastValue = useRef(value);
 
   const syncEdges = () => {
     const el = trackRef.current;
@@ -123,6 +137,29 @@ export default function SegmentedToggle({
     syncEdges();
   }, [value, items.length]);
 
+  // Seat the pill on the selected segment. offsetLeft/Top are measured from
+  // the track (it is `relative`) and ignore its scroll, and the pill is the
+  // track's own child — so it scrolls with the segments and needs no maths.
+  const syncInd = (glide) => {
+    const btn = activeRef.current;
+    const w = btn?.offsetWidth;
+    const h = btn?.offsetHeight;
+    const next = btn?.isConnected && w && h ? { x: btn.offsetLeft, y: btn.offsetTop, w, h } : null;
+    setInd((cur) => {
+      if (!next) return null;
+      if (cur && cur.x === next.x && cur.y === next.y && cur.w === next.w && cur.h === next.h) return cur;
+      // Glide only from a pill that was already seated, and only for a
+      // change of value — never for a resize, a font swap or a label that grew.
+      return { ...next, anim: Boolean(glide && cur) };
+    });
+  };
+  // Every render: a label can change with no change of value or count.
+  useLayoutEffect(() => {
+    const changed = lastValue.current !== value;
+    lastValue.current = value;
+    syncInd(changed);
+  });
+
   useEffect(() => {
     syncEdges();
     const el = trackRef.current;
@@ -142,7 +179,7 @@ export default function SegmentedToggle({
     // state landed half off-screen behind the fade.
     let ro;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => { revealActive(); syncEdges(); });
+      ro = new ResizeObserver(() => { revealActive(); syncEdges(); syncInd(false); });
       ro.observe(el);
       for (const b of btnRefs.current) if (b) ro.observe(b);
     }
@@ -154,6 +191,7 @@ export default function SegmentedToggle({
   }, [items.length]);
 
   const enabledIdx = items.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
+  const activeItem = items.find((o) => o.value === value);
 
   const onKeyDown = (e) => {
     if (!asTabs) return;
@@ -189,9 +227,22 @@ export default function SegmentedToggle({
         // min-w-0 is what lets the track shrink below its content inside the
         // inline-flex wrapper above — without it the flex item keeps its
         // max-content width and overflows instead of scrolling.
-        className={`${fill ? "flex w-full" : "inline-flex max-w-full"} min-w-0 overflow-x-auto no-scrollbar items-center gap-1 rounded-xl p-[4px]`}
+        className={`relative ${fill ? "flex w-full" : "inline-flex max-w-full"} min-w-0 overflow-x-auto no-scrollbar items-center gap-1 rounded-xl p-[4px]`}
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
       >
+        {ind && (
+          <span
+            aria-hidden="true"
+            className="seg-ind rounded-lg"
+            style={{
+              width: ind.w,
+              height: ind.h,
+              transform: `translate(${ind.x}px, ${ind.y}px)`,
+              background: activeItem?.activeBg || "var(--brand)",
+              ...(ind.anim ? null : { transition: "none" }),
+            }}
+          />
+        )}
         {items.map((o, i) => {
           const active = value === o.value;
           return (
@@ -214,10 +265,15 @@ export default function SegmentedToggle({
               // fit; a flex item's automatic minimum size then floors each
               // segment at its own text, so a set that does not fit overflows
               // the scroller instead of being squeezed into unreadable slivers.
-              className={`${fill ? "flex-1" : "flex-shrink-0"} inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
+              // `relative z-[1]`: the label rides over the pill. `seg-btn`
+              // (index.css) times the label's colour to the pill's journey: a
+              // label turns white as its ground arrives and lets go of white
+              // as it leaves — white on the bare track is unreadable on the
+              // light theme.
+              className={`seg-btn ${fill ? "flex-1" : "flex-shrink-0"} relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap ${seg}`}
               style={
                 active
-                  ? { background: o.activeBg || "var(--brand)", color: o.activeFg || "var(--on-brand)", fontWeight: 600 }
+                  ? { background: ind ? "transparent" : (o.activeBg || "var(--brand)"), color: o.activeFg || "var(--on-brand)", fontWeight: 600 }
                   : { background: "transparent", color: o.idleFg || "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
               }
             >

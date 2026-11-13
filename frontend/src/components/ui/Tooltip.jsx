@@ -1,6 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 /**
  * Info icon with a hover/tap popup.
@@ -16,6 +17,7 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
   const [show, setShow] = useState(false);
   const triggerRef = useRef(null);
   const tipRef = useRef(null);
+  const setTip = useLeaveRef(tipRef); // fades out, so sweeping across icons does not flicker
   const [pos, setPos] = useState({ top: 0, left: 0, visible: false });
   const [nested, setNested] = useState(false);
   useLayoutEffect(() => {
@@ -82,8 +84,8 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
       {show &&
         createPortal(
           <span
-            ref={tipRef}
-            className="fixed z-[9999] text-[11px] rounded-lg px-2.5 py-2 shadow-xl leading-snug whitespace-pre-line pointer-events-none"
+            ref={setTip}
+            className="tip fixed z-[9999] text-[11px] rounded-lg px-2.5 py-2 shadow-xl leading-snug whitespace-pre-line pointer-events-none"
             style={{
               top: pos.top,
               left: pos.left,

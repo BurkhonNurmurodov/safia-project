@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Check, Minus, Trash2, Search, Plus } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useMarkDraft } from "./dialogLayers";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 /**
  * Styled custom select — dropdown is rendered via createPortal so it is never
@@ -99,6 +100,8 @@ export default function StyledSelect({
   const [query, setQuery]         = useState("");
   const triggerRef                = useRef(null);
   const listRef                   = useRef(null);
+  // The list drops out of the trigger and eases back as it closes.
+  const setList                   = useLeaveRef(listRef);
   const searchRef                 = useRef(null);
 
   // Normalise options → [{ value, label }]
@@ -245,7 +248,9 @@ export default function StyledSelect({
   const dropdown = open
     ? createPortal(
         <div
-          ref={listRef}
+          ref={setList}
+          className="pop"
+          data-side={dropStyle.bottom != null ? "top" : undefined}
           style={{
             ...dropStyle,
             background:   "var(--bg-card)",

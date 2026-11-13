@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { isTopLayer, trapTab, useDialogLayer } from "./dialogLayers";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 /* THE full-screen photo zoom (proof photos on the leader day report, example
  * photos on the /leaders «Vazifalar» tab, …).
@@ -15,11 +16,15 @@ import { isTopLayer, trapTab, useDialogLayer } from "./dialogLayers";
  * It is a dialog layer (`dialogLayers.js`): opened over a Modal — a day
  * report's photo — Escape closes the photo and leaves the Modal standing.
  * Focus moves to its close button and returns to the thumbnail after.
+ *
+ * It opens and closes like a dialog (motion system, index.css): the dark
+ * ground fades, the picture settles in from 96% and eases back out.
  */
 const Z = 120;
 
 export default function Lightbox({ src, onClose, alt = "" }) {
   const rootRef = useRef(null);
+  const setRoot = useLeaveRef(rootRef);
   const closeRef = useRef(null);
   const layer = useDialogLayer(Boolean(src), Z, rootRef);
   const onKey = useEffectEvent((e) => {
@@ -46,8 +51,8 @@ export default function Lightbox({ src, onClose, alt = "" }) {
 
   if (!src) return null;
   return createPortal(
-    <div ref={rootRef} role="dialog" aria-modal="true" aria-label={alt || undefined} onClick={onClose}
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+    <div ref={setRoot} role="dialog" aria-modal="true" aria-label={alt || undefined} onClick={onClose}
+      className="modal-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.92)",
                paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)",
                paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
@@ -58,7 +63,7 @@ export default function Lightbox({ src, onClose, alt = "" }) {
         <X size={20} />
       </button>
       <img src={src} alt={alt} onClick={(e) => e.stopPropagation()}
-        className="max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} />
+        className="modal-card max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} />
     </div>,
     document.body,
   );

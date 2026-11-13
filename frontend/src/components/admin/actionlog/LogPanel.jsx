@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, EyeOff, KeyRound, X } from "lucide-react";
 import { useLang } from "../../../context/LangContext";
 import { useTranslit } from "../../../utils/transliterate";
 import useIsMobile from "../../../hooks/useIsMobile";
+import useLeaveRef from "../../../hooks/useLeaveRef";
 import { AMBER, CAT_ICON, RED, fmtDay, labelOf, roleLabel, timeAgo, tpl } from "./taxonomy";
 import LogDetail, { OutcomeChip, SourceChip } from "./LogDetail";
 
@@ -52,6 +53,8 @@ export default function LogPanel({ r, onClose, onPrev, onNext, hasPrev, hasNext,
   const phone = useIsMobile(768);
   const top = useHeaderBottom();
   const rootRef = useRef(null);
+  // The phone form is a bottom sheet: it rides up from the edge and back down.
+  const setSheet = useLeaveRef(rootRef);
   const titleRef = useRef(null);
 
   // The heading takes focus on every event, so ↑ ↓ keep working from the panel
@@ -172,8 +175,8 @@ export default function LogPanel({ r, onClose, onPrev, onNext, hasPrev, hasNext,
   if (phone) {
     return createPortal(
       <div
-        ref={rootRef}
-        className="modal-backdrop fixed inset-0 flex items-end justify-center"
+        ref={setSheet}
+        className="sheet-backdrop fixed inset-0 flex items-end justify-center"
         style={{ background: "rgba(0,0,0,0.6)", zIndex: 90 }}
         onClick={onClose}
         role="dialog"
@@ -181,7 +184,7 @@ export default function LogPanel({ r, onClose, onPrev, onNext, hasPrev, hasNext,
         aria-label={title}
       >
         <div
-          className="modal-card w-full max-w-lg rounded-t-2xl flex flex-col"
+          className="sheet w-full max-w-lg rounded-t-2xl flex flex-col"
           style={{
             background: "var(--bg-card)",
             borderTop: "1px solid var(--border-md)",

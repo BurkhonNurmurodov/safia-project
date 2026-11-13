@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 /**
  * Toast — THE template for transient action feedback (saved / sent / deleted /
@@ -16,6 +17,9 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
  *     fullscreen Telegram session it can't hide under the client's own header;
  *   • it announces itself (role=status / aria-live), so the one confirmation a
  *     destructive flow gives isn't invisible to assistive tech.
+ *
+ * It slides in from its edge and eases back out toward it when dismissed,
+ * timed out or replaced by the next one (motion system, index.css).
  *
  * Failures deserve a toast as much as successes: `tone="error"` is why pages no
  * longer need window.alert, which Telegram's iOS WebView silently swallows.
@@ -66,6 +70,7 @@ export default function Toast({
   // Errors persist by default; everything else self-dismisses.
   const ms = duration === undefined ? (tone === "error" ? 0 : 4000) : duration;
   const showClose = closable ?? !!onClose;
+  const leaveRef = useLeaveRef();
 
   useEffect(() => {
     if (!open || !ms) return undefined;
@@ -77,8 +82,10 @@ export default function Toast({
 
   return createPortal(
     <div
+      ref={leaveRef}
       role="status"
       aria-live={live}
+      data-pos={position === "bottom" ? "bottom" : undefined}
       className="toast-in flex items-start gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
       style={{
         position: "fixed",

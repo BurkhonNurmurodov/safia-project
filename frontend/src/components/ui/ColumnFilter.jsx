@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { SlidersHorizontal, X, ChevronDown, Check } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 // A column header with a popover filter. Pass `label` to render it next to the
 // trigger, or omit it when the header already renders its own (sortable) label.
@@ -19,6 +20,7 @@ export function ColFilter({ label, active, children, quiet = false, align = "lef
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const popRef = useRef(null);
+  const setPop = useLeaveRef(popRef);
   const [pos, setPos] = useState(null);
   useEffect(() => {
     if (!open) return;
@@ -79,8 +81,8 @@ export function ColFilter({ label, active, children, quiet = false, align = "lef
       </>)}
       {open && pos && createPortal(
         <div
-          ref={popRef}
-          className="rounded-xl p-3"
+          ref={setPop}
+          className="pop rounded-xl p-3"
           style={{
             position: "fixed",
             top: pos.top,
@@ -447,7 +449,7 @@ function PanelField({ icon: Icon, label, active, display, renderContent }) {
             transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
       {open && (
-        <div className="mt-1.5 rounded-xl p-3"
+        <div className="brk-in mt-1.5 rounded-xl p-3"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
           {renderContent && renderContent({ close: () => setOpen(false) })}
         </div>
@@ -528,6 +530,11 @@ function FilterChip({ s, onOpen, className = "", wide = false }) {
 // Mobile slide-up sheet listing every filter expanded.
 function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
   const { t } = useLang();
+  // The dimmer fades and the sheet rides up from the bottom edge — and back
+  // down again when it closes (motion system, index.css). The dimmer is its
+  // own element because it BLURS the page: a blur cannot see through a parent
+  // that is fading, so the root (`sheet-root`) only keeps time for the two.
+  const leaveRef = useLeaveRef();
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -538,13 +545,12 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
     return () => { document.body.style.overflow = ""; };
   }, []);
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-      <div onClick={onClose}
+    <div ref={leaveRef} className="sheet-root" style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      <div onClick={onClose} className="fade-in"
         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
-      <div style={{
+      <div className="sheet" style={{
         position: "relative", background: "var(--bg-card)", borderRadius: "20px 20px 0 0",
         maxHeight: "82vh", display: "flex", flexDirection: "column",
-        animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
         paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
       }}>
         <div className="flex justify-center pt-3 pb-1">
@@ -597,7 +603,6 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
           ))}
         </div>
       </div>
-      <style>{`@keyframes slideUpSheet { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
     </div>,
     document.body
   );
@@ -616,6 +621,7 @@ function InlineFilterField({ icon: Icon, label, active, display, renderContent }
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const popRef = useRef(null);
+  const setPop = useLeaveRef(popRef);
   const [pos, setPos] = useState(null);
   useEffect(() => {
     if (!open) return;
@@ -664,8 +670,8 @@ function InlineFilterField({ icon: Icon, label, active, display, renderContent }
       </button>
       {open && pos && createPortal(
         <div
-          ref={popRef}
-          className="rounded-xl p-3"
+          ref={setPop}
+          className="pop rounded-xl p-3"
           style={{
             position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
             width: INLINE_POP_WIDTH,
@@ -704,6 +710,7 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   const [collapsed, setCollapsed] = useState(true);
   const ref = useRef(null);        // grouped trigger wrapper
   const popRef = useRef(null);     // portaled grouped panel
+  const setPop = useLeaveRef(popRef);
   const wrapRef = useRef(null);    // md+ container — a direct toolbar-row child
   const measureRef = useRef(null); // invisible natural-width copy of the inline row
   // The fit check's own answer can change the width it is measured against, so
@@ -913,8 +920,8 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
             </button>
             {open && pos && createPortal(
               <div
-                ref={popRef}
-                className="rounded-xl p-3"
+                ref={setPop}
+                className="pop rounded-xl p-3"
                 style={{
                   position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
                   width: PANEL_WIDTH,

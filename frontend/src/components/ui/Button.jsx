@@ -44,6 +44,11 @@ const iconEl = (icon, size) =>
  *               blocks window.open and gives the OS its normal long-press menu.
  *               `loading` is meaningless here and ignored.
  *   className – extra classes (layout only — colors come from the variant)
+ *
+ * It answers the hand (motion system, index.css `.btn`): a wash on hover for
+ * pointers that have one, a deeper wash and a 3% dip while pressed — in CSS,
+ * so a phone gets the press too. A solid fill darkens; a neutral or tinted
+ * one takes the theme's wash. A disabled or loading button answers nothing.
  */
 const SOLID = {
   primary:   { background: "var(--brand)",    color: "var(--on-brand)", border: "1px solid transparent" },
@@ -83,10 +88,13 @@ const Button = forwardRef(function Button({
     : size === "lg" ? "px-4 py-2 text-sm"    // 38px — toolbar baseline
     : "px-3.5 py-1.5 text-xs";               // md, ≈30px
   const isDisabled = disabled || loading;
+  // A solid colour fill (not the neutral card ground, not a tint) darkens
+  // under the pointer; everything else takes the theme's wash.
+  const solid = !tint && (variant === "primary" || variant === "danger" || variant === "success" || !SOLID[variant]);
   const spinner = <Loader2 size={size === "sm" ? 12 : size === "lg" ? 14 : 13} className="animate-spin" />;
   const shared = {
     ref,
-    className: `relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-opacity ${sizing} ${className}`,
+    className: `btn press${solid ? " btn-solid" : ""} relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold ${sizing} ${className}`,
     style: { ...palette, opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? "not-allowed" : "pointer", ...style },
   };
 

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreVertical } from "lucide-react";
+import useLeaveRef from "../../hooks/useLeaveRef";
 
 /**
  * ActionMenu — THE row-actions control: a ⋮ button that opens a short list of
@@ -29,6 +30,7 @@ export default function ActionMenu({ items, label, zIndex = 80, className = "" }
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
   const menu = useRef(null);
+  const setMenu = useLeaveRef(menu); // the list eases out when it closes
   const startAt = useRef("first");
 
   const enabled = () => [...(menu.current?.querySelectorAll('[role="menuitem"]:not([aria-disabled="true"])') || [])];
@@ -52,9 +54,12 @@ export default function ActionMenu({ items, label, zIndex = 80, className = "" }
     const h = el.offsetHeight;
     const left = Math.max(pad, Math.min(r.right - w, vw - w - pad));
     const below = r.bottom + 4;
-    const top = below + h > vh - pad && r.top - 4 - h >= pad ? r.top - 4 - h : Math.min(below, vh - h - pad);
+    const flipped = below + h > vh - pad && r.top - 4 - h >= pad;
+    const top = flipped ? r.top - 4 - h : Math.min(below, vh - h - pad);
     el.style.left = `${left}px`;
     el.style.top = `${Math.max(pad, top)}px`;
+    // Opened upward: it rises out of the ⋮ instead of dropping from it.
+    if (flipped) el.dataset.side = "top"; else delete el.dataset.side;
     el.style.visibility = "visible";
     const all = enabled();
     (startAt.current === "last" ? all[all.length - 1] : all[0])?.focus();
@@ -128,12 +133,12 @@ export default function ActionMenu({ items, label, zIndex = 80, className = "" }
       </button>
       {open && createPortal(
         <div
-          ref={menu}
+          ref={setMenu}
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKey}
           onClick={(e) => e.stopPropagation()}
-          className="fixed rounded-xl py-1 overflow-hidden"
+          className="pop fixed rounded-xl py-1 overflow-hidden"
           style={{
             zIndex, top: 0, left: 0, visibility: "hidden",
             minWidth: 200, maxWidth: "calc(100vw - 16px)",

@@ -20,6 +20,7 @@ import ExamBand from "../exam/ExamBand";
 import OfflineBand from "./OfflineBand";
 import { usePwaInstall } from "../../hooks/usePwaInstall";
 import useActivityPing from "../../hooks/useActivityPing";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { usesLauncher } from "../../utils/launcherRoles";
@@ -58,6 +59,10 @@ function UserProfile() {
   const [addProfile, setAddProfile] = useState(null);
   const [switching, setSwitching] = useState("");
   const ref = useRef(null);
+  // The menu drops out of the avatar and eases back; the sign-out question
+  // opens and closes like any dialog (motion system, index.css).
+  const leaveMenu = useLeaveRef();
+  const leaveConfirm = useLeaveRef();
   const { data: me } = useMyProfileDetails();
   const pwa = usePwaInstall();
 
@@ -110,8 +115,10 @@ function UserProfile() {
 
       {open && (
         <div
-          className="absolute right-0 mt-2 z-50 rounded-xl"
+          ref={leaveMenu}
+          className="pop absolute right-0 mt-2 z-50 rounded-xl"
           style={{
+            transformOrigin: "100% 0",
             background: "var(--bg-card)",
             border: "1px solid var(--border)",
             boxShadow: "0 8px 24px rgba(0,0,0,.15)",
@@ -322,6 +329,7 @@ function UserProfile() {
 
       {confirmLogout && (
         <div
+          ref={leaveConfirm}
           className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setConfirmLogout(false)}
@@ -423,6 +431,7 @@ function LangSwitcher() {
   const { lang, setLang, t, languages } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const leaveMenu = useLeaveRef();
 
   useEffect(() => {
     function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
@@ -445,8 +454,10 @@ function LangSwitcher() {
 
       {open && (
         <div
-          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+          ref={leaveMenu}
+          className="pop absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
           style={{
+            transformOrigin: "100% 0",
             background: "var(--bg-card)",
             border: "1px solid var(--border)",
             boxShadow: "0 8px 24px rgba(0,0,0,.15)",

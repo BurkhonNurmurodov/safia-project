@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import useLeaveRef from "../../hooks/useLeaveRef";
 import {
   commentPlanFormula, commentActualFormula, commentEffectiveHcFormula, commentAvailMinFormula,
   commentSimplePlanFormula, commentSimpleActualFormula,
@@ -46,6 +47,7 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
   const { tl } = useTranslit();
   const myId = auth?.telegram_id ? String(auth.telegram_id) : null;
   const isoDate = toIsoDate(date);
+  const leaveRef = useLeaveRef(); // opens and closes like Modal (motion system, index.css)
   const [text, setText] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -99,9 +101,9 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
     c.is_own ?? (myId && String(c.author_telegram_id) === myId);
 
   return createPortal(
-    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
+    <div ref={leaveRef} className="modal-backdrop fixed inset-0 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
       <div
-        className="rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
+        className="modal-card rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "min(80dvh, 100%)" }}
         onClick={(e) => e.stopPropagation()}
       >
