@@ -1718,6 +1718,24 @@ class QualitySyncMeta(Base):
     row_count   = Column(Integer, default=0)
 
 
+class QualityOpenBaseline(Base):
+    """The quality records that were OPEN when a month's «solved since» count
+    began — `services/quality_baseline.py` is the rule and says why it must be
+    kept (the register is wipe-and-reload and carries no solve date).
+
+    One row per open record, found again after a reload by `ref_no` or by `fp`
+    (a fingerprint of the fields a status change never touches), plus ONE
+    marker row per month with `fp == ""` saying the list was taken — so a month
+    that began with nothing open is not taken a second time."""
+    __tablename__ = "quality_open_baseline"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    month    = Column(String(7), index=True, nullable=False)   # "YYYY-MM"
+    ref_no   = Column(String, nullable=True)                   # № не соответствия
+    fp       = Column(String(40), nullable=False, default="")  # "" = the marker
+    taken_on = Column(String(10), nullable=False)              # ISO date, the plant's
+
+
 class LeaderSyncMeta(Base):
     """Singleton row (id=1) tracking the last leaders-checklist sheet sync — the
     "last updated" time shown on the Leaders page header."""

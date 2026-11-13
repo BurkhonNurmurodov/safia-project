@@ -15,7 +15,7 @@
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   printed as a percentage alone — and the cell's hover box is a small
-//   note of what is LEFT unsolved: hair, and without hair (the operator's call,
+//   «0/24»: solved since the month's start, of the problems open then (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -470,14 +470,41 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       { label: t("overview.sr.hairWithout"), left: rest },
     ];
   };
+  // «0/24» — THE hover box from 2026-11-13 (the operator: «it's too much for
+  // this too, there should be 0/24» → solved since the month's start, in the
+  // box, instead of the hair lines): of the problems that were open when this
+  // month's count began, how many are solved since. The server keeps that
+  // starting list (backend `services/quality_baseline.py`) and names the day
+  // it was taken — `quality_open_since`, 13.11 for November 2026, the 1st of
+  // every month after — which the caption prints. A payload without it (an
+  // older server, or the list could not be read) falls back to the «left:
+  // hair / without hair» box below.
+  const qSince = data?.quality_open_since || "";
+  const qualityOpen = (r) => {
+    const c = r.quality_open;
+    const all = r.quality_hair;
+    if (!qSince || !c || !all || all.reason || !isNum(all.value)) return null;
+    return { caption: fill(t("overview.sr.qSince"), { date: ddmm(qSince) }), text: `${c.done}/${c.total}` };
+  };
   // Its spoken form, for the link's aria-label.
   const qualityTitle = (r) => {
+    const open = qualityOpen(r);
+    if (open) return `${open.caption}: ${open.text}`;
     const rows = qualityRows(r);
     return rows
       ? `${t("overview.sr.qLeftTitle")}: ${rows.map((x) => `${x.label} ${x.left}`).join(", ")}`
       : undefined;
   };
   const qualityTip = (r) => {
+    const open = qualityOpen(r);
+    if (open) {
+      return (
+        <div className="flex items-baseline justify-between gap-6 whitespace-nowrap">
+          <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
+          <span className="text-sm font-semibold tabular-nums">{open.text}</span>
+        </div>
+      );
+    }
     const rows = qualityRows(r);
     if (!rows) return null;
     return (
@@ -626,8 +653,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The hover box says how many problems
-                  are LEFT, hair and without hair. Counts were printed in
+                  included, all time. The hover box says «0/24»: solved
+                  since the month's start, of the problems open then
+                  (`qualityOpen`). Counts were printed in
                   the cell itself for a few minutes on 2026-11-13 and the
                   operator took them back out, as on 2026-09-16. */}
               {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),

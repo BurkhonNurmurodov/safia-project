@@ -38,7 +38,8 @@ from app.permissions import page_allowed, require_page
 from app.routers import production
 from app.routers.workers import _py_on_leave
 from app.services import (cell_hours, leader_register, live_overview, live_staff,
-                          quality_attribution, shared_build, shift_report,
+                          quality_attribution, quality_baseline, shared_build,
+                          shift_report,
                           verifix_live, zagruzka_source)
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 
@@ -197,6 +198,9 @@ def _empty(now, note, month: str, picked=None) -> dict:
         # the span the quality column WAS counted over, both days inclusive
         "quality_from": shift_report.QUALITY_FROM,
         "quality_to": now.date().isoformat(),
+        # the day this month's «solved since» count began (`quality_baseline`);
+        # None until `_compute` has it, or when it could not be read
+        "quality_open_since": None,
         "shifts": [],
     }
 
@@ -266,6 +270,18 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
         db, m_from, m_to, shift_report.SKIP_CATEGORY)
     quality = shift_report.fold_quality(q_kept)
     quality_hair = shift_report.fold_quality(q_every)
+
+    # ── «0/24» in the quality cell's hover box — of the records that were open
+    # when this month's count began, how many are solved since. The starting
+    # list is `quality_baseline`'s, taken by the first board of the month, and
+    # it reads in a session of its own: a failure there costs the box its
+    # figure (it falls back to «left: hair / without hair»), never the board.
+    try:
+        q_since, q_open = quality_baseline.board(now.date())
+    except Exception:  # noqa: BLE001
+        log.exception("shift-report: quality baseline failed")
+        q_since, q_open = None, {}
+    out["quality_open_since"] = q_since
 
     # ── Ochiq xavotirlar — open, and sitting at the brigadir's own level.
     concerns = dict(
@@ -356,6 +372,8 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     shift_report.att_cell(att.get(m.id),
                                           with_cells is None or m.id in with_cells),
                     shift_report.quality_cell(quality_hair.get(m.id)),
+                    (q_open.get(m.id) or {"done": 0, "total": 0})
+                    if q_since else None,
                 )
                 for m in groups[s]
             ],

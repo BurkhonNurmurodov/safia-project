@@ -318,7 +318,8 @@ def att_cell(acc: Optional[dict], has_cells: bool) -> dict:
 
 
 def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
-        att: Optional[dict] = None, quality_hair: Optional[dict] = None) -> dict:
+        att: Optional[dict] = None, quality_hair: Optional[dict] = None,
+        quality_open: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -329,5 +330,8 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         "quality": quality,
         # the same rate WITH the hair records (`SKIP_CATEGORY` says why both)
         "quality_hair": quality_hair or _blank("no_records", done=0, actionable=0),
+        # «0/24»: of the records open when the month's count began, how many
+        # are solved since (`quality_baseline`). None: no starting list yet.
+        "quality_open": quality_open,
         "concerns": {"open": int(open_concerns or 0)},
     }

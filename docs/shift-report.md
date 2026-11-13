@@ -517,3 +517,55 @@ window left a brigadir judged on a record or two («0/1»).
   gone; every bullet above about the box's earlier wordings is history. Keys
   `overview.sr.qLeftTitle` / `qHair` / `hairWithout` (`qProblems`, `qSolved`,
   `qLeft`, `qOverall`, `qHairOnly` removed).
+
+## «0/24» — solved since the month's start, in the quality cell's hover box (2026-11-13)
+
+The operator, on a screenshot of the «left: hair 19 / without hair 5» box: «so
+here it's good, but it's too much for this too, there should be 0/24». Asked
+what the 0 counts: «Solved since month start»; asked where: «In the hover box».
+Told that the register cannot answer that for a month already running, and
+offered a count that starts today: «Yes, start today».
+
+- **What the box says**: ONE line — «13.11 dan beri bartaraf etilgan  0/24» —
+  of the brigadir's problems that were OPEN when this month's count began, how
+  many are solved since. It replaces the hair / without-hair lines; hair is
+  counted in it like any other record. The cell's own figure (the all-time %,
+  hair included) and its link are unchanged.
+- **Why something had to be stored**: `quality_complaints` is a wipe-and-reload
+  copy of the QA sheet — the current status and the filing date, no solve date,
+  no history, and an `id` re-issued by every sync. «Open on the 1st» is not in
+  it. `services/quality_baseline.py` keeps the missing piece in
+  `quality_open_baseline` (a table from `create_all`): the records open on the
+  day the month's list was taken, plus one marker row (`fp == ""`) per month.
+- **When the list is taken**: once a month, by the FIRST board built in that
+  month (`quality_baseline.ensure`, under a Postgres advisory lock — a worker
+  swap runs two processes). **November 2026's list is 13 Nov**, the day this
+  shipped; every later month's is its first day, or the first day anybody
+  opened «Smena kunligi». `quality_open_since` on the payload is that date and
+  the box prints it, so «since 13.11» is never read as «since the 1st». An
+  empty register (a box never synced) takes no list.
+- **How a record is found after a reload**: by «№ не соответствия» (`ref_no`)
+  when exactly one current record carries it, else by a fingerprint of date ·
+  place · product · description. A record found by neither (deleted, or
+  rewritten) leaves BOTH numbers — nothing is counted solved for vanishing.
+  **Whether `ref_no` is filled and unique on production was NOT checked** (no
+  data access from the session that built it); the fingerprint is the answer
+  either way, and a description edited on a record without a usable number is
+  the one case that drops out of the count.
+- **What counts**: total = the list's records still in the register whose
+  status is one of `ACTIONABLE`; solved = those now `done`. A record turned
+  «не требуется мера» leaves both numbers. **A problem filed after the list was
+  taken is in neither** — it joins next month's list if still open. So the
+  total only shrinks during a month, and «24/24» means the month's backlog is
+  cleared, not that nothing is open.
+- **Attribution** is today's, `quality_attribution.Resolver` — a cell moved to
+  another brigadir takes its listed records with it, as on every quality figure.
+- **Payload**: `quality_open_since` (ISO date or null) and per row
+  `quality_open: {done, total}` (null with no list). The count runs in a
+  session of its OWN and inside a `try`: a failure logs «quality baseline
+  failed», sends nulls, and the box falls back to «Qolgan: Soch / Sochsiz» —
+  the board itself never depends on it.
+- **Tests**: `tests/test_quality_baseline.py` covers the pure half (the list,
+  the matching, the fold). The database half was run once against SQLite with
+  stub models before shipping; it has no test in the suite.
+
