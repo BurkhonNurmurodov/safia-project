@@ -508,3 +508,12 @@ window left a brigadir judged on a record or two («0/1»).
   rows: «I like it but it should be like how many of the problems left which
   not solved»): problems − solved per row, the records the cell's link opens.
   Key `overview.sr.qLeft`. The table box may grow past the text tooltip's 18rem.
+- **STANDING STATE of the hover box — «left» only** (the operator, on a
+  screenshot of the three-by-three table: «it's too many information here, I
+  need how much they left and with hair and without hair should be together» →
+  «Left: hair and no hair»): a caption «Qolgan (bartaraf etilmagan)» over two
+  numbers — «Soch» (the hair category's unsolved records, overall left −
+  without-hair left) and «Sochsiz». Problems, solved and the overall row are
+  gone; every bullet above about the box's earlier wordings is history. Keys
+  `overview.sr.qLeftTitle` / `qHair` / `hairWithout` (`qProblems`, `qSolved`,
+  `qLeft`, `qOverall`, `qHairOnly` removed).

@@ -15,7 +15,7 @@
 //   (`quality_month`) and is captioned and linked by that. The figure is the
 //   brigadir's OVERALL rate — every record, hair included (`quality_hair`) —
 //   printed as a percentage alone — and the cell's hover box is a small
-//   table, problems and solved — overall, hair only, without hair (the operator's call,
+//   note of what is LEFT unsolved: hair, and without hair (the operator's call,
 //   2026-11-13; two lanes side by side stood here for an hour first and he
 //   asked for one column). The cell opens the Quality page «Soch bilan», the
 //   reading it counted.
@@ -452,56 +452,48 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return isNum(k.avg_min) ? `${line} · ${hm(k.avg_min)}` : line;
   };
 
-  // The quality cell's hover box is a small TABLE (the operator, 2026-11-13:
-  // «should be easy — if they have a problem like 50, and how much did they
-  // solve, and same with hair and without hair»), three plain numbers a row —
-  // the problems that needed action, how many are solved and how many are
-  // LEFT («it should be like how many of the problems left which not solved»). THREE rows (his
-  // next call, «Overall + hair + no hair»): «Umumiy» is every record — the
-  // figure the cell judges — and it splits into «Faqat soch» (the hair
-  // category alone: overall minus the rest) and «Sochsiz», so the two lower
-  // rows add up to the first. No fraction and no % to decode; the cell itself
-  // carries the %. A reading with no record of its own reads 0 and 0.
+  // The quality cell's hover box says ONE thing: how many problems are LEFT —
+  // not solved yet — under that caption, a number for the hair category and a
+  // number for everything else (the operator, 2026-11-13, after the box had
+  // grown to three rows by three columns: «it's too many information here, I
+  // need how much they left, and with hair and without hair should be
+  // together»). The two add up to the list the cell's link opens. The totals,
+  // the solved counts and the overall row are gone from it; the cell's own %
+  // is the overall verdict. A reading with nothing left reads 0.
   const qualityRows = (r) => {
     const all = r.quality_hair;
     if (!all || all.reason || !isNum(all.value)) return null;
-    const rest = { total: r.quality?.actionable ?? 0, done: r.quality?.done ?? 0 };
+    const left = (c) => Math.max(0, (c?.actionable ?? 0) - (c?.done ?? 0));
+    const rest = left(r.quality);
     return [
-      { label: t("overview.sr.qOverall"), total: all.actionable, done: all.done },
-      { label: t("overview.sr.qHairOnly"), total: Math.max(0, all.actionable - rest.total), done: Math.max(0, all.done - rest.done) },
-      { label: t("overview.sr.hairWithout"), ...rest },
+      { label: t("overview.sr.qHair"), left: Math.max(0, left(all) - rest) },
+      { label: t("overview.sr.hairWithout"), left: rest },
     ];
   };
   // Its spoken form, for the link's aria-label.
-  const qualityTitle = (r) => qualityRows(r)
-    ?.map((x) => `${x.label}: ${t("overview.sr.qProblems")} ${x.total}, ${t("overview.sr.qSolved")} ${x.done}, ${t("overview.sr.qLeft")} ${x.total - x.done}`)
-    .join("\n");
+  const qualityTitle = (r) => {
+    const rows = qualityRows(r);
+    return rows
+      ? `${t("overview.sr.qLeftTitle")}: ${rows.map((x) => `${x.label} ${x.left}`).join(", ")}`
+      : undefined;
+  };
   const qualityTip = (r) => {
     const rows = qualityRows(r);
     if (!rows) return null;
-    const num = "pl-4 text-right tabular-nums";
     return (
-      <table className="border-separate border-spacing-0 whitespace-nowrap">
-        <thead>
-          <tr style={{ color: "var(--text-3)" }}>
-            <th />
-            <th className={`${num} font-medium`}>{t("overview.sr.qProblems")}</th>
-            <th className={`${num} font-medium`}>{t("overview.sr.qSolved")}</th>
-            <th className={`${num} font-medium`}>{t("overview.sr.qLeft")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((x) => (
-            <tr key={x.label}>
-              <td className="pt-1 text-left font-medium first-letter:uppercase">{x.label}</td>
-              <td className={`${num} pt-1 font-semibold`}>{x.total}</td>
-              <td className={`${num} pt-1 font-semibold`}>{x.done}</td>
-              {/* What is still NOT solved — the records the cell's link opens. */}
-              <td className={`${num} pt-1 font-semibold`}>{x.total - x.done}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="whitespace-nowrap">
+        <div className="font-medium" style={{ color: "var(--text-3)" }}>{t("overview.sr.qLeftTitle")}</div>
+        <table className="mt-1 w-full border-separate border-spacing-0">
+          <tbody>
+            {rows.map((x) => (
+              <tr key={x.label}>
+                <td className="py-0.5 text-left font-medium first-letter:uppercase">{x.label}</td>
+                <td className="py-0.5 pl-6 text-right font-semibold tabular-nums">{x.left}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   };
 
@@ -634,12 +626,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
               {/* The percentage is the figure: the overall rate, hair
-                  included, all time. The counts stay in the hover box, a
-                  small table: problems and solved — overall, hair only and
-                  without hair —
-                  they were printed in the cell for a few minutes on
-                  2026-11-13 and the operator took them back out, as on
-                  2026-09-16. */}
+                  included, all time. The hover box says how many problems
+                  are LEFT, hair and without hair. Counts were printed in
+                  the cell itself for a few minutes on 2026-11-13 and the
+                  operator took them back out, as on 2026-09-16. */}
               {figCell(r.quality_hair, resolvedTone, (c) => pctText(c.value),
                 qualityTitle(r), qualityTarget(r), qualityTip(r))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
