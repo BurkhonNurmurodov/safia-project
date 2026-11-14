@@ -387,6 +387,15 @@ what the role opens. The deny shows on the Permissions tab like any entry;
 taking it off there gives the page back. Same «exactly one match» rule and
 admin DM as the first.
 
+## …and «Konteyner berish» for her (`startup.dilafruz_container_flow`, 2026-11-14)
+
+The operator: «show this page for Fozilova Dilavruz, she is the member of AXO
+and she has to create the requests». A third one-shot (flag
+`oneshot:guest_dilafruz_container_flow_nov14`, `later`) on the same guest
+profile, same «exactly one match» rule and admin DM: grants
+`page.view.container-flow` (docs/containers-flow.md — AXO's steps: issuing,
+manual requests, settling a dispute). Nothing she held is revoked.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three

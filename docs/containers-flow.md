@@ -17,16 +17,30 @@ containers row from production and move it into the new button».
     access are unchanged, and for anybody without the launcher the row stays
     in the Production group (the launcher's own rule).
   - **«Konteyner berish»** (`/containers/flow`, `pages/ContainerFlow.jsx`) —
-    `adminOnly`, no page key, the route behind `RequireAdmin`, every endpoint
-    behind `verify_admin`.
+    page key **`container-flow`** (admin-only by default, `[]`; from
+    2026-11-14 — it was `adminOnly` with no key on its first day).
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».
-- **While it is admin-only an admin presses every step** — AXO's, Logistics',
-  a leader's. There are no AXO / Logistics accounts yet (the operator: «we
-  gonna create for them accounts, for now just leave it») and **nothing here
-  sends a message to anybody** — no Telegram, no notification. Both come with
-  the first-day date the operator names.
+- **Who presses what** (2026-11-14, the operator: «show this page for Fozilova
+  Dilafruz, she is the member of AXO and she has to create the requests»):
+  - **A holder of `container-flow` who is not an admin is AXO.** The page shows
+    them «AXO», «Hammasi» and «Hisobot»; they ISSUE an hour, file a «Qo'lda
+    so'rov» (also offered on the empty state while no unit is enrolled — the
+    way she creates a request before any unit is switched on), settle a
+    dispute («Hammasi» → ⋮ → «Hal qilish»), read the history and the report.
+    The endpoints behind the page key (`PAGE` in `routers/container_flow.py`):
+    board, issue, manual, settle, history, teams, settings (read), readiness,
+    report and its Excel.
+  - **Admins only** (`verify_admin`): Logistics' delivery and send-back, a
+    leader's answer, «Majburan yopish» and writing the settings — and the
+    «Logistika», «Liderlar» and «Sozlamalar» tabs. Logistics and leaders get
+    accounts later (the operator: «we gonna create for them accounts, for now
+    just leave it»).
+  - First holder: **Fozilova Dilafruz** (guest profile, AXO) —
+    `startup.dilafruz_container_flow`, docs/data-fixes.md.
+- **Nothing here sends a message to anybody** — no Telegram, no notification;
+  that comes with the first-day date the operator names.
 
 ### How it works (`services/container_flow.py`, `routers/container_flow.py`)
 
@@ -110,8 +124,8 @@ hover): five long names pushed the status and the actions off a laptop.
 
 ### Not built (the plan's remaining parts — ask first)
 
-- AXO and Logistics accounts and their page keys; a leader's own card; the
-  brigadir's read-only view.
+- Logistics accounts and their page key; a leader's own card; the brigadir's
+  read-only view.
 - Every notification and Telegram message, and the escalation chain.
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.

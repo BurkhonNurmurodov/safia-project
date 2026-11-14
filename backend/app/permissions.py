@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen", "container-flow"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -182,6 +182,12 @@ DEFAULT_PAGE_ACCESS = {
     # the factory right now, read from Verifix: counts and department names,
     # never a person. ADMIN-ONLY until the operator opens it on the Access tab.
     "kitchen": [],
+    # «Konteyner berish» (/containers/flow, routers/container_flow.py) — the
+    # container flow AXO → Logistics → Leader. ADMIN-ONLY until opened; a
+    # holder takes AXO's steps (issue, manual request, settle) — Logistics',
+    # a leader's, a forced close and the settings stay with admins
+    # (docs/containers-flow.md). First holder: Fozilova Dilafruz (AXO).
+    "container-flow": [],
     # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
     # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
     # operator opens it: a token reads every cell's plan and people.

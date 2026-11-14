@@ -10400,6 +10400,53 @@ def dilafruz_containers_only() -> None:
         db.close()
 
 
+# ── Fozilova Dilafruz → «Konteyner berish» (docs/data-fixes.md) ──────────────
+# 2026-11-14, the operator: «show this page for Fozilova Dilafruz, she is the
+# member of AXO and she has to create the requests». Her guest profile gets
+# `page.view.container-flow`; what she already holds is untouched.
+DILAFRUZ_FLOW_FLAG = "oneshot:guest_dilafruz_container_flow_nov14"
+
+
+def dilafruz_container_flow() -> None:
+    import html
+
+    from app import capabilities
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DILAFRUZ_FLOW_FLAG).first():
+            return
+        found = _dilafruz_profiles(db)
+        if len(found) != 1:
+            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Dilafruz container flow: {len(found)} guest profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Fozilova Dilafruz — «Konteyner berish» berilmadi</b>\n"
+                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish» sahifasini yoqing.")
+            return
+        prof = found[0]
+        key = f"guest:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key], grants={"page.view.container-flow": "all"},
+            actor_name="system (one-shot 2026-11-14)")
+        db.add(AppSetting(key=DILAFRUZ_FLOW_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] Dilafruz container flow: {key} → page.view.container-flow")
+        _dm_admins_plain(
+            "✅ <b>Fozilova Dilafruz — «Konteyner berish»</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            "Berildi: «Konteyner berish» (AXO: berish, qo'lda so'rov, nizoni hal qilish).")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Dilafruz container flow failed: {exc}")
+        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — «Konteyner berish» berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

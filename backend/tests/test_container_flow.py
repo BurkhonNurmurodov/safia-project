@@ -250,5 +250,39 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.draft(7), 1)               # a manual batch is no regular draft: hour 9 still gets one
 
 
+
+class PageKeyTest(unittest.TestCase):
+    """«Konteyner berish» is a grantable page (admin-only by default), and its
+    capability exists — Dilafruz's one-shot grants it by that id."""
+
+    def test_page_key_and_capability(self):
+        from app import capabilities
+        from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
+        self.assertIn("container-flow", PAGE_KEYS)
+        self.assertEqual(DEFAULT_PAGE_ACCESS["container-flow"], [])
+        self.assertIn("page.view.container-flow", {c["key"] for c in capabilities.CAPABILITIES})
+
+    def test_axo_doors_and_admin_doors(self):
+        """AXO's steps and the reads take the page key; Logistics', a
+        leader's, a forced close and the settings write stay admin-only."""
+        from app.routers import container_flow as r
+        from app.routers.admin import verify_admin
+        guard = {}
+        for route in r.router.routes:
+            deps = [d.call for d in route.dependant.dependencies]
+            guard[(next(iter(route.methods)), route.path)] = (
+                "admin" if verify_admin in deps else "page" if r.PAGE in deps else "?")
+        p = "/api/container-flow"
+        for k in [("GET", f"{p}/board"), ("POST", f"{p}/issue"), ("POST", f"{p}/manual"),
+                  ("POST", f"{p}/batches/{{batch_id}}/settle"), ("GET", f"{p}/report"),
+                  ("GET", f"{p}/settings"), ("GET", f"{p}/teams")]:
+            self.assertEqual(guard[k], "page", k)
+        for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
+                  ("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
+                  ("PUT", f"{p}/settings")]:
+            self.assertEqual(guard[k], "admin", k)
+        self.assertNotIn("?", guard.values())
+
+
 if __name__ == "__main__":
     unittest.main()

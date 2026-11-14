@@ -26,6 +26,7 @@ import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 
@@ -35,10 +36,14 @@ import api from "../utils/api";
 // FROZEN on it; AXO issues the hour, Logistics confirms it at the unit, the
 // platform splits it between the unit's teams and each leader accepts a share.
 // docs/containers-flow.md. ADMINS ONLY while it is tried out — an admin presses
-// every step, and nothing here messages the floor.
+// every step, and nothing here messages the floor. A holder of the page key
+// `container-flow` who is not an admin is AXO (Fozilova Dilafruz, 2026-11-14):
+// they see AXO, Hammasi and Hisobot and take AXO's steps — issue, a manual
+// request, settling a dispute; the other tabs and steps stay with admins.
 const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
 const TABS = ["axo", "logistics", "leaders", "all", "report", "settings"];
+const AXO_TABS = ["axo", "all", "report"];
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
@@ -46,7 +51,9 @@ export default function ContainerFlow() {
   const toast = useToast();
   const qc = useQueryClient();
   const [tabSaved, setTab] = usePersistentState("cflow_tab", "axo");
-  const tab = TABS.includes(tabSaved) ? tabSaved : "axo";
+  const isAdmin = useAuth()?.auth?.role === "admin";
+  const tabs = isAdmin ? TABS : AXO_TABS;
+  const tab = tabs.includes(tabSaved) ? tabSaved : "axo";
   const [picked, setPicked] = useState(null);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -81,7 +88,7 @@ export default function ContainerFlow() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* The tabs first: they never move when a tab drops the day control. */}
         <SegmentedToggle asTabs value={tab} onChange={setTab}
-          options={TABS.map((k) => ({ value: k, label: t(`cflow.tab.${k}`) }))} />
+          options={tabs.map((k) => ({ value: k, label: t(`cflow.tab.${k}`) }))} />
         {tab !== "report" && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
         {onFlow && (
           <Button size="lg" variant="secondary" icon={<PackagePlus size={15} />} className="ml-auto"
@@ -94,12 +101,15 @@ export default function ContainerFlow() {
       {board.isError && onFlow ? (
         <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, board.error)} />
       ) : nothingOn ? (
-        <EmptyState showUploadLink={false} icon={Settings2} title={t("cflow.noUnits")} message={t("cflow.noUnitsMsg")}
-          action={<Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>} />
+        <EmptyState showUploadLink={false} icon={Settings2} title={t("cflow.noUnits")}
+          message={t(isAdmin ? "cflow.noUnitsMsg" : "cflow.noUnitsAxo")}
+          action={isAdmin
+            ? <Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>
+            : <Button icon={<PackagePlus size={15} />} onClick={() => setManualOpen(true)}>{t("cflow.manual")}</Button>} />
       ) : tab === "axo" ? <AxoTab {...ctx} />
         : tab === "logistics" ? <LogisticsTab {...ctx} />
         : tab === "leaders" ? <LeadersTab {...ctx} />
-        : tab === "all" ? <AllTab {...ctx} />
+        : tab === "all" ? <AllTab {...ctx} isAdmin={isAdmin} />
         : tab === "report" ? <FlowReport t={t} toast={toast} />
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}
@@ -440,9 +450,10 @@ function LeadersTab({ t, batches, loading, done, fail }) {
 }
 
 // ── Every batch of the day ──────────────────────────────────────────────────
-function AllTab({ t, batches, loading, done, fail }) {
+function AllTab({ t, batches, loading, done, fail, isAdmin }) {
   const [hist, setHist] = useState(null);
   const [close, setClose] = useState(null);
+  const [settle, setSettle] = useState(null);
   const total = (b, f) => (b.lines.some((ln) => ln[f] != null) ? b.lines.reduce((a, ln) => a + (ln[f] ?? 0), 0) : null);
   return (
     <>
@@ -485,7 +496,8 @@ function AllTab({ t, batches, loading, done, fail }) {
                 <td className="px-3 py-1.5">
                   <ActionMenu label={`${t("cflow.actions")}: ${b.unit ?? ""} ${span(b.hour)}`} items={[
                     { key: "hist", label: t("cflow.history"), icon: History, onSelect: () => setHist(b) },
-                    b.status !== "closed" && { key: "close", label: t("cflow.close"), icon: Lock, tone: "danger", onSelect: () => setClose(b) },
+                    b.status === "disputed" && { key: "settle", label: t("cflow.lead.settle"), icon: Scale, onSelect: () => setSettle(b) },
+                    isAdmin && b.status !== "closed" && { key: "close", label: t("cflow.close"), icon: Lock, tone: "danger", onSelect: () => setClose(b) },
                   ]} />
                 </td>
               </tr>
@@ -494,6 +506,12 @@ function AllTab({ t, batches, loading, done, fail }) {
         </tbody>
       </TableCard>
       {hist && <HistoryModal t={t} b={hist} onClose={() => setHist(null)} />}
+      {settle && (
+        <NoteModal t={t} title={t("cflow.lead.settle")} subtitle={`${span(settle.hour)} · ${settle.unit ?? ""}`}
+          label={t("cflow.lead.settleNote")} confirm={t("cflow.lead.settle")} onClose={() => setSettle(null)}
+          post={(note) => api.post(`/api/container-flow/batches/${settle.id}/settle`, { note })}
+          onDone={() => { setSettle(null); done(t("cflow.settled")); }} onFail={fail} />
+      )}
       {close && (
         <NoteModal t={t} title={t("cflow.close")} subtitle={`${span(close.hour)} · ${close.unit ?? ""}`}
           label={t("cflow.closeNote")} hint={t("cflow.closeHint")} confirm={t("cflow.close")} danger onClose={() => setClose(null)}

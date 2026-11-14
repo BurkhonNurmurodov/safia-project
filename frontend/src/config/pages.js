@@ -49,6 +49,7 @@ export const PAGES = [
   { tier: "test", key: "ovens", route: "/ovens", labelKey: "nav.ovens" },
   { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
   { tier: "test", key: "kitchen", route: "/kitchen", labelKey: "nav.kitchen" },
+  { tier: "test", key: "container-flow", route: "/containers/flow", labelKey: "nav.containerFlow" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -103,6 +104,8 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Oshxona» — the people at work in the factory now (Verifix): counts only.
   // Admin-only until the operator opens it.
   kitchen: [],
+  // «Konteyner berish» — AXO's steps of the container flow. Admin-only until opened.
+  "container-flow": [],
   // «API» — personal tokens for the external read API. Admin-only until the
   // operator opens it: a token reads every cell's plan and people.
   api: [],

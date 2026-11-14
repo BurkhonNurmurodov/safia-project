@@ -1,7 +1,13 @@
-"""«Konteynerlar oqimi» — the container flow's API (services/container_flow.py,
-docs/containers-flow.md). ADMINS ONLY while the app is tried out: every step —
-AXO's, Logistics', a leader's — is pressed by an admin, and nothing here sends
-a message to anybody."""
+"""«Konteyner berish» — the container flow's API (services/container_flow.py,
+docs/containers-flow.md). Two doors:
+
+- `PAGE` (page key `container-flow`, admin-only until granted): reading the
+  board, the history, the report, and AXO's steps — issuing, a manual request,
+  settling a dispute. Its first holder is AXO (Fozilova Dilafruz).
+- `verify_admin`: Logistics' and a leader's steps, a forced close and the
+  settings — pressed by an admin until those people have accounts.
+
+Nothing here sends a message to anybody."""
 from __future__ import annotations
 
 import io
@@ -16,11 +22,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Manager
+from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.services import action_log, container_flow as flow
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/container-flow", tags=["container-flow"])
+
+PAGE = require_page("container-flow")
 
 _draft_lock = threading.Lock()
 _drafted_at = 0.0
@@ -64,7 +73,7 @@ def _step(db: Session, fn, *args) -> dict:
 
 @router.get("/board")
 def get_board(day: date = Query(...), db: Session = Depends(get_db),
-              payload: dict = Depends(verify_admin)):
+              payload: dict = Depends(PAGE)):
     _draft_now(db)
     return flow.board(db, day)
 
@@ -82,7 +91,7 @@ class IssueBody(BaseModel):
 
 @router.post("/issue")
 def post_issue(body: IssueBody, db: Session = Depends(get_db),
-               payload: dict = Depends(verify_admin)):
+               payload: dict = Depends(PAGE)):
     """AXO issues an HOUR: several batches in one press, all or nothing."""
     if not body.items:
         raise HTTPException(status_code=422, detail="no batches")
@@ -135,7 +144,7 @@ def post_answer(batch_id: int, body: AnswerBody, db: Session = Depends(get_db),
 
 @router.post("/batches/{batch_id}/settle")
 def post_settle(batch_id: int, body: NoteBody, db: Session = Depends(get_db),
-                payload: dict = Depends(verify_admin)):
+                payload: dict = Depends(PAGE)):
     return _step(db, flow.settle, batch_id, body.note, _actor(payload))
 
 
@@ -147,7 +156,7 @@ def post_close(batch_id: int, body: NoteBody, db: Session = Depends(get_db),
 
 @router.get("/batches/{batch_id}/history")
 def get_history(batch_id: int, db: Session = Depends(get_db),
-                payload: dict = Depends(verify_admin)):
+                payload: dict = Depends(PAGE)):
     return {"events": flow.history(db, batch_id)}
 
 
@@ -163,14 +172,14 @@ class ManualBody(BaseModel):
 
 @router.post("/manual")
 def post_manual(body: ManualBody, db: Session = Depends(get_db),
-                payload: dict = Depends(verify_admin)):
+                payload: dict = Depends(PAGE)):
     return _step(db, flow.manual, body.manager_id, body.day, body.hour, body.work_center,
                  body.group, body.counts, body.note, _actor(payload))
 
 
 @router.get("/teams")
 def get_teams(manager_id: int = Query(...), day: date = Query(...),
-              db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+              db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """A unit's teams for the manual request's picker — every work centre of
     its «Zagruzka fayli» and each group of it, whether the hours see it or not."""
     from app.routers import production
@@ -204,9 +213,12 @@ def _units(db: Session) -> list:
 
 
 @router.get("/settings")
-def get_settings(db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+def get_settings(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Read by every holder (the manual request's unit picker, «is anything
+    enrolled»); written by admins only."""
     return {**flow.settings(db), "all_units": _units(db), "reasons": list(flow.REASONS),
-            "draft_min": flow.DRAFT_MIN, "lead_min": flow.LEAD_MIN}
+            "draft_min": flow.DRAFT_MIN, "lead_min": flow.LEAD_MIN,
+            "admin": payload.get("role") == "admin"}
 
 
 class SettingsBody(BaseModel):
@@ -228,7 +240,7 @@ def put_settings(body: SettingsBody, db: Session = Depends(get_db),
 
 @router.get("/readiness")
 def get_readiness(day: date = Query(...), db: Session = Depends(get_db),
-                  payload: dict = Depends(verify_admin)):
+                  payload: dict = Depends(PAGE)):
     return {"day": day.isoformat(), "units": flow.readiness(db, day)}
 
 
@@ -239,7 +251,7 @@ def _span(d_from: date, d_to: date) -> None:
 
 @router.get("/report")
 def get_report(date_from: date = Query(...), date_to: date = Query(...),
-               db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+               db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     _span(date_from, date_to)
     return flow.report(db, date_from, date_to)
 
@@ -254,7 +266,7 @@ class ReportXlsxBody(BaseModel):
 
 @router.post("/report.xlsx")
 def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depends(get_db),
-                     payload: dict = Depends(verify_admin)):
+                     payload: dict = Depends(PAGE)):
     from openpyxl import Workbook
     from openpyxl.styles import Font
     _span(body.date_from, body.date_to)

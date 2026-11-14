@@ -63,8 +63,9 @@ export const ALL_LINKS = [
   // anybody without the launcher the row stays in the Production group.
   { to: "/containers", page: "containers", key: "nav.containers", icon: Package, group: "prod", app: "containers" },
   // «Konteynerlar oqimi» — AXO → Logistics → Leader, hour by hour
-  // (docs/containers-flow.md). ADMINS ONLY while it is tried out: no page key.
-  { to: "/containers/flow", adminOnly: true, key: "nav.containerFlow", icon: PackageCheck, group: "prod", app: "containers" },
+  // (docs/containers-flow.md). Page key `container-flow`, admin-only until
+  // granted — AXO (Fozilova Dilafruz) holds it.
+  { to: "/containers/flow", page: "container-flow", key: "nav.containerFlow", icon: PackageCheck, group: "prod", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
