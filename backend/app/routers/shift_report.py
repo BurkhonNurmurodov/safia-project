@@ -276,6 +276,9 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     # fold of the same read.
     q_since = shift_report.fold_quality(
         r for r in q_every if (r[2] or "") >= shift_report.QUALITY_SINCE)
+    # …and without the hair category, for the column's «sochsiz» lane
+    q_since_kept = shift_report.fold_quality(
+        r for r in q_kept if (r[2] or "") >= shift_report.QUALITY_SINCE)
     # The month's starting list of open records is still TAKEN, though the box
     # no longer prints its count (2026-11-13): a list not taken on its day can
     # never be taken afterwards. Its failure costs nothing here.
@@ -375,6 +378,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     shift_report.quality_cell(quality_hair.get(m.id)),
                     shift_report.since_cell(q_since.get(m.id)),
                     shift_report.work_cell(quality_hair.get(m.id), q_since.get(m.id)),
+                    shift_report.work_cell(quality.get(m.id), q_since_kept.get(m.id)),
                 )
                 for m in groups[s]
             ],

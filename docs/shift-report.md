@@ -656,3 +656,22 @@ take like this, what do you think?» — told yes, with two warnings (below) —
   server from before sends no `quality_work` and the new bundle does the same.
 - Tests: `WorkCell` in `tests/test_quality_baseline.py`.
 
+## «Sifat nazorati %» in two lanes — with hair and without (2026-11-14)
+
+The operator, on the solved ÷ had-to-solve figure: «ok I like it, and divide
+this column in two and make it with hair and without hair».
+
+- **One header «Sifat nazorati %», two tiles under it** (`Th` `colSpan` +
+  `alsoActive`, the shape v4.489.0 had for an hour): «soch bilan» first —
+  `quality_work`, unchanged — then «sochsiz», `quality_work_nohair`: the same
+  `work_cell` arithmetic over the records with the hair category left out
+  (unsolved today without hair + filed since 1 October, solved, without hair).
+- **Each lane is its own**: tooltip (its lane's name, its «21/76», its all-time
+  rate — `quality_hair` / `quality`), link (the Quality page «Soch bilan» /
+  «Sochsiz»), sort (the lane labels in the header are buttons; the header's own
+  press sorts by «soch bilan»). Same band and legend for both.
+- Widths: the four single lanes 12%, the pair 22% (was 14% and one cell).
+- Payload: `quality_work_nohair` per row. A bundle from before ignores it; the
+  new bundle on a server from before fills the «sochsiz» lane with the all-time
+  without-hair rate until the server catches up.
+

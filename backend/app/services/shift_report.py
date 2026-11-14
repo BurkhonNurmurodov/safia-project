@@ -372,7 +372,8 @@ def att_cell(acc: Optional[dict], has_cells: bool) -> dict:
 def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         att: Optional[dict] = None, quality_hair: Optional[dict] = None,
         quality_since: Optional[dict] = None,
-        quality_work: Optional[dict] = None) -> dict:
+        quality_work: Optional[dict] = None,
+        quality_work_nohair: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -390,5 +391,9 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         # (`work_cell`). `quality_hair`, the all-time rate, is its box's
         # second line now.
         "quality_work": quality_work or _blank("no_records", done=0, total=0),
+        # the same figure with the hair category left out — the column's
+        # second lane (the operator, 2026-11-14: «divide this column in two and
+        # make it with hair and without hair»)
+        "quality_work_nohair": quality_work_nohair or _blank("no_records", done=0, total=0),
         "concerns": {"open": int(open_concerns or 0)},
     }
