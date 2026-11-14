@@ -33,15 +33,34 @@ const STICK_TO_MAIN = { top: "calc(var(--main-pad, 0px) * -1)" };
 // `size="lg"` titles a whole card rather than labelling a table — a sentence-
 // case title with the subtitle under it (the chat card on the appeal page, the
 // «Muhokama» design). The default is the small uppercase label every table has.
-export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", color }) {
+// `onToggle` makes the head FOLD its card (2026-11-14, «Rahbariyat vazifalari»):
+// the icon, title and subtitle become ONE button with a turning chevron and
+// `aria-expanded={open}`, stretched to the head's full height for the tap; the
+// `right` slot stays outside it, so its own buttons are never nested in it.
+// The card decides what folding hides — the head only reports the press.
+export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", color, open, onToggle }) {
   const lg = size === "lg";
+  const ident = `flex ${color && !subtitle ? "items-center" : "items-start"} min-w-0 ${lg ? "gap-3" : "gap-2"}`;
+  const Wrap = onToggle ? "button" : "div";
+  const wrapProps = onToggle
+    ? {
+        type: "button",
+        onClick: onToggle,
+        "aria-expanded": !!open,
+        className: `${ident} flex-1 self-stretch text-left ${lg ? "-my-3.5 sm:-my-4 py-3.5 sm:py-4" : "-my-2.5 py-2.5"}`,
+      }
+    : { className: ident };
   return (
     <div className={`flex items-center justify-between gap-2 flex-wrap ${lg ? "px-3 sm:px-6 py-3.5 sm:py-4" : "px-4 py-2.5"}`}
       style={{ borderBottom: "1px solid var(--border)" }}>
       {/* The icon sits on the TITLE's line, whatever the subtitle under it
           does — centred on the whole block, a subtitle that wraps left it
           beside the subtitle instead. */}
-      <div className={`flex ${color && !subtitle ? "items-center" : "items-start"} min-w-0 ${lg ? "gap-3" : "gap-2"}`}>
+      <Wrap {...wrapProps}>
+        {onToggle && (
+          <ChevronDown size={lg ? 18 : 15} aria-hidden="true" className={`flex-shrink-0 ${color && !subtitle ? "" : lg ? "mt-0.5" : "mt-1"}`}
+            style={{ color: "var(--text-3)", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        )}
         {/* `color` (a hex) seats the icon in a soft tint chip of that hue — a
             section with an identity of its own (the profile page's cards). */}
         {Icon && (color ? (
@@ -60,7 +79,7 @@ export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", c
               style={{ color: lg ? "var(--text-2)" : "var(--text-3)" }}>{subtitle}</div>
           )}
         </div>
-      </div>
+      </Wrap>
       {right}
     </div>
   );

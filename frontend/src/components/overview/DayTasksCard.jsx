@@ -17,6 +17,13 @@
  * it in time. A task the unit's own brigadir set for a leader is not here, and
  * neither is a shift manager's own — both stay on /tasks.
  *
+ * IT FOLDS (the operator, 2026-11-14: «make this foldable, after pressing it
+ * should open all»). Folded — the default, remembered per browser — it is the
+ * head and the day's one-line answer (the bar, its parts, how many are late);
+ * one press on the head, or on «Hammasini ochish» under the answer, opens
+ * EVERY person and EVERY task, nothing held back behind «yana N». The page
+ * under it no longer starts a screen and a half down.
+ *
  * IT OPENS ON NOW, not on the page's day (the operator, 2026-11-14, with a
  * screenshot of thirteen tasks set that morning: «this tasks should appear in
  * shift day»). «Smena kunligi» opens on YESTERDAY — its figures are about
@@ -37,9 +44,9 @@
  * /tasks board where overdue is a flag beside three statuses: that page counts
  * what the status column says, this block asks who is late.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BellRing, Check, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
+import { AlertTriangle, BellRing, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -87,10 +94,6 @@ const TONE = {
   done:  { Icon: Check,         fill: STATUS_COLOR.done, ink: "var(--status-ok)" },
 };
 
-// People listed per group before «yana N» — each list is worst first, so the
-// ones on screen are the people to talk to.
-const SHOWN = 6;
-
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 const line = "1px solid var(--border)";
 
@@ -123,7 +126,9 @@ export default function DayTasksCard({ day, params }) {
 
   const [thread, setThread] = useState(null);           // the task whose chat is open
   const [form, setForm] = useState(null);               // the task form's opening state
-  const [expanded, setExpanded] = useState({});         // group → list every person
+  // Folded or open — remembered per browser (a convenience, never a right).
+  const [open, setOpen] = usePersistentState("day_tasks_open", false);
+  const cardRef = useRef(null);
   // "now" (today's state — the default, every time the page opens) or "day"
   // (the page's picked day, as it stood). Never remembered: a block that
   // reopened on a past day would hide this morning's tasks again.
@@ -176,6 +181,13 @@ export default function DayTasksCard({ day, params }) {
     },
   });
   const remindingId = remind.isPending ? remind.variables?.task?.id : null;
+
+  // Folding from the END of a long list would leave the reader a screen below
+  // the block — bring its head back into view.
+  const fold = () => {
+    setOpen(false);
+    requestAnimationFrame(() => cardRef.current?.scrollIntoView?.({ block: "nearest" }));
+  };
 
   if (data && !data.show) return null;
   // Without an answer — still loading, or the read failed — the block is
@@ -287,12 +299,14 @@ export default function DayTasksCard({ day, params }) {
   );
 
   return (
-    <div className="rounded-xl overflow-hidden mb-6" style={cardStyle}>
+    <div ref={cardRef} className="rounded-xl overflow-hidden mb-6" style={cardStyle}>
       <SectionHead
         icon={ClipboardCheck}
         color="#3b82f6"
         title={t("dayTasks.title")}
         subtitle={subtitle}
+        open={open}
+        onToggle={() => (open ? fold() : setOpen(true))}
         right={(pastDay || createKinds.length > 0) ? (
           <div className="flex items-center gap-2 flex-wrap">
             {/* Only while the page is on another day — on today both are one. */}
@@ -318,7 +332,7 @@ export default function DayTasksCard({ day, params }) {
           <div className="space-y-3">
             <SkeletonBlock className="h-2.5 w-full rounded-full" />
             <SkeletonBlock className="h-4 w-2/3" />
-            {Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} className="h-16 w-full" />)}
+            {open && Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} className="h-16 w-full" />)}
           </div>
         ) : !people.length ? (
           <div className="text-sm py-2" style={{ color: "var(--text-3)" }}>{asOfDay ? t("dayTasks.empty") : t("dayTasks.emptyNow")}</div>
@@ -337,27 +351,27 @@ export default function DayTasksCard({ day, params }) {
               </span>
             </div>
 
-            {groups.map((g) => {
-              const all = !!expanded[g.kind];
-              const rows = all ? g.rows : g.rows.slice(0, SHOWN);
-              const more = g.rows.length - SHOWN;
-              return (
-                <div key={g.kind} className="mt-4">
-                  <div className="text-[11px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-3)" }}>
-                    {t(`dayTasks.grp.${g.kind}`)} · {g.rows.length}
-                  </div>
-                  <div className="space-y-2">{rows.map(personBlock)}</div>
-                  {more > 0 && (
-                    <div className="mt-1.5">
-                      <Button size="sm" variant="ghost"
-                        onClick={() => setExpanded((e) => ({ ...e, [g.kind]: !all }))}>
-                        {all ? t("dayTasks.showLess") : t("dayTasks.showMore").replace("{n}", more)}
-                      </Button>
+            {!open ? (
+              <Button className="w-full mt-3" variant="secondary" icon={<ChevronDown size={14} />}
+                aria-expanded={false} onClick={() => setOpen(true)}>
+                {t("dayTasks.openAll").replace("{n}", totals.total)}
+              </Button>
+            ) : (
+              <>
+                {groups.map((g) => (
+                  <div key={g.kind} className="mt-4">
+                    <div className="text-[11px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-3)" }}>
+                      {t(`dayTasks.grp.${g.kind}`)} · {g.rows.length}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="space-y-2">{g.rows.map(personBlock)}</div>
+                  </div>
+                ))}
+                <Button className="w-full mt-3" variant="ghost" icon={<ChevronUp size={14} />}
+                  aria-expanded onClick={fold}>
+                  {t("dayTasks.fold")}
+                </Button>
+              </>
+            )}
           </>
         )}
       </div>

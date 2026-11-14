@@ -339,6 +339,15 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
 - **Which day**: set on or before it AND (still open on it OR finished on it).
   Finished earlier = left; set later = not arrived. A day is Tashkent's
   calendar day, never the shift frame.
+- **IT FOLDS** (v4.526.0, the operator: «make this foldable, after pressing it
+  should open all»). Folded — the default, remembered per browser
+  (`day_tasks_open`) — it is the head and the day's one-line answer (the bar,
+  its parts, «N kishidan M nafari kechikmoqda») with «Hammasini ochish · N ta
+  vazifa» under it: about 170px instead of a screen and a half. One press on
+  the head or that button opens EVERY person and EVERY task — the «Yana N
+  kishi» cut is gone; «Yig'ish» at the end folds it back and brings the head
+  into view. The head's fold is `SectionHead`'s own `onToggle` / `open` (see
+  the template table), so the head is still THE section header.
 - **THE BLOCK OPENS ON NOW, not on the page's day** (v4.524.0). «Smena kunligi»
   opens on YESTERDAY (its stepper's default — the page's figures are about
   closed days), and a day is shown exactly as it stood, so every task set
