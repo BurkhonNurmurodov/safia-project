@@ -200,6 +200,9 @@ def _empty(now, note, month: str, picked=None) -> dict:
         "quality_to": now.date().isoformat(),
         # the filing day the hover box's «solved x/y» counts from
         "quality_since_from": shift_report.QUALITY_SINCE,
+        # the filing day the «sochsiz» lane counts solved from: the 1st of
+        # the plant's current month
+        "quality_nohair_since_from": shift_report.month_start(now.date()),
         "shifts": [],
     }
 
@@ -276,9 +279,15 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     # fold of the same read.
     q_since = shift_report.fold_quality(
         r for r in q_every if (r[2] or "") >= shift_report.QUALITY_SINCE)
-    # …and without the hair category, for the column's «sochsiz» lane
+    # …and without the hair category, for the column's «sochsiz» lane — whose
+    # solved count starts on the 1st of the CURRENT month, not on
+    # QUALITY_SINCE (the operator, 2026-11-14: «the date for this should be
+    # the beginning of the month for the without hair part»). Its «left» is
+    # still everything unsolved today, all time.
+    nh_from = shift_report.month_start(now.date())
     q_since_kept = shift_report.fold_quality(
-        r for r in q_kept if (r[2] or "") >= shift_report.QUALITY_SINCE)
+        r for r in q_kept if (r[2] or "") >= nh_from)
+    out["quality_nohair_since_from"] = nh_from
     # The month's starting list of open records is still TAKEN, though the box
     # no longer prints its count (2026-11-13): a list not taken on its day can
     # never be taken afterwards. Its failure costs nothing here.

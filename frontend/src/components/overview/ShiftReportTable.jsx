@@ -539,7 +539,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       lane: t(noHair ? "overview.sr.hairWithout" : "overview.sr.hairWith"),
       // «sochsiz» reads solved / LEFT, as its cell does («1/4»: 1 solved,
       // 4 still open); «soch bilan» stays solved / had to solve.
-      caption: fill(t(noHair ? "overview.sr.qSinceLeft" : "overview.sr.qSince"), { date: ddmm(qFrom) }),
+      // «sochsiz» counts solved from the 1st of the month (the server's
+      // `quality_nohair_since_from`), «soch bilan» from 1 October.
+      caption: fill(t(noHair ? "overview.sr.qSinceLeft" : "overview.sr.qSince"),
+        { date: ddmm(noHair ? data?.quality_nohair_since_from || qFrom : qFrom) }),
       text: noHair ? `${w.done}/${Math.max(0, w.total - w.done)}` : `${w.done}/${w.total}`,
       allTime: all && !all.reason && isNum(all.value) ? pctText(all.value) : null,
     };
@@ -734,14 +737,11 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                   2026-09-16. */}
               {figCell(qualityCell(r), resolvedTone, (c) => pctText(c.value),
                 qualityTitle(r), qualityTarget(r), qualityTip(r))}
-              {/* «sochsiz» prints solved / LEFT instead of a percentage (the
-                  operator, 2026-11-14: «if they left four and solved 1 → 1/4»
-                  → «Solved / left», «In the cell, instead of %»): 1 solved
-                  since 1 October, 4 still not solved. The colour is still the
-                  lane's % band; sorting still sorts by that %. An older
-                  payload (no `total`) keeps its %. */}
-              {figCell(qualityCell(r, true), resolvedTone, (c) => (isNum(c.total)
-                ? `${c.done}/${Math.max(0, c.total - c.done)}` : pctText(c.value)),
+              {/* «sochsiz» prints its percentage; its hover box carries the
+                  counts as solved / LEFT («1/4»: 1 solved since the 1st of
+                  the month, 4 still not solved) — the operator moved them
+                  there on 2026-11-14 after an hour in the cell. */}
+              {figCell(qualityCell(r, true), resolvedTone, (c) => pctText(c.value),
                 qualityTitle(r, true), qualityTarget(r, true), qualityTip(r, true))}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>

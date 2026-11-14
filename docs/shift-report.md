@@ -683,4 +683,16 @@ this column in two and make it with hair and without hair».
   beri bartaraf etilgan / qolgan  1/4» (key `overview.sr.qSinceLeft`) over the
   all-time rate. The «soch bilan» tile is unchanged — a percentage, its box
   solved / had to solve. Frontend-only.
+- **…then back to a percentage, with the counts in the box and the month's
+  1st as its date** (the operator, an hour later: «these numbers should be in
+  the hover box, in the box should be written the percentage, and the date for
+  this should be the beginning of the month for the without hair part»). THE
+  STANDING «sochsiz» lane: the tile prints the % of `quality_work_nohair`, now
+  folded from records FILED since `shift_report.month_start` (the 1st of the
+  plant's current month, `quality_nohair_since_from` on the payload) instead of
+  `QUALITY_SINCE`; «left» is still everything unsolved today without hair, all
+  time. Its box: «01.11 dan beri bartaraf etilgan / qolgan  1/4» over the
+  all-time without-hair rate. **The «soch bilan» lane keeps 1 October.** Each
+  new month the «sochsiz» solved count starts from 0 again, so its % drops on
+  the 1st.
 

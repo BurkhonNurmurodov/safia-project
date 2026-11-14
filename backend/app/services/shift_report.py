@@ -120,6 +120,12 @@ def since_cell(acc: Optional[dict]) -> dict:
     return {"done": int(acc.get("done") or 0), "total": int(acc.get("actionable") or 0)}
 
 
+def month_start(day: date) -> str:
+    """The 1st of `day`'s month, ISO — where the «sochsiz» lane's solved count
+    starts (the «soch bilan» lane's is `QUALITY_SINCE`)."""
+    return day.replace(day=1).isoformat()
+
+
 def work_cell(all_acc: Optional[dict], since_acc: Optional[dict]) -> dict:
     """THE figure the board's quality cell prints from 2026-11-13: solved ÷ had
     to solve — «21/76 = 28%».
