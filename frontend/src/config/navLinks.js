@@ -8,7 +8,7 @@ import {
   Briefcase, BriefcaseBusiness, CalendarCheck, ChefHat, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
-  MessageSquareWarning, MonitorDot, Network, Package, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
+  MessageSquareWarning, MonitorDot, Network, Package, PackageCheck, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
   ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
@@ -58,7 +58,13 @@ export const ALL_LINKS = [
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   // «Konteynerlar» — the day's containers (totals · hour by hour · per
   // brigadir) laid out for a TV. Admin-only until opened on the Access tab.
-  { to: "/containers", page: "containers", key: "nav.containers", icon: Package, group: "prod" },
+  // On the launcher it is the first page of the «Konteynerlar» app (2026-11-14,
+  // the operator: out of the Production app); page access unchanged, and for
+  // anybody without the launcher the row stays in the Production group.
+  { to: "/containers", page: "containers", key: "nav.containers", icon: Package, group: "prod", app: "containers" },
+  // «Konteynerlar oqimi» — AXO → Logistics → Leader, hour by hour
+  // (docs/containers-flow.md). ADMINS ONLY while it is tried out: no page key.
+  { to: "/containers/flow", adminOnly: true, key: "nav.containerFlow", icon: PackageCheck, group: "prod", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
@@ -201,6 +207,11 @@ export const APPS = [
   // «Oshxona» — the kitchen's app (2026-11-12, the operator): the people at
   // work in the factory now. Its tile shows to whoever may open `kitchen`.
   { id: "kitchen",   labelKey: "apps.kitchen",      icon: ChefHat,         hue: "red" },
+  // «Konteynerlar» (2026-11-14, the operator): the containers' own app — the
+  // TV board out of Production, and the AXO → Logistics → Leader flow. Yellow:
+  // the containers themselves are («сарик контенер»), and its look-alikes
+  // (gold, amber) sit rows away from it.
+  { id: "containers", labelKey: "apps.containers",  icon: Package,         hue: "yellow" },
   // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
   // phone's tile; the tile says it in one word.
   { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },

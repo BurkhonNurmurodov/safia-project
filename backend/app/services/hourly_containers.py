@@ -140,3 +140,45 @@ def unit_hours(dash: dict):
         else:
             add(*team_timeline(mine, w.get("people"), clock_of(None, w.get("cell")), eff))
     return hours, untimed
+
+
+def unit_teams(dash: dict) -> list:
+    """One unit's dashboard → its TEAMS, each with its own hours:
+    `[{work_center, group, rest, cell, people, hours: {h: {key: n}}, untimed}]`
+    — the very split `unit_hours` sums (keep the two in step), kept apart for
+    the container flow, whose need and shares are per team
+    (services/container_flow.py, docs/containers-flow.md). A team with no
+    count at all is left out."""
+    const = dash.get("constants") or {}
+    s = _num(const.get("shift_min")) or 480.0
+    pm = _num(const.get("productive_min")) or 408.0
+    eff = pm / s if 0 < pm / s <= 1.5 else 0.85
+    unit_clock = (const.get("shift_hours") or {}).get("start")
+    rows = dash.get("rows") or []
+    out: list = []
+
+    def clock_of(cell, w_cell):
+        c = cell or w_cell or {}
+        return (c.get("shift_hours") or {}).get("start") or unit_clock
+
+    def team(code, group, rest, cell, people, mine, start):
+        h_map, u_map = team_timeline(mine, people, start, eff)
+        if h_map or u_map:
+            out.append({"work_center": code, "group": group or "", "rest": bool(rest),
+                        "cell": cell if isinstance(cell, dict) else None,
+                        "people": people, "hours": h_map, "untimed": u_map})
+
+    for w in dash.get("work_centers") or []:
+        code = _norm(w.get("work_center"))
+        mine = [r for r in rows if _norm(r.get("work_center")) == code]
+        groups = [g for g in (w.get("groups") or []) if not g.get("orphan")]
+        if groups:
+            for g in groups:
+                team(code, g.get("group"), False, g.get("cell") or w.get("cell"), g.get("people"),
+                     [r for r in mine if r.get("wc_group") == g.get("group")],
+                     clock_of(g.get("cell"), w.get("cell")))
+            team(code, "", True, w.get("cell"), w.get("people"),
+                 [r for r in mine if not r.get("wc_group")], clock_of(None, w.get("cell")))
+        else:
+            team(code, "", False, w.get("cell"), w.get("people"), mine, clock_of(None, w.get("cell")))
+    return out

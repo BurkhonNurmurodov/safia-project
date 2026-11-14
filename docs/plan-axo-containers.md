@@ -1,6 +1,8 @@
 # Plan — container issuing: AXO → Logistics (MITSU) → Leader
 
-Status: **design plan, nothing built** (agreed with the operator 2026-11-14;
+Status: **phase 1 partly built, admin-only** — what exists is recorded in
+`docs/containers-flow.md` (its last section lists what is not built). Design
+plan (agreed with the operator 2026-11-14;
 revised the same day after a review against how «Soatlik» computes the hourly
 need — §10 lists what changed and why).
 

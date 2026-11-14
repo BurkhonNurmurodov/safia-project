@@ -520,6 +520,15 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # role may read, which is a setting about the platform, not a fact about a
     # person's post.
     (("PUT",),    "/api/idle-owner/admin/owners",              "config", "config.idle_owner_saved"),
+    (("POST",),   "/api/container-flow/issue",                 "shopfloor", "containers.issued"),
+    (("POST",),   "/api/container-flow/batches/{}/deliver",    "shopfloor", "containers.delivered"),
+    (("POST",),   "/api/container-flow/batches/{}/return",     "shopfloor", "containers.returned"),
+    (("POST",),   "/api/container-flow/batches/{}/answer",     "shopfloor", "containers.answered"),
+    (("POST",),   "/api/container-flow/batches/{}/settle",     "shopfloor", "containers.settled"),
+    (("POST",),   "/api/container-flow/batches/{}/close",      "shopfloor", "containers.force_closed"),
+    (("POST",),   "/api/container-flow/manual",                "shopfloor", "containers.manual_request"),
+    (("PUT",),    "/api/container-flow/settings",              "config", "config.container_flow_saved"),
+    (("POST",),   "/api/container-flow/report.xlsx",           "sync_export", "export.container_flow"),
     (("POST",),   "/api/idle-solutions",                       "collab", "idle.solution_added"),
     (("PUT",),    "/api/idle-solutions/{}",                    "collab", "idle.solution_edited"),
     (("PUT",),    "/api/downtime/wage-rates",                  "config", "config.wage_rate_saved"),

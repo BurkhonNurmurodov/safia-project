@@ -757,6 +757,9 @@ try:
     # «Oshxona» history: a year of attendance counts from Verifix (mirrors main.py).
     from app.services.kitchen_history import register_jobs as register_kitchen_history_jobs
     register_kitchen_history_jobs()
+    # The container flow's hourly drafts (mirrors main.py).
+    from app.services.container_flow import register_jobs as register_container_flow_jobs
+    register_container_flow_jobs()
     from app.services.verifix_sync import register_jobs as register_verifix_sync_jobs
     register_verifix_sync_jobs()
     from app.services.cell_links import register_jobs as register_cell_link_jobs

@@ -64,6 +64,8 @@ const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Ovens = lazyWithReload(() => import("./pages/Ovens"));
 const Kitchen = lazyWithReload(() => import("./pages/Kitchen"));
 const Containers = lazyWithReload(() => import("./pages/Containers"));
+// «Konteynerlar oqimi» — AXO → Logistics → Leader (admins only while tried out).
+const ContainerFlow = lazyWithReload(() => import("./pages/ContainerFlow"));
 const ApiAccess = lazyWithReload(() => import("./pages/ApiAccess"));
 const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
@@ -657,6 +659,8 @@ function AppWithLang() {
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
             <Route path="/containers" element={<AuthGate><RequirePage page="containers"><Containers /></RequirePage></AuthGate>} />
+            {/* «Konteynerlar oqimi» — ADMINS ONLY, not grantable (no page key). */}
+            <Route path="/containers/flow" element={<AuthGate><RequireAdmin><ContainerFlow /></RequireAdmin></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />

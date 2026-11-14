@@ -1,0 +1,254 @@
+"""The container flow (services/container_flow.py): the split, the frozen
+need and its top-up, and a batch's steps from the draft to the close.
+
+`split` is pure and runs everywhere; the steps need the real tables (JSONB,
+row locks), so they run where `SAFIA_TEST_PG` names a server.
+"""
+import unittest
+from datetime import date, datetime, timedelta
+from unittest import mock
+
+try:
+    from tests.pg_scratch import SERVER, ScratchDB
+except ImportError:  # run from inside tests/
+    from pg_scratch import SERVER, ScratchDB
+
+from app.models import ContainerBatch, ContainerShare, Manager
+from app.services import container_flow as flow
+
+DAY = date(2026, 11, 16)
+
+
+def team(wc, group, hours, cell=None):
+    return {"work_center": wc, "group": group, "rest": False, "cell": cell,
+            "people": 4, "hours": hours, "untimed": {}}
+
+
+class SplitTest(unittest.TestCase):
+    def test_enough_gives_everybody_their_due(self):
+        self.assertEqual(flow.split(30, [18, 6, 4]), [18, 6, 4])   # the surplus stays with the batch
+
+    def test_short_is_cut_in_proportion_and_adds_up(self):
+        out = flow.split(15, [18, 6])
+        self.assertEqual(sum(out), 15)
+        self.assertEqual(out, [11, 4])
+
+    def test_largest_remainder_breaks_ties_by_order(self):
+        self.assertEqual(flow.split(1, [1, 1, 1]), [1, 0, 0])
+        self.assertEqual(sum(flow.split(7, [3, 3, 3])), 7)
+
+    def test_nothing_delivered(self):
+        self.assertEqual(flow.split(0, [5, 2]), [0, 0])
+
+
+class UnitTeamsTest(unittest.TestCase):
+    """`hourly_containers.unit_teams` is `unit_hours` kept per team: summed
+    back together it is the same answer, so a batch's need is the «Soatlik»
+    figure and nothing else."""
+
+    DASH = {
+        "constants": {"shift_min": 480, "productive_min": 408, "shift_hours": {"start": "08:00"}},
+        "rows": [
+            {"work_center": "A1", "wc_group": "A", "seq": 1, "plan_qty": 400, "total_labor": 600, "cap_yellow": 20},
+            {"work_center": "A1", "wc_group": "B", "seq": 2, "plan_qty": 90, "total_labor": 300, "cap_round": 9, "cap_box": 30},
+            {"work_center": "A1", "wc_group": None, "seq": 3, "plan_qty": 50, "total_labor": 100, "cap_grey": 5},
+            {"work_center": "B2", "seq": 1, "plan_qty": 120, "total_labor": 0, "cap_bucket": 10},      # no norm → untimed
+            {"work_center": "B2", "seq": 2, "plan_qty": 300, "total_labor": 900, "cap_yellow": 25},
+        ],
+        "work_centers": [
+            {"work_center": "A1", "people": 2, "cell": {"id": 1, "verifix_code": "9001", "leader": "L1"},
+             "groups": [{"group": "A", "people": 3, "cell": {"id": 2, "verifix_code": "9002", "leader": "L2"}},
+                        {"group": "B", "people": 2, "cell": None},
+                        {"group": "Z", "people": 1, "orphan": True}]},
+            {"work_center": "B2", "people": 4, "cell": None},
+        ],
+    }
+
+    def test_teams_add_up_to_the_unit(self):
+        from app.services import hourly_containers as hc
+        hours, untimed = hc.unit_hours(self.DASH)
+        teams = hc.unit_teams(self.DASH)
+        got_h, got_u = {}, {}
+        for t in teams:
+            for h, e in t["hours"].items():
+                for k, n in e.items():
+                    got_h.setdefault(h, {})[k] = got_h.get(h, {}).get(k, 0) + n
+            for k, n in t["untimed"].items():
+                got_u[k] = got_u.get(k, 0) + n
+        self.assertEqual(got_h, hours)
+        self.assertEqual(got_u, untimed)
+        self.assertTrue(hours and untimed)
+        self.assertEqual([(t["work_center"], t["group"], t["rest"]) for t in teams],
+                         [("A1", "A", False), ("A1", "B", False), ("A1", "", True), ("B2", "", False)])
+        need = flow.need_by_hour(teams)
+        first = min(need)
+        self.assertEqual(need[first][0][0]["cell_code"], "9002")     # a group's own cell names its leader
+        self.assertEqual(sum(sum(c.values()) for teams_ in need.values() for _m, c in teams_),
+                         sum(sum(e.values()) for e in hours.values()))
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
+class FlowTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.pg = ScratchDB()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.pg.drop()
+
+    def setUp(self):
+        self.db = self.pg.Session()
+        for t in ("container_events", "container_shares", "container_batch_lines",
+                  "container_batches", "app_settings"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        if self.db.get(Manager, 1) is None:
+            self.db.add(Manager(id=1, name="Unit One", shift=1))
+        self.db.commit()
+        flow.save_settings(self.db, [1], 2)
+        self.teams = [team("A2894", "A", {9: {"yellow": 18, "round": 6}},
+                           {"id": 7, "verifix_code": "9422", "leader": "Leader A"}),
+                      team("A2894", "B", {9: {"yellow": 6}})]
+        self._p = mock.patch.object(flow, "unit_teams", side_effect=lambda db, mid, day: self.teams)
+        self._p.start()
+
+    def tearDown(self):
+        self._p.stop()
+        self.db.close()
+
+    def at(self, hh, mm=0):
+        return datetime.combine(DAY, datetime.min.time(), flow.TZ) + timedelta(hours=hh, minutes=mm)
+
+    def draft(self, hh, mm=0):
+        return flow.draft_due(self.db, self.at(hh, mm))
+
+    def batches(self):
+        return self.db.query(ContainerBatch).order_by(ContainerBatch.id).all()
+
+    # ── drafting ──
+    def test_nothing_before_the_window_and_no_unit_no_batch(self):
+        self.assertEqual(self.draft(6, 55), 0)          # H − 125 min
+        flow.save_settings(self.db, [], 2)
+        self.assertEqual(self.draft(7), 0)
+
+    def test_draft_freezes_the_need_and_is_due_an_hour_ahead(self):
+        self.assertEqual(self.draft(7), 1)
+        self.assertEqual(self.draft(7, 5), 0)           # once
+        b = self.batches()[0]
+        self.assertEqual((b.kind, b.status, b.hour), ("regular", "requested", 9))
+        self.assertEqual(b.due_at, self.at(8))
+        got = flow.one(self.db, b)
+        self.assertEqual({ln["ctype"]: ln["need"] for ln in got["lines"]}, {"yellow": 24, "round": 6})
+        self.assertEqual(got["teams"][0]["cell_code"], "9422")
+
+    def test_a_late_draft_is_due_an_hour_after_it(self):
+        self.draft(8, 30)
+        self.assertEqual(self.batches()[0].due_at, self.at(9, 30))
+
+    def test_topup_only_from_the_threshold(self):
+        self.draft(7)
+        self.teams[1]["hours"][9]["yellow"] = 7          # +1 — under the threshold
+        self.assertEqual(self.draft(7, 10), 0)
+        self.teams[1]["hours"][9]["yellow"] = 9          # +3
+        self.assertEqual(self.draft(7, 15), 1)
+        top = self.batches()[1]
+        self.assertEqual(top.kind, "topup")
+        self.assertEqual([(s.wc_group, s.ctype, s.due) for s in
+                          self.db.query(ContainerShare).filter_by(batch_id=top.id)], [("B", "yellow", 3)])
+        self.assertEqual(self.draft(7, 20), 0)           # the top-up is frozen too
+        self.teams[1]["hours"][9]["yellow"] = 2          # a shrinking plan takes nothing back
+        self.assertEqual(self.draft(7, 25), 0)
+
+    # ── the steps ──
+    def flow_to_delivery(self, issued=None, delivered=None, reason=None):
+        self.draft(7)
+        b = self.batches()[0]
+        flow.issue(self.db, b.id, issued, reason, None, "axo")
+        flow.deliver(self.db, b.id, delivered, reason, None, "mitsu")
+        self.db.commit()
+        return b
+
+    def test_full_flow_closes(self):
+        b = self.flow_to_delivery()
+        self.assertEqual(b.status, "delivered")
+        flow.answer(self.db, b.id, "A2894|A|0", "all", None, None, None, "leader")
+        self.assertEqual(b.status, "delivered")          # team B has not answered
+        flow.answer(self.db, b.id, "A2894|B|0", "all", None, None, None, "leader")
+        self.assertEqual(b.status, "closed")
+        self.assertIsNotNone(b.closed_at)
+
+    def test_a_lower_number_needs_a_reason_at_every_step(self):
+        self.draft(7)
+        b = self.batches()[0]
+        with self.assertRaises(flow.FlowError) as e:
+            flow.issue(self.db, b.id, {"yellow": 20}, None, None, "axo")
+        self.assertEqual(e.exception.code, "reason")
+        with self.assertRaises(flow.FlowError) as e:
+            flow.issue(self.db, b.id, {"yellow": 20}, "other", " ", "axo")
+        self.assertEqual(e.exception.code, "comment")
+        self.db.rollback()
+        flow.issue(self.db, b.id, {"yellow": 20}, "short", None, "axo")
+        with self.assertRaises(flow.FlowError):
+            flow.deliver(self.db, b.id, {"yellow": 15}, None, None, "mitsu")
+
+    def test_short_delivery_is_split_by_need(self):
+        b = self.flow_to_delivery(issued={"yellow": 15}, reason="short")
+        got = {t["key"]: t for t in flow.one(self.db, b)["teams"]}
+        self.assertEqual(got["A2894|A|0"]["sent"], {"yellow": 11, "round": 6})
+        self.assertEqual(got["A2894|B|0"]["sent"], {"yellow": 4})
+
+    def test_dispute_then_settle(self):
+        b = self.flow_to_delivery()
+        with self.assertRaises(flow.FlowError):
+            flow.answer(self.db, b.id, "A2894|A|0", "actual", {"yellow": 19}, None, None, "l")   # more than sent
+        self.db.rollback()
+        b = self.batches()[0]
+        flow.answer(self.db, b.id, "A2894|A|0", "actual", {"yellow": 10}, "damaged", None, "l")
+        self.assertEqual(b.status, "disputed")
+        flow.answer(self.db, b.id, "A2894|B|0", "refuse", None, "wrong_type", None, "l")
+        with self.assertRaises(flow.FlowError):
+            flow.settle(self.db, b.id, "", "admin")
+        flow.settle(self.db, b.id, "replaced", "admin")
+        self.assertEqual(b.status, "closed")
+        self.db.commit()
+        rep = flow.report(self.db, DAY, DAY)
+        y = next(r for r in rep["rows"] if r["ctype"] == "yellow")
+        self.assertEqual((y["need"], y["issued"], y["delivered"], y["accepted"], y["gap_dispute"]),
+                         (24, 24, 24, 10, 14))
+
+    def test_send_back_and_force_close(self):
+        self.draft(7)
+        b = self.batches()[0]
+        flow.issue(self.db, b.id, None, None, None, "axo")
+        with self.assertRaises(flow.FlowError):
+            flow.send_back(self.db, b.id, "", "mitsu")
+        flow.send_back(self.db, b.id, "wrong unit", "mitsu")
+        self.assertEqual((b.status, b.returned), ("requested", 1))
+        with self.assertRaises(flow.FlowError):
+            flow.force_close(self.db, b.id, " ", "admin")
+        flow.force_close(self.db, b.id, "line stopped", "admin")
+        self.assertTrue(b.forced)
+        with self.assertRaises(flow.FlowError):
+            flow.issue(self.db, b.id, None, None, None, "axo")
+
+    def test_late_is_read_from_the_delivery(self):
+        self.draft(7)
+        b = self.batches()[0]
+        flow.issue(self.db, b.id, None, None, None, "axo")
+        with mock.patch.object(flow, "now", return_value=self.at(8, 1)):
+            flow.deliver(self.db, b.id, None, None, None, "mitsu")
+        self.assertTrue(b.late)
+
+    def test_manual_request(self):
+        b = flow.manual(self.db, 1, DAY, 11, "a2894", "a", {"box": 5, "grey": 0}, "no norm yet", "admin")
+        self.db.commit()
+        got = flow.one(self.db, b)
+        self.assertEqual((got["kind"], got["lines"][0]["need"], got["teams"][0]["leader"]),
+                         ("manual", 5, "Leader A"))
+        with self.assertRaises(flow.FlowError):
+            flow.manual(self.db, 1, DAY, 11, "A2894", "", {}, "", "admin")
+        self.assertEqual(self.draft(7), 1)               # a manual batch is no regular draft: hour 9 still gets one
+
+
+if __name__ == "__main__":
+    unittest.main()

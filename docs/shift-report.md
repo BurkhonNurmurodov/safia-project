@@ -376,6 +376,11 @@ supervisor; and it hangs on a TV, so designed for one.
 - **Page key `containers`** (`permissions.PAGE_KEYS`, default `[]` = admin-only;
   open it on the Access tab or per person with `page.view.containers`). Nav
   row in «Ishlab chiqarish» after «Zagruzka fayli» (`navLinks.js`, icon Package).
+- **On the launcher it is a page of the «Konteynerlar» app** (2026-11-14, the
+  operator: «bring the containers row from production and move it into the
+  new button») — `app: "containers"` on its nav link; its access is unchanged
+  and without the launcher the row is still in the Production group.
+  docs/containers-flow.md.
 - **No figure of its own.** It reads `/api/shift-report/containers` (now also
   answering `by_unit` — `[{id, name, shift, totals}]` per brigadir unit, most
   first, units with no count left out; their sum per container IS `totals`)

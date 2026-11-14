@@ -5930,3 +5930,104 @@ class KeptAnswerRow(Base):
     label    = Column(String(200))
     built_at = Column(DateTime(timezone=True), nullable=False)
     value    = Column(Text, nullable=False)
+
+
+# ── Container flow: AXO → Logistics → Leader (docs/containers-flow.md) ───────
+
+class ContainerBatch(Base):
+    """One hour's containers for one unit, on their way from AXO to its teams
+    (services/container_flow.py). `hour` counts from the DAY's midnight and
+    runs past 23 for a night shift (the production day it started on), like
+    `hourly_containers`. `kind`: regular (drafted by the clock) · topup (the
+    plan grew after the draft) · manual (asked for by hand).
+
+    `status`: requested → issued (AXO) → delivered (Logistics; the split
+    between teams is made in the same step) → closed, or disputed while a team
+    took fewer than it was sent. The NEED is frozen on the lines when the batch
+    is drafted and never re-read. `due_at` is the delivery deadline; `late` is
+    set at delivery (None while not delivered — «overdue» is read off the
+    clock)."""
+    __tablename__ = "container_batches"
+
+    id           = Column(Integer, primary_key=True)
+    manager_id   = Column(Integer, nullable=False, index=True)
+    day          = Column(Date, nullable=False, index=True)
+    hour         = Column(Integer, nullable=False)
+    kind         = Column(String(10), nullable=False, default="regular")
+    status       = Column(String(12), nullable=False, default="requested")
+    drafted_at   = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    due_at       = Column(DateTime(timezone=True), nullable=False)
+    issued_at    = Column(DateTime(timezone=True), nullable=True)
+    issued_by    = Column(String, nullable=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    delivered_by = Column(String, nullable=True)
+    closed_at    = Column(DateTime(timezone=True), nullable=True)
+    closed_by    = Column(String, nullable=True)
+    close_note   = Column(Text, nullable=True)
+    forced       = Column(Boolean, nullable=False, default=False)   # closed by an admin while stuck
+    late         = Column(Boolean, nullable=True)
+    returned     = Column(Integer, nullable=False, default=0)       # times Logistics sent it back
+    note         = Column(Text, nullable=True)                      # a manual request's own words
+    created_by   = Column(String, nullable=True)
+
+    __table_args__ = (Index("ix_container_batches_unit_day_hour", "manager_id", "day", "hour"),)
+
+
+class ContainerBatchLine(Base):
+    """A batch's count of ONE container type: the frozen need, what AXO issued
+    and what Logistics confirmed at the unit, each lower number with its
+    reason."""
+    __tablename__ = "container_batch_lines"
+
+    id              = Column(Integer, primary_key=True)
+    batch_id        = Column(Integer, ForeignKey("container_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    ctype           = Column(String(10), nullable=False)
+    need            = Column(Integer, nullable=False, default=0)
+    issued          = Column(Integer, nullable=True)
+    delivered       = Column(Integer, nullable=True)
+    issue_reason    = Column(String(20), nullable=True)
+    issue_comment   = Column(Text, nullable=True)
+    deliver_reason  = Column(String(20), nullable=True)
+    deliver_comment = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("batch_id", "ctype", name="uq_container_batch_lines"),)
+
+
+class ContainerShare(Base):
+    """One TEAM's part of a batch, per container type: `due` is the team's
+    frozen need, `sent` what the split gave it at delivery, `accepted` what its
+    leader took. A team is a work centre, one group of it, or (`rest`) its
+    unlettered lines — the «Jamoalar» card's own split. The cell and leader are
+    the team's on the day the batch was drafted, kept as text."""
+    __tablename__ = "container_shares"
+
+    id          = Column(Integer, primary_key=True)
+    batch_id    = Column(Integer, ForeignKey("container_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_center = Column(String, nullable=False)
+    wc_group    = Column(String(4), nullable=False, default="")
+    rest        = Column(Boolean, nullable=False, default=False)
+    cell_id     = Column(Integer, nullable=True)
+    cell_code   = Column(String, nullable=True)
+    leader      = Column(String, nullable=True)
+    ctype       = Column(String(10), nullable=False)
+    due         = Column(Integer, nullable=False, default=0)
+    sent        = Column(Integer, nullable=True)
+    accepted    = Column(Integer, nullable=True)
+    status      = Column(String(10), nullable=False, default="pending")  # pending · accepted · disputed · settled
+    reason      = Column(String(20), nullable=True)
+    comment     = Column(Text, nullable=True)
+    answered_at = Column(DateTime(timezone=True), nullable=True)
+    answered_by = Column(String, nullable=True)
+
+
+class ContainerEvent(Base):
+    """Every step a batch took — who, when, what — the batch's own history
+    (the «Jurnal» row of the same request is written by the action log)."""
+    __tablename__ = "container_events"
+
+    id       = Column(Integer, primary_key=True)
+    batch_id = Column(Integer, ForeignKey("container_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    at       = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    actor    = Column(String, nullable=True)
+    action   = Column(String(24), nullable=False)
+    detail   = Column(JSONB, nullable=True)
