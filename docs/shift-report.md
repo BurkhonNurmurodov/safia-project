@@ -674,4 +674,13 @@ this column in two and make it with hair and without hair».
 - Payload: `quality_work_nohair` per row. A bundle from before ignores it; the
   new bundle on a server from before fills the «sochsiz» lane with the all-time
   without-hair rate until the server catches up.
+- **The «sochsiz» tile prints solved / LEFT, not a percentage** (the operator,
+  the same morning: «in without hair part can you write how much left, like if
+  they left four and solved 1 → 1/4» → «Solved / left», «In the cell, instead
+  of %»): `done / (total − done)` of `quality_work_nohair` — solved since 1
+  October, still not solved. Its colour is still that lane's % band and sorting
+  still sorts by the %, so «1/4» is red (20%). Its hover box reads «01.10 dan
+  beri bartaraf etilgan / qolgan  1/4» (key `overview.sr.qSinceLeft`) over the
+  all-time rate. The «soch bilan» tile is unchanged — a percentage, its box
+  solved / had to solve. Frontend-only.
 
