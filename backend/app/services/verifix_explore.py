@@ -39,9 +39,10 @@ as a PHOTO (`_ALLOWED`), so it cannot be turned into a fetcher for any other
 file Verifix keeps. Nothing is stored — a small in-memory cache of the resized
 copies only.
 
-Every Verifix read is cached here for a few minutes (`_CACHE`; the page's
-«Yangilash» reloads), so moving between pages does not re-read 18 pages of
-employees each time.
+Every Verifix read is cached here (`_CACHE`; the page's «Yangilash» reloads),
+so moving between pages does not re-read 18 pages of employees each time. A
+read older than its few minutes is still served at once and reloaded in the
+background; the answer then says `refreshing` and the page asks again.
 """
 from __future__ import annotations
 
@@ -69,6 +70,7 @@ TZ = verifix.TZ
 TTL_DIR = 600            # the directory lists: employees, divisions, jobs, …
 TTL_TODAY = 90           # today's report / marks / who is inside
 TTL_PAST = 600           # a finished day barely changes
+RENEW_BACKOFF_S = 60     # a background reload that failed is not tried again sooner
 REQUEST_BUDGET_S = 72.0  # one request's Verifix time: + one 25 s call stays under Cloudflare's 100 s
 MAX_PAGES = 60
 PROBE_LIMIT = 20         # rows a probe asks for
@@ -108,15 +110,62 @@ def meta(db: Session) -> dict:
 # ── a cache that loads each key once ──────────────────────────────────────────
 
 class _Cache:
-    """Values younger than their ttl are reused; ttl 0 reloads. Two requests
-    asking for one cold key load it ONCE: the second waits for the first,
-    because the employee list alone is eighteen Verifix pages."""
+    """Values younger than their ttl are reused; ttl 0 reloads. An OLDER value
+    is served at once and reloaded on a thread of its own, so opening a page
+    never waits on Verifix while any earlier answer exists — only a key never
+    read (or a forced reload) waits. Two requests asking for one cold key load
+    it ONCE: the second waits for the first, because the employee list alone
+    is eighteen Verifix pages."""
 
     def __init__(self, max_items: int = 60):
         self._max = max_items
         self._lock = threading.Lock()
         self._data: "OrderedDict[tuple, tuple[float, datetime, Any]]" = OrderedDict()
         self._loading: dict[tuple, threading.Lock] = {}
+        self._failed: dict[tuple, float] = {}     # key → when its background reload failed
+        self._local = threading.local()           # this request served a value being reloaded
+
+    def begin(self) -> None:
+        """Start of a request (the router's `_run`): forget the last one's flag."""
+        self._local.renewing = False
+
+    def renewing(self) -> bool:
+        """Whether this request served a value that is being reloaded right now."""
+        return getattr(self._local, "renewing", False)
+
+    def _put(self, key: tuple, val: Any) -> datetime:
+        stamp = verifix_live.now_local()
+        with self._lock:
+            self._data[key] = (time.monotonic(), stamp, val)
+            self._data.move_to_end(key)
+            self._failed.pop(key, None)
+            while len(self._data) > self._max:
+                old, _ = self._data.popitem(last=False)
+                self._loading.pop(old, None)
+        return stamp
+
+    def _renew(self, key: tuple, fn: Callable[[], Any]) -> None:
+        """Reload a stale key on its own thread; called under `self._lock`."""
+        gate = self._loading.setdefault(key, threading.Lock())
+        if not gate.acquire(blocking=False):      # a reload of it is already running
+            self._local.renewing = True
+            return
+        if time.monotonic() - self._failed.get(key, -1e9) < RENEW_BACKOFF_S:
+            gate.release()                        # Verifix just failed it: serve, don't hammer
+            return
+        self._local.renewing = True
+
+        def run():
+            try:
+                self._put(key, fn())
+            except Exception as exc:              # noqa: BLE001 — the served value stays
+                with self._lock:
+                    self._failed[key] = time.monotonic()
+                log.warning("verifix-test: background reload of %s failed: %s", key[2:3], exc)
+            finally:
+                gate.release()
+
+        threading.Thread(target=run, name="vfx-renew", daemon=True).start()
 
     def peek(self, key: tuple) -> Optional[tuple[Any, datetime, float]]:
         """(value, when read, age in seconds) without loading — None when absent."""
@@ -128,8 +177,10 @@ class _Cache:
         started = time.monotonic()
         with self._lock:
             hit = self._data.get(key)
-            if hit and ttl > 0 and started - hit[0] < ttl:
+            if hit and ttl > 0:
                 self._data.move_to_end(key)
+                if started - hit[0] >= ttl:
+                    self._renew(key, fn)
                 return hit[2], hit[1]
             gate = self._loading.setdefault(key, threading.Lock())
         with gate:
@@ -140,14 +191,7 @@ class _Cache:
             if hit and (hit[0] >= started or (ttl > 0 and time.monotonic() - hit[0] < ttl)):
                 return hit[2], hit[1]
             val = fn()
-            stamp = verifix_live.now_local()
-            with self._lock:
-                self._data[key] = (time.monotonic(), stamp, val)
-                self._data.move_to_end(key)
-                while len(self._data) > self._max:
-                    old, _ = self._data.popitem(last=False)
-                    self._loading.pop(old, None)
-            return val, stamp
+            return val, self._put(key, val)
 
 
 _CACHE = _Cache()

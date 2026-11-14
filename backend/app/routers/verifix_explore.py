@@ -36,8 +36,13 @@ def _who(admin: dict) -> str:
 
 
 def _run(fn, *args, **kwargs):
+    vx._CACHE.begin()
     try:
-        return fn(*args, **kwargs)
+        out = fn(*args, **kwargs)
+        # An older read was served while a new one runs: the page asks again.
+        if isinstance(out, dict) and vx._CACHE.renewing():
+            out = {**out, "refreshing": True}
+        return out
     except vx.NotConfigured:
         raise HTTPException(status_code=409, detail={"code": "not_configured"})
     except verifix.VerifixError as exc:

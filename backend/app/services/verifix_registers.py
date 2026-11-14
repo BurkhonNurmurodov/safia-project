@@ -160,7 +160,9 @@ def _wait(states: Iterable[dict], wait: float) -> None:
         left = end - time.monotonic()
         if left <= 0:
             return
-        if st["running"]:
+        # A reload with previous rows answers with them now (`refreshing`) and
+        # the page polls — only a first read is worth waiting for.
+        if st["running"] and st.get("prev") is None:
             st["event"].wait(left)
 
 

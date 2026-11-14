@@ -27,6 +27,8 @@ export function useVfx(key, path, params, options = {}) {
     },
     staleTime: 5 * 60_000,
     retry: false,
+    // An older answer served while the server reads a new one: ask again soon.
+    refetchInterval: (query) => (query.state.data?.refreshing ? 4000 : false),
     ...options,
   });
   const refresh = () => { force.current = true; return q.refetch(); };

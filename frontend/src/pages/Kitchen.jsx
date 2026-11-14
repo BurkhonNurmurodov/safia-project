@@ -122,7 +122,8 @@ export default function Kitchen() {
   const q = useQuery({
     queryKey: ["kitchen-now"],
     queryFn: () => api.get("/api/kitchen/now").then((r) => r.data),
-    refetchInterval: 60_000,
+    // An older snapshot served while the server reads a new one: ask again soon.
+    refetchInterval: (query) => (query.state.data?.refreshing ? 5000 : 60_000),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
@@ -153,7 +154,7 @@ export default function Kitchen() {
       />
     );
   } else {
-    const stale = d.age_s > STALE_S;
+    const stale = d.age_s > STALE_S && !d.refreshing;   // a read is running, not silent
     const at = (d.read_at || "").slice(11, 16);
     const live = stale ? "var(--status-warn)" : "var(--status-ok)";
     const deps = d.departments || [];

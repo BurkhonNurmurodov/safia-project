@@ -7,7 +7,8 @@ names only — never a person, so the page is safe to open to a kitchen role.
 
 One plant-wide read of «Отчёт по посещениям» (`core/timesheet$export`, no
 employee filter = everybody), kept in memory for `TTL_S` and shared by every
-viewer. The minute job's stored read (`verifix_live` — the production cells'
+viewer; an older one still answers at once (`refreshing`) while a new read runs
+in the background. The minute job's stored read (`verifix_live` — the production cells'
 people, fresher and with their door marks) is laid over it, so those people
 read exactly as /staff reads them. Everybody else is judged by the report's
 own clocks: the whole plant's marks cost ~25 s a call (`verifix_explore`).
@@ -31,6 +32,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
 from app.services import verifix, verifix_live
 
 log = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ GONE = {"left", "no_out"}
 
 _lock = threading.Lock()
 _snap: Optional[tuple[float, dict]] = None
-_failed: Optional[tuple[float, verifix.VerifixError]] = None
+_failed: Optional[tuple[float, Exception]] = None
 
 
 def _read_report(cfg: dict, days: list[date]) -> dict[str, dict[date, dict]]:
@@ -159,9 +161,24 @@ def _out(hit: tuple[float, dict]) -> dict:
     return {**hit[1], "age_s": int(time.monotonic() - hit[0])}
 
 
+def _renew(cfg: dict) -> None:
+    """Read a new snapshot on a thread of its own; the caller holds `_lock`."""
+    global _snap, _failed
+    db = SessionLocal()
+    try:
+        _snap, _failed = (time.monotonic(), _build(db, cfg)), None
+    except Exception as exc:                         # noqa: BLE001 — the old snapshot stays
+        _failed = (time.monotonic(), exc)
+        log.warning("kitchen: the background read failed (%s)", exc)
+    finally:
+        db.close()
+        _lock.release()
+
+
 def headcount(db: Session) -> dict:
-    """The snapshot, at most `TTL_S` old. One read at a time: whoever asks
-    while it runs gets the last snapshot, and waits only when there is none."""
+    """The snapshot. Younger than `TTL_S` it simply answers; older, it still
+    answers at once (`refreshing`) while ONE new read runs on a thread, so
+    opening the page never waits on Verifix — only the very first read does."""
     global _snap, _failed
     hit = _snap
     if hit and time.monotonic() - hit[0] < TTL_S:
@@ -173,8 +190,11 @@ def headcount(db: Session) -> dict:
         if hit:
             return _out(hit)
         raise _failed[1]
-    if not _lock.acquire(blocking=hit is None):
-        return _out(hit)
+    if hit:
+        if _lock.acquire(blocking=False):
+            threading.Thread(target=_renew, args=(cfg,), name="kitchen-read", daemon=True).start()
+        return {**_out(hit), "refreshing": True}
+    _lock.acquire()
     try:
         if _snap and time.monotonic() - _snap[0] < TTL_S:    # read while we waited
             return _out(_snap)
@@ -183,8 +203,6 @@ def headcount(db: Session) -> dict:
         except verifix.VerifixError as exc:
             _failed = (time.monotonic(), exc)
             log.warning("kitchen: the read failed (%s: %s)", exc.code, exc.message)
-            if hit:
-                return _out(hit)
             raise
         _snap, _failed = (time.monotonic(), data), None
         return _out(_snap)
