@@ -162,6 +162,12 @@ class WhoATaskBelongsTo(unittest.TestCase):
 
 
 TOP = {"role": "top-manager", "role_id": 5, "sub": "1"}
+
+# The two sides of the first day, pinned — never the shipped constant, which a
+# test run after the day would read as «open» and one before it as «closed».
+CLOSED = lambda: mock.patch.object(tb, "OPEN_FROM", None)                      # noqa: E731
+BEFORE = lambda: mock.patch.object(tb, "OPEN_FROM", date(9999, 12, 31))       # noqa: E731  a day not come
+OPEN = lambda: mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1))            # noqa: E731
 ADMIN = {"role": "admin", "sub": "2"}
 SM = {"role": "shift-manager", "role_id": 41, "sub": "3"}
 
@@ -169,11 +175,17 @@ SM = {"role": "shift-manager", "role_id": 41, "sub": "3"}
 class TheFirstDay(unittest.TestCase):
     """`OPEN_FROM` is None until the operator names the day."""
 
-    def test_no_day_is_named_yet(self):
-        # The shipped rule itself — remove this test in the commit that names it.
-        self.assertIsNone(tb.OPEN_FROM)
-        self.assertFalse(tb.is_open())
-        self.assertFalse(tb.top_sets(TOP))
+    def test_the_named_day(self):
+        # The operator, 2026-11-14: «open it for top managers and shift
+        # managers from tomorrow».
+        self.assertEqual(tb.OPEN_FROM, date(2026, 11, 15))
+
+    def test_nothing_opens_while_no_day_is_named_or_before_it(self):
+        for gate in (CLOSED, BEFORE):
+            with gate():
+                self.assertFalse(tb.is_open())
+                self.assertFalse(tb.top_sets(TOP))
+                self.assertFalse(tb.from_top(SM))
 
     def test_closed_before_the_day_open_on_it_and_after(self):
         with mock.patch.object(tb, "OPEN_FROM", DAY):
@@ -182,10 +194,11 @@ class TheFirstDay(unittest.TestCase):
             self.assertTrue(tb.is_open(d(30)))
 
     def test_a_top_manager_sets_tasks_only_from_the_day(self):
-        self.assertFalse(smt.can_manage(TOP))
-        self.assertFalse(bt._may_set(TOP))
-        self.assertFalse(bt._can_manage(None, TOP, 7))
-        with mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1)):
+        with BEFORE():
+            self.assertFalse(smt.can_manage(TOP))
+            self.assertFalse(bt._may_set(TOP))
+            self.assertFalse(bt._can_manage(None, TOP, 7))
+        with OPEN():
             self.assertTrue(smt.can_manage(TOP))
             self.assertTrue(bt._may_set(TOP))
             self.assertTrue(bt._can_manage(None, TOP, 7))
@@ -216,9 +229,10 @@ class TheNoticeOfATaskFromTheTop(unittest.TestCase):
             self.assertEqual(tb.created_nkey(BRIG), "task_created")
 
     def test_a_managers_task_turns_loud_on_the_first_day(self):
-        for who in (SM, TOP):
-            self.assertEqual(tb.created_nkey(who), "task_created")
-        with mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1)):
+        with BEFORE():
+            for who in (SM, TOP):
+                self.assertEqual(tb.created_nkey(who), "task_created")
+        with OPEN():
             for who in (SM, TOP):
                 self.assertEqual(tb.created_nkey(who), "task_from_top")
 
@@ -258,7 +272,10 @@ class TheReminder(unittest.TestCase):
     """«remind them did you do this or not» — one press on the shift day."""
 
     def task(self, status="todo", due=-3):
-        return SimpleNamespace(id=77, status=status, due_date=date.today() + timedelta(days=due),
+        # The deadline on the reminder's own clock (Tashkent), never this
+        # machine's calendar — the two differ for five hours of every day.
+        today = tb.datetime.now(tb.TZ).date()
+        return SimpleNamespace(id=77, status=status, due_date=today + timedelta(days=due),
                                task_text="Pechni tekshirish", assignee_kind="supervisor",
                                supervisor_manager_id=9, leader_profile_id=None)
 
@@ -305,9 +322,10 @@ class TheReminder(unittest.TestCase):
 
     def test_only_who_acts_from_the_top_may_press(self):
         # Before the first day a shift manager has no «Eslatish» at all.
-        self.assertFalse(tb.from_top(SM))
-        self.assertTrue(tb.from_top(ADMIN))
-        with mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1)):
+        with BEFORE():
+            self.assertFalse(tb.from_top(SM))
+            self.assertTrue(tb.from_top(ADMIN))
+        with OPEN():
             self.assertTrue(tb.from_top(SM))
             self.assertTrue(tb.from_top(TOP))
             self.assertFalse(tb.from_top(BRIG))
@@ -319,11 +337,12 @@ class ALeadersTaskFromTheTop(unittest.TestCase):
                                supervisor_manager_id=12, leader_profile_id=5)
 
     def test_a_manager_sets_a_leaders_task_only_from_the_first_day(self):
-        self.assertTrue(lt._may_set(ADMIN))
-        self.assertTrue(lt._may_set(BRIG))
-        self.assertFalse(lt._may_set(SM))
-        self.assertFalse(lt._may_set(TOP))
-        with mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1)):
+        with BEFORE():
+            self.assertTrue(lt._may_set(ADMIN))
+            self.assertTrue(lt._may_set(BRIG))
+            self.assertFalse(lt._may_set(SM))
+            self.assertFalse(lt._may_set(TOP))
+        with OPEN():
             self.assertTrue(lt._may_set(SM))
             self.assertTrue(lt._may_set(TOP))
         self.assertFalse(lt._may_set({"role": "leader", "role_id": 12}))
@@ -335,15 +354,30 @@ class ALeadersTaskFromTheTop(unittest.TestCase):
             self.assertFalse(lt._governs_from_top(SM, self.row("supervisor:12")))
             self.assertFalse(lt._governs_from_top(BRIG, self.row("admin:1")))
         # Before the day a manager has no such hand at all.
-        self.assertFalse(lt._governs_from_top(SM, self.row("admin:1")))
+        with BEFORE():
+            self.assertFalse(lt._governs_from_top(SM, self.row("admin:1")))
 
 
 class TheVazifalarPageForTopManagers(unittest.TestCase):
     def test_nothing_is_granted_before_the_day(self):
-        # No day named → returns before it ever opens a session.
-        with mock.patch("app.database.SessionLocal", side_effect=AssertionError("touched the db")):
+        # Before the day → returns before it ever opens a session.
+        for gate in (CLOSED, BEFORE):
+            with gate(), mock.patch.object(tb, "_top_page_done", False), \
+                    mock.patch("app.database.SessionLocal", side_effect=AssertionError("touched the db")):
+                tb.open_page_to_top_managers()
+                self.assertFalse(tb._top_page_done)
+
+    def test_once_done_it_never_touches_the_database_again(self):
+        with OPEN(), mock.patch.object(tb, "_top_page_done", True), \
+                mock.patch("app.database.SessionLocal", side_effect=AssertionError("touched the db")):
             tb.open_page_to_top_managers()
-        self.assertFalse(tb._top_page_done)
+
+    def test_every_menu_read_asks_for_it_first(self):
+        from app.routers import settings as st
+        with mock.patch.object(tb, "open_page_to_top_managers") as grant, \
+                mock.patch.object(st, "get_page_access", return_value={}):
+            st.page_access_payload(None)
+        grant.assert_called_once()
 
 
 class ShiftManagerTier(unittest.TestCase):

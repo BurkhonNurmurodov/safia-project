@@ -265,11 +265,16 @@ top». So:
   page by default, so on the first day the role is added to the stored Access
   matrix's `tasks` list, once (`tb.open_page_to_top_managers`, flag
   `tasks_page_top_managers_2026_11_v1` — a later untick on the Access tab
-  stays unticked). It runs at startup and from the day read, because the first
-  day may come with no deploy on it. Before the day: a no-op.
+  stays unticked). It runs at startup, from the day read and before every
+  page-access answer (`settings.page_access_payload` — each sign-in and each
+  menu), because the first day may come with no deploy on it: the first person
+  to open the app that day grants it before their own menu is drawn. Before the
+  day, and once done in a process, it touches no database.
 
-- **THE FIRST DAY IS ONE CONSTANT — `task_board.OPEN_FROM`, None until he names
-  it.** Before it: only an admin sees the «Rahbariyat vazifalari» block, a
+- **THE FIRST DAY IS ONE CONSTANT — `task_board.OPEN_FROM` = 2026-11-15**
+  (named by the operator on 2026-11-14 at 21:13: «open it for top managers and
+  shift managers from tomorrow»; it was None — «admins only first» — until
+  then). Before it: only an admin sees the «Rahbariyat vazifalari» block, a
   top-manager sets nothing, a shift manager sets a brigadir's task as before
   (the plain notice) and no leader's. On it and after: top- and shift-managers
   see the block and set tasks for brigadirs and leaders with the loud notice, a
@@ -277,8 +282,10 @@ top». So:
   top-managers are given «Vazifalar». **An admin's own act never waits**: a
   task an admin sets is from the top today. There is NO browser twin of the date — the
   block asks the server (`show`), the form asks the server which tiers it may
-  offer — so naming the day is one line in one file. Delete
-  `test_no_day_is_named_yet` (`tests/test_task_day.py`) in that commit.
+  offer — so the day is one line in one file. **Every test pins its own side
+  of the day** (`CLOSED` / `BEFORE` / `OPEN` in `tests/test_task_day.py`) and
+  never reads the shipped constant, except `test_the_named_day`: a test that
+  read it would pass today and fail from the 15th, or the reverse.
   **Not gated: an admin setting a shift manager a task.** That is a deliberate
   act by somebody who knows, it reaches that shift manager like any task (bell
   + DM, their `/tasks` board, their bell queue), and they can work it.

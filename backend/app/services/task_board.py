@@ -99,10 +99,11 @@ TZ = timezone(timedelta(hours=5))
 MANAGER_ROLES = ("admin", "top-manager", "shift-manager")
 
 # The first day a TOP-MANAGER sets tasks and the day block is shown to anybody
-# but an admin. The operator names it (2026-11-14: «admins only first»); until
-# then it is None. ONE constant — the browser asks the server, so there is no
-# twin to keep in step. Once the day has come it never moves LATER.
-OPEN_FROM: Optional[date] = None
+# but an admin. The operator named it on 2026-11-14 at 21:13 Tashkent: «open it
+# for top managers and shift managers from tomorrow» (it was «admins only
+# first» until then). ONE constant — the browser asks the server, so there is
+# no twin to keep in step. Now that the day is named it never moves LATER.
+OPEN_FROM: Optional[date] = date(2026, 11, 15)
 
 
 def is_open(today: Optional[date] = None) -> bool:
@@ -150,10 +151,13 @@ def open_page_to_top_managers() -> None:
     """Give top-managers the «Vazifalar» page — on the first day and after,
     once per database. Nothing before the day (while no day is named: never).
 
-    Called at startup (`main` / `passenger_wsgi`) AND by the day read on
-    «Smena kunligi» (`routers/tasks.day_tasks`), because the first day may come
-    with no deploy on it: whoever opens that page first on the day opens this.
-    Own session; never raises — config, not a request's business."""
+    Called at startup (`main` / `passenger_wsgi`), by the day read on «Smena
+    kunligi» (`routers/tasks.day_tasks`) and before every page-access answer
+    (`routers/settings.page_access_payload` — what each sign-in and each tab's
+    menu reads), because the first day may come with no deploy on it: the
+    first person to open the app on the day opens this, before their menu is
+    drawn. Before the day — and once done in this process — it returns without
+    touching the database. Own session; never raises."""
     global _top_page_done
     if _top_page_done or not is_open():
         return

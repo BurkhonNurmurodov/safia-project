@@ -204,6 +204,11 @@ def get_zagruzka_bands(db: Session = Depends(get_db), _: dict = Depends(require_
 def page_access_payload(db: Session) -> dict:
     """THE answer of GET /api/page-access — also handed out with every sign-in
     (`boot_extras`), so the two can never disagree."""
+    # «Vazifalar» for top-managers from the first day of tasks from the top
+    # (`task_board.OPEN_FROM`) — granted here, before the matrix is read, so
+    # the first menu drawn on that day already carries it. A no-op otherwise.
+    from app.services import task_board
+    task_board.open_page_to_top_managers()
     return {
         "pages":            get_page_access(db),
         "page_keys":        PAGE_KEYS,
