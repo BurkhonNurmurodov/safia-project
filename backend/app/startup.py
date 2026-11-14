@@ -10447,6 +10447,61 @@ def dilafruz_container_flow() -> None:
         db.close()
 
 
+# ── Nuriddin aka → «Konteyner berish» as Logistics (docs/data-fixes.md) ──────
+# 2026-11-14, the operator: AXO «has to choose Nuriddin aka, he is the guy from
+# logistics, and Nuriddin aka has to choose the brigadirs». His «Kutish
+# mas'uli» profile gets `page.view.container-logistics` — which also makes him
+# an addressee AXO can pick. What he already holds is untouched.
+NURIDDIN_LOGISTICS_FLAG = "oneshot:idle_owner_nuriddin_container_logistics_nov14"
+
+
+def _nuriddin_profiles(db) -> list:
+    from app.services.people import fold_name
+    return [p for p in db.query(RoleProfile).filter(RoleProfile.role == "idle-owner").all()
+            if any("nuriddin" in fold_name(n).split()
+                   for n in (p.name, p.name_uz_cyrl, p.name_ru, p.name_en) if n)]
+
+
+def nuriddin_container_logistics() -> None:
+    import html
+
+    from app import capabilities
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=NURIDDIN_LOGISTICS_FLAG).first():
+            return
+        found = _nuriddin_profiles(db)
+        if len(found) != 1:
+            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Nuriddin logistics: {len(found)} idle-owner profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Nuriddin aka — «Konteyner berish» (logistika) berilmadi</b>\n"
+                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            return
+        prof = found[0]
+        key = f"idle-owner:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key], grants={"page.view.container-logistics": "all"},
+            actor_name="system (one-shot 2026-11-14)")
+        db.add(AppSetting(key=NURIDDIN_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] Nuriddin logistics: {key} → page.view.container-logistics")
+        _dm_admins_plain(
+            "✅ <b>Nuriddin aka — «Konteyner berish» (logistika)</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            "AXO so'rovlarini u qabul qilib, brigadirlarga taqsimlaydi.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Nuriddin logistics failed: {exc}")
+        _dm_admins_plain("🛑 <b>Nuriddin aka — «Konteyner berish» (logistika) berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

@@ -6031,3 +6031,49 @@ class ContainerEvent(Base):
     actor    = Column(String, nullable=True)
     action   = Column(String(24), nullable=False)
     detail   = Column(JSONB, nullable=True)
+
+
+class ContainerRequest(Base):
+    """A container request AXO addresses to ONE logistics person
+    (2026-11-14, the operator: AXO «should not choose the brigadirs, she has
+    to choose Nuriddin aka … and Nuriddin aka has to choose the brigadirs»).
+    AXO states the counts and the production hour; the logistics person splits
+    them across brigadirs (`ContainerRequestPart`), which closes it — nobody
+    confirms the arrival yet. Due an hour before `hour` (counted from the
+    day's midnight, past 23 for a night shift), like a batch.
+
+    `status`: requested → assigned, or cancelled (AXO / an admin, with a note).
+    `lines` is {ctype: count}. `logistics_key` is the addressee's PROFILE key."""
+    __tablename__ = "container_requests"
+
+    id             = Column(Integer, primary_key=True)
+    day            = Column(Date, nullable=False, index=True)
+    hour           = Column(Integer, nullable=False)
+    lines          = Column(JSONB, nullable=False)
+    note           = Column(Text, nullable=True)
+    logistics_key  = Column(String, nullable=False, index=True)
+    logistics_name = Column(String, nullable=True)
+    status         = Column(String(10), nullable=False, default="requested")
+    due_at         = Column(DateTime(timezone=True), nullable=False)
+    created_at     = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by     = Column(String, nullable=True)
+    created_key    = Column(String, nullable=True)
+    assigned_at    = Column(DateTime(timezone=True), nullable=True)
+    assigned_by    = Column(String, nullable=True)
+    late           = Column(Boolean, nullable=True)
+    short_reason   = Column(String(20), nullable=True)
+    short_comment  = Column(Text, nullable=True)
+    cancelled_at   = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by   = Column(String, nullable=True)
+    cancel_note    = Column(Text, nullable=True)
+
+
+class ContainerRequestPart(Base):
+    """What one brigadir's unit got of a request, per container type."""
+    __tablename__ = "container_request_parts"
+
+    id         = Column(Integer, primary_key=True)
+    request_id = Column(Integer, ForeignKey("container_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    manager_id = Column(Integer, nullable=False, index=True)
+    ctype      = Column(String(10), nullable=False)
+    count      = Column(Integer, nullable=False)

@@ -285,6 +285,8 @@ async def lifespan(app: FastAPI):
     # …and «Konteyner berish» for her (2026-11-14, mirrored in passenger_wsgi.py).
     from app.startup import dilafruz_container_flow
     later(dilafruz_container_flow)
+    from app.startup import nuriddin_container_logistics
+    later(nuriddin_container_logistics)
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     later(date_window_edits_nov13)

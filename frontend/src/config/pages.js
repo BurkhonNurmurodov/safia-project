@@ -50,6 +50,7 @@ export const PAGES = [
   { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
   { tier: "test", key: "kitchen", route: "/kitchen", labelKey: "nav.kitchen" },
   { tier: "test", key: "container-flow", route: "/containers/flow", labelKey: "nav.containerFlow" },
+  { tier: "test", key: "container-logistics", route: "/containers/flow", labelKey: "nav.containerLogistics" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -106,6 +107,8 @@ export const DEFAULT_PAGE_ACCESS = {
   kitchen: [],
   // «Konteyner berish» — AXO's steps of the container flow. Admin-only until opened.
   "container-flow": [],
+  // …as Logistics: a request addressed to them, split across brigadirs.
+  "container-logistics": [],
   // «API» — personal tokens for the external read API. Admin-only until the
   // operator opens it: a token reads every cell's plan and people.
   api: [],
@@ -180,8 +183,12 @@ export const DEFAULT_PAGE_ACCESS = {
 // grant, which the backend has already removed from the list. This is a
 // rendering aid only; require_page refuses the data either way, and a nav link
 // that 403s when tapped is worse than no link at all.
+// `pageKey` may be a LIST — the page opens for anyone who may open one of them
+// (OR, like the backend's require_page): «Konteyner berish» is AXO's page
+// AND Logistics' page.
 export function canAccessPage(role, pageKey, access, capPages, deniedPages) {
   if (role === "admin") return true;
+  if (Array.isArray(pageKey)) return pageKey.some((k) => canAccessPage(role, k, access, capPages, deniedPages));
   if ((deniedPages ?? []).includes(pageKey)) return false;
   const allowed = access?.[pageKey] ?? DEFAULT_PAGE_ACCESS[pageKey] ?? [];
   return allowed.includes(role) || (capPages ?? []).includes(pageKey);
