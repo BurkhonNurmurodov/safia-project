@@ -45,8 +45,20 @@ containers row from production and move it into the new button».
     `startup.dilafruz_container_flow`) and **Nuriddin aka** («Kutish mas'uli»
     profile, Logistics — `startup.nuriddin_container_logistics`);
     docs/data-fixes.md.
-- **Nothing here sends a message to anybody** — no Telegram, no notification;
-  that comes with the first-day date the operator names.
+  - **`container-receive` is a brigadir's «Qabul»** (2026-11-14): confirming
+    what reached their line from a split request — their OWN unit only (a
+    supervisor's `role_id` is the unit), admins any. Admin-only until the
+    operator opens it to the brigadirs (the page-access grant is the gate; a
+    holder of only this key sees the «Qabul» tab and nothing of the AXO /
+    logistics side — `WHO` reads `/settings`, `RECV` the receipts).
+- **The one message** (2026-11-14): a new or cancelled request DMs its
+  logistics person (`notify_request`, keys `container_request_new` /
+  `_cancelled`, a button opening the page; category «other», subject `page`
+  `/containers/flow`) — **only while «Sozlamalar» → «Telegram xabarlari» is
+  on** (`container_flow.notify_logistics`, OFF by default; a settings save from
+  an older tab without `notify` leaves it as it is). Sent on a thread after the
+  commit, so a save never waits on Telegram. Nothing else here messages
+  anybody.
 
 ### How it works (`services/container_flow.py`, `routers/container_flow.py`)
 
@@ -121,9 +133,47 @@ containers row from production and move it into the new button».
   filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
   (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
   else sees the mark.
+- **What else the requests tab answers** (2026-11-14, the operator asked for
+  all eight ideas at once):
+  - **The split starts filled** — `GET /requests/{id}/split-hint`
+    (`split_hint`): for each requested type, the units whose hour asks for it
+    on «Konteynerlar» (`units_hours`, the per-unit cache `plant_hours` now sums),
+    the asked count shared out in proportion to their figures by LARGEST
+    REMAINDER both ways (`share_out` — unlike `split`, it also scales UP), so
+    the rows add up to what was asked. A type no unit's hour asks for is left
+    to the hand. Each row says its unit's own figure; any edit keeps the rows
+    and «Hisobga qaytarish» brings the figures back.
+  - **AXO sees whether the addressee opened it** — «Ko'rildi 14:05», or
+    «Ko'rilmagan», yellow after `UNSEEN_WARN_MIN` (15).
+  - **The deadline is the TIME LEFT** («35 daq qoldi», yellow inside the last
+    `SOON_MIN` = 30, red «12 daq kechikdi» once past) while a request waits;
+    the clock once it is split.
+  - **«Kun rejasi»** (AXO): a strip of the day's hours — each hour that needs
+    containers on «Konteynerlar» or has a request, «asked / needed»: green =
+    split, yellow = asked and waiting (red past its deadline), an hour that
+    needs containers with NO request dashed yellow inside the next two hours
+    and dashed red once its deadline passed; the hour now ringed in gold; a
+    tap opens «Yangi so'rov» on that hour. The header counts the hours
+    without a request (always a chip, so a request made from it never moves
+    the strip).
+  - **A phone gets cards** (below md) — hour, chips, time left, counts as
+    pills, who, the split per brigadir with its receipt, one full-width
+    «Brigadirlarga taqsimlash».
+  - **The receipt** — a brigadir confirms on «Qabul»: «Hammasi keldi» (one
+    tap) or «Boshqa son» (per type, never above what was sent — `over`; fewer
+    needs a reason), once per unit (`receive`, columns
+    `container_request_parts.received*`). The request's status follows
+    (`receipt`: «Yetib keldi», «Qabul 1/2», «Kam keldi»), each brigadir in the
+    split line gets ✓ or ⚠.
+  - **«Hisobot» opens with the requests** (`requests_report`, in the same
+    `GET /report`): how many (split · waiting · cancelled), split on time %
+    (judged = split + overdue; the platform's on-time band), average minutes to
+    split and to open, what arrived of what the brigadirs confirmed, a table by
+    day (asked → split → received, missing, late, overdue, short) with the
+    short-split reasons under it; the Excel gains a «Requests» sheet.
   This REPLACED the first day's «Qo'lda so'rov», which had AXO pick the
   brigadir and the team (`manual`, removed; kind `manual` stays readable in the
-  report). Requests are not in «Hisobot» yet.
+  report).
 - **History**: `container_events`, one row per step (who, when, counts,
   reason) — the batch's «Tarix». The «Jurnal» row of each request is the
   action log's (`containers.*` in `ROUTES`, category `shopfloor`;
@@ -163,9 +213,9 @@ hover): five long names pushed the status and the actions off a laptop.
 
 ### Not built (the plan's remaining parts — ask first)
 
-- A leader's own card; the brigadir's read-only view; a brigadir confirming a
-  request's containers arrived; requests in «Hisobot».
-- Every notification and Telegram message, and the escalation chain.
+- A leader's own card; the brigadir's view of the AUTOMATIC batches (their
+  «Qabul» covers requests only).
+- Every other notification (AXO, brigadirs, leaders) and the escalation chain.
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.
 - The operator's rulings on: the deadline of a late-drafted batch (a default

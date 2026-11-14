@@ -40,6 +40,13 @@ class SplitTest(unittest.TestCase):
     def test_nothing_delivered(self):
         self.assertEqual(flow.split(0, [5, 2]), [0, 0])
 
+    def test_share_out_scales_both_ways_and_adds_up(self):
+        self.assertEqual(flow.share_out(30, [18, 12]), [18, 12])
+        self.assertEqual(flow.share_out(20, [18, 12]), [12, 8])     # fewer asked than the figures
+        self.assertEqual(flow.share_out(40, [18, 12]), [24, 16])    # more asked — scaled up, unlike split
+        self.assertEqual(sum(flow.share_out(7, [1, 1, 1])), 7)
+        self.assertEqual(flow.share_out(5, [0, 0]), [0, 0])
+
 
 class UnitTeamsTest(unittest.TestCase):
     """`hourly_containers.unit_teams` is `unit_hours` kept per team: summed
@@ -239,6 +246,38 @@ class FlowTest(unittest.TestCase):
             flow.deliver(self.db, b.id, None, None, None, "mitsu")
         self.assertTrue(b.late)
 
+    def test_split_hint_follows_each_units_hour(self):
+        from app.models import ContainerRequest
+        for i, n in ((12, "Bravo"), (13, "Alfa")):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=n, shift=1))
+        self.db.commit()
+        per = {12: {10: {"yellow": 18, "bucket": 4}}, 13: {10: {"yellow": 12}, 11: {"grey": 5}}}
+        r = ContainerRequest(day=DAY, hour=10, lines={"yellow": 20, "bucket": 6, "grey": 3},
+                             logistics_key="x", status="requested", due_at=self.at(9))
+        with mock.patch.object(flow, "units_hours", return_value=per):
+            rows = flow.split_hint(self.db, r)
+        # sorted by name; yellow 20 shared 12:8 by 18:12; bucket all to Bravo, scaled up to 6;
+        # grey is nobody's at 10:00 — left to the hand
+        self.assertEqual([(x["unit"], x["counts"]) for x in rows],
+                         [("Alfa", {"yellow": 8}), ("Bravo", {"yellow": 12, "bucket": 6})])
+        self.assertEqual(rows[1]["need"], {"yellow": 18, "bucket": 4})
+
+    def test_notify_switch_and_message(self):
+        from app.models import ContainerRequest
+        self.assertFalse(flow.settings(self.db)["notify"])            # off by default
+        flow.save_settings(self.db, [1], 2, True)
+        self.assertTrue(flow.settings(self.db)["notify"])
+        flow.save_settings(self.db, [1], 3)                            # an older tab keeps it
+        self.assertTrue(flow.settings(self.db)["notify"])
+        r = ContainerRequest(day=DAY, hour=20, lines={"yellow": 30, "bucket": 8}, note="tez",
+                             logistics_key="x", status="requested", due_at=self.at(19),
+                             created_by="Fozilova Dilafruz")
+        body = flow._tg_body(r, "new", "uz")
+        for bit in ("20:00–21:00", "To'rtburchak 30, Chelak 8", "19:00", "Fozilova Dilafruz", "tez"):
+            self.assertIn(bit, body)
+        self.assertIn("Прямоугольный 30", flow._tg_body(r, "new", "ru"))
+
     def test_request_to_logistics_split_across_brigadirs(self):
         from app.models import ProfilePermission, RoleProfile
         self.db.execute(flow.text("DELETE FROM container_request_parts"))
@@ -295,6 +334,46 @@ class FlowTest(unittest.TestCase):
             flow.cancel_request(self.db, r2.id, " ", "axo")
         flow.cancel_request(self.db, r2.id, "kerak emas", "axo")
         self.assertEqual(r2.status, "cancelled")
+        # a brigadir's receipt: only on a split request, once, never over, fewer with a reason
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as e:
+            flow.receive(self.db, r2.id, 1, None, None, None, "b")          # cancelled
+        self.assertEqual(e.exception.code, "state")
+        with self.assertRaises(flow.FlowError) as e:
+            flow.receive(self.db, r.id, 3, None, None, None, "b")           # not one of its units
+        self.assertEqual(e.exception.code, "unit")
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as e:
+            flow.receive(self.db, r.id, 1, {"yellow": 21}, None, None, "b")
+        self.assertEqual(e.exception.code, "over")
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as e:
+            flow.receive(self.db, r.id, 1, {"yellow": 18}, None, None, "b")
+        self.assertEqual(e.exception.code, "reason")
+        self.db.rollback()
+        flow.receive(self.db, r.id, 1, {"yellow": 18}, "damaged", None, "Brigadir One")
+        self.db.commit()
+        with self.assertRaises(flow.FlowError):
+            flow.receive(self.db, r.id, 1, None, None, None, "b")           # once
+        self.db.rollback()
+        got = flow.requests_of(self.db, DAY)
+        one = next(x for x in got if x["id"] == r.id)
+        self.assertEqual(one["receipt"], {"units": 2, "confirmed": 1, "short": True})
+        mine = flow.receipts_of(self.db, DAY, 1)
+        self.assertEqual([(x["request_id"], x["received"], x["received_reason"]) for x in mine],
+                         [(r.id, {"yellow": 18, "bucket": 12}, "damaged")])
+        flow.receive(self.db, r.id, 2, None, None, None, "Brigadir Two")
+        self.db.commit()
+        self.assertEqual(len(flow.receipts_of(self.db, DAY)), 2)
+        # the report: one split in full, one cancelled; 52 asked and given, 50 received
+        rep = flow.requests_report(self.db, DAY, DAY)
+        sm = rep["summary"]
+        self.assertEqual((sm["requests"], sm["cancelled"], sm["assigned"], sm["short"]), (2, 1, 1, 0))
+        self.assertEqual((sm["asked"], sm["given"], sm["received"], sm["missing"]), (52, 52, 50, 2))
+        self.assertEqual((sm["units"], sm["confirmed"]), (2, 2))
+        self.assertEqual(rep["reasons"]["short"], 0)
+        self.assertEqual(rep["days"][0]["requests"], 2)
+        self.assertEqual(rep["people"][0]["name"], "Nuriddin aka")
         self.db.query(ProfilePermission).filter_by(profile_key=nk).update({"mode": "deny"})
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
@@ -328,7 +407,7 @@ class PageKeyTest(unittest.TestCase):
     def test_page_key_and_capability(self):
         from app import capabilities
         from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
-        for key in ("container-flow", "container-logistics"):
+        for key in ("container-flow", "container-logistics", "container-receive"):
             self.assertIn(key, PAGE_KEYS)
             self.assertEqual(DEFAULT_PAGE_ACCESS[key], [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
@@ -343,7 +422,8 @@ class PageKeyTest(unittest.TestCase):
             deps = [d.call for d in route.dependant.dependencies]
             guard[(next(iter(route.methods)), route.path)] = (
                 "admin" if verify_admin in deps else "axo" if r.PAGE in deps
-                else "logistics" if r.LOGI in deps else "any" if r.ANY in deps else "?")
+                else "logistics" if r.LOGI in deps else "any" if r.ANY in deps
+                else "receive" if r.RECV in deps else "who" if r.WHO in deps else "?")
         p = "/api/container-flow"
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
@@ -351,10 +431,13 @@ class PageKeyTest(unittest.TestCase):
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
-                  ("GET", f"{p}/units")]:
+                  ("GET", f"{p}/units"), ("GET", f"{p}/requests/{{request_id}}/split-hint")]:
             self.assertEqual(guard[k], "logistics", k)
+        for k in [("GET", f"{p}/receipts"), ("POST", f"{p}/requests/{{request_id}}/receive")]:
+            self.assertEqual(guard[k], "receive", k)
+        self.assertEqual(guard[("GET", f"{p}/settings")], "who")
         for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"),
-                  ("GET", f"{p}/settings"), ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
+                  ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
             self.assertEqual(guard[k], "any", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
                   ("PUT", f"{p}/settings")]:

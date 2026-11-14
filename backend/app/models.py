@@ -6080,3 +6080,10 @@ class ContainerRequestPart(Base):
     manager_id = Column(Integer, nullable=False, index=True)
     ctype      = Column(String(10), nullable=False)
     count      = Column(Integer, nullable=False)
+    # The brigadir's receipt (2026-11-14): what actually arrived, per type.
+    # NULL = not confirmed yet. Fewer than `count` carries a reason.
+    received         = Column(Integer, nullable=True)
+    received_at      = Column(DateTime(timezone=True), nullable=True)
+    received_by      = Column(String, nullable=True)
+    received_reason  = Column(String(20), nullable=True)
+    received_comment = Column(Text, nullable=True)

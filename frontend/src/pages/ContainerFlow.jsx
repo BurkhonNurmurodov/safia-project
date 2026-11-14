@@ -24,6 +24,7 @@ import {
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, isFresh } from "../components/containers/FlowRequests";
+import FlowReceive from "../components/containers/FlowReceive";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
@@ -41,13 +42,15 @@ import api from "../utils/api";
 // `container-flow` is AXO (Fozilova Dilafruz) — a REQUEST to a logistics
 // person, issuing an hour, settling a dispute; `container-logistics` is
 // Logistics (Nuriddin aka) — splitting a request across brigadirs, a batch's
-// delivery; a leader's answer, a forced close and the settings are admins'.
+// delivery; `container-receive` is a brigadir confirming what reached their
+// line («Qabul», their own unit only); a leader's answer, a forced close and
+// the settings are admins'.
 const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
-const TABS = ["requests", "axo", "logistics", "leaders", "all", "report", "settings"];
+const TABS = ["requests", "receive", "axo", "logistics", "leaders", "all", "report", "settings"];
 const tabsFor = (r) => TABS.filter((k) => r.admin
-  || k === "requests" || k === "all" || k === "report"
-  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics));
+  || ((k === "requests" || k === "all" || k === "report") && (r.axo || r.logistics))
+  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics) || (k === "receive" && r.receive));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
@@ -64,18 +67,26 @@ export default function ContainerFlow() {
   }, []);
   const live = liveDay(tashkentNow());
   const day = picked ?? live;
-  const [newOpen, setNewOpen] = useState(false);
+  // null = closed; {hour} = open (hour null → the next hour)
+  const [newOpen, setNewOpen] = useState(null);
+  const openNew = (hour = null) => setNewOpen({ hour });
 
-  const board = useQuery({
-    queryKey: ["cflow-board", day],
-    queryFn: () => api.get("/api/container-flow/board", { params: { day } }).then((r) => r.data),
-    refetchInterval: REFRESH_MS,
-  });
   const settings = useQuery({
     queryKey: ["cflow-settings"],
     queryFn: () => api.get("/api/container-flow/settings").then((r) => r.data),
   });
-  const roles = { admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics };
+  const roles = {
+    admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics,
+    receive: isAdmin || !!settings.data?.receive,
+  };
+  // a brigadir holding only «Qabul» reads nothing of the AXO / logistics side
+  const flowSide = roles.axo || roles.logistics;
+  const board = useQuery({
+    queryKey: ["cflow-board", day],
+    queryFn: () => api.get("/api/container-flow/board", { params: { day } }).then((r) => r.data),
+    refetchInterval: REFRESH_MS,
+    enabled: flowSide,
+  });
   const tabs = tabsFor(roles);
   // The «So'rovlar» tab counts the requests its viewer has not opened yet
   // (the same query the tab reads — fetched once).
@@ -83,16 +94,17 @@ export default function ContainerFlow() {
     queryKey: ["cflow-requests", day],
     queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
+    enabled: flowSide,
   });
   const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
-  const tab = tabs.includes(tabSaved) ? tabSaved : "requests";
+  const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
   const refresh = () => qc.invalidateQueries({ queryKey: ["cflow-board"] });
   const done = (msg) => { toast.success(msg); refresh(); };
   const fail = (e) => toast.error(errText(t, e));
 
   const batches = board.data?.batches ?? [];
   const enrolled = settings.data?.units ?? null;
-  const onFlow = !["report", "settings", "requests"].includes(tab);
+  const onFlow = !["report", "settings", "requests", "receive"].includes(tab);
   const nothingOn = onFlow && enrolled != null && enrolled.length === 0 && !board.isLoading && batches.length === 0;
   const ctx = { t, day, batches, loading: board.isLoading, done, fail, refresh };
 
@@ -100,7 +112,7 @@ export default function ContainerFlow() {
     <Layout title={t("nav.containerFlow")}>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* The tabs first: they never move when a tab drops the day control. */}
-        <SegmentedToggle asTabs value={tab} onChange={setTab}
+        {tabs.length > 1 && <SegmentedToggle asTabs value={tab} onChange={setTab}
           options={tabs.map((k) => ({
             value: k,
             label: k === "requests" && freshN > 0 ? (
@@ -115,16 +127,18 @@ export default function ContainerFlow() {
                 </span>
               </span>
             ) : t(`cflow.tab.${k}`),
-          }))} />
+          }))} />}
         {tab !== "report" && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
-        {roles.axo && tab !== "settings" && tab !== "report" && (
-          <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => setNewOpen(true)}>
+        {roles.axo && !["settings", "report", "receive"].includes(tab) && (
+          <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => openNew()}>
             {t("cflow.req.new")}
           </Button>
         )}
       </div>
 
-      {board.isError && onFlow ? (
+      {settings.isLoading && !isAdmin ? <Loading />
+        : !tab ? <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, settings.error)} />
+        : board.isError && onFlow ? (
         <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, board.error)} />
       ) : nothingOn ? (
         <EmptyState showUploadLink={false} icon={Settings2} title={t("cflow.noUnits")}
@@ -132,7 +146,8 @@ export default function ContainerFlow() {
           action={isAdmin
             ? <Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>
             : <Button onClick={() => setTab("requests")}>{t("cflow.tab.requests")}</Button>} />
-      ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={() => setNewOpen(true)} />
+      ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} />
+        : tab === "receive" ? <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} />
         : tab === "axo" ? <AxoTab {...ctx} />
         : tab === "logistics" ? <LogisticsTab {...ctx} />
         : tab === "leaders" ? <LeadersTab {...ctx} />
@@ -142,9 +157,9 @@ export default function ContainerFlow() {
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}
 
       {newOpen && (
-        <NewRequestModal t={t} day={day} onClose={() => setNewOpen(false)}
+        <NewRequestModal t={t} day={day} initialHour={newOpen.hour} onClose={() => setNewOpen(null)}
           onDone={() => {
-            setNewOpen(false); setTab("requests"); toast.success(t("cflow.req.sent"));
+            setNewOpen(null); setTab("requests"); toast.success(t("cflow.req.sent"));
             qc.invalidateQueries({ queryKey: ["cflow-requests"] });
           }} onFail={fail} />
       )}

@@ -9,9 +9,12 @@ docs/containers-flow.md). Two doors:
   First holder: Nuriddin aka.
 - `ANY` (either key): reading the board, the requests, the history, the
   report. Both keys are admin-only until granted.
+- `RECV` (page key `container-receive`): a brigadir confirming what reached
+  their line — only their own unit; admins any. Admin-only until granted.
 - `verify_admin`: a leader's answer, a forced close, the settings.
 
-Nothing here sends a message to anybody."""
+The one message: a new / cancelled request to its logistics person, only
+while «Sozlamalar» → Telegram is on (`flow.notify_later`)."""
 from __future__ import annotations
 
 import io
@@ -36,6 +39,8 @@ router = APIRouter(prefix="/api/container-flow", tags=["container-flow"])
 PAGE = require_page("container-flow")
 LOGI = require_page("container-logistics")
 ANY = require_page("container-flow", "container-logistics")
+RECV = require_page("container-receive")
+WHO = require_page("container-flow", "container-logistics", "container-receive")
 
 
 def _roles(db: Session, payload: dict) -> dict:
@@ -43,10 +48,18 @@ def _roles(db: Session, payload: dict) -> dict:
     from app.capabilities import capability_pages, caller_denied_pages
     from app.permissions import get_page_access, role_can_access
     if payload.get("role") == "admin":
-        return {"admin": True, "axo": True, "logistics": True}
+        return {"admin": True, "axo": True, "logistics": True, "receive": True, "unit": None}
     access, caps, denied = get_page_access(db), capability_pages(db, payload), caller_denied_pages(db, payload)
     can = lambda k: role_can_access(payload.get("role"), [k], access, caps, denied)  # noqa: E731
-    return {"admin": False, "axo": can("container-flow"), "logistics": can("container-logistics")}
+    return {"admin": False, "axo": can("container-flow"), "logistics": can("container-logistics"),
+            "receive": can("container-receive"), "unit": _my_unit(payload)}
+
+
+def _my_unit(payload: dict) -> Optional[int]:
+    """The brigadir's own unit (a supervisor's role_id IS the manager id)."""
+    if payload.get("role") == "supervisor" and str(payload.get("role_id") or "").isdigit():
+        return int(payload["role_id"])
+    return None
 
 
 def _me(db: Session, payload: dict) -> Optional[str]:
@@ -218,7 +231,7 @@ def _units(db: Session) -> list:
 
 
 @router.get("/settings")
-def get_settings(db: Session = Depends(get_db), payload: dict = Depends(ANY)):
+def get_settings(db: Session = Depends(get_db), payload: dict = Depends(WHO)):
     """Read by every holder (the manual request's unit picker, «is anything
     enrolled»); written by admins only."""
     return {**flow.settings(db), "all_units": _units(db), "reasons": list(flow.REASONS),
@@ -228,15 +241,17 @@ def get_settings(db: Session = Depends(get_db), payload: dict = Depends(ANY)):
 class SettingsBody(BaseModel):
     units: List[int]
     topup_min: int = Field(ge=1, le=1000)
+    notify: Optional[bool] = None   # absent = unchanged (an older tab)
 
 
 @router.put("/settings")
 def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(verify_admin)):
     was = flow.settings(db)
-    out = flow.save_settings(db, body.units, body.topup_min)
+    out = flow.save_settings(db, body.units, body.topup_min, body.notify)
     action_log.enrich(changes=[("units", len(was["units"]), len(out["units"])),
-                               ("topup_min", was["topup_min"], out["topup_min"])])
+                               ("topup_min", was["topup_min"], out["topup_min"]),
+                               ("notify", was["notify"], out["notify"])])
     global _drafted_at
     _drafted_at = 0.0   # the next board read drafts for a unit just enrolled
     return {**out, "all_units": _units(db)}
@@ -257,7 +272,7 @@ def _span(d_from: date, d_to: date) -> None:
 def get_report(date_from: date = Query(...), date_to: date = Query(...),
                db: Session = Depends(get_db), payload: dict = Depends(ANY)):
     _span(date_from, date_to)
-    return flow.report(db, date_from, date_to)
+    return {**flow.report(db, date_from, date_to), "requests": flow.requests_report(db, date_from, date_to)}
 
 
 class ReportXlsxBody(BaseModel):
@@ -292,6 +307,24 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     for i, w in enumerate([12, 30, 22, 10, 10, 12, 12, 10, 12, 10, 10]):
         ws.column_dimensions[chr(65 + i)].width = w
     ws.freeze_panes = "A2"
+    # the requests side: one row per day, as the page's table
+    rq = flow.requests_report(db, body.date_from, body.date_to)
+    rcols = ["day", "requests", "asked", "given", "received", "missing", "late", "overdue", "short"]
+    ws2 = wb.create_sheet("Requests")
+    ws2.append([body.headers.get(f"rq_{c}", c) for c in rcols])
+    for c in ws2[1]:
+        c.font = Font(bold=True)
+    for d in rq["days"]:
+        ws2.append([d["day"], d["requests"], d["asked"], d["given"], d["received"],
+                    d["sent_confirmed"] - d["received"], d["late"], d["overdue"], d["short"]])
+    sm = rq["summary"]
+    ws2.append([body.headers.get("total", "Total"), sm["requests"], sm["asked"], sm["given"], sm["received"],
+                sm["missing"], sm["late"], sm["overdue"], sm["short"]])
+    for c in ws2[ws2.max_row]:
+        c.font = Font(bold=True)
+    for i, w in enumerate([12, 10, 12, 12, 12, 12, 10, 12, 10]):
+        ws2.column_dimensions[chr(65 + i)].width = w
+    ws2.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
     return deliver_xlsx(request, payload, f"containers-{body.date_from}_{body.date_to}.xlsx", buf.getvalue())
@@ -365,6 +398,7 @@ def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict
     except flow.FlowError as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
+    flow.notify_later(r.id, "new")
     return _req_out(db, r, body.day)
 
 
@@ -402,4 +436,49 @@ def post_cancel(request_id: int, body: NoteBody, db: Session = Depends(get_db),
     except flow.FlowError as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
+    flow.notify_later(r.id, "cancelled")
     return _req_out(db, r, r.day)
+
+
+@router.get("/requests/{request_id}/split-hint")
+def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
+    """Where the request's containers would go by each brigadir's own hour on
+    «Konteynerlar» — the split dialog starts from it."""
+    from app.models import ContainerRequest
+    r = db.get(ContainerRequest, request_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="gone")
+    return {"rows": flow.split_hint(db, r)}
+
+
+@router.get("/receipts")
+def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(RECV)):
+    """The day's split requests per brigadir: a brigadir sees their own unit,
+    everybody else (admins) every unit."""
+    mine = _my_unit(payload) if payload.get("role") != "admin" else None
+    return {"day": day.isoformat(), "unit": mine, "receipts": flow.receipts_of(db, day, mine)}
+
+
+class ReceiveBody(BaseModel):
+    manager_id: int
+    counts: Optional[Dict[str, int]] = None   # None = everything as sent
+    reason: Optional[str] = None
+    comment: Optional[str] = None
+
+
+@router.post("/requests/{request_id}/receive")
+def post_receive(request_id: int, body: ReceiveBody, db: Session = Depends(get_db),
+                 payload: dict = Depends(RECV)):
+    """A brigadir confirms what reached their line; an admin may for any unit."""
+    if payload.get("role") != "admin" and _my_unit(payload) != body.manager_id:
+        raise HTTPException(status_code=409, detail="not_yours")
+    try:
+        r = flow.receive(db, request_id, body.manager_id, body.counts, body.reason, body.comment,
+                         _actor(payload))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    out = _req_out(db, r, r.day)
+    action_log.enrich(unit_id=body.manager_id)
+    return out

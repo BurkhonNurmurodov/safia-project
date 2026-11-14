@@ -4,11 +4,12 @@
 // can see (docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ListChecks, Save, Settings2 } from "lucide-react";
+import { BellRing, ListChecks, Save, Settings2 } from "lucide-react";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import CountStepper from "../ui/CountStepper";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
@@ -26,6 +27,13 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
   const save = useMutation({
     mutationFn: () => api.put("/api/container-flow/settings", { units, topup_min: topup }),
     onSuccess: () => { toast.success(t("cflow.set.saved")); onSaved(); },
+    onError: (e) => toast.error(errText(t, e)),
+  });
+  // Telegram to the logistics person — its own switch, saved on the tap (the
+  // server keeps units and the threshold as they are stored).
+  const notify = useMutation({
+    mutationFn: (on) => api.put("/api/container-flow/settings", { units: data.units, topup_min: data.topup_min, notify: on }),
+    onSuccess: (_, on) => { toast.success(t(on ? "cflow.set.notifyOn" : "cflow.set.notifyOff")); onSaved(); },
     onError: (e) => toast.error(errText(t, e)),
   });
   const ready = useQuery({
@@ -57,6 +65,17 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
             </div>
           </div>
         )}
+      </div>
+
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead icon={BellRing} title={t("cflow.set.notifyTitle")} subtitle={t("cflow.set.notifySub")} size="lg" />
+        <div className="px-5 pb-5 flex flex-wrap items-center gap-3">
+          {loading ? <SkeletonBlock className="h-[38px] w-48" /> : (
+            <SegmentedToggle value={data?.notify ? "on" : "off"} onChange={(v) => !notify.isPending && notify.mutate(v === "on")}
+              options={[["off", t("cflow.set.off")], ["on", t("cflow.set.on")]]} />
+          )}
+          <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.set.notifyHint")}</span>
+        </div>
       </div>
 
       <TableCard icon={ListChecks} title={t("cflow.ready.title")} subtitle={t("cflow.ready.sub")} headSize="lg"

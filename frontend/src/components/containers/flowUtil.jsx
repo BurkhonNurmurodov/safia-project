@@ -1,6 +1,7 @@
 // «Konteyner berish» — the pieces every tab of the page shares
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
-import { AlertTriangle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Clock } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import GroupBadge from "../ui/GroupBadge";
@@ -106,3 +107,69 @@ export function byHour(batches) {
 }
 
 export const lineOf = (b, k) => b.lines.find((ln) => ln.ctype === k) ?? null;
+
+
+// ── time ─────────────────────────────────────────────────────────────────────
+// A clock that re-renders its caller every `ms` — the deadlines count down.
+export function useNow(ms = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+  return now;
+}
+
+// Minutes from `now` to an ISO moment (negative once it has passed).
+export const minsTo = (iso, now) => (iso ? Math.round((new Date(iso).getTime() - now) / 60_000) : null);
+// The start of hour `h` of the production day `day` (past 23 = the next morning).
+export const hourStartMs = (day, h) => new Date(`${day}T00:00:00+05:00`).getTime() + h * 3_600_000;
+export const SOON_MIN = 30;           // the last half hour before a deadline reads yellow
+export const UNSEEN_WARN_MIN = 15;    // a request nobody opened for this long reads yellow
+
+export const durText = (t, m) => {
+  const a = Math.abs(m);
+  if (a < 60) return t("cflow.dur.m").replace("{m}", a);
+  return t("cflow.dur.hm").replace("{h}", Math.floor(a / 60)).replace("{m}", a % 60);
+};
+
+// A deadline as the time LEFT: plain while there is room, yellow inside the
+// last half hour, red once it has passed. `live={false}` prints the clock.
+export function DueText({ iso, now, t, live = true }) {
+  if (!iso) return <span style={{ color: "var(--text-4)" }}>—</span>;
+  if (!live) return <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{hhmm(iso)}</span>;
+  const m = minsTo(iso, now);
+  const color = m < 0 ? "var(--status-bad)" : m <= SOON_MIN ? "var(--status-warn)" : "var(--text-2)";
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums whitespace-nowrap font-medium text-[13px]" style={{ color }}
+      title={t("cflow.dueAt").replace("{at}", hhmm(iso))}>
+      <Clock size={12} className="shrink-0" />
+      {(m < 0 ? t("cflow.left.late") : t("cflow.left.in")).replace("{d}", durText(t, m))}
+    </span>
+  );
+}
+
+// «30 to'rtburchak, 8 chelak» — a set of counts as words.
+export const countsText = (t, counts) => KEYS.filter((k) => counts?.[k])
+  .map((k) => `${counts[k]} ${t(`cflow.ct.${k}`).toLowerCase()}`).join(", ");
+
+// The same counts as pills — on a card, where there is room to read them.
+export function CountPills({ counts, t, of }) {
+  const keys = KEYS.filter((k) => counts?.[k] != null && (counts[k] || of?.[k]));
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {keys.map((k) => {
+        const short = of && (counts[k] ?? 0) < (of[k] ?? 0);
+        return (
+          <span key={k} className="inline-flex items-baseline gap-1 rounded-lg px-2 py-1 text-xs whitespace-nowrap"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+            <b className="tabular-nums text-[13px]" style={{ color: short ? "var(--status-bad)" : "var(--text-1)" }}>
+              {fmt(counts[k])}{of ? <span style={{ color: "var(--text-3)", fontWeight: 500 }}> / {fmt(of[k])}</span> : null}
+            </b>
+            {t(`cflow.ct.${k}`)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}

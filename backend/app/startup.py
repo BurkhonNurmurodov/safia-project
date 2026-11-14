@@ -2139,6 +2139,16 @@ def add_container_request_seen() -> None:
                     "container request seen_at column")
 
 
+def add_container_receipt_columns() -> None:
+    """2026-11-14: a brigadir confirms what reached the line —
+    `container_request_parts.received*`; NULL = not confirmed. Pure DDL,
+    idempotent, no flag; every ORM read of a part selects them."""
+    _ensure_columns((("container_request_parts", (
+        ("received", "INTEGER"), ("received_at", "TIMESTAMPTZ"), ("received_by", "VARCHAR"),
+        ("received_reason", "VARCHAR(20)"), ("received_comment", "TEXT")), None),),
+        "container receipt columns")
+
+
 UNBIND_ENDED_FLAG = "oneshot:unbind_ended_leaders_nov13"
 # The operator, 2026-11-13 («Yes, remove both»): the two leaders Verifix
 # dismissed before a dismissal took access away, who still held a Telegram link.

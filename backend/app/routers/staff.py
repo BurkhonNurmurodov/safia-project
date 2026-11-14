@@ -481,6 +481,21 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новое ожидание внесено", "{cell} · {category} · {time} | Дата: {date} | Внёс(ла): {leader_name}\nУбирали (чел.): {cleaners}"),
         "en": ("New idle time entered", "{cell} · {category} · {time} | Date: {date} | Entered by: {leader_name}\nCleaners: {cleaners}"),
     },
+    # «Konteyner berish» (services/container_flow.notify_request, behind the
+    # page's «Sozlamalar» switch): a request addressed to a logistics person
+    # arrived / was cancelled. The DM itself is `_tg_body`, per language.
+    "container_request_new": {
+        "uz": ("Yangi konteyner so'rovi: {hour}", "{counts} | Muddat: {due} | Yubordi: {by}\n{note}"),
+        "uz_cyrl": ("Янги контейнер сўрови: {hour}", "{counts} | Муддат: {due} | Юборди: {by}\n{note}"),
+        "ru": ("Новая заявка на контейнеры: {hour}", "{counts} | Срок: {due} | Отправил(а): {by}\n{note}"),
+        "en": ("New container request: {hour}", "{counts} | Due: {due} | Sent by: {by}\n{note}"),
+    },
+    "container_request_cancelled": {
+        "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
+        "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),
+        "ru": ("Заявка на контейнеры отменена: {hour}", "{counts}\n{note}"),
+        "en": ("Container request cancelled: {hour}", "{counts}\n{note}"),
+    },
     # «Kutish yechimlari» — the daily reminder (services/idle_solution_reminder):
     # what waits on a brigadir or a cause's owner. One row per kind, so
     # `_render_body` drops the kind that has nothing; the DM carries the list.

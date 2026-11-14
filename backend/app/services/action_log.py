@@ -529,6 +529,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/container-flow/requests",              "shopfloor", "containers.request_made"),
     (("POST",),   "/api/container-flow/requests/{}/assign",    "shopfloor", "containers.request_assigned"),
     (("POST",),   "/api/container-flow/requests/{}/cancel",    "shopfloor", "containers.request_cancelled"),
+    (("POST",),   "/api/container-flow/requests/{}/receive",   "shopfloor", "containers.request_received"),
     (("PUT",),    "/api/container-flow/settings",              "config", "config.container_flow_saved"),
     (("POST",),   "/api/container-flow/report.xlsx",           "sync_export", "export.container_flow"),
     (("POST",),   "/api/idle-solutions",                       "collab", "idle.solution_added"),

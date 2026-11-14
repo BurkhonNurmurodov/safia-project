@@ -46,6 +46,10 @@ TICK_MIN = 5
 TOPUP_MIN_DEFAULT = 2
 _UNITS_KEY = "container_flow.units"
 _TOPUP_KEY = "container_flow.topup_min"
+# Telegram to the addressed logistics person on a new / cancelled request —
+# OFF until an admin switches it on in «Sozlamalar» (nothing on this page
+# messages anybody before the operator says so).
+_NOTIFY_KEY = "container_flow.notify_logistics"
 _LOCK_KEY = 8_140_573_112_014_001   # distinct from every other advisory key
 
 
@@ -74,7 +78,7 @@ def team_key(work_center, group, rest) -> str:
 
 def settings(db: Session) -> dict:
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
-        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY])).all()}
+        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY])).all()}
     try:
         units = [int(x) for x in json.loads(rows.get(_UNITS_KEY) or "[]")]
     except (ValueError, TypeError):
@@ -83,12 +87,16 @@ def settings(db: Session) -> dict:
         topup = max(1, int(rows.get(_TOPUP_KEY) or TOPUP_MIN_DEFAULT))
     except (ValueError, TypeError):
         topup = TOPUP_MIN_DEFAULT
-    return {"units": units, "topup_min": topup}
+    return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1"}
 
 
-def save_settings(db: Session, units: list, topup_min: int) -> dict:
+def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None) -> dict:
+    """`notify` None leaves the switch as it is (a tab on an older bundle
+    saves without it)."""
     vals = {_UNITS_KEY: json.dumps(sorted({int(x) for x in units})),
             _TOPUP_KEY: str(max(1, int(topup_min)))}
+    if notify is not None:
+        vals[_NOTIFY_KEY] = "1" if notify else "0"
     for k, v in vals.items():
         row = db.get(AppSetting, k)
         if row is None:
@@ -319,6 +327,22 @@ def split(delivered: int, dues: list) -> list:
     out = [int(q) for q in quota]
     left = delivered - sum(out)
     order = sorted(range(len(dues)), key=lambda i: (-(quota[i] - out[i]), i))
+    for i in order[:left]:
+        out[i] += 1
+    return out
+
+
+def share_out(total: int, weights: list) -> list:
+    """`total` across `weights` in proportion, by LARGEST REMAINDER — unlike
+    `split` it scales UP as well as down, so the parts always add up to
+    `total` exactly (ties go to the earlier weight)."""
+    w = sum(weights)
+    if total <= 0 or w <= 0:
+        return [0] * len(weights)
+    quota = [total * x / w for x in weights]
+    out = [int(q) for q in quota]
+    left = total - sum(out)
+    order = sorted(range(len(weights)), key=lambda i: (-(quota[i] - out[i]), i))
     for i in order[:left]:
         out[i] += 1
     return out
@@ -776,8 +800,15 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
         for p in parts.get(r.id, []):
             u = by_unit.setdefault(p.manager_id, {"manager_id": p.manager_id,
                                                   "unit": getattr(units.get(p.manager_id), "name", None),
-                                                  "counts": {}})
+                                                  "shift": getattr(units.get(p.manager_id), "shift", None),
+                                                  "counts": {}, "received": None, "received_at": None,
+                                                  "received_by": None, "received_reason": None,
+                                                  "received_comment": None})
             u["counts"][p.ctype] = p.count
+            if p.received is not None:
+                u["received"] = {**(u["received"] or {}), p.ctype: p.received}
+                u["received_at"], u["received_by"] = _iso(p.received_at), p.received_by
+                u["received_reason"], u["received_comment"] = p.received_reason, p.received_comment
         out.append({
             "id": r.id, "day": r.day.isoformat(), "hour": r.hour,
             "lines": {k: r.lines[k] for k in KEYS if k in (r.lines or {})}, "note": r.note,
@@ -788,8 +819,255 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "short_reason": r.short_reason, "short_comment": r.short_comment,
             "cancelled_at": _iso(r.cancelled_at), "cancelled_by": r.cancelled_by, "cancel_note": r.cancel_note,
             "seen_at": _iso(r.seen_at), "parts": list(by_unit.values()),
+            "receipt": _receipt(list(by_unit.values())) if r.status == "assigned" else None,
         })
     return out
+
+
+def _receipt(parts: list) -> dict:
+    """How far the brigadirs confirmed a split request: how many of its units
+    answered, and whether any of them got fewer than sent."""
+    done = [p for p in parts if p["received"] is not None]
+    short = any(p["received"].get(k, 0) < n for p in done for k, n in p["counts"].items())
+    return {"units": len(parts), "confirmed": len(done), "short": short}
+
+
+def receive(db: Session, request_id: int, manager_id: int, counts: Optional[dict], reason, comment,
+            actor) -> ContainerRequest:
+    """A brigadir confirms what reached the line from a split request: every
+    type as sent when `counts` is None, else the counts given. More than was
+    sent is refused (`over`); fewer needs a reason. Once per unit."""
+    r = _request(db, request_id)
+    if r.status != "assigned":
+        raise FlowError("state")
+    parts = db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == r.id,
+                                                  ContainerRequestPart.manager_id == int(manager_id)).all()
+    if not parts:
+        raise FlowError("unit")
+    if any(p.received is not None for p in parts):
+        raise FlowError("state")
+    counts = counts or {}
+    got = {}
+    for p in parts:
+        n = _count(counts.get(p.ctype, p.count))
+        if n > p.count:
+            raise FlowError("over")
+        got[p.ctype] = n
+    why = (None, None)
+    if any(got[p.ctype] < p.count for p in parts):
+        why = _why(reason, comment)
+    at = now()
+    for p in parts:
+        p.received, p.received_at, p.received_by = got[p.ctype], at, actor
+        p.received_reason, p.received_comment = why
+    return r
+
+
+def receipts_of(db: Session, day: date, manager_id: Optional[int] = None) -> list:
+    """The day's split requests as each brigadir sees them: one row per
+    request × unit (only `manager_id`'s when given), newest hour last."""
+    out = []
+    for r in requests_of(db, day):
+        if r["status"] != "assigned":
+            continue
+        for p in r["parts"]:
+            if manager_id is not None and p["manager_id"] != manager_id:
+                continue
+            out.append({"request_id": r["id"], "day": r["day"], "hour": r["hour"],
+                        "due_at": r["due_at"], "assigned_at": r["assigned_at"],
+                        "from": r["logistics_name"], **p})
+    return out
+
+
+def requests_report(db: Session, d_from: date, d_to: date) -> dict:
+    """The requests side of «Hisobot»: how many, how fast the logistics
+    person opened and split them, on time against the deadline, short splits
+    by reason, and what the brigadirs confirmed against what was sent."""
+    at = now()
+    rows = db.query(ContainerRequest).filter(ContainerRequest.day >= d_from,
+                                             ContainerRequest.day <= d_to).all()
+    parts: dict = {}
+    if rows:
+        for p in db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id.in_([r.id for r in rows])).all():
+            parts.setdefault(p.request_id, []).append(p)
+    s = {"requests": 0, "cancelled": 0, "waiting": 0, "overdue": 0, "assigned": 0, "on_time": 0,
+         "late": 0, "short": 0, "asked": 0, "given": 0, "units": 0, "confirmed": 0,
+         "sent_confirmed": 0, "received": 0}
+    reasons = {k: 0 for k in REASONS}
+    seen_min, assign_min = [], []
+    days: dict = {}
+    people: dict = {}
+    for r in rows:
+        d = days.setdefault(r.day, {"day": r.day.isoformat(), "requests": 0, "asked": 0, "given": 0,
+                                    "received": 0, "sent_confirmed": 0, "late": 0, "overdue": 0, "short": 0})
+        s["requests"] += 1
+        d["requests"] += 1
+        if r.status == "cancelled":
+            s["cancelled"] += 1
+            continue
+        asked = sum((r.lines or {}).values())
+        s["asked"] += asked
+        d["asked"] += asked
+        who = people.setdefault(r.logistics_key, {"key": r.logistics_key, "name": r.logistics_name,
+                                                  "requests": 0, "assigned": 0, "on_time": 0,
+                                                  "overdue": 0, "_min": []})
+        who["requests"] += 1
+        if r.seen_at is not None:
+            seen_min.append((r.seen_at - r.created_at).total_seconds() / 60)
+        if r.status == "requested":
+            if at > r.due_at:
+                s["overdue"] += 1
+                d["overdue"] += 1
+                who["overdue"] += 1
+            else:
+                s["waiting"] += 1
+            continue
+        s["assigned"] += 1
+        who["assigned"] += 1
+        m = (r.assigned_at - r.created_at).total_seconds() / 60
+        assign_min.append(m)
+        who["_min"].append(m)
+        if r.late:
+            s["late"] += 1
+            d["late"] += 1
+        else:
+            s["on_time"] += 1
+            who["on_time"] += 1
+        if r.short_reason:
+            s["short"] += 1
+            d["short"] += 1
+            reasons[r.short_reason] = reasons.get(r.short_reason, 0) + 1
+        by_unit: dict = {}
+        for p in parts.get(r.id, []):
+            s["given"] += p.count
+            d["given"] += p.count
+            by_unit.setdefault(p.manager_id, []).append(p)
+        for ps in by_unit.values():
+            s["units"] += 1
+            if all(p.received is not None for p in ps):
+                s["confirmed"] += 1
+                for p in ps:
+                    s["sent_confirmed"] += p.count
+                    s["received"] += p.received
+                    d["sent_confirmed"] += p.count
+                    d["received"] += p.received
+    judged = s["assigned"] + s["overdue"]
+    s["on_time_pct"] = round(100 * s["on_time"] / judged) if judged else None
+    s["avg_seen_min"] = round(sum(seen_min) / len(seen_min)) if seen_min else None
+    s["avg_assign_min"] = round(sum(assign_min) / len(assign_min)) if assign_min else None
+    s["missing"] = s["sent_confirmed"] - s["received"]
+    out_people = []
+    for p in people.values():
+        mins = p.pop("_min")
+        j = p["assigned"] + p["overdue"]
+        p["on_time_pct"] = round(100 * p["on_time"] / j) if j else None
+        p["avg_assign_min"] = round(sum(mins) / len(mins)) if mins else None
+        out_people.append(p)
+    return {"summary": s, "reasons": reasons,
+            "days": [days[k] for k in sorted(days)],
+            "people": sorted(out_people, key=lambda p: p["name"] or "")}
+
+
+# ── Telegram to the addressee (behind the «Sozlamalar» switch) ──────────────
+_CT_NAMES = {
+    "uz": {"yellow": "To'rtburchak", "round": "Dumaloq", "grey": "Kulrang", "bucket": "Chelak", "box": "Yashik"},
+    "uz_cyrl": {"yellow": "Тўртбурчак", "round": "Думалоқ", "grey": "Кулранг", "bucket": "Челак", "box": "Яшик"},
+    "ru": {"yellow": "Прямоугольный", "round": "Круглый", "grey": "Серый", "bucket": "Челак", "box": "Ящик"},
+    "en": {"yellow": "Rectangle", "round": "Round", "grey": "Grey", "bucket": "Bucket", "box": "Crate"},
+}
+_TG = {
+    "uz": {"new": "Yangi konteyner so'rovi", "cancelled": "Konteyner so'rovi bekor qilindi",
+           "hour": "Soat", "due": "Muddat", "by": "Yubordi", "note": "Izoh", "why": "Sabab",
+           "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish"},
+    "uz_cyrl": {"new": "Янги контейнер сўрови", "cancelled": "Контейнер сўрови бекор қилинди",
+                "hour": "Соат", "due": "Муддат", "by": "Юборди", "note": "Изоҳ", "why": "Сабаб",
+                "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш"},
+    "ru": {"new": "Новая заявка на контейнеры", "cancelled": "Заявка на контейнеры отменена",
+           "hour": "Час", "due": "Срок", "by": "Отправил(а)", "note": "Комментарий", "why": "Причина",
+           "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку"},
+    "en": {"new": "New container request", "cancelled": "Container request cancelled",
+           "hour": "Hour", "due": "Due", "by": "Sent by", "note": "Note", "why": "Reason",
+           "hint": "Split it across the brigadirs.", "btn": "📦 Open the request"},
+}
+NOTIFY_PAGE = "/containers/flow"
+
+
+def hour_span(h: int) -> str:
+    return f"{int(h) % 24:02d}:00–{(int(h) + 1) % 24:02d}:00"
+
+
+def counts_text(lines: dict, lang: str = "uz") -> str:
+    names = _CT_NAMES.get(lang) or _CT_NAMES["uz"]
+    return ", ".join(f"{names.get(k, k)} {lines[k]}" for k in KEYS if lines.get(k))
+
+
+def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
+    from html import escape as _esc
+
+    def escape(x):
+        return _esc(x, quote=False)
+    from app.translit import transliterate, transliterate_text
+    t = _TG.get(lang) or _TG["uz"]
+    name = transliterate(r.created_by or "—", lang) or "—"
+    rows = [f"📦 <b>{escape(t[kind])}</b>", "",
+            f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
+            escape(counts_text(r.lines or {}, lang))]
+    if kind == "new":
+        rows += [f"{t['due']}: <b>{r.due_at.astimezone(TZ):%H:%M}</b>", f"{t['by']}: {escape(name)}"]
+        if r.note:
+            rows.append(f"{t['note']}: {escape(transliterate_text(r.note, lang) or r.note)}")
+        rows += ["", f"<i>{escape(t['hint'])}</i>"]
+    elif r.cancel_note:
+        rows.append(f"{t['why']}: {escape(r.cancel_note)}")
+    return "\n".join(rows)
+
+
+def _tg_markup(lang: str):
+    from telebot import types
+    from app.config import settings as cfg
+    t = _TG.get(lang) or _TG["uz"]
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(
+        t["btn"], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{NOTIFY_PAGE}")))
+    return kb
+
+
+def notify_request(request_id: int, kind: str) -> bool:
+    """Tell the addressee a request came (`new`) or went (`cancelled`): one
+    bell row + a DM with a button to the page. Only while the «Sozlamalar»
+    switch is on. Own session; never raises. Returns whether it was sent."""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        if not settings(db)["notify"]:
+            return False
+        r = db.get(ContainerRequest, request_id)
+        if r is None or (kind == "new" and r.status != "requested"):
+            return False
+        from app.routers.staff import notify_profile
+        notify_profile(
+            db, r.logistics_key, f"container_request_{kind}",
+            {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
+             "due": f"{r.due_at.astimezone(TZ):%H:%M}", "by": r.created_by or "—",
+             "note": r.note or r.cancel_note or ""},
+            type="warning" if kind == "cancelled" else "info",
+            html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_tg_markup,
+            subject=("page", NOTIFY_PAGE))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: request notice failed", exc_info=True)
+        return False
+    finally:
+        db.close()
+
+
+def notify_later(request_id: int, kind: str) -> None:
+    """`notify_request` on a thread — a request's save never waits on Telegram."""
+    import threading
+    threading.Thread(target=notify_request, args=(request_id, kind), daemon=True).start()
 
 
 # ── the hour's figure for a request ─────────────────────────────────────────
@@ -806,6 +1084,44 @@ _hours_cache: dict = {}
 def plant_hours(db: Session, day: date) -> dict:
     """{hour: {ctype: n}} for the whole plant on `day` (hours past 23 belong
     to the production day that started them)."""
+    out: dict = {}
+    for h_map in units_hours(db, day).values():
+        for h, e in h_map.items():
+            o = out.setdefault(h, {})
+            for k, n in e.items():
+                o[k] = o.get(k, 0) + n
+    return out
+
+
+def split_hint(db: Session, r: ContainerRequest) -> list:
+    """Where a request's containers would go by the «Konteynerlar» figures:
+    for each requested type, the units whose hour asks for it, the requested
+    count shared out in proportion to each unit's own figure (largest
+    remainder — up or down, so it always adds up to what was asked). A type
+    no unit's hour asks for is left to the hand."""
+    per = units_hours(db, r.day)
+    hour = int(r.hour)
+    mids = [mid for mid, hm in per.items() if hm.get(hour)]
+    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    mids.sort(key=lambda m: (getattr(units.get(m), "name", "") or "", m))
+    rows: dict = {}
+    for k, asked in (r.lines or {}).items():
+        have = [m for m in mids if (per[m][hour] or {}).get(k)]
+        weights = [per[m][hour][k] for m in have]
+        for m, n, w in zip(have, share_out(asked, weights), weights):
+            if not n:
+                continue
+            row = rows.setdefault(m, {"manager_id": m, "unit": getattr(units.get(m), "name", None),
+                                      "shift": getattr(units.get(m), "shift", None),
+                                      "counts": {}, "need": {}})
+            row["counts"][k] = n
+            row["need"][k] = w
+    return [rows[m] for m in mids if m in rows]
+
+
+def units_hours(db: Session, day: date) -> dict:
+    """{manager_id: {hour: {ctype: n}}} — each configured, non-archived unit's
+    `hourly_containers.unit_hours`, kept a minute."""
     import time as _time
     from fastapi import HTTPException
     from app.routers import production
@@ -822,9 +1138,9 @@ def plant_hours(db: Session, day: date) -> dict:
             h_map, _u = hourly_containers.unit_hours(production._build_dashboard(db, mid, day))
         except HTTPException:
             continue
-        for h, e in h_map.items():
-            o = out.setdefault(int(h), {})
-            for k, n in e.items():
-                o[k] = o.get(k, 0) + n
+        hm = {int(h): {k: n for k, n in e.items() if n} for h, e in h_map.items()}
+        hm = {h: e for h, e in hm.items() if e}
+        if hm:
+            out[mid] = hm
     _hours_cache[day] = (started, out)
     return out
