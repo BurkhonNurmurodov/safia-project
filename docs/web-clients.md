@@ -495,3 +495,47 @@ holder's personal grants — and those re-opened pages the profile had closed
   the website and in the Android app they hold what their profile holds.
 - Account DENIES still apply to a password session (the borrowed holder's):
   subtracting can only hide a page, never show one.
+
+## A profile photo is kept by the browser, at the size it is drawn (2026-11-14)
+
+Found on «Brigadirlar reytingi» (v4.511.0, measured on production 13 Nov): the
+page's twenty faces were downloaded again in EVERY session — 637 KB, 0.55–
+0.84 s behind the board — and each was the stored 512 px picture, for an
+avatar drawn at 30 px. Every page that draws a `ProfileAvatar` paid the same.
+
+- **Why nothing kept them.** `GET /api/profiles/photo/{key}` has always asked
+  for `private, max-age=31536000, immutable` (its URL names the photo's
+  version, `?v=`), but `NoStoreAPIMiddleware` rewrote every /api answer to
+  `no-store`; the service worker never caches /api; `offlineCache` stores no
+  Blob; and react-query lets a blob go five minutes after its last avatar
+  unmounts. So a photo lived as long as the tab.
+- **`app/browser_cache.py` is THE exception, and the only one.** A 200 from a
+  path in `PATHS` that itself asks for `private` + `immutable` keeps its
+  `Cache-Control`. `private` still forbids every shared cache, the LiteSpeed
+  opt-out still rides along, and it gets no `Vary: Authorization` — the token
+  changes with every sign-in, and a picture that matched only the token it
+  was fetched with would be kept for nothing. A 404 or a 401 from that path is
+  `no-store` like the rest. **A new path belongs there only if its answer is
+  the same for everybody who may read it AND its URL changes whenever the
+  answer does.**
+- **Such a request carries `_browserKept`** (`ProfileAvatar` → `utils/api.js`).
+  An answer read off the disk replays the headers of the day it was
+  downloaded, so the interceptor does not take the server's version or floor
+  from it (`compat` — a stale floor would switch the «not served» warning
+  off), does not count it as proof of a connection (`connectivity`) or of a
+  finished restart, and `requestLog` records no server timing for it. A
+  FAILURE of such a request is still news, and is read as before.
+- **`?s=` is the size the caller draws at** (`ProfileAvatar`'s `servedSize`:
+  up to 48 px → 96, up to 96 px → 192, larger → the stored picture — a podium
+  card, a profile hero). The server rounds it up to one of
+  `profile_photo.SIZES` (`snap`) and scales once per (photo, version, size),
+  kept in memory (`sized`, at most 800 copies of 3–8 KB); nothing is stored
+  twice in the database. The twenty faces at 96 px: 53 KB instead of 637. A
+  bundle from before this release sends no `s` and gets the stored picture.
+- **Fixed with it**: the GET route's function was named `profile_photo` and
+  shadowed the service module of the same name inside `routers/profiles.py`,
+  so the admin upload (`POST /api/profiles/admin/photo`) called `.store` on a
+  function — a 500 since v4.246.0, when the module was introduced. The route
+  is `get_profile_photo` now (`tests/test_profile_photo_sizes` holds the name).
+- Not done: the Verifix people photos (`/api/people/:id/photo`, `photoUrl`) —
+  their URL names no version, so they stay `no-store`.

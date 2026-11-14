@@ -14,7 +14,19 @@ import { useAuth } from "../../context/AuthContext";
  * along — a bare <img src> would arrive anonymous and 401), keyed by
  * `photoVer` so react-query caches it forever and a replaced photo busts the
  * cache by key, never by guesswork.
+ *
+ * …and the BROWSER keeps it too (2026-11-13): the URL names the version
+ * (`?v=`), so the server marks the answer immutable and a later session reads
+ * it off the disk instead of downloading every face again. That is why the
+ * request carries `_browserKept` — see utils/api.js. The picture is asked for
+ * at the size it is drawn (`servedSize`): a 30 px avatar in a table row was
+ * the full 512 px file, twelve times the bytes it needed.
  */
+
+/** The size to ask the server for, for an avatar drawn at `size` CSS px: the
+ *  smallest it serves (backend `profile_photo.SIZES`) that still covers a 2×
+ *  screen. Undefined = the stored picture — a podium card, a profile hero. */
+const servedSize = (size) => (size <= 48 ? 96 : size <= 96 ? 192 : undefined);
 
 /** The caller's own profile card (profile key + photo version for the avatar,
  *  web login state, holders). ONE query shared by the header, the sidebar
@@ -71,14 +83,16 @@ export default function ProfileAvatar({
   // they did before photos reached that page.
   fallback,
 }) {
+  const s = servedSize(size);
   const { data: blob } = useQuery({
-    queryKey: photoUrl ? ["avatar-url", photoUrl] : ["avatar", profileKey, photoVer],
+    queryKey: photoUrl ? ["avatar-url", photoUrl] : ["avatar", profileKey, photoVer, s ?? 0],
     queryFn: () =>
       (photoUrl
         ? api.get(photoUrl, { responseType: "blob" })
         : api.get(`/api/profiles/photo/${encodeURIComponent(profileKey)}`, {
           responseType: "blob",
-          params: { v: photoVer },
+          params: s ? { v: photoVer, s } : { v: photoVer },
+          _browserKept: true,
         })).then((r) => r.data),
     enabled: Boolean(photoUrl || (profileKey && photoVer)),
     staleTime: Infinity,

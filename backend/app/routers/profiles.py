@@ -3113,18 +3113,46 @@ def profile_photo_versions(roles: str = "leader,supervisor",
 
 
 @router.get("/photo/{key}")
-def profile_photo(key: str, db: Session = Depends(get_db),
-                  _: dict = Depends(_caller)):
+def get_profile_photo(key: str, s: Optional[int] = None,
+                      db: Session = Depends(get_db),
+                      _: dict = Depends(_caller)):
     """One profile's avatar bytes. Any approved session may read it — photos
     are org-internal exactly like the names they sit next to. The frontend
-    fetches this as a blob (the auth headers ride along) and keys its cache by
-    ``photo_ver``, so the long client cache here can never go stale."""
-    row = db.query(ProfilePhoto).filter_by(profile_key=key).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="No photo")
+    fetches this as a blob (the auth headers ride along) and names the photo's
+    version in the URL (``?v=``), so the browser may keep the answer for good:
+    this is the ONE /api route whose ``Cache-Control`` reaches the browser
+    (`main.NoStoreAPIMiddleware`) — until 2026-11-13 it was overwritten with
+    ``no-store`` like every other, and every face was downloaded again in
+    every session.
+
+    ``s`` is the size the caller draws at, in px: the answer is the photo
+    scaled to the smallest served size that covers it (`profile_photo.sized`),
+    the stored picture without it.
+
+    Named ``get_…`` so the module `profile_photo` keeps its name in here: as
+    ``profile_photo`` this function shadowed it, and `admin_set_photo` below
+    called `.store` on a function."""
+    side = profile_photo.snap(s)
+    if side is None:
+        row = db.query(ProfilePhoto).filter_by(profile_key=key).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="No photo")
+        data, mime = row.data, row.mime
+    else:
+        # The version first, without the bytes: a size already made needs none.
+        head = (db.query(ProfilePhoto.updated_at, ProfilePhoto.mime)
+                .filter_by(profile_key=key).first())
+        if head is None:
+            raise HTTPException(status_code=404, detail="No photo")
+        data = profile_photo.sized(
+            key, head.updated_at, side,
+            lambda: db.query(ProfilePhoto.data).filter_by(profile_key=key).scalar())
+        if data is None:
+            raise HTTPException(status_code=404, detail="No photo")
+        mime = head.mime
     return Response(
-        content=row.data,
-        media_type=row.mime or "image/jpeg",
+        content=data,
+        media_type=mime or "image/jpeg",
         headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
 

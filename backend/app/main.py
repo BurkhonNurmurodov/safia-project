@@ -1024,6 +1024,9 @@ from app.services.exam_sandbox import ExamWriteGuardMiddleware  # noqa: E402
 app.add_middleware(ExamWriteGuardMiddleware)
 
 
+from app import browser_cache  # noqa: E402 — the one answer a browser may keep
+
+
 class NoStoreAPIMiddleware:
     """Mark every API/auth response as non-cacheable.
 
@@ -1041,6 +1044,12 @@ class NoStoreAPIMiddleware:
 
     Pure ASGI (not BaseHTTPMiddleware) so it composes cleanly with the a2wsgi
     bridge and the Ghost Mode ContextVar, same as GhostModeMiddleware.
+
+    ONE exception (2026-11-13): an answer `app/browser_cache.py` names — a
+    profile photo, whose URL carries its version — keeps the ``private,
+    immutable`` its route asks for, so the BROWSER keeps the picture instead
+    of downloading every face again in every session. That module holds the
+    rule and the reason; nothing else is ever exempt.
     """
 
     _API_PREFIXES = ("/api", "/admin", "/bot", "/health")
@@ -1053,10 +1062,17 @@ class NoStoreAPIMiddleware:
         if scope.get("type") != "http" or not scope.get("path", "").startswith(self._API_PREFIXES):
             await self.app(scope, receive, send)
             return
+        path = scope.get("path", "")
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
-                headers = [(k, v) for (k, v) in message.get("headers", [])
+                own = message.get("headers", [])
+                kept = browser_cache.kept_headers(path, message.get("status"), own)
+                if kept is not None:
+                    message["headers"] = kept
+                    await send(message)
+                    return
+                headers = [(k, v) for (k, v) in own
                            if k.lower() not in self._DROP]
                 headers += [
                     (b"cache-control", b"no-store, no-cache, must-revalidate, private"),

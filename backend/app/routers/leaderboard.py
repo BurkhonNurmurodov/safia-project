@@ -1,20 +1,24 @@
 """«Brigadirlar reytingi» (/leaderboard) — the board's real figures.
 
-The rule lives in `services/brigadir_board.py`; this door decides the scope
-(plant lock, shift, the viewer's reach — `scoped_manager_ids`), keeps one
-answer per scope for `_TTL` seconds, and adds the checklist pool «Lider
-nazorati» is scored from in the browser (`checklist_pool`). Admin-only until
-the operator opens the page on the Access tab (`DEFAULT_PAGE_ACCESS`).
+The rule lives in `services/brigadir_board.py`; this door builds the WHOLE
+board of a period — every unit, both shifts — keeps it (`_KEPT`: served at
+once, recalculated behind the answer when it is not fresh, stored across
+deploys), cuts it to the viewer's reach and filters (`cut`: plant lock, plant,
+shift — `scoped_manager_ids`), and adds the checklist pool «Lider nazorati» is
+scored from in the browser (`checklist_pool`). Admin-only until the operator
+opens the page on the Access tab (`DEFAULT_PAGE_ACCESS`).
 """
 from __future__ import annotations
 
+import json
 import threading
 from datetime import date, datetime, timedelta
 from io import BytesIO
-from time import monotonic
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -22,33 +26,70 @@ from app import identity
 from app.database import get_db
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
-from app.services import action_log, brigadir_board as bb, gc_pause, quality_attribution
+from app.services import action_log, brigadir_board as bb, gc_pause, kept_store, quality_attribution
 from app.services.factory_scope import empty_scope, scoped_manager_ids
+from app.services.kept_answer import KeptAnswers
 from app.services.ojidaniya_matrix import TZ, today_local
-from app.services.shared_build import SharedBuild
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
 PAGE = "leaderboard"
 
-# One answer per (grain, period, scope) is kept this long. A build reads the
-# загрузка and the attendance of every unit over the whole history (8 weeks,
-# 8 months, up to 4 years), so it is the price of one /zagruzka of that span;
-# a ranking that moves once a day can be ten minutes old (two until 2026-11-12,
-# when repeat builds of one view led a slow-server report).
-_TTL = 600.0
-_cache: dict = {}
-_cache_lock = threading.Lock()
-_SHARED = SharedBuild()
+# The board is KEPT (2026-11-13 — the operator: «this screen is taking too much
+# time to load and open»). A build reads the загрузка and the attendance of
+# every unit over the whole history (8 weeks, 8 months, up to 4 years):
+# measured on production that day, 3.4–3.8 s for the week and 10.1 s for the
+# month — against 0.34 s when the answer was already in memory, which it
+# rarely was. It lived ten minutes in a cache of this module, one entry per
+# (period, plant filter, shift filter); the page is opened a few times a day
+# and a backend deploy empties the process 5–24 times a day, so nearly every
+# open, every step ‹ back and every filter was a whole recalculation.
+#
+# Now `KeptAnswers` + its store (services/kept_answer.py, kept_store.py — the
+# rule «Hisobotlar» runs on) keep ONE answer per period: a unit's figures do
+# not depend on who is looking or which plant and shift they picked, so the
+# whole board is built once and each request is cut to its viewer (`cut`).
+#   - Ten minutes as built (the old cache's own age — a ranking of closed
+#     days moves once a day).
+#   - Past that, and for a viewer who changed something since, served AT ONCE
+#     while one build runs behind the answer; the answer says `refreshing` and
+#     the page asks again every few seconds until the new board is in.
+#   - A board ANOTHER process built (the worker before a deploy) is served at
+#     once from the store, however old, and rebuilt behind the reader.
+# So a request waits for a build only when a period was never built at all —
+# `stale` is as long as a stored row lives.
+#
+# What is kept is the answer ENCODED, as text (`_encode`): returned as a dict
+# it was walked and encoded again on every request, 0.1–0.2 s of the event
+# loop each time for a board nothing had changed in.
+#
+# FORMAT is the SHAPE of the payload `_build` returns, as the page reads it.
+# It rides the key, so a stored board of another shape is never served: bump
+# it whenever a release renames or re-shapes a field of that payload.
+FORMAT = 1
+_KEEP_DAYS = 45
+_KEPT = KeptAnswers("leaderboard", ttl=600, stale=_KEEP_DAYS * 86400, max_keys=12,
+                    writers_refresh=True,
+                    store=kept_store.DbStore("leaderboard", max_age_days=_KEEP_DAYS))
 # ONE build at a time across every key (2026-10-23). A build is seconds of
-# Python over the whole history, holding the GIL while it runs (3–10 s at
-# production size); three grains or plants opened together ran three of them
-# side by side and lifted every other request's latency with them. Queued, the
-# server pays one build's worth at a time; the request waiting holds no DB
-# connection (it hands it back first), and gives up with a 503 after BUILD_WAIT_S.
+# Python over the whole history, holding the GIL while it runs; three grains
+# opened together ran three of them side by side and lifted every other
+# request's latency with them. Queued, the server pays one build's worth at a
+# time — a background rebuild takes the same turn; the request waiting holds no
+# DB connection (it hands it back first), and gives up with a 503 after
+# BUILD_WAIT_S.
 _ONE_BUILD = threading.Semaphore(1)
 BUILD_WAIT_S = 90.0
+
+# Who a build reads as: nobody. What is kept is the whole board and each
+# request is cut to its viewer afterwards (`cut`), so a build must never be
+# narrowed by whoever happened to ask first — a locked viewer's plant, say.
+_SYSTEM: dict = {"role": None}
+
+# Put in front of the kept answer while a newer one is being calculated: the
+# page asks again every few seconds for as long as it reads this.
+_REFRESHING = '{"refreshing":true,'
 
 
 def _iso(d: date) -> str:
@@ -113,11 +154,12 @@ def _quality_rows(db: Session, d_from: date, d_to: date) -> list[tuple]:
                                          bb.SKIP_CATEGORY)
 
 
-def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) -> dict:
-    today = today_local()
+def _build(db: Session, grain: str, anchor: date, today: date) -> dict:
+    """The WHOLE board of the period holding `anchor`: every unit on the
+    board, both shifts, read as nobody (`_SYSTEM`)."""
     # Nothing ever closed: the picked period alone, never four empty years.
     pers = bb.periods(grain, anchor, today, bb.data_floor(db) or today)
-    managers = bb.board_units(db, scoped, shift)
+    managers = bb.board_units(db, None, None)
     ids = {m.id for m in managers}
     d_from, d_to = pers[0]["from"], pers[-1]["to"]
 
@@ -128,7 +170,7 @@ def _build(db: Session, payload: dict, grain: str, anchor: date, scoped, shift) 
         eff = bb.efficiency(metrics, ids, pers)
         plan = bb.fulfillment(metrics, ids, pers)
         from app.routers.workers import headcount       # the page's own figure
-        head = headcount(db, payload, d_from, d_to, None, sorted(ids), None, daily_only=True)
+        head = headcount(db, _SYSTEM, d_from, d_to, None, sorted(ids), None, daily_only=True)
         att = bb.attendance(head, ids, pers)
         xav = bb.concerns(db, ids, pers)
         qrows = _quality_rows(db, d_from, d_to)
@@ -182,30 +224,87 @@ def get_leaderboard(
     if empty_scope(scoped):
         scoped = []
     start = bb.period_of(grain, anchor)[0]
-    key = (grain, start, today, None if scoped is None else tuple(sorted(scoped)), shift)
-    now = monotonic()
-    with _cache_lock:
-        hit = _cache.get(key)
-        if hit and now - hit[0] < _TTL:
-            return hit[1]
+    # One answer per PERIOD — never per viewer, plant or shift (`cut` below).
+    key = (FORMAT, grain, start.isoformat())
+    body, state = _KEPT.lookup(db, payload, key, lambda own: _calculate(own, grain, start))
+    return _answer(body, scoped, shift, state == "refreshing")
 
-    def build():
-        db.rollback()                     # wait without a pooled connection
-        if not _ONE_BUILD.acquire(timeout=BUILD_WAIT_S):
-            raise HTTPException(status_code=503, headers={"Retry-After": "60"},
-                                detail="The ranking is still being calculated — open it again in a minute.")
-        try:
-            with gc_pause.paused():       # its objects die by refcount; a full GC is pure GIL
-                out = _build(db, payload, grain, anchor, scoped, shift)
-        finally:
-            _ONE_BUILD.release()
-        with _cache_lock:
-            for k in [k for k, (at, _) in _cache.items() if monotonic() - at >= _TTL]:
-                _cache.pop(k, None)
-            _cache[key] = (monotonic(), out)
-        return out
 
-    return _SHARED.run(key, build, before_wait=db.rollback)
+def _calculate(db: Session, grain: str, start: date) -> str:
+    """One build in its turn (`_ONE_BUILD`): the encoded board of the period
+    starting on `start`. `db` is the request's session, or a session of the
+    rebuild's own when it runs behind an answer."""
+    db.rollback()                         # wait for the turn without a pooled connection
+    if not _ONE_BUILD.acquire(timeout=BUILD_WAIT_S):
+        raise HTTPException(status_code=503, headers={"Retry-After": "60"},
+                            detail="The ranking is still being calculated — open it again in a minute.")
+    try:
+        with gc_pause.paused():           # its objects die by refcount; a full GC is pure GIL
+            return _encode(_build(db, grain, start, today_local()))
+    finally:
+        _ONE_BUILD.release()
+
+
+def _dumps(out) -> str:
+    # `JSONResponse.render`'s own call, so the bytes are the ones FastAPI sent.
+    return json.dumps(out, ensure_ascii=False, allow_nan=False, indent=None,
+                      separators=(",", ":"))
+
+
+def _encode(out: dict) -> str:
+    """The answer as FastAPI itself would send it, encoded ONCE per build."""
+    return _dumps(jsonable_encoder(out))
+
+
+def cut(pay: dict, ids: Optional[set], shift: Optional[int]) -> dict:
+    """The whole board cut to the units in `ids` (None = every unit) on
+    `shift` (None = both) — the answer a build scoped to them gave until
+    2026-11-13, when every scope was a build of its own.
+
+    The checklist pool is cut by `checklist_pool`'s own rule: a unit's rows;
+    the leaders on it, or with a span on it; a span on a unit outside the cut
+    dropped, and a current unit outside it blanked. Every cutoff stays, as a
+    scoped build kept them all."""
+    units = [u for u in pay.get("units") or []
+             if (ids is None or u["id"] in ids) and (shift is None or u.get("shift") == shift)]
+    keep = {str(u["id"]) for u in units}
+    pool = pay.get("checklist") or {}
+    roster = []
+    for p in pool.get("roster") or []:
+        spans = (p[10] or []) if len(p) > 10 else []
+        if p[1] not in keep and not any(u[0] in keep for u in spans):
+            continue
+        p = list(p)
+        if p[1] not in keep:
+            p[1] = ""
+        if len(p) > 10:
+            p[10] = [u for u in spans if u[0] in keep] or None
+        roster.append(p)
+    out = dict(pay)
+    out["units"] = units
+    out["figures"] = {k: v for k, v in (pay.get("figures") or {}).items() if k in keep}
+    out["checklist"] = {
+        "rows": [r for r in pool.get("rows") or [] if r[3] in keep],
+        "roster": roster,
+        "cutoffs": pool.get("cutoffs") or {},
+        "cutUnits": {k: v for k, v in (pool.get("cutUnits") or {}).items() if k in keep},
+    }
+    return out
+
+
+def _answer(body: str, scoped: Optional[list], shift: Optional[int], refreshing: bool) -> Response:
+    """The kept answer as it is for a viewer who reaches every unit and asked
+    for no filter (the page filters plant and shift itself); cut to the rest
+    otherwise — a locked viewer's plant, a bundle from before 2026-11-13 still
+    sending `factory` / `shift`."""
+    if scoped is None and shift is None:
+        out = _REFRESHING + body[1:] if refreshing else body
+    else:
+        pay = cut(json.loads(body), None if scoped is None else set(scoped), shift)
+        if refreshing:
+            pay["refreshing"] = True
+        out = _dumps(pay)
+    return Response(content=out, media_type="application/json")
 
 
 # ── Excel ───────────────────────────────────────────────────────────────────

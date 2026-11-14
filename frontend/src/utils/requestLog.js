@@ -83,12 +83,15 @@ export function noteEnd(config, response, cancelled = false) {
     if (!r) return;
     inflight.delete(id);
     const t1 = now();
+    // An answer the browser kept (`_browserKept`, utils/api.js) replays the
+    // server's timing of the day it was downloaded — not this request's.
+    const live = config?._browserKept ? undefined : response?.headers;
     done.push({
       ...r,
       s: response?.status ?? 0, // 0 = no answer at all
       ms: Math.round(t1 - r.t0),
-      sms: header(response?.headers, "x-server-ms"),
-      stall: header(response?.headers, "x-server-stall-ms"),
+      sms: header(live, "x-server-ms"),
+      stall: header(live, "x-server-stall-ms"),
       x: cancelled ? 1 : undefined,
       t1,
     });

@@ -35,7 +35,7 @@ loaded by themselves:
 - `docs/workers-and-attendance.md` — a worker's cell and the «Yacheykalar» placement, the three «Odam soni» pages, «Tarkib», attendance charts on the original brigadir, «Davomat» reading Verifix.
 - `docs/staff-live.md` — the live day engine (`live_staff`, `verifix_live`), /staff reading today live (`live_day.LIVE_FROM`), the close and its copy into `attendance`, the close clock.
 - `docs/tasks-and-concerns.md` — the /tasks board, a concern's deadline and date, the weekly Concerns deck.
-- `docs/kpi.md` — «Liderlar KPI» and its KPIs (worker concerns, turnover, foreign objects, category compliance, the technologists' audit), **one «Qayta hisoblash» brings every source up to date — on every open and on the button** (`kpi_recalc`), who answers for a Quality record, «Brigadirlar KPI», «Brigadirlar reytingi».
+- `docs/kpi.md` — «Liderlar KPI» and its KPIs (worker concerns, turnover, foreign objects, category compliance, the technologists' audit), **one «Qayta hisoblash» brings every source up to date — on every open and on the button** (`kpi_recalc`), who answers for a Quality record, «Brigadirlar KPI», «Brigadirlar reytingi» (**its board is KEPT — one answer per period, cut per viewer; bump `FORMAT` in `routers/leaderboard.py` when its payload changes shape**).
 - `docs/checklist.md` — the checklist config page, a checklist on the other shift, temporary task hours, the brigadir's day digest, one checklist per cell, per-task submission.
 - `docs/checklist-auto-checks.md` — the tasks the platform answers itself (`leader_auto`).
 - `docs/checklist-camera.md` — in-app camera proofs (`/proof/camera`, `proof_kind`).
@@ -54,7 +54,7 @@ loaded by themselves:
 - `docs/notifications-and-telegram.md` — the notification centre, phone notifications, coloured and disabled Telegram buttons.
 - `docs/org-chart.md` — «Tashkiliy tuzilma» `/panel/orgchart`: everybody on the platform as one chart (plant → shift → brigadir → leader, the roles on no unit beside them), each one's pages and personal grants, the way to their «Xodim kartasi»; read-only, admin-only; **its access answer repeats the guards' rule** (`services/org_chart.resolve_access` — change `capabilities.py`, change it too).
 - `docs/admin-registers.md` — the action register «Jurnal» and its undo, «Foydalanuvchilar faolligi».
-- `docs/web-clients.md` — the browser login, the installable PWA, the boot path, offline mode.
+- `docs/web-clients.md` — the browser login, the installable PWA, the boot path, offline mode, **a profile photo is the ONE /api answer the browser keeps** (`app/browser_cache.py`; its request carries `_browserKept`; `?s=` is the size it is drawn at).
 - `docs/registration.md` — **job seekers go to HR** (`hr_contact`, seeded `@safiahrrecruiting`, set on the Users tab): the bot's description, welcome, waiting and closed guest requests and /login all name it; copy names ROLES, never «employees»; the guest picker lists only unclaimed profiles; every request DM carries «👤 Profilni ko'rish» → `/tg-user/:tid`, the registrant's Telegram profile as the bot sees it.
 - `docs/android.md` — the Android app.
 - `docs/exam.md` — the dashboard exam «Imtihon».

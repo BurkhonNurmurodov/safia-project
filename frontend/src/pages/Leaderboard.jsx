@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   Trophy, Gauge, Zap, ClipboardCheck, Lightbulb, ShieldCheck, UserCheck,
   ListOrdered, TrendingUp, ArrowUp, ArrowDown, Minus, Info, ChevronDown,
   Download, Layers, CircleCheck, TriangleAlert, CalendarX2, Target,
-  MessageSquareWarning,
+  MessageSquareWarning, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
@@ -19,7 +19,7 @@ import ProfileAvatar from "../components/ui/ProfileAvatar";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { useFactorySection } from "../components/ui/FactorySelect";
-import { useFactory, useFactoryParams, factoryName } from "../context/FactoryContext";
+import { useFactory, factoryName } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -128,6 +128,26 @@ function daysOf(from, to) {
   const out = [];
   for (let d = from; d <= to; d = isoAdd(d, 1)) out.push(d);
   return out;
+}
+/* The first day of the period of `grain` that holds `iso` — a week's Monday,
+ * a month's 1st, 1 January; the twin of `period_of` (services/
+ * brigadir_board.py). The request is keyed by it, never by the day itself:
+ * keyed by today's date, the board kept on the device (and in react-query's
+ * memory) stopped matching at midnight, in the middle of the very week it
+ * was the board of, and the first open of every day drew the skeleton. */
+function periodStart(grain, iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (grain === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  else if (grain === "month") d.setDate(1);
+  else d.setMonth(0, 1);
+  return isoOf(d);
+}
+/* When the board on screen was calculated — «11:53», or «12.11 11:53» when
+ * that was not today. `builtAt` is the server's ISO stamp, Tashkent time. */
+function builtLabel(builtAt, today) {
+  if (typeof builtAt !== "string" || builtAt.length < 16) return "";
+  const day = builtAt.slice(0, 10), clock = builtAt.slice(11, 16);
+  return day === today ? clock : `${ddmm(day)} ${clock}`;
 }
 /* A period's name: the week's span, the month, the year. `short` is the
  * chart axis's. */
@@ -1245,19 +1265,52 @@ export default function Leaderboard() {
   const grain = GRAINS.includes(grainRaw) ? grainRaw : "week";
   const anchor = anchorRaw && anchorRaw <= today ? anchorRaw : today;
 
-  const params = useMemo(() => ({ grain, anchor, ...(shiftF ? { shift: shiftF } : {}) }), [grain, anchor, shiftF]);
-  const fparams = useFactoryParams(params);
+  // ONE request per period — its grain and first day (`periodStart`). The
+  // server sends the whole board this viewer may see; plant and shift are
+  // filters of the PAGE (below), so picking one costs no request at all.
+  const params = useMemo(() => ({ grain, anchor: periodStart(grain, anchor) }), [grain, anchor]);
+  const pollSince = useRef(null);
   const query = useQuery({
-    queryKey: ["leaderboard", fparams],
-    queryFn: () => api.get("/api/leaderboard", { params: fparams }).then((r) => r.data),
+    queryKey: ["leaderboard", params],
+    queryFn: () => api.get("/api/leaderboard", { params }).then((r) => r.data),
     staleTime: 60_000,
+    // Another period picked: the board on screen stays (dimmed) until the
+    // new one is in, instead of the page falling back to its skeleton.
+    placeholderData: keepPreviousData,
+    // The server answers at once from the board it keeps and says
+    // `refreshing` while a newer one is being calculated behind the answer
+    // (routers/leaderboard.py `_KEPT`): ask again until it is in — every 3 s
+    // for the first minute, then every 20 s, as «Hisobotlar» asks for its
+    // months.
+    refetchInterval: (q) => {
+      if (!q.state.data?.refreshing) { pollSince.current = null; return false; }
+      pollSince.current ??= Date.now();
+      return Date.now() - pollSince.current < 60_000 ? 3_000 : 20_000;
+    },
   });
-  const board = useMemo(() => buildBoard(query.data), [query.data]);
+  // The page's own cut of the answer: the plant and the shift.
+  const pay = useMemo(() => {
+    const d = query.data;
+    if (!d || (factory == null && shiftF == null)) return d;
+    return {
+      ...d,
+      units: (d.units || []).filter((u) => (factory == null || u.factory_id === factory)
+        && (shiftF == null || u.shift === shiftF)),
+    };
+  }, [query.data, factory, shiftF]);
+  const board = useMemo(() => buildBoard(pay), [pay]);
   const L = board.periods.length - 1;
   const cur = board.periods[L];
+  // What is ON SCREEN, which for a moment is not what was picked: while the
+  // next period loads, the board (and so every label on it) is still the one
+  // before — a week's, perhaps, under a toggle already saying «Month».
+  const shownGrain = GRAINS.includes(query.data?.grain) ? query.data.grain : grain;
+  const pending = query.isPlaceholderData;
+  const busy = pending || !!query.data?.refreshing;
+  const asOf = builtLabel(query.data?.built_at, today);
 
   // The plant is named on a row only while the board mixes plants.
-  const multiPlant = new Set((query.data?.units || []).map((u) => u.factory_id ?? 0)).size > 1;
+  const multiPlant = new Set((pay?.units || []).map((u) => u.factory_id ?? 0)).size > 1;
   const { sups, byRank } = useMemo(() => {
     const sub = (s) => (multiPlant && s.factory ? tx(factoryName(s.factory, lang)) : null);
     const list = board.sups.map((s) => ({ ...s, sub: sub(s) }));
@@ -1286,7 +1339,7 @@ export default function Leaderboard() {
     setExpandedId((c) => (fromTable && c === id ? null : id));
   }
 
-  const vsLabel = t(`leaderboard.vsPrev.${grain}`);
+  const vsLabel = t(`leaderboard.vsPrev.${shownGrain}`);
 
   // Team reference points — every number on the page is read against these.
   const teamAvg = useMemo(() => Object.fromEntries(CATS.map((c) => {
@@ -1336,8 +1389,8 @@ export default function Leaderboard() {
   const sortOptions = [["overall", t("leaderboard.overallShort")], ...LIVE.map((c) => [c.key, catMeta[c.key].short])];
   const muted = { color: "var(--text-4)" };
   const dAvgIcon = kpi && kpi.dAvg != null && (kpi.dAvg > 0.05 ? <ArrowUp size={11} /> : kpi.dAvg < -0.05 ? <ArrowDown size={11} /> : <Minus size={11} />);
-  const chartLabels = board.periods.map((p) => periodLabel(p, grain, t, true));
-  const chartTips = board.periods.map((p) => periodLabel(p, grain, t));
+  const chartLabels = board.periods.map((p) => periodLabel(p, shownGrain, t, true));
+  const chartTips = board.periods.map((p) => periodLabel(p, shownGrain, t));
   const prevAnchor = cur ? isoAdd(cur.from, -1) : null;
 
   const rowProps = (s) => ({
@@ -1353,10 +1406,10 @@ export default function Leaderboard() {
         fallbackName: "brigadirlar-reytingi.xlsx",
         body: {
           title: t("leaderboard.subtitle"),
-          period: periodLabel(cur, grain, t),
+          period: periodLabel(cur, shownGrain, t),
           scope: scopeText,
           filename: `brigadirlar-reytingi-${cur.from}`,
-          caption: `📊 ${t("leaderboard.subtitle")} — ${periodLabel(cur, grain, t)}`,
+          caption: `📊 ${t("leaderboard.subtitle")} — ${periodLabel(cur, shownGrain, t)}`,
           columns: LIVE.map((c) => ({ key: c.key, label: catMeta[c.key].name })),
           weights: LIVE.map((c) => `${catMeta[c.key].short} ${Math.round(shareOf(c) * 100)}%`).join(" · "),
           labels: {
@@ -1396,7 +1449,7 @@ export default function Leaderboard() {
           {/* the export: beside the grain on a phone, at the row's end above */}
           <div className="flex items-center ml-auto sm:order-last">
             <Button size="lg" variant="secondary" icon={<Download size={14} />} loading={exporting}
-              disabled={!byRank.length || loading} onClick={onExport} aria-label={t("leaderboard.export")}>
+              disabled={!byRank.length || loading || pending} onClick={onExport} aria-label={t("leaderboard.export")}>
               <span className="max-sm:hidden">{t("leaderboard.export")}</span>
             </Button>
           </div>
@@ -1405,14 +1458,27 @@ export default function Leaderboard() {
           <FilterPanel sections={[factorySection, shiftSection].filter(Boolean)} />
         </div>
 
-        {/* what the period on screen is — always one line, so the board never
-            moves when it changes */}
-        <div className="text-xs -mt-2 min-h-[16px]" style={{ color: "var(--text-3)" }}>
-          {cur && <>
-            <span className="font-semibold" style={{ color: "var(--text-2)" }}>{periodLabel(cur, grain, t)}</span>
-            {cur.partial && <span> · {t("leaderboard.partialNote")}</span>}
-            {board.missing > 0 && <span> · {t("leaderboard.missingNote").replace("{n}", board.missing)}</span>}
-          </>}
+        {/* what the period on screen is, and when its figures were calculated
+            (the board is served from a kept answer and recalculated behind it).
+            The stamp is there whenever a board is, and its spinner keeps its
+            place while idle — nothing here appears or leaves on a refresh, so
+            the board never moves. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs -mt-2 min-h-[16px]" style={{ color: "var(--text-3)" }}>
+          <span className="min-w-0">
+            {cur && <>
+              <span className="font-semibold" style={{ color: "var(--text-2)" }}>{periodLabel(cur, shownGrain, t)}</span>
+              {cur.partial && <span> · {t("leaderboard.partialNote")}</span>}
+              {board.missing > 0 && <span> · {t("leaderboard.missingNote").replace("{n}", board.missing)}</span>}
+            </>}
+          </span>
+          {asOf && (
+            <span className="ml-auto inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
+              role="status" aria-live="polite" title={t("leaderboard.asOfHint")}>
+              <Loader2 size={11} className={busy ? "animate-spin" : ""} style={{ visibility: busy ? "visible" : "hidden" }} aria-hidden="true" />
+              {busy && <span className="sr-only">{t("leaderboard.updating")}</span>}
+              {t("leaderboard.asOf").replace("{t}", asOf)}
+            </span>
+          )}
         </div>
 
         {loading ? <BoardSkeleton /> : failed ? (
@@ -1427,7 +1493,8 @@ export default function Leaderboard() {
               message={t("leaderboard.emptyBody")} height="h-56"
               action={prevAnchor && <Button variant="secondary" onClick={() => setAnchor(prevAnchor)}>{t(`leaderboard.prev.${grain}`)}</Button>} />
           </div>
-        ) : <>
+        ) : <div className="flex flex-col gap-4 transition-opacity duration-200 motion-reduce:transition-none"
+            aria-busy={pending || undefined} style={{ opacity: pending ? 0.5 : 1 }}>
 
           {/* ── podium: the three big cards ── */}
           <Podium byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} t={t} nm={nm} />
@@ -1484,7 +1551,7 @@ export default function Leaderboard() {
                       label={<span className="inline-flex items-center gap-1.5" style={live ? undefined : { opacity: 0.6 }}><span className="inline-block rounded-full" style={{ width: 7, height: 7, background: catMeta[c.key].hue }} />{catMeta[c.key].short}</span>} />
                   );
                 })}
-                <Th label={t("leaderboard.trend")} align="center" cls="hidden lg:table-cell w-[116px]" hint={t(`leaderboard.trendHint.${grain}`)} />
+                <Th label={t("leaderboard.trend")} align="center" cls="hidden lg:table-cell w-[116px]" hint={t(`leaderboard.trendHint.${shownGrain}`)} />
                 <Th label="" cls="w-8" />
               </tr>
             </thead>
@@ -1498,7 +1565,7 @@ export default function Leaderboard() {
           {/* ── how the places moved ── */}
           {board.periods.length > 1 && (
             <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-              <SectionHead icon={TrendingUp} title={t(`leaderboard.rankDyn.${grain}`)} subtitle={t("leaderboard.chartHint")}
+              <SectionHead icon={TrendingUp} title={t(`leaderboard.rankDyn.${shownGrain}`)} subtitle={t("leaderboard.chartHint")}
                 right={selectedSup && (
                   <span className="inline-flex items-center gap-1.5 text-xs">
                     <Avatar sup={selectedSup} size={20} />
@@ -1511,7 +1578,7 @@ export default function Leaderboard() {
               </div>
             </div>
           )}
-        </>}
+        </div>}
 
         {/* ── methodology ── */}
         <details className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

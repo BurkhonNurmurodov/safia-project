@@ -241,10 +241,17 @@ function normalizeDetail(response) {
 api.interceptors.response.use(
   (response) => {
     noteEnd(response.config, response);
-    noteServerHeaders(response.headers);
-    // Any answer proves the connection (utils/connectivity.js).
-    noteAnswer(response.status);
-    if (isServerRestarting() && !restartKind(response)) setServerRestarting(false);
+    // An answer the BROWSER may have kept (`_browserKept` — a profile photo,
+    // the one /api answer served immutable) can come off the disk, with the
+    // headers of the day it was downloaded. It says nothing about the server
+    // NOW: not which build runs, not that the connection works, not that a
+    // restart is over. Only a failure of such a request is news (below).
+    if (!response.config?._browserKept) {
+      noteServerHeaders(response.headers);
+      // Any answer proves the connection (utils/connectivity.js).
+      noteAnswer(response.status);
+      if (isServerRestarting() && !restartKind(response)) setServerRestarting(false);
+    }
     // A sandbox write the exam may be waiting on — the strip re-checks the task.
     const m = String(response.config?.method || "get").toLowerCase();
     if (m !== "get" && response.config?.headers?.["X-Exam-Attempt"]

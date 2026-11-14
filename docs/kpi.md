@@ -1131,11 +1131,70 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
   scans and the official-HC read behind fields neither reader uses — a cold
   build is ~10 s of загрузка + attendance + checklist pool, with no single
   hot spot, so the lever on a slow-server report is fewer builds, not this.
-- One answer per (grain, period, scope) is kept 10 minutes (120 s until
-  2026-11-12 — the operator's call on that day's slow-server report), shared by viewers
-  asking together (`SharedBuild`). The Excel is the board as drawn (the
-  browser sends its rows; `build_workbook` lays them out, the page's 80 / 65
-  bands as cell tints), logged as `export.leaderboard`.
+- **The board is KEPT, and built once for everybody** (2026-11-14, v4.511.0 —
+  the operator: «this screen is taking too much time to load and open»).
+  Measured on production on 13 Nov in the operator's signed-in pane
+  (`X-Server-Ms`): the first open of the week waited 4.06 s on the board and
+  0.84 s more on its photos; one week ‹ back 3.4 s, the «Smena 1» filter
+  2.5 s, the month 10.1 s (the year covers the same days) — against 0.34 s
+  whenever the answer was already in memory. It rarely was: it lived ten
+  minutes (120 s until 2026-11-12) in a cache of the router, one entry per
+  (period, plant filter, shift filter); the page is opened a few times a day
+  and a backend deploy empties the process 5–24 times a day. The browser's
+  own work is 12 ms and the answer 36 KB on the wire — neither was the wait.
+  - `_KEPT` (`routers/leaderboard.py`) is a `KeptAnswers` with a store
+    (`services/kept_answer.py`, `kept_store.py` — «Hisobotlar»'s rule, its
+    record in `docs/reports-and-ontime.md`): ten minutes as built; past that,
+    and for a viewer who wrote something since, served AT ONCE while one
+    build runs behind the answer (`writers_refresh`); a board another process
+    built (the worker before a deploy) served at once from `kept_answers`,
+    however old, and rebuilt behind the reader. `stale` is as long as a row
+    lives (45 days), so a request waits for a build only when a period was
+    never built at all. Served that way the answer carries `refreshing`, and
+    the page asks again (every 3 s for a minute, then every 20 s) until the
+    new board is in. A rebuild that fails leaves the kept board on screen and
+    is tried again a minute later.
+  - **ONE answer per period — never per viewer, plant or shift.** A unit's
+    figures do not depend on who looks, so `_build` builds the WHOLE board
+    (every unit, both shifts, read as nobody — `_SYSTEM`, never the viewer
+    who happened to ask first) and `cut` narrows the answer: to a locked
+    viewer's plant, or to the `factory` / `shift` a bundle from before this
+    release still sends. `cut` is the scoped build's own rule for the
+    checklist pool (`checklist_pool`): a unit's rows, the leaders on it or
+    with a span on it, a span or a current unit outside the cut dropped —
+    `tests/test_leaderboard_keep` holds the two equal.
+  - **What is kept is the answer ENCODED** (`_encode`, text). Returned as a
+    dict it was walked and encoded again on every request — 0.10 s for the
+    week (309 KB) to 0.19 s for the month (617 KB) of the event loop, for a
+    board nothing had changed in. 89% of that JSON is the checklist rows.
+  - **`FORMAT` is the shape of the payload, and rides the key**: bump it when
+    a release renames or re-shapes a field `_build` returns — otherwise a
+    page is handed a stored board of the old shape for the seconds its
+    rebuild takes.
+  - `kept_answer.forget_all()` (the catalog follow, the turnover rule) drops
+    the board too; the router's own cache was never told.
+  - **The page** (`Leaderboard.jsx`). The request is keyed by the period's
+    FIRST day (`periodStart`), never by today's date: keyed by today, the
+    copy the device keeps (`offlineCache`) stopped matching at midnight, in
+    the middle of the week it was the board of. Plant and shift are filters
+    of the PAGE — the units are cut in the browser, no request is made.
+    Another period picked: the board on screen stays, dimmed, under its own
+    labels (`shownGrain`) until the new one is in, and the Excel button waits
+    with it. «Tayyorlandi: 11:53» (with the date when that was not today)
+    says when the figures on screen were built; its spinner turns while a
+    newer board is on its way and keeps its place when idle, so nothing on
+    the line appears or leaves.
+  - Not built: REUSING FINISHED PERIODS — stepping ‹ back builds all eight
+    though seven are unchanged; keeping each finished period would take a
+    never-built month from 10 s to about 2 (an estimate from the two timings:
+    a build is ~1.2 s plus ~45 ms per day of history). Keeping the current
+    periods built by the clock (`KeptAnswers.ensure`, as «Hisobotlar» does) —
+    without it the first open of a NEW week or month builds in the request,
+    once. A faster build: the загрузка figures are most of one
+    (/api/brigadirs alone over the same 8 weeks, 3.3 s).
+- The Excel is the board as drawn (the browser sends its rows;
+  `build_workbook` lays them out, the page's 80 / 65 bands as cell tints),
+  logged as `export.leaderboard`.
 - The podium shows the brigadir's profile photo as a medallion sized off the
   card's measured width, below the rank column (the mock's cut-out renders
   are gone).
