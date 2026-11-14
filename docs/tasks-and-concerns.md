@@ -330,9 +330,20 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   brigadir's, and a leader's for a viewer who holds «Vazifalar» and acts from
   the top; never a task the block would not then show.
 - **Which day**: set on or before it AND (still open on it OR finished on it).
-  Finished earlier = left; set later = not arrived. The day stepper reaches the
-  block (the «Smena hisoboti» board under it still does not). A day is
-  Tashkent's calendar day, never the shift frame.
+  Finished earlier = left; set later = not arrived. A day is Tashkent's
+  calendar day, never the shift frame.
+- **THE BLOCK OPENS ON NOW, not on the page's day** (v4.524.0). «Smena kunligi»
+  opens on YESTERDAY (its stepper's default — the page's figures are about
+  closed days), and a day is shown exactly as it stood, so every task set
+  today was missing: the operator sent a screenshot of thirteen tasks he had
+  set for brigadirs that morning and «this tasks should appear in shift day».
+  The block is a to-do list with a «remind» button — a question about the
+  present — so it reads TODAY (no `date` sent: the server's Tashkent today)
+  every time the page opens. While the stepper is on another day, a
+  `SegmentedToggle` in the block's head («Hozir» · «13 noyabr») switches it to
+  that day as it stood; on today the toggle does not exist. The choice is never
+  remembered — a block that reopened on a past day would hide the morning's
+  tasks again. The «Smena hisoboti» board under it still takes no day at all.
 - **Four states, and a task is in exactly one**: `done` (finished that day;
   `late` when after its deadline) · `overdue` (open, deadline before the day) ·
   `doing` · `todo`. **Late is a BUCKET here and a FLAG on `/tasks`** — that page

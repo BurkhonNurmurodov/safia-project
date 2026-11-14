@@ -711,7 +711,9 @@ in `docs/tasks-and-concerns.md`, «Tasks set from above»** — what a day holds
 the four states, the shift-manager tier, and the first day it waits for
 (`task_board.OPEN_FROM`; the admins' alone until the operator names it).
 
-What matters on THIS page: the day stepper, the plant and the shift all reach
-the block (the board under it still takes no day); it reads `GET /api/tasks/day`
+What matters on THIS page: the block opens on NOW, never on the stepper's day
+(which defaults to yesterday and hid every task set today — v4.524.0); while
+the stepper is on another day a toggle in the block switches it to that day.
+The plant and the shift reach it. It reads `GET /api/tasks/day`
 behind the page's own guard (`overview` / `shift-daily`), and a reader it is not
 for gets `show: false` and no block at all — never an error card.

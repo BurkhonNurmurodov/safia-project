@@ -315,7 +315,9 @@ export default function ShiftDaily() {
           day, per person and worst first (the operator, 2026-11-14). Above the
           board on purpose: who is not doing what they were set is the first
           thing a top manager asks.
-          The day stepper, the plant and the shift all reach it. It draws
+          It opens on NOW, not on the stepper's day (which defaults to
+          yesterday and hid every task set today); the stepper's day is a
+          second view inside it. The plant and the shift reach it. It draws
           nothing for a reader it is not for — the server decides
           (`task_board.OPEN_FROM`: the admins' alone until the day is named). */}
       <DayTasksCard day={date} params={dayParams} />

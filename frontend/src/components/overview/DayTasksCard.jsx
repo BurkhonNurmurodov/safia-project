@@ -17,6 +17,15 @@
  * it in time. A task the unit's own brigadir set for a leader is not here, and
  * neither is a shift manager's own — both stay on /tasks.
  *
+ * IT OPENS ON NOW, not on the page's day (the operator, 2026-11-14, with a
+ * screenshot of thirteen tasks set that morning: «this tasks should appear in
+ * shift day»). «Smena kunligi» opens on YESTERDAY — its figures are about
+ * closed days — and a day is shown exactly as it stood, so every task set
+ * today was missing from it. The block is a to-do list with a «remind» button,
+ * a question about the present: it reads today (every open task + what was
+ * finished today) unless the reader switches it to the page's day, a toggle
+ * that exists only while the page is on another day.
+ *
  * `GET /api/tasks/day` is the whole read (`services/task_day.py` holds the
  * rule of what a day contains and the four states). The SERVER decides who
  * sees the block: `show: false` draws nothing — it is the admins' alone until
@@ -33,6 +42,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BellRing, Check, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR } from "../ui/TaskQueue";
 import Button from "../ui/Button";
 import CommentsModal, { CommentsButton } from "../ui/CommentsModal";
@@ -44,7 +54,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { fmtDate } from "../../utils/targets";
+import { fmtDate, todayISO } from "../../utils/targets";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { TIERS, KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
 
@@ -114,21 +124,28 @@ export default function DayTasksCard({ day, params }) {
   const [thread, setThread] = useState(null);           // the task whose chat is open
   const [form, setForm] = useState(null);               // the task form's opening state
   const [expanded, setExpanded] = useState({});         // group → list every person
+  // "now" (today's state — the default, every time the page opens) or "day"
+  // (the page's picked day, as it stood). Never remembered: a block that
+  // reopened on a past day would hide this morning's tasks again.
+  const [view, setView] = useState("now");
+  const today = todayISO();
+  const pastDay = !!day && day < today;
+  const asOfDay = pastDay && view === "day";
   // Whether this browser was shown the block last time — so a reader who has
   // it gets its skeleton while it loads instead of a block dropping in above
   // the board. Never a right: the server decides (`show`).
   const [seen, setSeen] = usePersistentState("day_tasks_seen", false);
 
+  // No date = the server's today (Tashkent), whatever this browser's clock says.
   const query = useMemo(
-    () => ({ date: day, ...(params?.shift ? { shift: params.shift } : {}), ...(params?.factory != null ? { factory: params.factory } : {}) }),
-    [day, params]);
+    () => ({ ...(asOfDay ? { date: day } : {}), ...(params?.shift ? { shift: params.shift } : {}), ...(params?.factory != null ? { factory: params.factory } : {}) }),
+    [asOfDay, day, params]);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["day-tasks", query],
     queryFn: () => api.get("/api/tasks/day", { params: query }).then((r) => {
       setSeen(!!r.data?.show);
       return r.data;
     }),
-    enabled: !!day,
     staleTime: 30_000,
   });
 
@@ -172,6 +189,7 @@ export default function DayTasksCard({ day, params }) {
   // them this viewer may.
   const createKinds = [KIND_SUP, KIND_LEADER].filter((k) => data?.can_create?.[k]);
   const dateLabel = fmtDate(data?.date || day, t);
+  const subtitle = asOfDay ? t("dayTasks.sub").replace("{d}", dateLabel) : t("dayTasks.subNow");
 
   // What a task's date line says, and in which ink.
   const dueLine = (task) => {
@@ -274,9 +292,23 @@ export default function DayTasksCard({ day, params }) {
         icon={ClipboardCheck}
         color="#3b82f6"
         title={t("dayTasks.title")}
-        subtitle={t("dayTasks.sub").replace("{d}", dateLabel)}
-        right={createKinds.length ? (
-          <Button size="md" icon={<Plus size={14} />} onClick={() => setForm({})}>{t("dayTasks.add")}</Button>
+        subtitle={subtitle}
+        right={(pastDay || createKinds.length > 0) ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Only while the page is on another day — on today both are one. */}
+            {pastDay && (
+              <SegmentedToggle
+                size="sm"
+                ariaLabel={t("dayTasks.viewLabel")}
+                value={view}
+                onChange={setView}
+                options={[["now", t("dayTasks.viewNow")], ["day", fmtDate(day, t)]]}
+              />
+            )}
+            {createKinds.length > 0 && (
+              <Button size="md" icon={<Plus size={14} />} onClick={() => setForm({})}>{t("dayTasks.add")}</Button>
+            )}
+          </div>
         ) : null}
       />
       <div className="p-4">
@@ -289,7 +321,7 @@ export default function DayTasksCard({ day, params }) {
             {Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} className="h-16 w-full" />)}
           </div>
         ) : !people.length ? (
-          <div className="text-sm py-2" style={{ color: "var(--text-3)" }}>{t("dayTasks.empty")}</div>
+          <div className="text-sm py-2" style={{ color: "var(--text-3)" }}>{asOfDay ? t("dayTasks.empty") : t("dayTasks.emptyNow")}</div>
         ) : (
           <>
             {/* The whole day in one bar, then its parts by name and number. */}
