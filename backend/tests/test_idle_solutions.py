@@ -788,6 +788,30 @@ class Page(unittest.TestCase):
         out, dm = self.remind(now=clock(22))
         self.assertEqual([c.args[0] for c in dm.call_args_list], [502])
 
+    # ── the Ojidaniya page's stop window shows them ─────────────────────────
+
+    def detail(self, payload, unit=1):
+        from app.routers import downtime
+        out = downtime.get_downtime_cell_detail(
+            manager_id=unit, date_from=ago(30), date_to=TODAY, stopped=True, kpi_only=False,
+            cats=[], factory=None, db=self.db, payload=payload)
+        return {iv["id"]: iv for cells_ in out["days"].values() for c in cells_ for iv in c["intervals"]}
+
+    def test_the_stop_window_shows_what_was_written(self):
+        self.write(SUP1, "s3", status="open", due_date=TODAY + timedelta(days=2), text="ordered a new part")
+        self.write(self.OWNER, "s3", text="spoke to the warehouse")
+        got = self.detail(ADMIN)
+        self.assertEqual([x["text"] for x in got[self.stop["s3"]]["solutions"]],
+                         ["spoke to the warehouse", "ordered a new part"])         # newest first
+        plan = got[self.stop["s3"]]["solutions"][1]
+        self.assertEqual((plan["author_role"], plan["status"], plan["due_in"]), ("supervisor", "open", 2))
+        self.assertEqual(got[self.stop["s1"]]["solutions"], [])                    # nothing written yet
+        self.assertEqual(self.detail(self.SM)[self.stop["s3"]]["solutions"][0]["text"], "spoke to the warehouse")
+        # the page's rule holds here too: before its first day only an admin reads them
+        with mock.patch.object(ims, "OPEN_FROM", None):
+            self.assertEqual(len(self.detail(ADMIN)[self.stop["s3"]]["solutions"]), 2)
+            self.assertEqual(self.detail(self.SM)[self.stop["s3"]]["solutions"], [])
+
     # ── the shift-managers' digest ───────────────────────────────────────────
 
     def test_a_brigadir_left_behind_is_named_to_the_shift_managers(self):

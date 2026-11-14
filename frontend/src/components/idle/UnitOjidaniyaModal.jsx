@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Boxes, CalendarDays, Info, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Boxes, CalendarDays, Info, Lightbulb, Users } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
@@ -11,6 +11,8 @@ import { useTranslit } from "../../utils/transliterate";
 import { fmtDur } from "../../utils/idleTime";
 import { cellLabel } from "../../utils/cellName";
 import { shortPerson } from "../../utils/personName";
+import { ROLE_LABEL_KEYS } from "../../config/pages";
+import { TXT, fill } from "../../pages/idleSolutionsText";
 import api from "../../utils/api";
 
 /**
@@ -39,6 +41,10 @@ import api from "../../utils/api";
  *    add up to something else entirely — usually much more. Printing only one of
  *    them either contradicts the bar the reader just pressed or leaves an
  *    unexplained gap on screen, so both are printed and each says what it is.
+ * Under each stop's comment: what people wrote about it on «Kutish yechimlari»
+ * (`solutions`, 2026-11-14) — read here, written there. The server sends an
+ * empty list to whoever that page is still closed to.
+ *
  * 3. **A day the unit does not read from its cells says so.** Before
  *    `idle_source.CELLS_FROM` the number came from the «Смена отчёт» row, which
  *    carries category minutes and no endpoints. Such a date shows its category
@@ -131,8 +137,9 @@ export default function UnitOjidaniyaModal({
   // question nobody asked.
   openDate = null,
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
+  const S = TXT[lang] || TXT.uz;
   // The pressed date opens, or the newest when none was named. The caller keys
   // this component on what it opened, so a different press is a fresh mount and
   // this initialiser is always the one that decides.
@@ -244,7 +251,7 @@ export default function UnitOjidaniyaModal({
                 </p>
               ) : (
                 cells.map((c) => (
-                  <CellBlock key={c.cell_id} cell={c} t={t} tl={tl} fmt={fmtN} />
+                  <CellBlock key={c.cell_id} cell={c} t={t} tl={tl} fmt={fmtN} S={S} />
                 ))
               )}
             </div>
@@ -313,7 +320,42 @@ function SheetDay({ row, t, fmt }) {
 
 // One cell's day: its header — code, leader, people, total — over the table of
 // the events that made it.
-function CellBlock({ cell, t, tl, fmt }) {
+// Status of a written solution — the «Kutish yechimlari» palette.
+const SOL_INK = { open: "var(--status-warn)", doing: "#3b82f6", done: "var(--status-ok)", late: "var(--status-bad)" };
+const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
+
+/** The solutions written to one stop: who, in which role, when, its state — and the words. */
+function Solutions({ list, S, t, tl }) {
+  return (
+    <ul className="mt-2 space-y-1.5">
+      {list.map((x) => {
+        const state = x.overdue ? "late" : x.status;
+        const ink = SOL_INK[state] || "var(--text-3)";
+        const who = x.author_name ? shortPerson(tl(x.author_name) || x.author_name) : "—";
+        const role = ROLE_LABEL_KEYS[x.author_role] ? t(ROLE_LABEL_KEYS[x.author_role]) : "";
+        const due = x.status !== "done" && x.due_date
+          ? (x.overdue ? fill(S.dueLate, { d: ddmm(x.due_date), n: Math.abs(x.due_in ?? 0) })
+            : fill(S.dueBy, { d: ddmm(x.due_date) }))
+          : "";
+        return (
+          <li key={x.id} className="rounded-md px-2 py-1.5 flex items-start gap-1.5"
+            style={{ background: `color-mix(in srgb, ${ink} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${ink} 28%, transparent)` }}>
+            <Lightbulb size={11} className="flex-shrink-0 mt-[3px]" style={{ color: ink }} aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block whitespace-pre-wrap break-words leading-snug" style={{ color: "var(--text-1)" }}>{x.text}</span>
+              <span className="block text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                {who}{role ? ` · ${role}` : ""} · {ddmm(x.created_at)} · <span style={{ color: ink, fontWeight: 600 }}>{S.st[state] || state}</span>
+                {due && ` · ${due}`}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CellBlock({ cell, t, tl, fmt, S }) {
   const overlap = Math.max(0, (cell.sum_min || 0) - (cell.total || 0));
   const leader = cell.leader ? tl(cell.leader) : "";
   const full = cellLabel(cell.code, leader);
@@ -441,6 +483,7 @@ function CellBlock({ cell, t, tl, fmt }) {
                   <span className="block whitespace-pre-wrap break-words leading-snug">
                     {iv.note}
                   </span>
+                  {iv.solutions?.length > 0 && <Solutions list={iv.solutions} S={S} t={t} tl={tl} />}
                 </td>
               </tr>
             ))}

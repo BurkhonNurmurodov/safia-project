@@ -567,12 +567,48 @@ def get_downtime_cell_detail(
                 "shift": mgr.shift, "cells_days": [], "days": {}}
     detail = _cell_detail(db, manager_id, date_from, date_to, stopped, kpi_only,
                           cat_scope or [])
+    _attach_solutions(db, payload, detail)
     return {
         "manager_id": manager_id,
         "manager_name": mgr.name,
         "shift": mgr.shift,
         **detail,
     }
+
+
+def _attach_solutions(db: Session, payload: dict, detail: dict) -> None:
+    """Every filed stop gains `solutions` — what people wrote about it on
+    «Kutish yechimlari» (the operator, 2026-11-14: «if the brigadirs write a
+    solution for that problem it should appear here»), newest first, in that
+    page's own shape (`idle_solutions._item`).
+
+    Read-only here: the writing stays on that page. Its rule is kept too —
+    before the page's first day (`idle_solutions.is_open`) only an admin sees
+    them, and every other reader gets an empty list."""
+    from app import identity
+    from app.models import IdleCategorySolution
+    from app.routers import idle_solutions as ims
+    from app.services.leader_bot import _in_ids
+    ivs = [iv for cells_ in (detail.get("days") or {}).values()
+           for cell in cells_ for iv in cell.get("intervals") or []]
+    for iv in ivs:
+        iv["solutions"] = []
+    is_admin = payload.get("role") == "admin"
+    ids = [iv["id"] for iv in ivs if iv.get("id") is not None]
+    if not ids or not (is_admin or ims.is_open()):
+        return
+    rows = (db.query(IdleCategorySolution)
+            .filter(_in_ids(IdleCategorySolution.event_id, ids))
+            .order_by(IdleCategorySolution.created_at.desc(), IdleCategorySolution.id.desc()).all())
+    if not rows:
+        return
+    viewer = identity.viewer_profile_key(db, payload)
+    today = ims._today()
+    by_event: dict = {}
+    for r in rows:
+        by_event.setdefault(r.event_id, []).append(ims._item(r, viewer, is_admin, today))
+    for iv in ivs:
+        iv["solutions"] = by_event.get(iv.get("id"), [])
 
 
 def _cell_detail(db: Session, manager_id: int, date_from: date, date_to: date,

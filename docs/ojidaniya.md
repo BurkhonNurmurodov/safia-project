@@ -1262,3 +1262,21 @@ leaves stops unanswered for days?». It starts with the page's first day
 - Not built: a view on the page listing exactly the stops the digest counts
   (the button opens the brigadirs' stops; «Yechimsizlar» narrows to the ones
   nobody answered), the same digest for admins or top-managers.
+
+## The stop window on /downtime shows what was written to each stop (2026-11-14)
+
+The operator, on the bar modal (`UnitOjidaniyaModal`): «if the brigadirs write
+a solution for that problem it should appear here».
+
+- `GET /api/downtime/cell-detail` gives every filed stop a `solutions` list —
+  the «Kutish yechimlari» rows answering that stop, newest first, in that page's
+  own shape (`downtime._attach_solutions` → `idle_solutions._item`: text,
+  status, author and role, date, a plan's `due_date` / `overdue`).
+- The modal prints them under the leader's comment in the «Izoh» column: the
+  words, then who · role · day · status (a late plan red, with its date). Read
+  only — writing stays on «Kutish yechimlari». A stop nobody answered shows
+  nothing extra.
+- **The launch rule holds here too**: before `idle_solutions.OPEN_FROM` only an
+  admin gets the solutions; every other reader of /downtime gets empty lists.
+- Test: `test_the_stop_window_shows_what_was_written` in
+  `backend/tests/test_idle_solutions.py`.
