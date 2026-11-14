@@ -291,6 +291,27 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
 
+class PlantHoursTest(unittest.TestCase):
+    """The request form's default is the «Konteynerlar» page's hour: every
+    configured, non-archived unit's `unit_hours`, summed."""
+
+    def test_sums_configured_units_and_keeps_a_minute(self):
+        from unittest import mock as m
+        from app.routers import production
+        dashes = {1: ({9: {"yellow": 18}, 25: {"box": 2}}, {}), 2: ({9: {"yellow": 6, "round": 3}}, {})}
+        db = m.MagicMock()
+        db.query.return_value.filter.return_value.all.return_value = [(1,), (2,), (3,)]
+        flow._hours_cache.clear()
+        with m.patch.object(production, "_configured_manager_ids", return_value={1, 2}), \
+             m.patch.object(production, "_build_dashboard", side_effect=lambda db, mid, day: mid), \
+             m.patch.object(flow.hourly_containers, "unit_hours", side_effect=lambda mid: dashes[mid]) as uh:
+            got = flow.plant_hours(db, DAY)
+            self.assertEqual(got, {9: {"yellow": 24, "round": 3}, 25: {"box": 2}})
+            flow.plant_hours(db, DAY)
+            self.assertEqual(uh.call_count, 2)          # unit 3 has no «Zagruzka fayli»; the 2nd read is kept
+        flow._hours_cache.clear()
+
+
 class PageKeyTest(unittest.TestCase):
     """«Konteyner berish» is a grantable page (admin-only by default), and its
     capability exists — Dilafruz's one-shot grants it by that id."""
@@ -317,7 +338,7 @@ class PageKeyTest(unittest.TestCase):
         p = "/api/container-flow"
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
-                  ("GET", f"{p}/logistics")]:
+                  ("GET", f"{p}/logistics"), ("GET", f"{p}/hour-need")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("GET", f"{p}/units")]:

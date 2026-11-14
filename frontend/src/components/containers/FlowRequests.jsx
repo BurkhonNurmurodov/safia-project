@@ -2,7 +2,7 @@
 // pick brigadirs — a request names the counts, the hour and ONE logistics
 // person («Nuriddin aka»); that person splits it across brigadirs, which closes
 // it. docs/containers-flow.md.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Ban, Check, ClipboardList, Plus, Split, Trash2 } from "lucide-react";
 import Button from "../ui/Button";
@@ -148,6 +148,23 @@ export function NewRequestModal({ t, day, onClose, onDone, onFail }) {
   const to = who ?? (list.length === 1 ? list[0].key : null);
   const [hour, setHour] = useState(() => Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
   const [counts, setCounts] = useState({});
+  // The hour's figure from the «Konteynerlar» page fills the counts whenever
+  // an hour is picked (the operator, 2026-11-14: «the number of containers
+  // should appear by default, then if it is incorrect they will correct it by
+  // hand»). A refetch never overwrites what was typed — only a new hour does.
+  const need = useQuery({
+    queryKey: ["cflow-hour-need", day],
+    queryFn: () => api.get("/api/container-flow/hour-need", { params: { day } }).then((r) => r.data.hours),
+    staleTime: 60_000,
+  });
+  const hourNeed = need.data?.[String(hour)] ?? null;
+  const [filledFor, setFilledFor] = useState(null);
+  useEffect(() => {
+    if (!need.data || filledFor === hour) return;
+    setFilledFor(hour);
+    setCounts(Object.fromEntries(KEYS.map((k) => [k, need.data[String(hour)]?.[k] ?? null])));
+  }, [need.data, hour, filledFor]);
+  const changed = hourNeed != null && KEYS.some((k) => (counts[k] ?? 0) !== (hourNeed[k] ?? 0));
   const [note, setNote] = useState("");
   const any = KEYS.some((k) => counts[k] > 0);
   const m = useMutation({
@@ -176,9 +193,15 @@ export function NewRequestModal({ t, day, onClose, onDone, onFail }) {
             options={Array.from({ length: 32 }, (_, h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
         </FormField>
       </div>
+      <p className="text-[11px] -mb-1 min-h-[16px]" style={{ color: "var(--text-3)" }}>
+        {need.isLoading ? t("cflow.req.needLoading")
+          : hourNeed ? t(changed ? "cflow.req.needEdited" : "cflow.req.needFilled").replace("{span}", span(hour))
+          : t("cflow.req.needNone").replace("{span}", span(hour))}
+      </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {KEYS.map((k) => (
-          <FormField key={k} label={t(`production.cont.${k}`)}>
+          <FormField key={k} label={t(`production.cont.${k}`)}
+            hint={hourNeed && (counts[k] ?? 0) !== (hourNeed[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", hourNeed[k] ?? 0) : undefined}>
             <CountStepper min={0} value={counts[k] ?? null} placeholder="0" onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />
           </FormField>
         ))}

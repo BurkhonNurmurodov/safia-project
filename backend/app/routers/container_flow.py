@@ -309,6 +309,15 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": _me(db, payload)}
 
 
+@router.get("/hour-need")
+def get_hour_need(day: date = Query(...), db: Session = Depends(get_db),
+                  payload: dict = Depends(PAGE)):
+    """The plant's containers per hour on `day` — the «Konteynerlar» page's
+    figures — so a new request starts from the hour's number."""
+    hours = flow.plant_hours(db, day)
+    return {"day": day.isoformat(), "hours": {str(h): c for h, c in sorted(hours.items())}}
+
+
 @router.get("/logistics")
 def get_logistics(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Who a request can be addressed to."""

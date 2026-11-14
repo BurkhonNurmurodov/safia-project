@@ -102,6 +102,15 @@ containers row from production and move it into the new button».
   asked (`over`), fewer needs a reason; the request is then `assigned` and
   CLOSED — nobody confirms the arrival yet (the operator's pick). `late` = split
   after the deadline. AXO / an admin may cancel one still waiting, with a note.
+  **The counts start from the hour's figure** (2026-11-14, the operator: «when
+  we choose the hours the number of containers should appear by default, then
+  if it is incorrect they will correct it by hand»): picking an hour on «Yangi
+  so'rov» fills every count with the «Konteynerlar» page's number for that
+  hour — the whole plant, every configured non-archived unit's
+  `hourly_containers.unit_hours` summed (`plant_hours`, `GET /hour-need`,
+  kept a minute; the page's own filters are not applied). A hand edit sticks
+  until another hour is picked; a field that differs says «Hisob bo'yicha: N»,
+  and an hour with no figure says so and leaves the counts to the hand.
   This REPLACED the first day's «Qo'lda so'rov», which had AXO pick the
   brigadir and the team (`manual`, removed; kind `manual` stays readable in the
   report). Requests are not in «Hisobot» yet.

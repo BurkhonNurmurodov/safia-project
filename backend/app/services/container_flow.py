@@ -779,3 +779,41 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "parts": list(by_unit.values()),
         })
     return out
+
+
+# ── the hour's figure for a request ─────────────────────────────────────────
+# 2026-11-14, the operator, on «Yangi so'rov»: «when we choose the hours the
+# number of containers should appear by default, then if it is incorrect they
+# will correct it by hand». The figure is the «Konteynerlar» page's own —
+# every non-archived unit with a «Zagruzka fayli», `hourly_containers
+# .unit_hours` summed per clock hour (what `/api/shift-report/containers-hourly`
+# answers without a filter) — kept a minute, like that endpoint.
+_HOURS_TTL_S = 60
+_hours_cache: dict = {}
+
+
+def plant_hours(db: Session, day: date) -> dict:
+    """{hour: {ctype: n}} for the whole plant on `day` (hours past 23 belong
+    to the production day that started them)."""
+    import time as _time
+    from fastapi import HTTPException
+    from app.routers import production
+    got = _hours_cache.get(day)
+    if got and _time.monotonic() - got[0] < _HOURS_TTL_S:
+        return got[1]
+    started = _time.monotonic()
+    configured = production._configured_manager_ids(db)
+    out: dict = {}
+    for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all():
+        if mid not in configured:
+            continue
+        try:
+            h_map, _u = hourly_containers.unit_hours(production._build_dashboard(db, mid, day))
+        except HTTPException:
+            continue
+        for h, e in h_map.items():
+            o = out.setdefault(int(h), {})
+            for k, n in e.items():
+                o[k] = o.get(k, 0) + n
+    _hours_cache[day] = (started, out)
+    return out
