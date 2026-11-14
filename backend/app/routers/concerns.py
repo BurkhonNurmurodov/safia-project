@@ -49,12 +49,15 @@ they — or an admin — may move it. ``_due`` is the one answer to «when does 
 run out»; deadlines creators typed before this keep counting from entry_date.
 Access is gated by the ``concerns`` page in the access matrix.
 """
+import json
 import logging
 import re
+from decimal import Decimal
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -830,6 +833,28 @@ def _apply_completion(status: str, requested: Optional[date], existing: Optional
     return None
 
 
+def _json_default(o):
+    """What `jsonable_encoder` would make of a stray non-JSON value."""
+    if hasattr(o, "isoformat"):
+        return o.isoformat()
+    if isinstance(o, (set, frozenset, tuple)):
+        return list(o)
+    if isinstance(o, Decimal):
+        return int(o) if o == o.to_integral_value() else float(o)
+    raise TypeError(f"not JSON serialisable: {type(o).__name__}")
+
+
+class _RegisterJSON(JSONResponse):
+    """The register's answer serialised ONCE. Returned as a plain dict, FastAPI
+    first walked all ~11.7k rows × ~45 fields through `jsonable_encoder` —
+    0.53 s of the single worker's CPU per open, save and refocus, for values
+    that `_serialize` already makes JSON (2026-11-14 speed audit)."""
+
+    def render(self, content) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False,
+                          separators=(",", ":"), default=_json_default).encode("utf-8")
+
+
 @router.get("")
 def list_concerns(
     leader_ref: Optional[int] = Query(default=None),
@@ -894,7 +919,7 @@ def list_concerns(
     owner_names = _owner_names(db, rows)
     cell_leaders = _cell_leaders(db)
     comment_counts = _comment_counts(db, ids)
-    return {
+    return _RegisterJSON({
         "role": role,
         "picker": picker,
         "read_only": role == "top-manager",
@@ -904,7 +929,7 @@ def list_concerns(
                        comment_counts)
             for r in rows
         ],
-    }
+    })
 
 
 @router.get("/supervisors")

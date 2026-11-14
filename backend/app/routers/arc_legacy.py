@@ -34,7 +34,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import (Boolean, DateTime, Float, Integer, String, Text, and_,
-                        case, cast, false, func, not_, null, or_, select, union_all)
+                        case, cast, false, func, not_, null, or_, select, true, union_all)
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
@@ -147,9 +147,17 @@ def _R():
     cols = list(N.__table__.columns)
     new_sel = select(*[by_name.get(c.name, c).label(c.name) if c.name in by_name else c
                        for c in cols])
+    # The test categories, named once: the old mirror is FROZEN (2026-10-05),
+    # so the names `hidden_clause` matches are a fixed list, read with that very
+    # clause. Inline, the regex ran over all ~34k old rows in each of the ~11
+    # queries one /arc open sends — 2–3 s of database per open (2026-11-14).
+    from app.database import SessionLocal
+    with SessionLocal() as s:
+        hidden = [n for (n,) in s.query(A.category_name).filter(
+            arc_hidden.hidden_clause()).distinct().all()]
     old_sel = (select(*[(old[c.name] if c.name in old else cast(null(), c.type)).label(c.name)
                         for c in cols])
-               .where(not_(arc_hidden.hidden_clause())))
+               .where(func.coalesce(A.category_name, "").notin_(hidden) if hidden else true()))
     # adapt_on_names: the projected columns (a coalesce, a case) have no lineage
     # back to the table, so the alias must match them by NAME or the ORM treats
     # them as unloaded and tries to fetch the row from the real table.

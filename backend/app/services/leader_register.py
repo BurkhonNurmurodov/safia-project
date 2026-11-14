@@ -92,6 +92,12 @@ STALE_MAX_S = 600.0
 _BG = threading.BoundedSemaphore(2)
 # How long a request waits on a build somebody else is running.
 FLIGHT_WAIT_S = 120.0
+# How long one fingerprint answers for every viewer (2026-11-14 speed audit):
+# it scans ~720k rows (75 ms warm, ~1 s cold) and ran on EVERY /api/leaders
+# request — production's single biggest full-table reader. A write through
+# `wrote()` drops it at once, and a viewer who wrote after it was taken always
+# gets a fresh one, so only a background job's change can wait this long.
+FP_KEEP_S = 15.0
 # Scoped builds kept at once (one per viewer scope); the unscoped one is extra.
 MAX_SLOTS = 160
 # …and the bytes they may hold between them: a supervisor's unit is ~1 MB, a
@@ -272,6 +278,7 @@ class _Slot:
 _lock = threading.Lock()
 _slots: dict[Hashable, _Slot] = {}  # scope key → slot; None = the unscoped register
 _writes: dict[str, float] = {}     # actor → monotonic() of their last write
+_fp_kept: Optional[tuple[tuple, float]] = None   # (fingerprint, monotonic() it was taken)
 
 
 def _slot(key: Hashable) -> _Slot:
@@ -390,10 +397,25 @@ def fingerprint(db: Session) -> tuple:
     midnight with no table touched."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    taken = monotonic()                 # BEFORE the read: a write landing during it moves the next one
     rows = db.execute(_FP_SQL).all()
     day = datetime.now(ZoneInfo("Asia/Tashkent")).date().toordinal()
-    return (tuple(sorted((str(t), int(n or 0), int(x or 0), int(s or 0)) for t, n, x, s in rows))
-            + (("_day", day, 0, 0),))
+    fp = (tuple(sorted((str(t), int(n or 0), int(x or 0), int(s or 0)) for t, n, x, s in rows))
+          + (("_day", day, 0, 0),))
+    global _fp_kept
+    with _lock:
+        _fp_kept = (fp, taken)
+    return fp
+
+
+def _fingerprint_kept(db: Session, since: float) -> tuple:
+    """`fingerprint()`, reused for `FP_KEEP_S` while it is newer than this
+    viewer's own last write (`since`)."""
+    with _lock:
+        k = _fp_kept
+    if k is not None and k[1] > since and monotonic() - k[1] < FP_KEEP_S:
+        return k[0]
+    return fingerprint(db)
 
 
 # ── who wrote, and when ──────────────────────────────────────────────────────
@@ -416,9 +438,11 @@ def wrote(actor) -> None:
     move the register costs that one account one rebuild, never a stale view."""
     if actor is None:
         return
+    global _fp_kept
     key = str(actor)
     now = monotonic()
     with _lock:
+        _fp_kept = None                 # the next viewer measures the tables again
         _writes[key] = now
         if len(_writes) > 4096:             # bounded; the oldest marks go first
             for k in sorted(_writes, key=_writes.get)[:1024]:
@@ -454,12 +478,12 @@ def get(db: Session, payload: dict, build_fn: Callable[[Session], Build],
     if not enabled():
         return _run(db, build_fn, None, fp=(), key=key)
     arrived = monotonic()
+    since = _written_since(actor_key(payload))
     try:
-        fp = fingerprint(db)
+        fp = _fingerprint_kept(db, since)
     except Exception:
         log.exception("leader-register: fingerprint failed; building unkept")
         return _run(db, build_fn, None, fp=(), key=key)
-    since = _written_since(actor_key(payload))
     with _lock:
         k = _slot(key).kept
     if k is not None:

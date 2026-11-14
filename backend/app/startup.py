@@ -10243,6 +10243,36 @@ def drop_duplicate_indexes() -> None:
         db.close()
 
 
+# 2026-11-14 speed audit — production's own counters (pg_stat_user_tables):
+# `hr_documents` read in full 611k times and never through an index (it had
+# only its primary key), `leader_concerns` 161k times (1.75 billion rows), both
+# mostly by the bell's every-minute poll and the badges. Small tables, so each
+# build takes milliseconds; the boot guard reads them off the catalogue after.
+_SPEED_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_hr_documents_draft "
+    "ON hr_documents (manager_id, date) WHERE status = 'draft'",
+    "CREATE INDEX IF NOT EXISTS ix_hr_documents_unit_date ON hr_documents (manager_id, date)",
+    "CREATE INDEX IF NOT EXISTS ix_hr_documents_date ON hr_documents (date)",
+    "CREATE INDEX IF NOT EXISTS ix_leader_concerns_todo ON leader_concerns (id) WHERE status = 'todo'",
+)
+
+
+def add_speed_audit_indexes() -> None:
+    """One transaction per index, so a busy table skips only its own until the
+    next boot (boot_ddl's lock timeout). Never raises."""
+    db = SessionLocal()
+    try:
+        for ddl in _SPEED_INDEXES:
+            try:
+                db.execute(text(ddl))
+                db.commit()
+            except Exception as exc:  # noqa: BLE001
+                db.rollback()
+                print(f"[startup] speed index skipped ({ddl.split()[5]}): {exc}")
+    finally:
+        db.close()
+
+
 AUDIT_RELOADS_FLAG = "audit_reloads_cleaned_nov11"
 
 

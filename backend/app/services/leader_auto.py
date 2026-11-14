@@ -478,7 +478,7 @@ class _Ctx:
             self.require_settled()
             self._by_code[code] = _build_dashboard(
                 self.db, self.unit_id, _as_date(self.date),
-                wc_scope={code}, payload=None).get("totals") or {}
+                wc_scope={code}, payload=None, totals_only=True).get("totals") or {}
         return self._by_code[code]
 
     @property
@@ -1665,6 +1665,9 @@ def run(db: Session, now: datetime | None = None,
     moved = set(leader_shift.moved_ids(db))
     if leader_ids is not None:
         moved &= set(leader_ids)
+    # Exclusions and cutoffs, read ONCE for the pass (`leader_exclusions.preload`)
+    # — per leader-day they were two queries × every leader × every 5 minutes.
+    excl = leader_exclusions.preload(db)
 
     for m in managers:
         if getattr(m, "archived", False):
@@ -1696,9 +1699,9 @@ def run(db: Session, now: datetime | None = None,
                 if prof.id in moved and leader_shift.shifted(db, prof.id, date, m.shift):
                     continue
                 _run_leader(db, m, prof, date, live, defs, now, tally,
-                            leader_close)
+                            leader_close, excl=excl)
     if moved:
-        _run_moved(db, managers, moved, defs, now, tally, leader_close)
+        _run_moved(db, managers, moved, defs, now, tally, leader_close, excl=excl)
     return tally
 
 
@@ -1712,7 +1715,7 @@ def _open_leader_dates(db: Session, leader_id: int, now: datetime) -> set[str]:
         LeaderTaskDay.date >= floor).distinct().all()}
 
 
-def _run_moved(db, managers, moved, defs, now, tally, leader_close) -> None:
+def _run_moved(db, managers, moved, defs, now, tally, leader_close, excl=None) -> None:
     """The checks of leaders whose checklist runs on the OTHER shift than their
     unit's (services/leader_shift): their days, at that shift's standard hours,
     with their unit read as running on that shift. Days still on the unit's
@@ -1737,14 +1740,17 @@ def _run_moved(db, managers, moved, defs, now, tally, leader_close) -> None:
                     if now >= dt[0] - WARN_BEFORE}
             if live:
                 _run_leader(db, mm, prof, date, live, defs, now, tally,
-                            leader_close)
+                            leader_close, excl=excl)
 
 
-def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close) -> None:
+def _run_leader(db, m, prof, date, live, defs, now, tally, leader_close,
+                excl=None) -> None:
     # A day nobody is scored on is a day nobody is checked on — the same carve-
     # out every AI queue door already makes, and for the same reason: a cutoff
     # or an exclusion says this leader-day costs nobody anything.
-    if leader_exclusions.excluded(db, prof.id, date, leader_name=prof.name):
+    pairs, cuts = excl if excl is not None else (None, None)
+    if leader_exclusions.excluded(db, prof.id, date, leader_name=prof.name,
+                                  pairs=pairs, cuts=cuts):
         return
     # A night whose hours were moved for this leader (services/leader_temp_hours)
     # is checked — and warned about — at the moved hour. The operator's call for

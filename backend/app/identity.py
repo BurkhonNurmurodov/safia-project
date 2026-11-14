@@ -94,6 +94,14 @@ def role_row_profile_key(db: Session, r: TelegramUserRole,
 
 
 def viewer_profile_key(db: Session, payload: dict) -> Optional[str]:
+    """`_viewer_profile_key`, asked once per session and token (`session_memo`):
+    every permission check of a request needs it, and it costs a query."""
+    from app import session_memo
+    return session_memo.get(db, ("identity.profile", session_memo.payload_key(payload)),
+                            lambda: _viewer_profile_key(db, payload))
+
+
+def _viewer_profile_key(db: Session, payload: dict) -> Optional[str]:
     """The JWT holder's ACTIVE profile — the identity every read filter and
     permission check must compare against.
 

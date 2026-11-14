@@ -107,6 +107,7 @@ from jwt import PyJWTError as JWTError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app import session_memo
 from app.config import settings
 from app.database import get_db
 from app.identity import parse_profile_key, role_row_profile_key, viewer_profile_key
@@ -288,11 +289,26 @@ def caps_for_user(db: Session, telegram_id: Optional[int]) -> dict[str, str]:
     :func:`denied_pages_for_user` for the other direction."""
     if not telegram_id:
         return {}
-    rows = db.query(UserCapability).filter(UserCapability.telegram_id == telegram_id).all()
     return {
-        r.capability: (r.scope if r.scope in SCOPES else DEFAULT_SCOPE)
-        for r in rows if r.capability in CAPABILITY_KEYS and r.mode != MODE_DENY
+        cap: (scope if scope in SCOPES else DEFAULT_SCOPE)
+        for cap, scope, mode in _user_rows(db, telegram_id)
+        if cap in CAPABILITY_KEYS and mode != MODE_DENY
     }
+
+
+def _user_rows(db: Session, telegram_id: int) -> tuple:
+    """Every entry (grant AND deny) on one account as ``(capability, scope,
+    mode)`` — read once per session (`session_memo`) for both directions."""
+    return session_memo.get(db, ("caps.user", telegram_id), lambda: tuple(
+        db.query(UserCapability.capability, UserCapability.scope, UserCapability.mode)
+        .filter(UserCapability.telegram_id == telegram_id).all()))
+
+
+def _profile_rows(db: Session, key: str) -> tuple:
+    """The same for one PROFILE's entries."""
+    return session_memo.get(db, ("caps.profile", key), lambda: tuple(
+        db.query(ProfilePermission.capability, ProfilePermission.scope, ProfilePermission.mode)
+        .filter(ProfilePermission.profile_key == key).all()))
 
 
 def caps_for_profile(db: Session, key: Optional[str]) -> dict[str, str]:
@@ -308,10 +324,10 @@ def caps_for_profile(db: Session, key: Optional[str]) -> dict[str, str]:
     call site at once."""
     if not key:
         return {}
-    rows = db.query(ProfilePermission).filter(ProfilePermission.profile_key == key).all()
     return {
-        r.capability: (r.scope if r.scope in SCOPES else DEFAULT_SCOPE)
-        for r in rows if r.capability in CAPABILITY_KEYS and r.mode != MODE_DENY
+        cap: (scope if scope in SCOPES else DEFAULT_SCOPE)
+        for cap, scope, mode in _profile_rows(db, key)
+        if cap in CAPABILITY_KEYS and mode != MODE_DENY
     }
 
 
@@ -323,7 +339,8 @@ def _profile_perm_modes(db: Session) -> set[str]:
     resolving the caller's active profile, which costs real joins. An
     installation using neither half (or only one) buys its way out of that work
     with this one probe, so adding the layer costs nothing where it is unused."""
-    return {m for (m,) in db.query(ProfilePermission.mode).distinct().all()}
+    return session_memo.get(db, ("caps.modes",), lambda: frozenset(
+        m for (m,) in db.query(ProfilePermission.mode).distinct().all()))
 
 
 def denied_pages_for_user(db: Session, telegram_id: Optional[int]) -> set[str]:
@@ -332,12 +349,8 @@ def denied_pages_for_user(db: Session, telegram_id: Optional[int]) -> set[str]:
     profile-level entry underneath."""
     if not telegram_id:
         return set()
-    rows = db.query(UserCapability).filter(
-        UserCapability.telegram_id == telegram_id,
-        UserCapability.mode == MODE_DENY,
-    ).all()
-    return {c["page"] for c in CAPABILITIES if c["page"]
-            and c["key"] in {r.capability for r in rows}}
+    denied = {cap for cap, _scope, mode in _user_rows(db, telegram_id) if mode == MODE_DENY}
+    return {c["page"] for c in CAPABILITIES if c["page"] and c["key"] in denied}
 
 
 def denied_pages_for_profile(db: Session, key: Optional[str]) -> set[str]:
@@ -346,12 +359,8 @@ def denied_pages_for_profile(db: Session, key: Optional[str]) -> set[str]:
     consumed, so it keeps applying to whoever fills the position next."""
     if not key:
         return set()
-    rows = db.query(ProfilePermission).filter(
-        ProfilePermission.profile_key == key,
-        ProfilePermission.mode == MODE_DENY,
-    ).all()
-    return {c["page"] for c in CAPABILITIES if c["page"]
-            and c["key"] in {r.capability for r in rows}}
+    denied = {cap for cap, _scope, mode in _profile_rows(db, key) if mode == MODE_DENY}
+    return {c["page"] for c in CAPABILITIES if c["page"] and c["key"] in denied}
 
 
 def caller_denied_pages(db: Session, payload: dict) -> list[str]:

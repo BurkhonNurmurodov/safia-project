@@ -343,6 +343,17 @@ def top_id(db: Session, payload: dict) -> int:
     return db.query(func.greatest(*subs)).scalar() or 0
 
 
+def _per_part(db: Session, payload: dict, agg, pick, *conds):
+    """`agg(Notification.created_at)` over the viewer's rows, as `top_id` takes
+    its max: one probe per part of the address rule, combined by `pick`
+    (least / greatest). Over the parts OR'ed together Postgres walked the
+    primary key backwards through ~208k rows for a viewer whose own rows are
+    old — 72–340 ms warm, 1.7 s cold, on every bell open (2026-11-14)."""
+    subs = [db.query(agg(Notification.created_at)).filter(p, *conds).scalar_subquery()
+            for p in viewer_branches(db, payload)]
+    return db.query(pick(*subs)).scalar() if subs else None
+
+
 def ids_above(db: Session, payload: dict, after: int, limit: int) -> list[int]:
     """The newest `limit` ids above `after` this session reads, newest first —
     each part's own newest `limit`, merged, which holds every id the whole set's
@@ -390,7 +401,7 @@ def mark_all_read(db: Session, payload: dict) -> int:
     """«Hammasini o'qildi»: one watermark at the newest row the viewer has.
     Returns the watermark. Individual marks under it are now redundant."""
     reader = reader_key(db, payload)
-    top = db.query(func.max(Notification.id)).filter(viewer_clause(db, payload)).scalar() or 0
+    top = top_id(db, payload)
     m = _mark_row(db, reader)
     m.upto_id = max(m.upto_id or 0, int(top))
     m.seen_upto = max(m.seen_upto or 0, int(top))
@@ -406,7 +417,7 @@ def mark_seen(db: Session, payload: dict, upto: int) -> None:
     """The bell was opened with rows up to ``upto`` on screen: its «something
     new» dot is measured from here. Never moves backwards."""
     reader = reader_key(db, payload)
-    top = db.query(func.max(Notification.id)).filter(viewer_clause(db, payload)).scalar() or 0
+    top = top_id(db, payload)
     upto = min(int(upto or 0), int(top))
     m = _mark_row(db, reader)
     m.seen_upto = max(m.seen_upto or 0, upto)
@@ -724,7 +735,7 @@ def feed(db: Session, payload: dict, lang: str, *, before: Optional[date] = None
     upto, seen = marks(db, reader)
     clause = viewer_clause(db, payload)
     end_day = before or (today_local() + timedelta(days=1))
-    oldest = db.query(func.min(Notification.created_at)).filter(clause).scalar()
+    oldest = _per_part(db, payload, func.min, func.least)
     oldest_day = local_day(oldest)
     needle = (q or "").strip().lower()
 
@@ -762,8 +773,8 @@ def feed(db: Session, payload: dict, lang: str, *, before: Optional[date] = None
         # Widen to the next day that HAS rows rather than by a fixed step, so a
         # quiet fortnight costs one step, not five empty ones — and a reader
         # whose last notice is a month old still sees it in the bell.
-        older = db.query(func.max(Notification.created_at)).filter(
-            clause, Notification.created_at < _day_bounds(start_day)).scalar()
+        older = _per_part(db, payload, func.max, func.greatest,
+                          Notification.created_at < _day_bounds(start_day))
         if older is None:
             start_day = oldest_day
             break
@@ -899,7 +910,7 @@ def push_entries(db: Session, payload: dict, lang: str, after: int) -> dict:
     reader = reader_key(db, payload)
     upto, seen = marks(db, reader)
     clause = viewer_clause(db, payload)
-    latest = int(db.query(func.max(Notification.id)).filter(clause).scalar() or 0)
+    latest = int(top_id(db, payload))
     out: dict = {"latest": latest, "items": [], "active": []}
     if after < 0:
         return out

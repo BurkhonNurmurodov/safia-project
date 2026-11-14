@@ -259,7 +259,7 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     def totals(mid: int, day) -> Optional[dict]:
         if mid not in configured:
             return None
-        return production._build_dashboard(db, mid, day)["totals"]
+        return production._build_dashboard(db, mid, day, totals_only=True)["totals"]
 
     # ── Hal qilingan % — the quality register over ALL TIME
     # (`shift_report.quality_window`, which is also what says why), attributed

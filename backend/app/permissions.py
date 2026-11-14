@@ -243,11 +243,13 @@ DEFAULT_PAGE_ACCESS = {
 def get_page_access(db: Session) -> dict:
     """Return the full {page_key: [roles]} matrix, merging stored overrides on
     top of the defaults and dropping any unknown pages/roles."""
-    row = db.query(AppSetting).filter(AppSetting.key == SETTING_KEY).first()
+    from app import session_memo
+    raw = session_memo.get(db, ("permissions.page_access",), lambda: db.query(AppSetting.value)
+                           .filter(AppSetting.key == SETTING_KEY).scalar())
     stored = {}
-    if row:
+    if raw:
         try:
-            stored = json.loads(row.value)
+            stored = json.loads(raw)
         except (ValueError, TypeError):
             stored = {}
     if not isinstance(stored, dict):

@@ -255,6 +255,14 @@ export function convertFromUz(value, targetLang) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+// Answers already worked out, per language: a page renders the same few
+// hundred names thousands of times (every row, every sort comparison), and each
+// one walked every character. Pure input → output, so a cache cannot go stale.
+// shortcut: cleared whole past CACHE_MAX entries; a real LRU only if a page
+// ever cycles through more distinct strings than that.
+const CACHE_MAX = 20000;
+const cache = new Map();
+
 /**
  * Transliterate a string only when the active language requires it.
  *
@@ -265,7 +273,18 @@ export function convertFromUz(value, targetLang) {
 export function transliterate(value, lang) {
   // ru and Cyrillic Uzbek keep the original Cyrillic; anything else gets transliterated.
   if (!value || lang === "ru" || lang === "uz_cyrl") return value;
+  if (typeof value !== "string") return translitUncached(value, lang);
+  const key = lang + "\0" + value;
+  let out = cache.get(key);
+  if (out === undefined) {
+    if (cache.size >= CACHE_MAX) cache.clear();
+    out = translitUncached(value, lang);
+    cache.set(key, out);
+  }
+  return out;
+}
 
+function translitUncached(value, lang) {
   // Split on whitespace boundaries so each word is capitalised independently.
   const latin = value
     .split(/(\s+)/)                   // keep whitespace tokens to preserve spacing
@@ -326,26 +345,32 @@ export function useTranslit() {
     return out;
   }, [nameOverrides, lang]);
 
-  const override = (value) => {
-    const raw = String(value).trim();
-    return nameOverrides?.[lang]?.[`name.${raw}`] ?? folded.get(normaliseNameKey(raw));
-  };
-
-  return {
-    /** Render a PERSON's name for the current language (override →
-     *  transliterate). For English this applies the name convention
-     *  (Burxon → Burkhon) — never use it on anything that is not a name. */
-    tl: (value) => {
-      if (!value) return value;
-      return override(value) || transliterate(value, lang);
-    },
-    /** Render any other DB TEXT (task, job title, category, SKU, note…):
-     *  Cyrillic → Latin for uz/en, but English keeps the Uzbek spelling. */
-    tx: (value) => {
-      if (!value) return value;
-      return override(value) || transliterateText(value, lang);
-    },
-    /** The current language, in case callers need it. */
-    lang,
-  };
+  // ONE object per (language, overrides): `tl` / `tx` sit in the dependency
+  // lists of ~75 useMemo / useCallback / effects across the pages, and a fresh
+  // pair on every render re-ran every one of them — a 9,000-row sort on each
+  // pager click of /concerns, a layout read on every render of the KPI board
+  // (2026-11-14 speed audit).
+  return useMemo(() => {
+    const override = (value) => {
+      const raw = String(value).trim();
+      return nameOverrides?.[lang]?.[`name.${raw}`] ?? folded.get(normaliseNameKey(raw));
+    };
+    return {
+      /** Render a PERSON's name for the current language (override →
+       *  transliterate). For English this applies the name convention
+       *  (Burxon → Burkhon) — never use it on anything that is not a name. */
+      tl: (value) => {
+        if (!value) return value;
+        return override(value) || transliterate(value, lang);
+      },
+      /** Render any other DB TEXT (task, job title, category, SKU, note…):
+       *  Cyrillic → Latin for uz/en, but English keeps the Uzbek spelling. */
+      tx: (value) => {
+        if (!value) return value;
+        return override(value) || transliterateText(value, lang);
+      },
+      /** The current language, in case callers need it. */
+      lang,
+    };
+  }, [lang, nameOverrides, folded]);
 }

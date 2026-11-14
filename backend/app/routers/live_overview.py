@@ -31,13 +31,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    Attendance, Cell, CellOjidaniyaInterval, Manager, PPDaily, PPLineDaily,
+    Attendance, Cell, CellOjidaniyaInterval, DayApproval, Manager, PPDaily, PPLineDaily,
     RoleProfile,
 )
 from app.permissions import require_page
 from app.services import (cell_archive, cell_hours, idle_source, live_overview, pp_catalog,
                           wc_group, zagruzka_source)
-from app.services.day_state import day_state
 from app.services.factory_scope import (
     empty_scope, resolve_factory, scoped_manager_ids, viewer_factory_id,
 )
@@ -275,7 +274,12 @@ def get_live_overview(
     # inside one, where several cells may name it and each reads its own group.
     plan_by_unit, cell_plan = _plan_inputs(db, unit_ids, day, cells_rows)
 
-    day_closed = {uid: day_state(db, uid, day)[0] != "open" for uid in unit_ids}
+    # `day_state(...)[0] != "open"` is exactly «a DayApproval row exists» — read
+    # for every unit at once: per unit it was 5 queries × ~29 units on every
+    # 30-second poll of a wallboard that never stops polling (2026-11-14).
+    closed_ids = {m for (m,) in db.query(DayApproval.manager_id).filter(
+        DayApproval.manager_id.in_(list(unit_ids)), DayApproval.date == day)} if unit_ids else set()
+    day_closed = {uid: uid in closed_ids for uid in unit_ids}
 
     data = live_overview.build(
         frame=frame, now=now,

@@ -563,7 +563,8 @@ def _archived_lines(db: Session, cat, quantities: dict,
 def _build_dashboard(db: Session, manager_id: int, day: date,
                      wc_scope: Optional[set[str]] = None,
                      payload: Optional[dict] = None,
-                     group_scope: Optional[set] = None) -> dict:
+                     group_scope: Optional[set] = None,
+                     totals_only: bool = False) -> dict:
     """The unit's dashboard for one day, optionally narrowed to ``wc_scope`` —
     the work centers of a leader's own cells.
 
@@ -585,8 +586,15 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     derived from `payload` whenever a code scope is given and it is not, so a
     caller cannot hand a leader the other groups of a shared work centre by
     forgetting it.
+
+    `totals_only` answers ``{"totals": …}`` and stops right after the engine:
+    the shift report and the checklist's «Bajarish %» read nothing else, and
+    the ~12 queries after it (фаза ops, reconciliation, the attendance staffing,
+    the cells registry, team clocks, the day lock, the catalog's edit day) only
+    dress the page (2026-11-14 speed audit: ~409k builds on production). Nothing
+    after the engine touches the totals — the group cut leaves them whole.
     """
-    if group_scope is None and wc_scope is not None and payload is not None:
+    if group_scope is None and wc_scope is not None and payload is not None and not totals_only:
         group_scope = _leader_group_scope(db, payload, day, manager_id)
     # The catalog AS IT STOOD ON THIS DAY (services/pp_catalog.py): an edit
     # counts from the shift it is made in, so a past day keeps its own lines,
@@ -740,6 +748,8 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         planned_wcs=(None if wc_scope is None
                      else (_planned_at(db, manager_id, day) or frozenset())),
     )
+    if totals_only:
+        return {"totals": result["totals"]}
     if group_scope is not None:
         # The leader's slice is CUT from the code-scoped computation, never
         # recomputed (see the docstring): another group's lines and group

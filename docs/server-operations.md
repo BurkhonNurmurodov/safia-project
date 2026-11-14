@@ -902,3 +902,61 @@ was never set. The operator asked for them in the gate after the first full run.
 - **A failure here is a real stop.** If a Postgres test fails on a machine that
   has a server, the commit and the deploy both wait. Fix the test or the code;
   do not unset `SAFIA_TEST_PG` to get past it.
+
+## The speed audit of 14 Nov 2026 — what repeated, and the rules it leaves
+
+Production's own counters (`pg_stat_user_tables`, asked through the report
+door; `pg_stat_statements` is NOT installed) ranked the waste: no slow
+algorithm anywhere — the biggest table is ~850k rows — but the same work
+repeated on every request and every poll. Ten fixes, one deploy:
+
+- **The register fingerprint is kept `FP_KEEP_S` (15 s) per process**
+  (`leader_register._fingerprint_kept`). It scans ~720k rows (75 ms warm,
+  ~1 s cold) and ran on every /api/leaders request — ~4.8 billion rows read,
+  the platform's biggest full-table reader. `wrote()` drops it, and a viewer
+  who wrote after it was taken always gets a fresh one; only a background
+  job's change (an AI verdict, an auto check) can wait up to 15 s.
+- **Permission reads are asked once per SESSION** (`app/session_memo.py`): the
+  page access matrix, the active profile, the profile-entry probe, an account's
+  and a profile's grant + deny rows (one query each now, not two). A leader's
+  page check went 9 queries / 5 ms → 5 / 2.4 ms (measured on the 9 Nov copy)
+  and every `has_cap` after it costs nothing. The memo keeps immutable values
+  only, is dropped on flush / commit / rollback, is bypassed while the session
+  holds unflushed changes, and ages out at 30 s. **A new permission read goes
+  through `session_memo.get` too, keyed by everything its answer depends on.**
+- **/live reads its closed days in ONE query** (`routers/live_overview.py`):
+  `day_state(...)[0] != "open"` is exactly «a DayApproval row exists», and per
+  unit it was 5 queries × ~29 units on every 30-second poll of a wallboard
+  that polls in background tabs too.
+- **Indexes** (`startup.add_speed_audit_indexes`, a `later` step):
+  `hr_documents` (drafts by unit+date, unit+date, date) — it had only its
+  primary key and was read in full 611k times; `leader_concerns` WHERE
+  status='todo' — the bell's every-minute holder query read all of it (1.75
+  billion rows).
+- **`_build_dashboard(…, totals_only=True)`** stops right after the engine. The
+  shift report and the checklist's per-code «Bajarish %» read only the totals;
+  the ~12 queries after the engine only dress the page. **A caller that reads
+  nothing but `totals` passes it.**
+- **/concerns is serialised once** (`concerns._RegisterJSON`): FastAPI's
+  `jsonable_encoder` walked ~11.7k rows × ~45 fields (0.53 s) for values that
+  `_serialize` already makes JSON.
+- **The boot date re-derive loads only its columns** (`leader_ai.sync_date_flags`,
+  `load_only`): 1.62 s → 1.25 s for 82k verdicts on the copy. It still runs at
+  every boot on purpose — a deploy can change the derivation.
+- **The 5-minute auto-check sweep reads exclusions and cutoffs once per pass**
+  (`leader_exclusions.preload`), not twice per leader-day.
+- **ARC's frozen old mirror is filtered by NAME** (`arc_legacy._R`): the test
+  categories are read once with `arc_hidden.hidden_clause` itself (2 names) —
+  the inline regex over ~34k rows cost 154 ms per query, ~11 queries per open;
+  now 18 ms, same 33,807 rows. Valid only while that mirror stays frozen.
+- **The bell's newest / oldest lookups probe each part of the address rule**
+  (`notification_center.top_id`, `_per_part`) — over the parts OR'ed together
+  Postgres walked the primary key back through ~208k rows (a leader: 194 →
+  31 ms).
+- **`useTranslit()` returns ONE object per (language, overrides)** and
+  `transliterate` caches its answers: a fresh `tl`/`tx` pair on every render
+  re-ran ~75 memos and effects across the pages.
+
+Left on purpose: skipping settled leader-days in the auto sweep (`_settle`'s
+rules decide what may still change); a stamp table for `labor_kept` (needs
+triggers); server-side paging of /concerns (the page filters client-side).

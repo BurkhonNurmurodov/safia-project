@@ -47,7 +47,7 @@ from sqlalchemy import (Integer, String, and_, any_, bindparam, case, cast, fals
                         literal, or_, text)
 from sqlalchemy import select as db_select
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.config import settings
 from app.database import SessionLocal, engine
@@ -3401,7 +3401,15 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     Rows a human has ruled on are skipped: re-flagging under a decision would
     rewrite what they decided and pollute the calibration stats.
     """
+    # Only the columns the pass reads or writes: the whole corpus was 79 MB of
+    # ORM rows per boot, 50 MB of it the `reason_*` / error text never read
+    # here (2026-11-14 speed audit). Anything else asked of a row still
+    # lazy-loads, so a later reader of a field gets it, just not for free.
     q = (db.query(LeaderAiReview)
+         .options(load_only(LeaderAiReview.id, LeaderAiReview.date, LeaderAiReview.task_id,
+                            LeaderAiReview.leader_id, LeaderAiReview.manager_id,
+                            LeaderAiReview.shift, LeaderAiReview.status,
+                            LeaderAiReview.flags, LeaderAiReview.clocks))
          .filter(LeaderAiReview.reviewed_at.isnot(None),
                  LeaderAiReview.resolution.is_(None)))
     if task_ids:
