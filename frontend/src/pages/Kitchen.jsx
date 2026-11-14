@@ -85,14 +85,16 @@ function Hours({ hours, T }) {
                 className="min-w-0 flex flex-col items-center gap-1 rounded-lg pt-1.5 pb-1"
                 style={now ? { background: "var(--bg-inner)" } : undefined}
               >
-                <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: h.plan ? "var(--text-3)" : "var(--text-1)", fontWeight: now ? 700 : 500 }}>
-                  {num(h.n)}
-                </span>
-                <span className="w-full h-[72px] @min-[936px]:h-28 flex items-end px-[3px]" aria-hidden>
+                {/* The number rides its own bar — a short bar under a number
+                    left at the top of the column read as two separate things. */}
+                <span className="w-full h-[92px] @min-[936px]:h-[132px] flex flex-col items-center justify-end gap-1 px-[3px]">
+                  <span className="text-[11px] leading-4 tabular-nums whitespace-nowrap" style={{ color: h.plan ? "var(--text-3)" : "var(--text-1)", fontWeight: now ? 700 : 500 }}>
+                    {num(h.n)}
+                  </span>
                   <span
-                    className="w-full rounded-t"
+                    aria-hidden className="w-full rounded-t"
                     style={{
-                      height: `${Math.max(2, (h.n / max) * 100)}%`,
+                      height: `calc((100% - 20px) * ${h.n / max})`, minHeight: 2,
                       ...(h.plan
                         ? { border: `1.5px dashed ${GREEN}`, borderBottom: "none", background: `${GREEN}24` }
                         : { background: GREEN, opacity: now ? 1 : 0.75 }),
