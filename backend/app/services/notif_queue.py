@@ -513,6 +513,11 @@ def _tasks(db: Session, payload: dict) -> list[dict]:
             return []
         q = q.filter(func.coalesce(LeaderTask.assignee_kind, "leader") == "leader",
                      LeaderTask.leader_profile_id == pid)
+    elif role == "shift-manager" and rid:
+        # The tier above: what a top-manager or an admin set for THIS shift
+        # manager (`routers/shift_manager_tasks`; the assignee is the profile).
+        q = q.filter(LeaderTask.assignee_kind == "shift-manager",
+                     LeaderTask.leader_profile_id == int(rid))
     else:
         return []
     rows = q.order_by(LeaderTask.created_at.desc()).limit(_CAP).all()

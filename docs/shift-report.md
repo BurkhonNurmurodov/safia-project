@@ -701,3 +701,16 @@ this column in two and make it with hair and without hair».
   new month the «sochsiz» solved count starts from 0 again, so its % drops on
   the 1st.
 
+## «Rahbariyat vazifalari» — the tasks set from above, under the KPI cards (2026-11-14)
+
+`components/overview/DayTasksCard.jsx`, between the four KPI cards and «Smena
+hisoboti»: the tasks an admin, a top-manager or a shift-manager set, as they
+stood on the picked day, one tile per person and worst first. **The record is
+in `docs/tasks-and-concerns.md`, «Tasks set from above»** — what a day holds,
+the four states, the shift-manager tier, and the first day it waits for
+(`task_board.OPEN_FROM`; the admins' alone until the operator names it).
+
+What matters on THIS page: the day stepper, the plant and the shift all reach
+the block (the board under it still takes no day); it reads `GET /api/tasks/day`
+behind the page's own guard (`overview` / `shift-daily`), and a reader it is not
+for gets `show: false` and no block at all — never an error card.

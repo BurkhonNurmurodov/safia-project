@@ -221,6 +221,95 @@ each row, an analysis tab beside it.
   `ResponsibleList` wrapper (a `RankedList` badged with the chain step). A
   third board copies nothing from either page.
 
+## Tasks set from above: the shift-manager tier, a top-manager's rights, the day block (`task_board.OPEN_FROM`, 2026-11-14)
+
+The operator (2026-11-14): «Top managers and shift managers and admins when
+they assign some kind of task it should appear in the shift day with different
+ui … easy visible for top managers to say like you are not doing or good
+doing». Four answers he gave before it was built: a top-manager sets tasks for
+**brigadirs AND shift managers**; on the shift day they **only see** (no verdict
+button — the task's chat is where a word is said); a day shows **everything
+unfinished plus what was finished that day**; and it is **the admins' alone
+first** — he names the day everybody else gets it.
+
+- **THE FIRST DAY IS ONE CONSTANT — `task_board.OPEN_FROM`, None until he names
+  it.** Before it: only an admin sees the «Rahbariyat vazifalari» block, and a
+  top-manager sets nothing (exactly as before this shipped). On it and after:
+  top-managers and shift-managers see the block, and a top-manager sets and
+  governs tasks (`tb.top_sets`). There is NO browser twin of the date — the
+  block asks the server (`show`), the form asks the server which tiers it may
+  offer — so naming the day is one line in one file. Delete
+  `test_no_day_is_named_yet` (`tests/test_task_day.py`) in that commit.
+  **Not gated: an admin setting a shift manager a task.** That is a deliberate
+  act by somebody who knows, it reaches that shift manager like any task (bell
+  + DM, their `/tasks` board, their bell queue), and they can work it.
+- **A third tier on the one board** — `assignee_kind == "shift-manager"`,
+  written through `routers/shift_manager_tasks.py` (`/api/shift-manager-tasks`,
+  journal actions `smtask.*`). The assignee is a shift-manager PROFILE, stored
+  in `leader_profile_id` — the column is a `role_profiles.id`, which is what a
+  shift-manager profile is, and ids never collide across roles; **always ask
+  `tb.kind_of` first**. `supervisor_manager_id` is NULL (the task belongs to no
+  unit, so no unit filter picks it up). On the board payload such a row serves
+  `assignee_profile_id` and a NULL `leader_profile_id`, so no leader filter or
+  queue counts it; `supervisor_shift` carries the shift manager's own shift.
+  - governs (sets, the flame, closes on their behalf, writes in the thread):
+    an admin, a top-manager from the first day;
+  - the ASSIGNEE reads their own, changes status, writes in the thread;
+  - **a shift manager never reads a colleague's** — the board, the thread and
+    the day block all refuse;
+  - text / date / delete: the creating profile or an admin, as on every tier.
+- **A top-manager on the brigadir tier**: from the first day they set a task
+  for ANY brigadir with a shift manager's rights over the row
+  (`brigadir_tasks._can_manage` / `_may_set` / `_manageable_units`).
+- **`shift-daily` is a second door to the two management routers**
+  (`require_page("tasks", "shift-daily")`): a top-manager holds «Smena kunligi»
+  and by default NOT `/tasks`, and the block lets them set a task and open its
+  chat. The door opens nothing by itself — every right is the ROLE's, and a
+  reader who came through it alone reads no board (`_scope_units` answers `[]`
+  unless they hold `tasks`). **To give top-managers the full register too
+  (edit, delete, the flame, the analysis tab), tick «Vazifalar» for them on the
+  Access tab** — the block does not need it.
+- **`utils/taskTiers.js` is the tiers' one spelling in the browser**
+  (`endpointFor`, `ASSIGNEE_FIELD`, `TIERS`), and
+  **`components/tasks/TaskFormModal.jsx` is THE task form** — `/tasks` and the
+  day block both open it; `kinds` = the tiers the server says this viewer may
+  create at. Never fork it back into a page.
+
+### The day block — «Rahbariyat vazifalari» on «Smena kunligi»
+
+`components/overview/DayTasksCard.jsx` over `GET /api/tasks/day`
+(`routers/tasks.py::day_tasks` reads and scopes, `services/task_day.py` folds —
+no database in the fold, `tests/test_task_day.py` feeds it plain objects).
+
+- **Which tasks**: set by an admin, a top-manager or a shift-manager
+  (`tb.set_from_above` — a brigadir's and a shift manager's own always are; a
+  LEADER's only when its creator's profile says so, since most are set by the
+  unit's brigadir and a row from before profile keys cannot tell). Inside the
+  page's plant and shift; archived units left out; a shift-manager viewer sees
+  the units' tasks and, of the tier above, only their own.
+- **Which day**: set on or before it AND (still open on it OR finished on it).
+  Finished earlier = left; set later = not arrived. The day stepper reaches the
+  block (the «Smena hisoboti» board under it still does not). A day is
+  Tashkent's calendar day, never the shift frame.
+- **Four states, and a task is in exactly one**: `done` (finished that day;
+  `late` when after its deadline) · `overdue` (open, deadline before the day) ·
+  `doing` · `todo`. **Late is a BUCKET here and a FLAG on `/tasks`** — that page
+  counts what the status column says, this block asks who is late; both add up.
+  A past day cannot know whether a task was already started: one open now
+  answers with its current status, one finished on a later day reads `doing`.
+- **It is a board of PEOPLE**: one tile per person, grouped by tier (shift
+  managers → brigadirs → leaders), **worst first** (`task_day.fold`: late →
+  going → done; more late tasks, longer late, more open work). The stack runs
+  overdue · todo · doing · done so the red starts at one edge on every tile;
+  the tile prints «done/total» and a red count of late tasks. A tile opens that
+  person's tasks (a `Modal`): state, text, deadline with the days late, who set
+  it, the chat, and «Vazifa berish» pre-filled with that person.
+- **The tier is a caption, never a `LevelChip` on the tile**: a brigadir's
+  identity hue is red, and a red chip on every row of a board whose red means
+  «not doing» would read as a verdict.
+- The block draws nothing for a reader it is not for (`show: false`, a refused
+  read) — only a browser that was shown it before gets its skeleton.
+
 ## Every new concern to Umarbek Karimov (`concerns.tell_watchers`, 2026-11-11)
 
 The operator (2026-11-11): Umarbek Karimov, shift manager, gets EVERY concern

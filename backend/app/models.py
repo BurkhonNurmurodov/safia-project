@@ -3325,6 +3325,10 @@ class LeaderTask(Base):
     # the assignee IS ``supervisor_manager_id`` (the brigadir's own unit),
     # ``leader_profile_id`` is NULL, and ``leader_name`` carries the brigadir's
     # name snapshot — the /brigadir-tasks board, smena menejeri → brigadir.
+    # "shift-manager" (2026-11-14, routers/shift_manager_tasks.py, top menejer →
+    # smena menejeri): the assignee is a shift-manager PROFILE, stored in
+    # ``leader_profile_id`` (a role_profiles.id, which is what such a profile
+    # is); ``supervisor_manager_id`` is NULL — the task belongs to no unit.
     # A row is READ on both boards where the scope reaches it, but MUTATED only
     # on its own: one task, one board that owns it.
     assignee_kind         = Column(String, nullable=False, server_default="leader", index=True)

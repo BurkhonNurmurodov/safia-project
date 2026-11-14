@@ -1,5 +1,7 @@
 /**
- * /tasks — THE task board: both tiers of the assignment chain on ONE page.
+ * /tasks — THE task board: every tier of the assignment chain on ONE page
+ * (three since 2026-11-14 — a top-manager's tasks for a shift manager joined
+ * the brigadir and leader tiers; `utils/taskTiers.js` is their one spelling).
  *
  * Until 2026-09-04 the same board was served twice — /tasks for the brigadir →
  * lider tier and /brigadir-tasks for the smena menejeri → brigadir tier — and a
@@ -15,7 +17,9 @@
  * reverse — so nothing here derives a right from the viewer's role. A row is
  * WRITTEN through the router that owns its tier (`endpointFor`), which is the
  * one rule the backend keeps: leader rows through /api/tasks, brigadir rows
- * through /api/brigadir-tasks.
+ * through /api/brigadir-tasks, a shift manager's through
+ * /api/shift-manager-tasks. Setting and editing a task is the shared
+ * `TaskFormModal` — the same form «Smena kunligi» opens.
  *
  * STATUS IS THE PARTITION; OVERDUE IS A FLAG. The donut and the KPI cards count
  * what the status column says — todo / doing / done — and «muddati o'tgan» is
@@ -32,13 +36,11 @@ import {
   Hourglass, Inbox, CheckCheck, Building2, ChevronDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
-import StyledSelect from "../components/ui/StyledSelect";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker, { ALL_TIME_FROM } from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
-import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th } from "../components/ui/DataTable";
 import {
@@ -52,6 +54,7 @@ import {
   LevelChip, InsightCard, Metric, Subject, ChartCard, Chart, NoChart, Empty,
   StackLegend, RankedList,
 } from "../components/ui/AnalysisBoard";
+import TaskFormModal from "../components/tasks/TaskFormModal";
 import { ROLE_LABEL_KEYS } from "../config/pages";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -63,18 +66,18 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useOpenParam } from "../hooks/useOpenParam";
 import { padChartFrom } from "../utils/chartRange";
 import { bucketTrend, bucketTick, bucketTitle } from "../utils/trendBuckets";
+import {
+  KIND_LEADER, KIND_SUP, KIND_SM, TIERS, tierRank, endpointFor, assigneeIdOf,
+} from "../utils/taskTiers";
 
-const KIND_SUP = "supervisor";
-const KIND_LEADER = "leader";
 const NO_ONE = "__none__";
 
-// The router that OWNS a row's tier — the one place the split survives.
-const endpointFor = (kind) => (kind === KIND_SUP ? "/api/brigadir-tasks" : "/api/tasks");
+// The tier filter's wording — «to whom», the form's own tabs.
+const TIER_TAB = { [KIND_LEADER]: "btasks.tabLeader", [KIND_SUP]: "btasks.tabBrigadir", [KIND_SM]: "smtasks.tab" };
 
 // The board a row belongs to, as a key: one person's tasks. A brigadir and a
 // leader of ONE unit are two different people, so the key carries the tier.
-const queueKey = (r) =>
-  r.assignee_kind === KIND_SUP ? `s${r.supervisor_manager_id}` : `l${r.leader_profile_id}`;
+const queueKey = (r) => `${r.assignee_kind}:${assigneeIdOf(r)}`;
 
 // Who set the task, as a PERSON: the creating profile, falling back to the
 // name snapshot on rows that predate profile keys.
@@ -114,17 +117,6 @@ const isUrgent = (r) => r.priority === 1;
 const createdDay = (r) => (r.created_at || "").slice(0, 10);
 const completedDay = (r) => (r.completed_at || "").slice(0, 10);
 
-const emptyForm = () => ({
-  id: null,
-  kind: KIND_LEADER,
-  assignee_id: null,
-  assignee_name: "",
-  task_text: "",
-  due_date: "",
-  comment: "",
-  urgent: false,
-});
-
 // Shows the top slice of a ranked board; the rest opens in a modal.
 const RANK_SHOWN = 8;
 
@@ -154,9 +146,9 @@ export default function Tasks() {
   const [sort, setSort] = usePersistentState("tasks_sort", { key: "priority", dir: "asc" });
 
   const [expandedId, setExpandedId] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm());
-  const [formError, setFormError] = useState("");
+  // The shared task form's opening state: null = closed, else what it starts
+  // from (a tier and a person for a new task, a row for an edit).
+  const [formInit, setFormInit] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [commentsTask, setCommentsTask] = useState(null);
   const [moreList, setMoreList] = useState(null);   // "creators" | "assignees" | null
@@ -177,21 +169,13 @@ export default function Tasks() {
     if (hit) setCommentsTask(hit);
     openDone();
   }, [openId, listResp, allRows, openDone]);
-  const canCreateLeader = !!listResp?.can_create_leader;
-  const canCreateBrigadir = !!listResp?.can_create_brigadir;
-  const canCreate = canCreateLeader || canCreateBrigadir;
-
-  // Create-form picker sources — each is exactly the set its endpoint accepts.
-  const { data: leaders = [] } = useQuery({
-    queryKey: ["task-leaders"],
-    queryFn: () => api.get("/api/tasks/leaders").then((r) => r.data),
-    enabled: canCreateLeader,
-  });
-  const { data: brigadirs = [] } = useQuery({
-    queryKey: ["btask-brigadirs"],
-    queryFn: () => api.get("/api/brigadir-tasks/brigadirs").then((r) => r.data),
-    enabled: canCreateBrigadir,
-  });
+  // The tiers this viewer may SET a task at — the server's word, per tier.
+  const createKinds = useMemo(() => [
+    listResp?.can_create_leader && KIND_LEADER,
+    listResp?.can_create_brigadir && KIND_SUP,
+    listResp?.can_create_manager && KIND_SM,
+  ].filter(Boolean), [listResp]);
+  const canCreate = createKinds.length > 0;
 
   // Hold charts back until the grid has its final width (same fix as Kaizen);
   // switching views mounts fresh containers, so the settle runs again.
@@ -210,13 +194,15 @@ export default function Tasks() {
   // filter over one tier, or a unit column over one unit, names a value the
   // page cannot show.
   const shape = useMemo(() => {
-    let sup = 0, lead = 0;
+    const seen = new Set();
     const units = new Set();
     for (const r of allRows) {
-      if (r.assignee_kind === KIND_SUP) sup += 1; else lead += 1;
+      seen.add(r.assignee_kind);
       if (r.supervisor_manager_id != null) units.add(r.supervisor_manager_id);
     }
-    return { bothKinds: sup > 0 && lead > 0, unitCount: units.size };
+    // The tiers present, top of the org chart first.
+    const kinds = TIERS.filter((k) => seen.has(k));
+    return { kinds, bothKinds: kinds.length > 1, unitCount: units.size };
   }, [allRows]);
 
   // ── filter option lists (cascade: shift → brigadir → leader) ───────────────
@@ -463,7 +449,7 @@ export default function Tasks() {
         // The column key stays "priority" so a saved sort keeps working; what
         // it sorts by is the flame.
         case "priority": return isUrgent(r) ? 0 : 1;
-        case "tier":     return r.assignee_kind === KIND_SUP ? 0 : 1;
+        case "tier":     return tierRank(r.assignee_kind);
         case "unit":     return tl(r.supervisor_name || "");
         case "assignee": return tl(r.assignee_name || "");
         case "status":   return STATUSES.indexOf(r.status);
@@ -487,26 +473,6 @@ export default function Tasks() {
   // ── mutations — every write goes to the router that owns the row's tier ───
   const invalidate = () => qc.invalidateQueries({ queryKey: ["task-board"] });
 
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const base = endpointFor(form.kind);
-      if (form.id) {
-        return api.put(`${base}/${form.id}`, { task_text: form.task_text.trim(), due_date: form.due_date }).then((r) => r.data);
-      }
-      const body = {
-        task_text: form.task_text.trim(),
-        due_date: form.due_date,
-        comment: form.comment.trim() || null,
-        urgent: !!form.urgent,
-      };
-      if (form.kind === KIND_SUP) body.supervisor_manager_id = form.assignee_id;
-      else body.leader_profile_id = form.assignee_id;
-      return api.post(base, body).then((r) => r.data);
-    },
-    onSuccess: () => { invalidate(); closeModal(); },
-    onError: (e) => setFormError(e?.response?.data?.detail || t("tasks.saveError")),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (r) => api.delete(`${endpointFor(r.assignee_kind)}/${r.id}`),
     onSuccess: () => { invalidate(); setConfirmDelete(null); setExpandedId(null); },
@@ -524,55 +490,25 @@ export default function Tasks() {
   });
   const savingUrgentId = urgentMutation.isPending ? urgentMutation.variables?.row?.id : null;
 
-  // ── modal helpers ──────────────────────────────────────────────────────────
+  // ── the task form (components/tasks/TaskFormModal) ─────────────────────────
   function openCreate() {
-    // The tier follows the filter when it can be created at, else whichever
-    // the viewer may create; the assignee is pre-filled from the matching pick.
-    const kind = fTier && ((fTier === KIND_SUP && canCreateBrigadir) || (fTier === KIND_LEADER && canCreateLeader))
-      ? fTier : (canCreateLeader ? KIND_LEADER : KIND_SUP);
-    const preset = kind === KIND_SUP
-      ? (fSup !== "All" ? Number(fSup) : null)
-      : (fLeader !== "All" ? Number(fLeader) : null);
-    setForm({ ...emptyForm(), kind, assignee_id: preset });
-    setFormError("");
-    setModalOpen(true);
+    // The tier follows the filter when it can be created at, else the form's
+    // first; the assignee is pre-filled from the matching pick.
+    const kind = fTier && createKinds.includes(fTier) ? fTier : undefined;
+    const preset = kind === KIND_SUP ? (fSup !== "All" ? Number(fSup) : null)
+      : kind === KIND_LEADER ? (fLeader !== "All" ? Number(fLeader) : null)
+      : null;
+    setFormInit({ kind, assignee_id: preset });
   }
   function openEdit(r) {
-    setForm({
+    setFormInit({
       id: r.id,
       kind: r.assignee_kind,
-      assignee_id: r.assignee_kind === KIND_SUP ? r.supervisor_manager_id : r.leader_profile_id,
       assignee_name: r.assignee_name || "",
       task_text: r.task_text || "",
       due_date: r.due_date || "",
-      comment: "",
     });
-    setFormError("");
-    setModalOpen(true);
   }
-  function closeModal() {
-    setModalOpen(false);
-    setForm(emptyForm());
-    setFormError("");
-  }
-  function submit() {
-    if (!form.id && !form.assignee_id) {
-      return setFormError(form.kind === KIND_SUP ? t("btasks.pickBrigadir") : t("tasks.pickLeader"));
-    }
-    if (!form.task_text.trim()) return setFormError(t("tasks.textRequired"));
-    if (!form.due_date) return setFormError(t("tasks.dueRequired"));
-    saveMutation.mutate();
-  }
-
-  // One option per leader PROFILE / per brigadir UNIT — per person.
-  const leaderPickOptions = leaders.map((l) => ({
-    value: String(l.leader_profile_id),
-    label: l.supervisor_name && shape.unitCount !== 1 ? `${tl(l.name)} · ${tl(l.supervisor_name)}` : tl(l.name),
-  }));
-  const brigadirPickOptions = brigadirs.map((b) => ({
-    value: String(b.supervisor_manager_id),
-    label: tl(b.name),
-  }));
 
   // ── one consolidated filter zone ───────────────────────────────────────────
   // The org chain («Kim va qayerda») and the record filters («Vazifa») as two
@@ -630,14 +566,14 @@ export default function Tasks() {
     ...(shape.bothKinds ? [{
       key: "tier", icon: Layers, label: t("tasks.colTier"), group: grpWhat,
       active: !!fTier,
-      display: fTier ? t(fTier === KIND_SUP ? "btasks.tabBrigadir" : "btasks.tabLeader") : "",
+      display: fTier ? t(TIER_TAB[fTier] || TIER_TAB[KIND_LEADER]) : "",
       onClear: () => setFTier(null),
       render: () => (
         <SegmentedToggle
           fill
           value={fTier}
           onChange={setFTier}
-          options={[[null, t("filter.all")], [KIND_SUP, t("btasks.tabBrigadir")], [KIND_LEADER, t("btasks.tabLeader")]]}
+          options={[[null, t("filter.all")], ...shape.kinds.map((k) => [k, t(TIER_TAB[k])])]}
         />
       ),
     }] : []),
@@ -1246,109 +1182,15 @@ export default function Tasks() {
         </TableCard>
       )}
 
-      {/* Create / edit modal */}
-      {modalOpen && (
-        <Modal
-          onClose={closeModal}
-          title={form.id ? t("tasks.editTitle") : t("tasks.addTitle")}
-          footer={
-            <>
-              <Button variant="secondary" onClick={closeModal}>{t("tasks.cancel")}</Button>
-              <Button loading={saveMutation.isPending} onClick={submit}>{t("tasks.save")}</Button>
-            </>
-          }
-        >
-          {/* Which tier — only asked when the viewer may create at both */}
-          {!form.id && canCreateLeader && canCreateBrigadir && (
-            <Field label={t("tasks.fieldTier")} required>
-              <SegmentedToggle
-                fill
-                value={form.kind}
-                onChange={(k) => setForm((f) => ({ ...f, kind: k, assignee_id: null }))}
-                options={[[KIND_LEADER, t("btasks.tabLeader")], [KIND_SUP, t("btasks.tabBrigadir")]]}
-              />
-            </Field>
-          )}
-
-          <Field label={t("tasks.fieldTask")} required>
-            <textarea
-              value={form.task_text}
-              onChange={(e) => setForm((f) => ({ ...f, task_text: e.target.value }))}
-              rows={3}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </Field>
-
-          {/* Assignee — fixed on edit (re-queueing across people is not supported) */}
-          <Field label={form.kind === KIND_SUP ? t("btasks.fieldBrigadir") : t("tasks.fieldLeader")} required={!form.id}>
-            {form.id ? (
-              <div
-                className="w-full rounded-lg px-3 py-2 text-sm"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
-              >
-                {tl(form.assignee_name) || "—"}
-              </div>
-            ) : (
-              <StyledSelect
-                value={form.assignee_id ? String(form.assignee_id) : ""}
-                onChange={(v) => setForm((f) => ({ ...f, assignee_id: v ? Number(v) : null }))}
-                options={form.kind === KIND_SUP ? brigadirPickOptions : leaderPickOptions}
-                placeholder={form.kind === KIND_SUP ? t("btasks.pickBrigadir") : t("tasks.pickLeader")}
-              />
-            )}
-          </Field>
-
-          <Field label={t("tasks.fieldDue")} required>
-            <DateRangePicker
-              single
-              dateFrom={form.due_date}
-              dateTo={form.due_date}
-              setDateFrom={(v) => setForm((f) => ({ ...f, due_date: v }))}
-              setDateTo={() => {}}
-            />
-          </Field>
-
-          {/* The flame, asked once when the task is set. Afterwards it is the
-              row's own one-tap control — and its own right, so the edit form
-              (open to the task's author) deliberately does not carry it. */}
-          {!form.id && (
-            <Field label={t("tasks.fieldUrgent")} hint={t("tasks.urgentHint")}>
-              <SegmentedToggle
-                fill
-                value={!!form.urgent}
-                onChange={(v) => setForm((f) => ({ ...f, urgent: v }))}
-                options={[
-                  { value: false, label: t("tasks.urgentOff") },
-                  { value: true, label: (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Flame size={12} /> {t("tasks.urgentOn")}
-                    </span>
-                  ) },
-                ]}
-              />
-            </Field>
-          )}
-
-          {/* Optional first comment — becomes the opening message of the thread */}
-          {!form.id && (
-            <Field label={t("tasks.fieldComment")}>
-              <textarea
-                value={form.comment}
-                onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))}
-                rows={2}
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-              />
-            </Field>
-          )}
-
-          {formError && (
-            <div className="flex items-center gap-1.5 text-xs text-red-400">
-              <AlertTriangle size={13} /> {formError}
-            </div>
-          )}
-        </Modal>
+      {/* Create / edit — the ONE task form */}
+      {formInit && (
+        <TaskFormModal
+          kinds={createKinds}
+          initial={formInit}
+          showUnit={shape.unitCount !== 1}
+          onClose={() => setFormInit(null)}
+          onSaved={invalidate}
+        />
       )}
 
       {/* The rest of a ranked board */}

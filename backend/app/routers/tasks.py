@@ -32,10 +32,10 @@ registration that happened to be picked. Several Telegram accounts may work as
 one leader; they share one board, one queue and one set of rights, and the work
 survives an unassign→re-claim. See app/identity.py.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -46,8 +46,8 @@ from app.models import (
     LeaderTask, LeaderTaskComment, Manager, RoleProfile, TelegramUserRole,
 )
 from app.capabilities import page_scope_is_all
-from app.permissions import require_page
-from app.services import action_log, shift_scope, task_board as tb
+from app.permissions import page_allowed, require_page
+from app.services import action_log, factory_scope, shift_scope, task_board as tb, task_day
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
 # holding it, so co-holders and successors are never silently skipped.
@@ -55,6 +55,8 @@ from app.routers.staff import _notify, notify_profile
 # The brigadir tier's picker/creation rule, asked by the one board below so the
 # «can create» flag and the list the endpoint accepts can never be two sets.
 from app.routers import brigadir_tasks as _bt
+# The tier above (top menejer → smena menejeri), asked the same way.
+from app.routers import shift_manager_tasks as _smt
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -237,13 +239,8 @@ def list_tasks(
 
 # ── the ONE board ─────────────────────────────────────────────────────────────
 
-def _creator_role(profile_key: Optional[str]) -> Optional[str]:
-    """The creator's ROLE off their profile key (``"supervisor:12"`` →
-    ``supervisor``) — what the analysis board badges a name with. Legacy rows
-    that predate ``created_by_profile`` carry none."""
-    if not profile_key or ":" not in profile_key:
-        return None
-    return profile_key.split(":", 1)[0]
+# The creator's ROLE off their profile key — spelled once, in the board core.
+_creator_role = tb.creator_role
 
 
 @router.get("/board")
@@ -251,8 +248,11 @@ def board(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("tasks")),
 ):
-    """BOTH tiers of everything in the viewer's reach, with the rights on each
-    row — what `/tasks` renders since the two boards became one page.
+    """EVERY tier of everything in the viewer's reach, with the rights on each
+    row — what `/tasks` renders since the boards became one page. From
+    2026-11-14 there are three: a SHIFT-MANAGER's own tasks (set by a
+    top-manager or an admin, `routers/shift_manager_tasks`) are read by whoever
+    governs them, by that shift manager and by nobody beside them.
 
     Reach is the UNION of what the two tier lists served: an admin (or a "see
     all" page grant) everything; a shift manager both tiers inside their shift
@@ -279,7 +279,11 @@ def board(
     if not sees_all:
         if role == "shift-manager":
             units = shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True)
-            q = q.filter(LeaderTask.supervisor_manager_id.in_(units)) if units else q.filter(False)
+            # …and what was set for THEM: a shift manager's own task belongs to
+            # no unit, so the unit filter alone would never show it to them.
+            own = and_(LeaderTask.assignee_kind == tb.KIND_SHIFT_MANAGER,
+                       LeaderTask.leader_profile_id == payload.get("role_id"))
+            q = q.filter(or_(LeaderTask.supervisor_manager_id.in_(units), own)) if units else q.filter(own)
         elif role == "supervisor":
             q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
         elif role == "leader":
@@ -307,11 +311,13 @@ def board(
         .all()
     )
     mgrs = {m.id: m for m in db.query(Manager).all()}
-    live_names = {
-        p.id: p.name for p in db.query(RoleProfile).filter(
+    # The assignee PROFILES by id — a leader's or a shift manager's, one table.
+    profiles = {
+        p.id: p for p in db.query(RoleProfile).filter(
             RoleProfile.id.in_([r.leader_profile_id for r in rows if r.leader_profile_id] or [0])
         )
     }
+    live_names = {pid: p.name for pid, p in profiles.items()}
 
     # The viewer, resolved once: their profile (creator rights), their own
     # leader profile (assignee rights on the leader tier), their own unit
@@ -323,6 +329,9 @@ def board(
     own_unit = payload.get("role_id") if role == "supervisor" else None
     managed = (set(shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True))
                if role == "shift-manager" else set())
+    # A top-manager governs the two tiers below them from the first day on.
+    top = tb.top_sets(payload)
+    own_sm = payload.get("role_id") if role == "shift-manager" else None
     try:
         sub = int(payload.get("sub"))
     except (TypeError, ValueError):
@@ -345,9 +354,14 @@ def board(
     def _rights(t: LeaderTask, kind: str) -> dict:
         unit_mine = own_unit is not None and t.supervisor_manager_id == own_unit
         if kind == tb.KIND_SUPERVISOR:
-            manage = is_admin or t.supervisor_manager_id in managed
+            manage = is_admin or top or t.supervisor_manager_id in managed
             return {"can_edit": _owns(t), "can_status": manage or unit_mine,
                     "can_reorder": manage, "can_comment": manage or unit_mine}
+        if kind == tb.KIND_SHIFT_MANAGER:
+            manage = is_admin or top
+            mine = own_sm is not None and t.leader_profile_id == own_sm
+            return {"can_edit": _owns(t), "can_status": manage or mine,
+                    "can_reorder": manage, "can_comment": manage or mine}
         lead = _owning_leader(t)
         return {"can_edit": _owns(t), "can_status": is_admin or unit_mine or lead,
                 "can_reorder": is_admin or unit_mine, "can_comment": is_admin or unit_mine or lead}
@@ -355,21 +369,29 @@ def board(
     def _row(t: LeaderTask) -> dict:
         kind = tb.kind_of(t)
         sup_kind = kind == tb.KIND_SUPERVISOR
+        sm_kind = kind == tb.KIND_SHIFT_MANAGER
         m = mgrs.get(t.supervisor_manager_id)
+        prof = profiles.get(t.leader_profile_id)
         # Read live off the registers so a renamed unit or leader does not read
         # as two people.
         unit_name = (m.name if m else None) or t.supervisor_name
-        leader_name = None if sup_kind else (live_names.get(t.leader_profile_id) or t.leader_name)
+        person = live_names.get(t.leader_profile_id) or t.leader_name
+        leader_name = None if (sup_kind or sm_kind) else person
         return {
             "id": t.id,
             "assignee_kind": kind,
             # WHO the work was set for, whichever tier — one column to print.
-            "assignee_name": unit_name if sup_kind else leader_name,
-            "leader_profile_id": t.leader_profile_id,
+            "assignee_name": unit_name if sup_kind else person,
+            # A shift manager is not a leader: their profile id rides in its own
+            # field, so no leader filter or leader queue ever counts the row.
+            "assignee_profile_id": t.leader_profile_id if sm_kind else None,
+            "leader_profile_id": None if sm_kind else t.leader_profile_id,
             "leader_name": leader_name,
             "supervisor_manager_id": t.supervisor_manager_id,
             "supervisor_name": unit_name,
-            "supervisor_shift": m.shift if m else None,
+            # The shift the row belongs to: the unit's — or, above the units,
+            # the shift manager's own.
+            "supervisor_shift": (prof.shift if prof else None) if sm_kind else (m.shift if m else None),
             "task_text": t.task_text,
             "priority": t.priority,
             "status": t.status,
@@ -388,7 +410,169 @@ def board(
         "role": role,
         "can_create_leader": role in ("admin", "supervisor"),
         "can_create_brigadir": _bt._can_create_anywhere(db, payload),
+        "can_create_manager": _smt.can_manage(payload),
         "data": [_row(r) for r in rows],
+    }
+
+
+# ── one DAY of the tasks set from above — «Smena kunligi» ─────────────────────
+
+@router.get("/day")
+def day_tasks(
+    day: Optional[date] = Query(default=None, alias="date"),
+    shift: Optional[int] = Query(default=None),
+    factory: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    # The pages «Smena kunligi» is read through — the «Smena hisoboti» board's
+    # own guard, since this block sits under it.
+    payload: dict = Depends(require_page("overview", "shift-daily")),
+):
+    """The tasks management set, as they stood on ONE day, per person — the
+    «Rahbariyat vazifalari» block (`services/task_day` is the fold and the
+    record of what a day holds).
+
+    WHO READS IT: an admin; a top-manager and a shift-manager from the first
+    day on (`tb.OPEN_FROM`). Anybody else — and those two before that day —
+    gets ``{"show": false}`` and the page draws nothing: a block that is not
+    theirs is not an error to report.
+
+    WHAT THEY READ: tasks set by an admin, a top-manager or a shift-manager
+    (`tb.set_from_above`) — for a brigadir or a leader inside the picked plant
+    and shift, and for a shift manager. A shift-manager reads the units' tasks
+    and, of the tier above, only their own. Archived units are left out: the
+    block is about people at work.
+    """
+    role = payload.get("role")
+    is_admin = role == "admin"
+    if not (is_admin or (role in ("top-manager", "shift-manager") and tb.is_open())):
+        return {"show": False}
+
+    today = datetime.now(tb.TZ).date()
+    day = min(day or today, today)
+    start = datetime.combine(day, time.min, tzinfo=tb.TZ)
+    end = start + timedelta(days=1)
+
+    # Everything that can belong to the day: set before its end, and either
+    # still open or finished on it or later. `task_day.state_on` is the rule;
+    # this only keeps years of finished rows out of the read.
+    q = db.query(LeaderTask).filter(
+        LeaderTask.created_at < end,
+        or_(LeaderTask.status != "done", LeaderTask.completed_at >= start),
+        or_(LeaderTask.assignee_kind != tb.KIND_LEADER,
+            *[LeaderTask.created_by_profile.like(f"{r}:%") for r in tb.MANAGER_ROLES]),
+    )
+    rows = [t for t in q.all() if tb.set_from_above(t)]
+
+    # Scope — plant and shift are the page's filter bar; a locked viewer's
+    # plant wins (`factory_scope`).
+    plant = factory_scope.resolve_factory(db, payload, factory)
+    mgrs = {m.id: m for m in db.query(Manager).all()}
+    profiles = {
+        p.id: p for p in db.query(RoleProfile).filter(
+            RoleProfile.id.in_([r.leader_profile_id for r in rows if r.leader_profile_id] or [0])
+        )
+    }
+
+    def _unit_in(m) -> bool:
+        if m is None or m.archived:
+            return False
+        if plant is not None and m.factory_id != plant:
+            return False
+        return shift not in (1, 2) or m.shift == shift
+
+    def _person_in(p) -> bool:
+        # A shift manager's plant and shift are a record of where they work; one
+        # with none set works everywhere, so no pick hides them.
+        if p is None:
+            return False
+        if plant is not None and p.factory_id not in (None, plant):
+            return False
+        return shift not in (1, 2) or p.shift in (None, shift)
+
+    # The viewer's rights, resolved once — each the owning router's predicate.
+    door = page_allowed(db, payload, _bt.PAGE, _bt.DAY_PAGE)
+    task_page = page_allowed(db, payload, "tasks")
+    top = tb.top_sets(payload)
+    own_sm = payload.get("role_id") if role == "shift-manager" else None
+    managed = (set(shift_scope.unit_ids(db, own_sm, include_archived=True))
+               if role == "shift-manager" else set())
+
+    entries = []
+    for t in rows:
+        st = task_day.state_on(t, day)
+        if st is None:
+            continue
+        kind = tb.kind_of(t)
+        if kind == tb.KIND_SHIFT_MANAGER:
+            prof = profiles.get(t.leader_profile_id)
+            mine = own_sm is not None and t.leader_profile_id == own_sm
+            if not _person_in(prof) or not (is_admin or top or mine):
+                continue
+            person = {"kind": kind, "id": prof.id, "name": prof.name,
+                      "unit_name": None, "shift": prof.shift}
+            thread = door and (is_admin or top or mine)
+            can_comment = thread
+        else:
+            m = mgrs.get(t.supervisor_manager_id)
+            if not _unit_in(m):
+                continue
+            if kind == tb.KIND_SUPERVISOR:
+                person = {"kind": kind, "id": m.id, "name": m.name,
+                          "unit_name": None, "shift": m.shift}
+                thread = door and (is_admin or top or m.id in managed)
+                can_comment = thread
+            else:
+                prof = profiles.get(t.leader_profile_id)
+                if t.leader_profile_id is None:
+                    continue           # a legacy row no profile names
+                person = {"kind": kind, "id": t.leader_profile_id,
+                          "name": (prof.name if prof else None) or t.leader_name,
+                          "unit_name": m.name, "shift": m.shift}
+                # A leader's thread lives on this router: readable through the
+                # TASK page, written by the unit's brigadir and admins only.
+                thread = is_admin or task_page
+                can_comment = is_admin
+        entries.append((person, {
+            "id": t.id,
+            "kind": kind,
+            "text": t.task_text,
+            "status": t.status,
+            "state": st["state"],
+            "late": st["late"],
+            "days_late": st["days_late"],
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "done_day": st["done_day"].isoformat() if st["done_day"] else None,
+            "urgent": tb.is_urgent(t),
+            "created_by_name": t.created_by_name,
+            "creator_role": tb.creator_role(t.created_by_profile),
+            "comment_count": 0,
+            "thread": bool(thread),
+            "can_comment": bool(can_comment),
+        }))
+
+    ids = [task["id"] for _, task in entries]
+    if ids:
+        from app.services.leader_bot import _in_ids
+        counts = dict(
+            db.query(LeaderTaskComment.task_id, func.count(LeaderTaskComment.id))
+            .filter(_in_ids(LeaderTaskComment.task_id, ids))
+            .group_by(LeaderTaskComment.task_id).all()
+        )
+        for _, task in entries:
+            task["comment_count"] = counts.get(task["id"], 0)
+
+    out = task_day.fold(entries)
+    return {
+        "show": True,
+        "date": day.isoformat(),
+        "is_today": day == today,
+        # What the «Vazifa berish» button may offer — per tier, the picker the
+        # owning router would hand this viewer.
+        "can_create": {
+            tb.KIND_SUPERVISOR: bool(door and _bt._can_create_anywhere(db, payload)),
+            tb.KIND_SHIFT_MANAGER: bool(door and _smt.can_manage(payload)),
+        },
+        **out,
     }
 
 

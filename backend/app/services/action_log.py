@@ -368,6 +368,16 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/brigadir-tasks",                       "collab", "btask.created"),
     (("PUT",),    "/api/brigadir-tasks/{}",                    "collab", "btask.edited"),
     (("DELETE",), "/api/brigadir-tasks/{}",                    "collab", "btask.deleted"),
+    # Shift-manager tasks — the tier above (top manager → shift manager), same
+    # shapes, same order rule.
+    (("PATCH",),  "/api/shift-manager-tasks/{}/status",        "collab", "smtask.status_changed"),
+    (("PATCH",),  "/api/shift-manager-tasks/{}/priority",      "collab", "smtask.priority_changed"),
+    (("POST",),   "/api/shift-manager-tasks/{}/comments",      "collab", "smtask.comment_added"),
+    (("PUT",),    "/api/shift-manager-tasks/{}/comments/{}",   "collab", "smtask.comment_edited"),
+    (("DELETE",), "/api/shift-manager-tasks/{}/comments/{}",   "collab", "smtask.comment_deleted"),
+    (("POST",),   "/api/shift-manager-tasks",                  "collab", "smtask.created"),
+    (("PUT",),    "/api/shift-manager-tasks/{}",               "collab", "smtask.edited"),
+    (("DELETE",), "/api/shift-manager-tasks/{}",               "collab", "smtask.deleted"),
     (("POST",),   "/api/comments",                             "collab", "comment.added"),
     (("PUT",),    "/api/comments/{}",                          "collab", "comment.edited"),
     (("DELETE",), "/api/comments/{}",                          "collab", "comment.deleted"),

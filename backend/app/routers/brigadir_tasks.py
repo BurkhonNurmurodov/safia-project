@@ -4,6 +4,8 @@ Brigadir tasks API — the smena menejeri → brigadir tier.
 The same board as the leader tier one level up the org chart: a shift manager sets
 tasks for the brigadirs of their shift, each task is urgent (the flame) or it is
 not, every task carries a chat thread, and the bell tells the people concerned.
+From the first day of ``task_board.OPEN_FROM`` a TOP-MANAGER sets them too — for
+any brigadir, with a shift manager's rights over the row (``tb.top_sets``).
 The urgency flag, the assignee rule and the comment-ownership rule are NOT
 restated here — they live in ``services/task_board.py`` and both boards call
 them, so the flame cannot come to mean two different things one tier apart.
@@ -42,7 +44,7 @@ from app import identity
 from app.capabilities import page_scope_is_all
 from app.database import get_db
 from app.models import LeaderTask, LeaderTaskComment, Manager
-from app.permissions import require_page
+from app.permissions import page_allowed, require_page
 from app.services import action_log, shift_scope, task_board as tb
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
@@ -56,6 +58,13 @@ router = APIRouter(prefix="/api/brigadir-tasks", tags=["brigadir-tasks"])
 # because the row's tier decides which router may touch it — a client picks
 # the prefix by `assignee_kind`.
 PAGE = "tasks"
+# «Smena kunligi» shows these tasks to the people who set them and lets them
+# set one and open its chat from there (services/task_day), so its page is a
+# second door to this router — a top-manager holds that page and not `tasks`.
+# The door opens nothing by itself: every right below is the ROLE's, and a
+# reader who came through it alone reads no board here (`_scope_units`).
+DAY_PAGE = "shift-daily"
+_door = require_page(PAGE, DAY_PAGE)
 _snippet = tb.snippet
 
 
@@ -81,21 +90,25 @@ def _scope_units(db: Session, payload: dict) -> Optional[list[int]]:
         return shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True)
     if role == "supervisor":
         return [payload.get("role_id")]
-    # Any other role toggled onto the page reads everything and writes nothing —
-    # the convention /tasks already sets for a page opened to an extra role.
-    return None
+    if tb.top_sets(payload):
+        return None                         # they set this work — every unit
+    # Any other role toggled onto the TASK page reads everything and writes
+    # nothing — the convention /tasks already sets for a page opened to an
+    # extra role. «Smena kunligi» alone is not that page: it reads no board.
+    return None if page_allowed(db, payload, PAGE) else []
 
 
 def _can_manage(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
     """May the caller RUN this unit's brigadir board — set tasks, raise or drop
     the flame, close a task on the brigadir's behalf?
 
-    Admin, or the shift manager whose shift ∩ plant contains the unit. Asked per
+    Admin, the shift manager whose shift ∩ plant contains the unit, or — from
+    the first day (``tb.OPEN_FROM``) — a top-manager, for every unit. Asked per
     UNIT, never per role: "you are a shift manager" is not "you are answerable
     for THIS unit", and ``covers`` is the one place that distinction lives.
     """
     role = payload.get("role")
-    if role == "admin":
+    if role == "admin" or tb.top_sets(payload):
         return True
     if role == "shift-manager":
         return shift_scope.covers(db, payload.get("role_id"), manager_id)
@@ -192,7 +205,7 @@ def _assert(ok: bool, msg: str) -> None:
 @router.get("")
 def list_tasks(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     """Both tiers of everything in the viewer's units — brigadir tasks they act
     on, leader tasks they only read. The client tabs between them; the rights
@@ -241,7 +254,7 @@ def _manageable_units(db: Session, payload: dict) -> list[Manager]:
     create endpoint accepts can never be two different sets."""
     role = payload.get("role")
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if role == "admin":
+    if role == "admin" or tb.top_sets(payload):
         pass
     elif role == "shift-manager":
         ids = shift_scope.unit_ids(db, payload.get("role_id"))
@@ -257,17 +270,23 @@ def _can_create_anywhere(db: Session, payload: dict) -> bool:
     return bool(_manageable_units(db, payload))
 
 
+def _may_set(payload: dict) -> bool:
+    """The roles that set a brigadir work at all: an admin, a shift manager,
+    and a top-manager from the first day on. WHICH brigadir is ``_can_manage``."""
+    return payload.get("role") in ("admin", "shift-manager") or tb.top_sets(payload)
+
+
 @router.get("/brigadirs")
 def list_assignable_brigadirs(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     """Create-form picker source: one entry per brigadir — per unit, which is
     what a brigadir profile is keyed by. Unclaimed units are listed too
     (``holders: 0``): a brigadir exists as an organizational post before anyone
     registers, and work set for them waits in the bell until the profile is
     claimed."""
-    if payload.get("role") not in ("admin", "shift-manager"):
+    if not _may_set(payload):
         raise HTTPException(status_code=403, detail="Admin or shift manager only")
     return [
         {
@@ -295,9 +314,9 @@ class TaskIn(BaseModel):
 def create_task(
     body: TaskIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
-    if payload.get("role") not in ("admin", "shift-manager"):
+    if not _may_set(payload):
         raise HTTPException(status_code=403, detail="Only shift managers and admins can set brigadir tasks")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
@@ -375,7 +394,7 @@ def update_task(
     task_id: int,
     body: TaskUpdate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     """Core-field edit (text + due date). The brigadir is never reassigned —
     the task belongs to the unit it was set for; delete and recreate. The flame
@@ -406,7 +425,7 @@ def update_task(
 def delete_task(
     task_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     t = _mine(task_id, payload, db)
     _assert(_owns_row(db, payload, t), "Only the task's creator or an admin can do this")
@@ -438,7 +457,7 @@ def set_status(
     task_id: int,
     body: StatusIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     if body.status not in tb.VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
@@ -502,7 +521,7 @@ def set_priority(
     task_id: int,
     body: PriorityIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     t = _mine(task_id, payload, db)
     # Never the brigadir: what is urgent is the shift manager's statement of
@@ -539,7 +558,7 @@ class CommentIn(BaseModel):
 def list_task_comments(
     task_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     # Readable wherever the row is readable — including a leader task the shift
     # manager may only look at; the thread is part of what they are shown.
@@ -558,7 +577,7 @@ def add_task_comment(
     task_id: int,
     body: CommentIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
@@ -619,7 +638,7 @@ def edit_task_comment(
     comment_id: int,
     body: CommentIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
@@ -645,7 +664,7 @@ def delete_task_comment(
     task_id: int,
     comment_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(_door),
 ):
     t = _mine(task_id, payload, db)
     c = _own_comment(task_id, comment_id, payload, db)

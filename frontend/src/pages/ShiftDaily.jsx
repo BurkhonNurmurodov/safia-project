@@ -15,6 +15,7 @@ import BarRankingChart from "../components/charts/BarChart";
 import BrigadirTable from "../components/ui/BrigadirTable";
 import ShiftReportTable from "../components/overview/ShiftReportTable";
 import ContainerTotalsCard from "../components/overview/ContainerTotalsCard";
+import DayTasksCard from "../components/overview/DayTasksCard";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
@@ -308,6 +309,15 @@ export default function ShiftDaily() {
           </>
         )}
       </div>
+
+      {/* «Rahbariyat vazifalari» — the tasks a top-manager, a shift-manager or
+          an admin set, as they stood on the picked day, per person and worst
+          first (the operator, 2026-11-14). Above the board on purpose: who is
+          not doing what they were set is the first thing a top manager asks.
+          The day stepper, the plant and the shift all reach it. It draws
+          nothing for a reader it is not for — the server decides
+          (`task_board.OPEN_FROM`: the admins' alone until the day is named). */}
+      <DayTasksCard day={date} params={dayParams} />
 
       {/* «Smena hisoboti» — the shift's status board, under the KPI cards: one
           row per brigadir with today's load, today's attendance so far,

@@ -1,11 +1,15 @@
 """
-The task-board core — ONE spelling of the rules, shared by both tiers.
+The task-board core — ONE spelling of the rules, shared by every tier.
 
-Two boards read and write ``leader_tasks``:
+Three routers read and write ``leader_tasks``, one per tier:
 
-  * ``/tasks``            brigadir → lider   (``assignee_kind == "leader"``)
-  * ``/brigadir-tasks``   smena menejeri → brigadir (``assignee_kind ==
-                          "supervisor"``)
+  * ``/api/tasks``                 brigadir → lider   (``assignee_kind ==
+                                   "leader"``)
+  * ``/api/brigadir-tasks``        smena menejeri → brigadir (``assignee_kind
+                                   == "supervisor"``)
+  * ``/api/shift-manager-tasks``   top menejer → smena menejeri
+                                   (``assignee_kind == "shift-manager"``,
+                                   from 2026-11-14)
 
 They ask the same question one tier apart, so everything about HOW a board
 behaves — who the assignee is, what URGENT means, how a comment is owned —
@@ -30,17 +34,33 @@ functions wearing one name.
 
 THE ASSIGNEE, per kind:
 
-  kind          assignee column          name snapshot
-  ------------  -----------------------  --------------
-  "leader"      leader_profile_id        leader_name
-  "supervisor"  supervisor_manager_id    leader_name
+  kind             assignee column          name snapshot
+  ---------------  -----------------------  --------------
+  "leader"         leader_profile_id        leader_name
+  "supervisor"     supervisor_manager_id    leader_name
+  "shift-manager"  leader_profile_id        leader_name
 
-``supervisor_manager_id`` is populated for BOTH kinds and means the same thing
-in both — the unit the work belongs to. For a leader task that is the leader's
-unit; for a brigadir task it is the brigadir themselves. That is what lets one
-scope filter (``supervisor_manager_id IN units``) answer "everything happening
-in these units" across both tiers.
+``supervisor_manager_id`` is populated for the two UNIT tiers and means the
+same thing in both — the unit the work belongs to. For a leader task that is
+the leader's unit; for a brigadir task it is the brigadir themselves. That is
+what lets one scope filter (``supervisor_manager_id IN units``) answer
+"everything happening in these units" across both.
+
+A SHIFT-MANAGER task belongs to no unit: ``supervisor_manager_id`` is NULL (so
+no unit filter can ever pick it up by accident) and the assignee is
+``leader_profile_id`` — the column is a ``role_profiles.id``, which is exactly
+what a shift-manager profile is. One table of profiles, one column naming one
+of them; ids never collide across roles, so a leader's queue and a shift
+manager's can not read each other's rows. Always ask ``kind_of`` first.
+
+WHO SETS FROM ABOVE (2026-11-14). ``MANAGER_ROLES`` are the roles whose tasks
+«Smena kunligi» collects — an admin, a top-manager, a shift-manager. A
+TOP-MANAGER setting tasks (for a brigadir or a shift manager) and anybody but
+an admin seeing that day block wait for ``OPEN_FROM`` — the operator names the
+day, exactly as on «Kutish yechimlari»; until then the constant is None and
+nothing changed for anybody who is not an admin.
 """
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import case
@@ -52,7 +72,52 @@ from app.routers.auth import ADMIN_ROLE_REF
 
 KIND_LEADER = "leader"
 KIND_SUPERVISOR = "supervisor"
-VALID_KINDS = (KIND_LEADER, KIND_SUPERVISOR)
+KIND_SHIFT_MANAGER = "shift-manager"
+VALID_KINDS = (KIND_LEADER, KIND_SUPERVISOR, KIND_SHIFT_MANAGER)
+
+# The platform's wall clock (Tashkent) — a task's DAY is read on it.
+TZ = timezone(timedelta(hours=5))
+
+# ── setting work from above ───────────────────────────────────────────────────
+# The roles whose tasks the «Smena kunligi» block collects (services/task_day).
+MANAGER_ROLES = ("admin", "top-manager", "shift-manager")
+
+# The first day a TOP-MANAGER sets tasks and the day block is shown to anybody
+# but an admin. The operator names it (2026-11-14: «admins only first»); until
+# then it is None. ONE constant — the browser asks the server, so there is no
+# twin to keep in step. Once the day has come it never moves LATER.
+OPEN_FROM: Optional[date] = None
+
+
+def is_open(today: Optional[date] = None) -> bool:
+    """Has the first day come (``OPEN_FROM``)? While no day is named: no."""
+    return OPEN_FROM is not None and (today or datetime.now(TZ).date()) >= OPEN_FROM
+
+
+def top_sets(payload: dict) -> bool:
+    """May this caller set and govern tasks AS A TOP-MANAGER — a top-manager,
+    from the first day on. The tier above, one level up from a shift manager."""
+    return payload.get("role") == "top-manager" and is_open()
+
+
+def creator_role(profile_key: Optional[str]) -> Optional[str]:
+    """The creator's ROLE off their profile key (``"supervisor:12"`` →
+    ``supervisor``) — what a board badges a name with and what decides whether
+    a task was «set from above». Legacy rows that predate
+    ``created_by_profile`` carry none."""
+    if not profile_key or ":" not in profile_key:
+        return None
+    return profile_key.split(":", 1)[0]
+
+
+def set_from_above(t) -> bool:
+    """Was this task set by management (``MANAGER_ROLES``)? A brigadir's or a
+    shift manager's own task always was — nobody else can set one. A leader's
+    task counts only when its creator's profile says so: most are set by the
+    unit's own brigadir, and a row from before profile keys cannot tell."""
+    if kind_of(t) != KIND_LEADER:
+        return True
+    return creator_role(t.created_by_profile) in MANAGER_ROLES
 
 VALID_STATUSES = {"todo", "doing", "done"}
 
@@ -71,8 +136,11 @@ def kind_of(t: LeaderTask) -> str:
 def assignee_key(t: LeaderTask) -> Optional[str]:
     """The assignee as an identity key (``app.identity``) — who to notify, and
     whose rights over the row are "it's mine"."""
-    if kind_of(t) == KIND_SUPERVISOR:
+    kind = kind_of(t)
+    if kind == KIND_SUPERVISOR:
         return identity.profile_key("supervisor", t.supervisor_manager_id)
+    if kind == KIND_SHIFT_MANAGER:
+        return identity.profile_key("shift-manager", t.leader_profile_id)
     return identity.profile_key("leader", t.leader_profile_id)
 
 
