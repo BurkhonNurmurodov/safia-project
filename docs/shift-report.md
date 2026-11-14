@@ -704,8 +704,9 @@ this column in two and make it with hair and without hair».
 ## «Rahbariyat vazifalari» — the tasks set from above, under the KPI cards (2026-11-14)
 
 `components/overview/DayTasksCard.jsx`, between the four KPI cards and «Smena
-hisoboti»: the tasks an admin, a top-manager or a shift-manager set, as they
-stood on the picked day, one tile per person and worst first. **The record is
+hisoboti»: the tasks an admin, a top-manager or a shift-manager set FOR
+BRIGADIRS (that tier alone — the operator, the same day), as they stood on the
+picked day, one tile per brigadir and worst first. **The record is
 in `docs/tasks-and-concerns.md`, «Tasks set from above»** — what a day holds,
 the four states, the shift-manager tier, and the first day it waits for
 (`task_board.OPEN_FROM`; the admins' alone until the operator names it).

@@ -53,12 +53,11 @@ what a shift-manager profile is. One table of profiles, one column naming one
 of them; ids never collide across roles, so a leader's queue and a shift
 manager's can not read each other's rows. Always ask ``kind_of`` first.
 
-WHO SETS FROM ABOVE (2026-11-14). ``MANAGER_ROLES`` are the roles whose tasks
-«Smena kunligi» collects — an admin, a top-manager, a shift-manager. A
-TOP-MANAGER setting tasks (for a brigadir or a shift manager) and anybody but
-an admin seeing that day block wait for ``OPEN_FROM`` — the operator names the
-day, exactly as on «Kutish yechimlari»; until then the constant is None and
-nothing changed for anybody who is not an admin.
+THE FIRST DAY (2026-11-14). A TOP-MANAGER setting tasks (for a brigadir or a
+shift manager) and anybody but an admin seeing the brigadirs' day block on
+«Smena kunligi» (``services/task_day``) wait for ``OPEN_FROM`` — the operator
+names the day, exactly as on «Kutish yechimlari»; until then the constant is
+None and nothing changed for anybody who is not an admin.
 """
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -78,10 +77,7 @@ VALID_KINDS = (KIND_LEADER, KIND_SUPERVISOR, KIND_SHIFT_MANAGER)
 # The platform's wall clock (Tashkent) — a task's DAY is read on it.
 TZ = timezone(timedelta(hours=5))
 
-# ── setting work from above ───────────────────────────────────────────────────
-# The roles whose tasks the «Smena kunligi» block collects (services/task_day).
-MANAGER_ROLES = ("admin", "top-manager", "shift-manager")
-
+# ── the first day ─────────────────────────────────────────────────────────────
 # The first day a TOP-MANAGER sets tasks and the day block is shown to anybody
 # but an admin. The operator names it (2026-11-14: «admins only first»); until
 # then it is None. ONE constant — the browser asks the server, so there is no
@@ -102,22 +98,11 @@ def top_sets(payload: dict) -> bool:
 
 def creator_role(profile_key: Optional[str]) -> Optional[str]:
     """The creator's ROLE off their profile key (``"supervisor:12"`` →
-    ``supervisor``) — what a board badges a name with and what decides whether
-    a task was «set from above». Legacy rows that predate
+    ``supervisor``) — what a board badges a name with. Legacy rows that predate
     ``created_by_profile`` carry none."""
     if not profile_key or ":" not in profile_key:
         return None
     return profile_key.split(":", 1)[0]
-
-
-def set_from_above(t) -> bool:
-    """Was this task set by management (``MANAGER_ROLES``)? A brigadir's or a
-    shift manager's own task always was — nobody else can set one. A leader's
-    task counts only when its creator's profile says so: most are set by the
-    unit's own brigadir, and a row from before profile keys cannot tell."""
-    if kind_of(t) != KIND_LEADER:
-        return True
-    return creator_role(t.created_by_profile) in MANAGER_ROLES
 
 VALID_STATUSES = {"todo", "doing", "done"}
 

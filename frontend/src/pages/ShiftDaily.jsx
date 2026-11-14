@@ -311,9 +311,10 @@ export default function ShiftDaily() {
       </div>
 
       {/* «Rahbariyat vazifalari» — the tasks a top-manager, a shift-manager or
-          an admin set, as they stood on the picked day, per person and worst
-          first (the operator, 2026-11-14). Above the board on purpose: who is
-          not doing what they were set is the first thing a top manager asks.
+          an admin set FOR BRIGADIRS, as they stood on the picked day, per
+          brigadir and worst first (the operator, 2026-11-14). Above the board
+          on purpose: who is not doing what they were set is the first thing a
+          top manager asks.
           The day stepper, the plant and the shift all reach it. It draws
           nothing for a reader it is not for — the server decides
           (`task_board.OPEN_FROM`: the admins' alone until the day is named). */}

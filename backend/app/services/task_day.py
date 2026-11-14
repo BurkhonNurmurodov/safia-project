@@ -1,14 +1,18 @@
 """
-The tasks management set, read for ONE DAY — the «Rahbariyat vazifalari» block
-on «Smena kunligi» (2026-11-14).
+The tasks management set for brigadirs, read for ONE DAY — the «Rahbariyat
+vazifalari» block on «Smena kunligi» (2026-11-14).
 
 The operator: «Top managers and shift managers and admins when they assign some
 kind of task it should appear in the shift day … easy visible for top managers
-to say like you are not doing or good doing». So the block answers, per PERSON,
-one question — is the work they were set from above getting done? — and this
-module is the whole of that answer. No database here: the router
+to say like you are not doing or good doing» — and, the same day, «only
+brigadirs' tasks»: the block is the BRIGADIR tier, the tasks a top-manager, a
+shift-manager or an admin sets for a brigadir. So it answers, per brigadir, one
+question — is the work they were set getting done? — and this module is the
+whole of that answer. No database here: the router
 (`routers/tasks.py::day_tasks`) reads the rows and their names, this folds
-them, and the tests feed it plain objects.
+them, and the tests feed it plain objects. The fold itself is tier-blind (a
+person is keyed by kind and id), so the router alone decides whose tasks it is
+handed.
 
 WHICH TASKS are a day's (the operator's pick, 2026-11-14: «all unfinished +
 done that day»): a task set on or before the day that was still OPEN on it, or
@@ -46,9 +50,6 @@ _STATE_ORDER = {"overdue": 0, "todo": 1, "doing": 2, "done": 3}
 # A person's one-word answer, worst first — the order the block lists them in.
 TONES = ("late", "going", "done")
 _TONE_ORDER = {t: i for i, t in enumerate(TONES)}
-
-# The tiers, top of the org chart first — the order of the block's groups.
-KIND_ORDER = (tb.KIND_SHIFT_MANAGER, tb.KIND_SUPERVISOR, tb.KIND_LEADER)
 
 
 def local_day(ts) -> Optional[date]:

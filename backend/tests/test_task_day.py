@@ -130,20 +130,12 @@ class Fold(unittest.TestCase):
         self.assertEqual(task_day.tone({"overdue": 1, "done": 1, "total": 2}), "late")
 
 
-class SetFromAbove(unittest.TestCase):
-    def row(self, kind, creator):
-        return SimpleNamespace(assignee_kind=kind, created_by_profile=creator)
-
-    def test_a_brigadirs_and_a_shift_managers_task_always_was(self):
-        self.assertTrue(tb.set_from_above(self.row("supervisor", None)))
-        self.assertTrue(tb.set_from_above(self.row("shift-manager", "admin:1")))
-
-    def test_a_leaders_task_only_when_management_set_it(self):
-        self.assertTrue(tb.set_from_above(self.row("leader", "admin:3")))
-        self.assertTrue(tb.set_from_above(self.row("leader", "shift-manager:8")))
-        self.assertFalse(tb.set_from_above(self.row("leader", "supervisor:12")))
-        self.assertFalse(tb.set_from_above(self.row("leader", None)))
-        self.assertFalse(tb.set_from_above(self.row(None, "supervisor:12")))   # legacy NULL kind
+class WhoATaskBelongsTo(unittest.TestCase):
+    def test_the_creators_role_is_read_off_their_profile_key(self):
+        self.assertEqual(tb.creator_role("shift-manager:8"), "shift-manager")
+        self.assertEqual(tb.creator_role("top-manager:6"), "top-manager")
+        self.assertIsNone(tb.creator_role(None))        # a row from before profile keys
+        self.assertIsNone(tb.creator_role("legacy"))
 
     def test_a_shift_managers_task_is_keyed_by_their_profile(self):
         t = SimpleNamespace(assignee_kind="shift-manager", leader_profile_id=41,

@@ -232,6 +232,13 @@ button — the task's chat is where a word is said); a day shows **everything
 unfinished plus what was finished that day**; and it is **the admins' alone
 first** — he names the day everybody else gets it.
 
+**The same day, after seeing it (v4.521.0): «only brigadirs' tasks».** The
+block on the shift day is the BRIGADIR tier alone — what a top-manager, a
+shift-manager or an admin sets for a brigadir. It shipped (v4.520.0) with the
+shift managers' own tasks and the leader tasks an admin or a manager had set
+as two more groups; both left the block and stay on `/tasks`. The
+shift-manager tier itself is untouched.
+
 - **THE FIRST DAY IS ONE CONSTANT — `task_board.OPEN_FROM`, None until he names
   it.** Before it: only an admin sees the «Rahbariyat vazifalari» block, and a
   top-manager sets nothing (exactly as before this shipped). On it and after:
@@ -281,12 +288,13 @@ first** — he names the day everybody else gets it.
 (`routers/tasks.py::day_tasks` reads and scopes, `services/task_day.py` folds —
 no database in the fold, `tests/test_task_day.py` feeds it plain objects).
 
-- **Which tasks**: set by an admin, a top-manager or a shift-manager
-  (`tb.set_from_above` — a brigadir's and a shift manager's own always are; a
-  LEADER's only when its creator's profile says so, since most are set by the
-  unit's brigadir and a row from before profile keys cannot tell). Inside the
-  page's plant and shift; archived units left out; a shift-manager viewer sees
-  the units' tasks and, of the tier above, only their own.
+- **Which tasks**: the BRIGADIR tier and nothing else
+  (`assignee_kind == "supervisor"`) — set by an admin, a shift-manager or a
+  top-manager, which is everybody who can set one, so no creator test is
+  needed. A leader's task and a shift manager's own are NOT in the block,
+  whoever set them. Inside the page's plant and shift; archived units left
+  out. **«Vazifa berish» in the block sets a brigadir's task only** — a task
+  the block would not then show is not offered from it.
 - **Which day**: set on or before it AND (still open on it OR finished on it).
   Finished earlier = left; set later = not arrived. The day stepper reaches the
   block (the «Smena hisoboti» board under it still does not). A day is
@@ -297,16 +305,17 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   counts what the status column says, this block asks who is late; both add up.
   A past day cannot know whether a task was already started: one open now
   answers with its current status, one finished on a later day reads `doing`.
-- **It is a board of PEOPLE**: one tile per person, grouped by tier (shift
-  managers → brigadirs → leaders), **worst first** (`task_day.fold`: late →
-  going → done; more late tasks, longer late, more open work). The stack runs
-  overdue · todo · doing · done so the red starts at one edge on every tile;
-  the tile prints «done/total» and a red count of late tasks. A tile opens that
-  person's tasks (a `Modal`): state, text, deadline with the days late, who set
-  it, the chat, and «Vazifa berish» pre-filled with that person.
-- **The tier is a caption, never a `LevelChip` on the tile**: a brigadir's
-  identity hue is red, and a red chip on every row of a board whose red means
-  «not doing» would read as a verdict.
+- **It is a board of BRIGADIRS**: one tile per brigadir, **worst first**
+  (`task_day.fold`: late → going → done; more late tasks, longer late, more
+  open work), the first nine on screen and «Yana N brigadir» under them. The
+  stack runs overdue · todo · doing · done so the red starts at one edge on
+  every tile; the tile prints «done/total» and a red count of late tasks. A
+  tile opens that brigadir's tasks (a `Modal`): state, text, deadline with the
+  days late, who set it, the chat, and «Vazifa berish» pre-filled with them.
+- **No `LevelChip` on a tile**: a brigadir's identity hue is red, and a red
+  chip on every row of a board whose red means «not doing» would read as a
+  verdict. The fold stays tier-blind (a person is keyed by kind and id), so
+  the router alone decides whose tasks the block is handed.
 - The block draws nothing for a reader it is not for (`show: false`, a refused
   read) — only a browser that was shown it before gets its skeleton.
 
