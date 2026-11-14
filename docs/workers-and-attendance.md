@@ -246,8 +246,9 @@ unchanged; what changed is what each page leads with and how it is drawn.
   drops some; a sortable table with lent / received / pending.
 - **«Tarkib»**: one toolbar row (read time, refresh icon, switch); five tiles,
   each share with its bar (women / men, under 25, under a year, the top
-  district) — the gender donut is gone, its split is the «Ayollar» tile; age,
-  tenure and place in ONE row; the place list's «others» fold is slate.
+  district) — the gender donut is gone, its split is the «Ayollar» tile; age
+  and tenure side by side, the place list across the width in two columns (three
+  in one row was tried first; the operator, 2026-11-14: «dont squeeze like that»); the place list's «others» fold is slate.
 - New template `components/ui/Meter.jsx` (`Meter`, `SplitBar`, `SplitLegend`,
   `FigureList`); `KPICard` gained `size="lg"`, `unit`, `children`, `className`.
 - Every page now says when its data FAILED (red `EmptyState` + retry) instead

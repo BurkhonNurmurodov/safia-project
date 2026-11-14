@@ -39,6 +39,8 @@ import { TXT, fill } from "./demographicsText";
  * the population switch and the admin's refresh — one row, not a second one
  * under the filters. Then the five answers in the order asked (how many, how
  * many women, how old, how long here, where from), the three distributions
+ * two to a row (never three: the operator, 2026-11-14 — «dont squeeze like
+ * that», the tenure axis ran its labels together)
  * side by side, and the breakdown they are made of.
  *
  * Colours: men / women are the categorical blue and pink of
@@ -307,9 +309,9 @@ export default function Demographics({ params, ready, scope, setScope }) {
     return frame(
       <>
         <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 lg:gap-4 mb-4 lg:mb-6"><TileSkeletons n={5} /></div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
           <SkeletonChart className="h-[380px] rounded-2xl" /><SkeletonChart className="h-[380px] rounded-2xl" />
-          <SkeletonChart className="h-[380px] rounded-2xl max-xl:lg:col-span-2" />
+          <SkeletonChart className="h-[380px] rounded-2xl lg:col-span-2" />
         </div>
       </>,
     );
@@ -331,7 +333,7 @@ export default function Demographics({ params, ready, scope, setScope }) {
   const numCell = "px-3 py-2 text-right tabular-nums";
   // The two charts stand beside the nine-row place list: tall enough to end
   // where it ends on a desktop, a phone's own height where each is a row.
-  const chartH = phone ? 320 : 392;
+  const chartH = phone ? 320 : 340;
 
   const newShare = s.ten_known ? pct(s.new, s.ten_known) : null;
   const youngShare = s.age_known ? pct(s.young, s.age_known) : null;
@@ -376,8 +378,9 @@ export default function Demographics({ params, ready, scope, setScope }) {
         </KPICard>
       </div>
 
-      {/* Age · tenure · place — three distributions, one row. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6 mb-4 lg:mb-6">
+      {/* Age · tenure side by side, then where people live across the
+          width — its list in two columns, so nothing is squeezed. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-4 lg:mb-6">
         <ChartCard icon={Cake} title={T.pyramid} info={T.pyramidTip} bodyClassName="px-2 pt-2 pb-3">
           <ReactApexChart key={`p-${lang}-${chartTheme.mode}-${ageMax}-${phone}`} type="bar" height={chartH}
             series={pyramidSeries} options={pyramidOptions} />
@@ -388,7 +391,7 @@ export default function Demographics({ params, ready, scope, setScope }) {
             series={[{ name: T.people, data: tenBands.map((b) => b.n) }]} options={tenureOptions} />
           {d.tenure.unknown > 0 && <div className="px-2"><Foot>{fill(T.tenureUnknown, { n: d.tenure.unknown })}</Foot></div>}
         </ChartCard>
-        <ChartCard icon={MapPin} title={T.place} info={T.placeTip} className="max-xl:lg:col-span-2"
+        <ChartCard icon={MapPin} title={T.place} info={T.placeTip} className="lg:col-span-2"
           right={(
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <SegmentedToggle size="sm" value={src} onChange={setSrc}
@@ -397,8 +400,12 @@ export default function Demographics({ params, ready, scope, setScope }) {
                 options={[["district", T.lvlDistrict], ["region", T.lvlRegion]]} />
             </div>
           )}>
-          <RankedList
-            rows={placeRows.map((r) => ({
+          {/* Two columns from lg up, read down the first then the second —
+              the same order and one shared scale, so bars compare across. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-3">
+          {[placeRows.slice(0, Math.ceil(placeRows.length / 2)), placeRows.slice(Math.ceil(placeRows.length / 2))].map((half, hi) => (
+          <RankedList key={hi}
+            rows={half.map((r) => ({
               ...r,
               label: r.rest ? T.others : placeName(r),
               title: r.rest ? T.others : (lvl === "district" && r.region ? `${placeName(r)} · ${regionName(r.region)}` : placeName(r)),
@@ -415,6 +422,8 @@ export default function Demographics({ params, ready, scope, setScope }) {
               </span>
             )}
           />
+          ))}
+          </div>
           {placeUnknown > 0 && <Foot>{fill(T.placeUnknown, { n: placeUnknown })}</Foot>}
         </ChartCard>
       </div>
