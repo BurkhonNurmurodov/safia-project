@@ -349,6 +349,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/cell-concerns",                        "collab", "concern.worker_filed"),
     (("PUT",),    "/api/concerns/{}",                          "collab", "concern.edited"),
     (("DELETE",), "/api/concerns/{}",                          "collab", "concern.deleted"),
+    (("POST",),   "/api/tasks/{}/remind",                      "collab", "task.reminded"),
     (("PATCH",),  "/api/tasks/{}/status",                      "collab", "task.status_changed"),
     (("PATCH",),  "/api/tasks/{}/priority",                    "collab", "task.priority_changed"),
     (("POST",),   "/api/tasks/{}/comments",                    "collab", "task.comment_added"),
@@ -360,6 +361,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # Brigadir tasks — the same board one tier up (shift manager → brigadir).
     # Distinct action keys so the register can tell which tier a change was on;
     # the "{}/comments/{}" shapes must stay ABOVE the "{}" ones, first match wins.
+    (("POST",),   "/api/brigadir-tasks/{}/remind",             "collab", "btask.reminded"),
     (("PATCH",),  "/api/brigadir-tasks/{}/status",             "collab", "btask.status_changed"),
     (("PATCH",),  "/api/brigadir-tasks/{}/priority",           "collab", "btask.priority_changed"),
     (("POST",),   "/api/brigadir-tasks/{}/comments",           "collab", "btask.comment_added"),

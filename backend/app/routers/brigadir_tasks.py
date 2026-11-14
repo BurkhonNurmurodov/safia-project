@@ -495,6 +495,38 @@ def set_status(
     return _serialize(t, count, payload, db)
 
 
+# ── «did you do this or not?» ─────────────────────────────────────────────────
+
+def _remind(db: Session, payload: dict, t: LeaderTask) -> dict:
+    """`tb.remind`, with its refusals as this API's answers."""
+    try:
+        out = tb.remind(db, payload, t)
+    except tb.RemindRefused as why:
+        raise HTTPException(status_code=409, detail=why.code)
+    db.commit()
+    return out
+
+
+@router.post("/{task_id}/remind")
+def remind_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(_door),
+):
+    """Ask the brigadir whether an open task is done (`tb.remind`) — pressed on
+    «Smena kunligi». Whoever acts from the top AND runs this unit's board."""
+    t = _mine(task_id, payload, db)
+    _assert(tb.from_top(payload) and _can_manage(db, payload, t.supervisor_manager_id),
+            "You can't remind about this task")
+    out = _remind(db, payload, t)
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name, day=t.due_date,
+        details=[("brigadir", t.supervisor_name), ("text", _snippet(t.task_text))],
+    )
+    return out
+
+
 # ── the flame ─────────────────────────────────────────────────────────────────
 
 class PriorityIn(BaseModel):

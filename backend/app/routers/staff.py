@@ -1262,6 +1262,16 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Важная задача от руководства", "«{task}»\n\n👤 Поставил: {creator_name} · {creator_role_label}\n📅 Срок: {date}\n❗️ На контроле: выполнение отслеживает руководство"),
         "en": ("Important task from management", "“{task}”\n\n👤 Set by: {creator_name} · {creator_role_label}\n📅 Due: {date}\n❗️ Watched: management follows its progress"),
     },
+    # «Did you do this or not?» — a manager's reminder about an OPEN task,
+    # pressed on «Smena kunligi» (`task_board.remind`). The «late» row is there
+    # only when the deadline has passed (`late_label` is blank otherwise and the
+    # row drops out).
+    "task_reminder": {
+        "uz": ("Eslatma: vazifa bajarildimi?", "«{task}»\n\n👤 So'ramoqda: {actor_name} · {creator_role_label}\n📅 Muddat: {date}\n⏰ Kechikdi: {late_label}\n✅ Javob: vazifani ochib, holatini belgilang yoki izoh yozing"),
+        "uz_cyrl": ("Эслатма: вазифа бажарилдими?", "«{task}»\n\n👤 Сўрамоқда: {actor_name} · {creator_role_label}\n📅 Муддат: {date}\n⏰ Кечикди: {late_label}\n✅ Жавоб: вазифани очиб, ҳолатини белгиланг ёки изоҳ ёзинг"),
+        "ru": ("Напоминание: задача выполнена?", "«{task}»\n\n👤 Спрашивает: {actor_name} · {creator_role_label}\n📅 Срок: {date}\n⏰ Просрочено: {late_label}\n✅ Ответ: откройте задачу и отметьте статус или напишите комментарий"),
+        "en": ("Reminder: is this task done?", "“{task}”\n\n👤 Asked by: {actor_name} · {creator_role_label}\n📅 Due: {date}\n⏰ Overdue: {late_label}\n✅ Answer: open the task and set its status, or write a comment"),
+    },
     "task_status_changed": {
         "uz": ("{actor_name} vazifa holatini o'zgartirdi", "Yangi holat: {status_label}\n{task}"),
         "uz_cyrl": ("{actor_name} вазифа ҳолатини ўзгартирди", "Янги ҳолат: {status_label}\n{task}"),
@@ -1324,6 +1334,9 @@ _TASK_SETTER_LABELS = {
     "top-manager":   {"uz": "top menejer",    "uz_cyrl": "топ менежер",    "ru": "топ-менеджер",     "en": "top manager"},
     "shift-manager": {"uz": "smena menejeri", "uz_cyrl": "смена менежери", "ru": "менеджер смены",   "en": "shift manager"},
 }
+
+# «N days», for a task reminder's overdue row.
+_DAYS_LABEL = {"uz": "{n} kun", "uz_cyrl": "{n} кун", "ru": "{n} дн.", "en": "{n} d"}
 
 _CONCERN_LEVEL_LABELS = {
     "leader":        {"uz": "Lider",           "uz_cyrl": "Лидер",           "ru": "Лидер",            "en": "Leader"},
@@ -1491,6 +1504,14 @@ def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
     if "creator_role" in params:
         by_lang = _TASK_SETTER_LABELS.get(params["creator_role"], {})
         values["creator_role_label"] = by_lang.get(lang) or by_lang.get("en") or ""
+    if "days_late" in params:
+        # A task reminder's «overdue by» — blank while the deadline is ahead,
+        # which drops its row (`_render_body`).
+        try:
+            n = int(params["days_late"] or 0)
+        except (TypeError, ValueError):
+            n = 0
+        values["late_label"] = (_DAYS_LABEL.get(lang) or _DAYS_LABEL["en"]).format(n=n) if n > 0 else ""
     # A concern raised by the cell's own leader printed the one name twice, under
     # two labels ("Лидер: X … Хавотир эгаси: X"), which told the reader nothing
     # the first row hadn't. Blank the duplicate and let _render_body take the
@@ -1534,8 +1555,10 @@ _NOTIF_TG_ICON = {
     "concern_escalated": "⬆️",
     "concern_returned": "↩️",
     "concern_comment": "💬",
-    # The one task notice that is a card: a task set from the top.
+    # The task notices that are cards: a task set from the top, and a
+    # manager's «did you do this?» about one.
     "task_from_top": "🚨",
+    "task_reminder": "🔔",
 }
 
 # HTML-formatted Telegram bodies for notifications whose DM should render richer

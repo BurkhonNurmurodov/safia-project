@@ -339,18 +339,38 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   counts what the status column says, this block asks who is late; both add up.
   A past day cannot know whether a task was already started: one open now
   answers with its current status, one finished on a later day reads `doing`.
-- **It is a board of PEOPLE**: one tile per person, in two groups (brigadirs,
-  then leaders), each **worst first** (`task_day.fold`: late → going → done;
-  more late tasks, longer late, more open work), six on screen and «Yana N
-  kishi» under them. The stack runs overdue · todo · doing · done so the red
-  starts at one edge on every tile; the tile prints «done/total» and a red
-  count of late tasks. A tile opens that person's tasks (a `Modal`): state,
-  text, deadline with the days late, who set it, the chat, and «Vazifa berish»
-  pre-filled with them.
-- **The tier is a caption, never a `LevelChip` on a tile**: a brigadir's
-  identity hue is red, and a red chip on every row of a board whose red means
-  «not doing» would read as a verdict. The fold stays tier-blind (a person is
-  keyed by kind and id), so the router alone decides whose tasks it is handed.
+- **THE TASKS ARE ON THE PAGE** (v4.523.0, the operator the same evening:
+  «when open shift day page i have to see the task for brigadirs and remind
+  them did you do this or not»). It shipped as tiles of names that opened a
+  dialog — he read that as «the tasks are not shown». Now: two groups
+  (brigadirs, then leaders), each person **worst first** (`task_day.fold`:
+  late → going → done; more late tasks, longer late, more open work), six
+  people per group and «Yana N kishi» under them. A person is a small block:
+  their line (the answer in one mark, «done/total», a red count of late tasks,
+  a «+» that sets them a task) and under it EVERY task they were set — its
+  state, its text, its deadline with the days late, who set it, «Eslatish» and
+  the chat. One line per task from `sm` up, in fixed columns so they line up
+  down the list; stacked on a phone, where the text gets the width. No dialog
+  stands between the reader and a task.
+- **«Eslatish» — «did you do this or not?»** (`tb.remind`, `POST
+  /api/brigadir-tasks/{id}/remind` and `/api/tasks/{id}/remind`). One press
+  sends the assignee the task again as a question — the `task_reminder` card in
+  the bot (who asks, the deadline, how many days late, «open the task and set
+  its status or write a comment») with the open-button, and a warning row in
+  the bell. Rules: only about an OPEN task; **one reminder per task per 30
+  minutes whoever presses** (`REMIND_GAP`, read off the notifications the
+  reminders themselves are — a second manager on the same page must not ping
+  the person again), and the row says so: the button reads «Eslatildi» while
+  the gap runs (`reminded` on the day read). Who may press: whoever acts from
+  the top (`tb.from_top` — an admin today, a top- or shift-manager from the
+  first day) AND governs the row; on a leader's task only one set from the top.
+  Journal actions `btask.reminded` / `task.reminded`. No verdict is stored —
+  the answer is the assignee setting the status or writing in the thread.
+- **The tier is a caption, never a `LevelChip` on a person's line**: a
+  brigadir's identity hue is red, and a red chip on every row of a board whose
+  red means «not doing» would read as a verdict. The fold stays tier-blind (a
+  person is keyed by kind and id), so the router alone decides whose tasks it
+  is handed.
 - The block draws nothing for a reader it is not for (`show: false`, a refused
   read) — only a browser that was shown it before gets its skeleton.
 

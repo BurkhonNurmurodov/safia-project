@@ -541,6 +541,7 @@ def day_tasks(
                       "unit_name": None, "shift": m.shift}
             thread = bool(door and (is_admin or top or m.id in managed))
             can_comment = thread
+            can_remind = bool(thread and acts_from_top)
         elif kind == tb.KIND_LEADER and t.leader_profile_id is not None:
             prof = leaders.get(t.leader_profile_id)
             person = {"kind": kind, "id": t.leader_profile_id,
@@ -548,6 +549,7 @@ def day_tasks(
                       "unit_name": m.name, "shift": m.shift}
             thread = bool(task_page)
             can_comment = bool(task_page and acts_from_top)
+            can_remind = can_comment
         else:
             continue            # a shift manager's own task, a legacy row no profile names
         entries.append((person, {
@@ -566,6 +568,8 @@ def day_tasks(
             "comment_count": 0,
             "thread": thread,
             "can_comment": can_comment,
+            # «Eslatish» — only about a task still open on the day shown.
+            "can_remind": bool(can_remind and st["state"] != "done" and t.status != "done"),
         }))
 
     ids = [task["id"] for _, task in entries]
@@ -578,6 +582,18 @@ def day_tasks(
         )
         for _, task in entries:
             task["comment_count"] = counts.get(task["id"], 0)
+
+    # Which of them were just reminded — «Eslatildi» instead of «Eslatish»
+    # while `tb.REMIND_GAP` runs, so two managers on one page never ping a
+    # person twice. Read by TIME, never by a list of ids: half an hour of
+    # reminders is a handful of rows.
+    from app.models import Notification
+    since = datetime.now(timezone.utc) - tb.REMIND_GAP
+    just = {sid for (sid,) in db.query(Notification.subject_id).filter(
+        Notification.nkey == tb.NKEY_REMINDER, Notification.subject_kind == "task",
+        Notification.created_at >= since)}
+    for _, task in entries:
+        task["reminded"] = str(task["id"]) in just
 
     return {
         "show": True,
@@ -844,6 +860,34 @@ def set_status(
     )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)
+
+
+# ── «did you do this or not?» ─────────────────────────────────────────────────
+
+@router.post("/{task_id}/remind")
+def remind_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("tasks")),
+):
+    """Ask the leader whether an open task is done (`tb.remind`) — pressed on
+    «Smena kunligi». A manager's hand over a task set from the top
+    (`_governs_from_top`); the unit's own brigadir asks their leader on the
+    board, in the thread."""
+    t = _get_visible_task(task_id, payload, db)
+    if not _governs_from_top(payload, t):
+        raise HTTPException(status_code=403, detail="You can't remind about this task")
+    try:
+        out = tb.remind(db, payload, t)
+    except tb.RemindRefused as why:
+        raise HTTPException(status_code=409, detail=why.code)
+    db.commit()
+    action_log.enrich(
+        target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+        unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name, day=t.due_date,
+        details=[("leader", t.leader_name), ("text", _snippet(t.task_text))],
+    )
+    return out
 
 
 # ── the flame ─────────────────────────────────────────────────────────────────

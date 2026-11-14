@@ -298,3 +298,10 @@ shift-manager sets is announced with `task_from_top`, never the plain
 make, and `created_nkey` decides which key: an admin's task is from the top
 today, a top- or shift-manager's from the first day (`OPEN_FROM`). The record
 of the feature is `docs/tasks-and-concerns.md`, «Tasks set from above».
+
+**`task_reminder` is its twin** (the same day): «Eslatma: vazifa bajarildimi?»
+— what «Eslatish» on «Smena kunligi» sends (`task_board.remind`). The same
+card shape and open-button, icon 🔔, `type="warning"`; its «⏰ Kechikdi: N kun»
+row exists only while the deadline has passed (`days_late` → `late_label`,
+blank otherwise, and `_render_body` drops the row). At most one per task per
+30 minutes, counted from the rows themselves.

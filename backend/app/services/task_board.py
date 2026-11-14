@@ -232,6 +232,69 @@ def notice_kwargs(payload: dict, t) -> dict:
     return kw
 
 
+# ── «did you do this or not?» — a reminder ────────────────────────────────────
+# The operator (2026-11-14): «when open shift day page i have to see the task
+# for brigadirs and remind them did you do this or not». One press on the shift
+# day sends the assignee the task again as a question, in the bot and the bell.
+NKEY_REMINDER = "task_reminder"
+# One reminder per task per this long, whoever presses: a second manager
+# looking at the same page a minute later must not ping the person again.
+REMIND_GAP = timedelta(minutes=30)
+
+
+class RemindRefused(Exception):
+    """Why a reminder was not sent — ``code`` is what the client words."""
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def remind(db: Session, payload: dict, t: LeaderTask) -> dict:
+    """Ask the assignee of an OPEN task whether it is done — one bell row and a
+    DM to everybody working as them, with the button that opens the task.
+
+    The caller decides WHO may press (each router's own right over the row);
+    this refuses what no right covers: a finished task (``done``), a task
+    nobody is assigned (``no_assignee``) and a second reminder inside
+    ``REMIND_GAP`` (``reminded_recently``). Does not commit."""
+    from app.models import Notification
+    from app.routers.staff import notify_profile
+
+    if t.status == "done":
+        raise RemindRefused("done")
+    who = assignee_key(t)
+    if not who:
+        raise RemindRefused("no_assignee")
+    since = datetime.now(timezone.utc) - REMIND_GAP
+    recent = (db.query(Notification.id)
+              .filter(Notification.nkey == NKEY_REMINDER,
+                      Notification.subject_kind == "task",
+                      Notification.subject_id == str(t.id),
+                      Notification.created_at >= since)
+              .first())
+    if recent:
+        raise RemindRefused("reminded_recently")
+
+    today = datetime.now(TZ).date()
+    late = (today - t.due_date).days if t.due_date and t.due_date < today else 0
+    try:
+        sub = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        sub = None
+    notify_profile(
+        db, who, nkey=NKEY_REMINDER, type="warning",
+        params={
+            "actor_name": payload.get("full_name"),
+            "creator_role": payload.get("role"),
+            "date": t.due_date,
+            "days_late": late,
+            "task": snippet(t.task_text),
+        },
+        exclude_account=sub, subject=("task", t.id), markup_fn=open_markup(t.id),
+    )
+    return {"ok": True, "days_late": late}
+
+
 def open_markup(task_id: int):
     """``markup_fn(lang)`` for a task's DM: one button to its thread on
     «Vazifalar» (`/tasks?open=<id>` — the page's own deep link). Plain, never

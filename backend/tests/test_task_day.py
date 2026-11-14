@@ -254,6 +254,65 @@ class TheNoticeOfATaskFromTheTop(unittest.TestCase):
         self.assertEqual(nc.category_of("task_from_top"), nc.category_of("task_created"))
 
 
+class TheReminder(unittest.TestCase):
+    """«remind them did you do this or not» — one press on the shift day."""
+
+    def task(self, status="todo", due=-3):
+        return SimpleNamespace(id=77, status=status, due_date=date.today() + timedelta(days=due),
+                               task_text="Pechni tekshirish", assignee_kind="supervisor",
+                               supervisor_manager_id=9, leader_profile_id=None)
+
+    def db(self, recent=None):
+        fake = mock.MagicMock()
+        fake.query.return_value.filter.return_value.first.return_value = recent
+        return fake
+
+    def test_it_asks_the_assignee_with_a_button_to_the_task(self):
+        with mock.patch.object(staff, "notify_profile") as send:
+            out = tb.remind(self.db(), {**ADMIN, "full_name": "Burxon"}, self.task())
+        self.assertEqual(out, {"ok": True, "days_late": 3})
+        (_, who), kw = send.call_args
+        self.assertEqual(who, "supervisor:9")
+        self.assertEqual((kw["nkey"], kw["type"], kw["subject"]), ("task_reminder", "warning", ("task", 77)))
+        self.assertEqual(kw["params"]["days_late"], 3)
+        self.assertTrue(kw["markup_fn"]("uz").keyboard[0][0].web_app.url.endswith("/tasks?open=77"))
+
+    def test_a_finished_task_is_not_asked_about(self):
+        with mock.patch.object(staff, "notify_profile") as send:
+            with self.assertRaises(tb.RemindRefused) as why:
+                tb.remind(self.db(), ADMIN, self.task(status="done"))
+        self.assertEqual(why.exception.code, "done")
+        send.assert_not_called()
+
+    def test_a_second_reminder_waits_out_the_gap(self):
+        with mock.patch.object(staff, "notify_profile") as send:
+            with self.assertRaises(tb.RemindRefused) as why:
+                tb.remind(self.db(recent=(1,)), ADMIN, self.task())
+        self.assertEqual(why.exception.code, "reminded_recently")
+        send.assert_not_called()
+
+    def test_the_card_says_how_late_only_when_it_is(self):
+        base = {"actor_name": "Saidov Akmal", "creator_role": "top-manager",
+                "date": DAY, "task": "Pechni tekshirish"}
+        late = staff._mk_notif_tg("task_reminder", {**base, "days_late": 4}, "ru")
+        self.assertTrue(late.startswith("🔔 <b>Напоминание: задача выполнена?</b>"))
+        self.assertIn("<b>Просрочено:</b> 4 дн.", late)
+        self.assertIn("топ-менеджер", late)
+        in_time = staff._mk_notif_tg("task_reminder", {**base, "days_late": 0}, "ru")
+        self.assertNotIn("Просрочено", in_time)        # the row is gone, not blank
+        for lang in ("uz", "uz_cyrl", "en"):
+            self.assertNotIn("{", staff._mk_notif_tg("task_reminder", {**base, "days_late": 2}, lang))
+
+    def test_only_who_acts_from_the_top_may_press(self):
+        # Before the first day a shift manager has no «Eslatish» at all.
+        self.assertFalse(tb.from_top(SM))
+        self.assertTrue(tb.from_top(ADMIN))
+        with mock.patch.object(tb, "OPEN_FROM", date(2020, 1, 1)):
+            self.assertTrue(tb.from_top(SM))
+            self.assertTrue(tb.from_top(TOP))
+            self.assertFalse(tb.from_top(BRIG))
+
+
 class ALeadersTaskFromTheTop(unittest.TestCase):
     def row(self, creator):
         return SimpleNamespace(assignee_kind="leader", created_by_profile=creator,
