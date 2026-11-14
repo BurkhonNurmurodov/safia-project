@@ -47,9 +47,10 @@ names change.
   end. Nobody who did not come is expected and nobody leaves early; a person
   with no schedule end is kept for the rest of the day. The page draws the
   forecast as a dashed outline under a lighter figure (shape, never colour
-  alone — a «~» before each number crowded the row), highlights
-  the current hour, and opens scrolled to it — 24 columns are wider than a
-  phone or a laptop. Plain CSS bars: the page loads no chart library. The
+  alone — a «~» before each number crowded the row) and highlights
+  the current hour. Plain CSS bars: the page loads no chart library. (It
+  used to scroll sideways and open on the current hour; from 2026-11-14 the
+  hours wrap — see «The page redesigned».) The
   first cut (a small hover-to-read chart inside the top card) hid the numbers
   behind a hover a phone does not have.
 - **«Bo'limlar bo'yicha»** — the same five counts per Verifix department (the
@@ -64,6 +65,40 @@ names change.
 - **Not built:** a split by plant (only brigadirs hang on a plant), meal times
   or portions, names, past days, an export, sortable columns, arrivals and
   departures per hour, a forecast past midnight.
+
+## The page redesigned — one roster, four colours (2026-11-14)
+
+The operator: «this page lacks a life … doesn't give you a motivation to use
+it», with the standing taste (clean, each thing in its place, nothing
+overlapping on any screen, several colours and none of them dominating). The
+old page was gold and grey only, said «came 1 471, left 54» twice (a sentence
+and two cards), left half of the top card empty and scrolled its chart
+sideways. Frontend only — `/api/kitchen/now` is unchanged.
+
+- **One hue per answer, everywhere on the page** (`PARTS` in
+  `pages/Kitchen.jsx`): at work green · left slate · not in yet blue · did not
+  come red — the roster bar, the hours' bars, the table's header dots and
+  every department's bar. Purple and teal are the two section chips; gold is
+  on nothing here.
+- **The top card is the number AND the day it is part of.** Left: «Hozir
+  ishda», the figure, «Soat 16:00 da 1 446 kishi kutilmoqda» (the first hour
+  still ahead from `hours`; none after 23:00) and the read time. Right:
+  «Bugungi tarkib» — ONE `SplitBar` of today's roster with its four figures
+  under it and «3 060 kishidan 1 471 nafari keldi». It replaced the sentence
+  and the four KPI cards; no figure was dropped.
+- **The roster's «Ishda» is `inside − night`**: somebody still here from last
+  night is at work but today is already one of the other three for them, so
+  the four parts never overlap and add up to came + not in yet + did not
+  come. The big figure stays `inside`; the night line under the roster names
+  the difference.
+- **The 24 hours wrap to the card's own width** — 24 · 12 · 8 · 6 a row by
+  container query, one scale for every row — so no screen scrolls them
+  sideways or squeezes a number. The header names the day's peak hour.
+- **A department's row carries its own roster bar** (full width = that
+  department's people today), so a row heavy with «Kelmadi» shows without
+  reading four numbers. On a phone: name · bar · «Hozir ishda».
+- The halves of the top card and its four figures split by flex-wrap and
+  container queries, never viewport breakpoints (the sidebar takes ~330px).
 
 ## A year of attendance, as counts (`kitchen_history`, 2026-11-12)
 
