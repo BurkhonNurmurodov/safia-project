@@ -18,6 +18,13 @@ leader; leaders work their own queue. Access is gated by the ``tasks`` page in
 the access matrix (default: ``supervisor`` + ``leader`` + admin). Any other
 role toggled onto the page gets a read-only view of everything.
 
+FROM THE TOP (2026-11-14). A shift-manager and a top-manager set a task for ANY
+leader too — from the first day (``tb.from_top``; an admin always could). Over
+a leader's task that was set from the top (``tb.set_from_above``) they keep a
+manager's hand — status, the flame, the thread — while a task the unit's own
+brigadir set stays that brigadir's: they only read it, as before. The unit's
+brigadir governs every task of their leaders, whoever set it.
+
 URGENCY is one flag — urgent (the flame) or not — carried by ``priority``
 (1 | NULL, see ``services/task_board``). It is set when the task is created and
 flipped afterwards by ``PATCH /{id}/priority``, which the unit's supervisor and
@@ -148,23 +155,42 @@ def _assert_can_edit_core(db: Session, payload: dict, t: LeaderTask):
         raise HTTPException(status_code=403, detail="Only the task's creator or an admin can do this")
 
 
+def _may_set(payload: dict) -> bool:
+    """The roles that set a leader work at all: an admin, a brigadir (their own
+    leaders), and a shift- or top-manager from the first day on. WHICH leader a
+    brigadir may pick is checked where the task is created."""
+    return payload.get("role") in ("admin", "supervisor") or tb.from_top(payload)
+
+
+def _governs_from_top(payload: dict, t: LeaderTask) -> bool:
+    """A manager's hand over a leader's task: the caller acts from the top AND
+    the task itself was set from the top. Never over a task the unit's own
+    brigadir set — that one a manager only reads."""
+    return tb.from_top(payload) and tb.set_from_above(t)
+
+
 def _assert_can_set_status(db: Session, payload: dict, t: LeaderTask):
-    """Status: admin, the unit's supervisor, or the owning leader."""
-    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(db, payload, t):
+    """Status: admin, the unit's supervisor, the owning leader — and a manager
+    over a task set from the top."""
+    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
+            or _is_owning_leader(db, payload, t) or _governs_from_top(payload, t)):
         return
     raise HTTPException(status_code=403, detail="You can't change this task's status")
 
 
 def _assert_can_reorder(payload: dict, t: LeaderTask):
-    """The flame: admin or the unit's supervisor (never the leader — what is
-    urgent is the person who set the work's statement, not the assignee's)."""
-    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t):
+    """The flame: admin, the unit's supervisor, a manager over a task set from
+    the top (never the leader — what is urgent is the person who set the work's
+    statement, not the assignee's)."""
+    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
+            or _governs_from_top(payload, t)):
         return
     raise HTTPException(status_code=403, detail="Only a supervisor or admin can change urgency")
 
 
 def _assert_can_comment(db: Session, payload: dict, t: LeaderTask):
-    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(db, payload, t):
+    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
+            or _is_owning_leader(db, payload, t) or _governs_from_top(payload, t)):
         return
     raise HTTPException(status_code=403, detail="You can't comment on this task")
 
@@ -331,6 +357,8 @@ def board(
                if role == "shift-manager" else set())
     # A top-manager governs the two tiers below them from the first day on.
     top = tb.top_sets(payload)
+    # …and a manager keeps a hand over a LEADER's task set from the top.
+    acts_from_top = tb.from_top(payload)
     own_sm = payload.get("role_id") if role == "shift-manager" else None
     try:
         sub = int(payload.get("sub"))
@@ -363,8 +391,9 @@ def board(
             return {"can_edit": _owns(t), "can_status": manage or mine,
                     "can_reorder": manage, "can_comment": manage or mine}
         lead = _owning_leader(t)
-        return {"can_edit": _owns(t), "can_status": is_admin or unit_mine or lead,
-                "can_reorder": is_admin or unit_mine, "can_comment": is_admin or unit_mine or lead}
+        gov = is_admin or unit_mine or (acts_from_top and tb.set_from_above(t))
+        return {"can_edit": _owns(t), "can_status": gov or lead,
+                "can_reorder": gov, "can_comment": gov or lead}
 
     def _row(t: LeaderTask) -> dict:
         kind = tb.kind_of(t)
@@ -408,14 +437,14 @@ def board(
 
     return {
         "role": role,
-        "can_create_leader": role in ("admin", "supervisor"),
+        "can_create_leader": _may_set(payload),
         "can_create_brigadir": _bt._can_create_anywhere(db, payload),
         "can_create_manager": _smt.can_manage(payload),
         "data": [_row(r) for r in rows],
     }
 
 
-# ── one DAY of the brigadirs' tasks — «Smena kunligi» ────────────────────────
+# ── one DAY of the tasks set from the top — «Smena kunligi» ───────────────────
 
 @router.get("/day")
 def day_tasks(
@@ -427,26 +456,30 @@ def day_tasks(
     # own guard, since this block sits above it.
     payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
-    """The tasks management set for BRIGADIRS, as they stood on ONE day, per
-    brigadir — the «Rahbariyat vazifalari» block (`services/task_day` is the
-    fold and the record of what a day holds).
+    """The tasks set from the top for BRIGADIRS and LEADERS, as they stood on
+    ONE day, per person — the «Rahbariyat vazifalari» block (`services/task_day`
+    is the fold and the record of what a day holds).
 
     WHO READS IT: an admin; a top-manager and a shift-manager from the first
     day on (`tb.OPEN_FROM`). Anybody else — and those two before that day —
     gets ``{"show": false}`` and the page draws nothing: a block that is not
     theirs is not an error to report.
 
-    WHAT THEY READ: the BRIGADIR tier and nothing else (the operator's ruling,
-    2026-11-14: «only brigadirs' tasks») — the tasks a top-manager, a
-    shift-manager or an admin set for a brigadir, which is everybody who can
-    set one. A leader's task and a shift manager's own task are NOT here: they
-    stay on `/tasks`. Inside the picked plant and shift; archived units are
-    left out — the block is about people at work.
+    WHAT THEY READ (the operator, 2026-11-14: «the task which assigned by
+    admins, top managers and shift managers to brigadirs and liders»): every
+    brigadir's task — only those three roles can set one — and a LEADER's task
+    when one of them set it (`tb.set_from_above`); a task the unit's own
+    brigadir set for a leader is NOT here, and neither is a shift manager's own
+    task. Inside the picked plant and shift; archived units are left out — the
+    block is about people at work.
     """
     role = payload.get("role")
     is_admin = role == "admin"
     if not (is_admin or (role in ("top-manager", "shift-manager") and tb.is_open())):
         return {"show": False}
+    # The first day may come with no deploy on it: the first reader of the day
+    # is who gives top-managers «Vazifalar» (a no-op before the day and after).
+    tb.open_page_to_top_managers()
 
     today = datetime.now(tb.TZ).date()
     day = min(day or today, today)
@@ -455,17 +488,27 @@ def day_tasks(
 
     # Everything that can belong to the day: set before its end, and either
     # still open or finished on it or later. `task_day.state_on` is the rule;
-    # this only keeps years of finished rows out of the read.
-    rows = db.query(LeaderTask).filter(
-        LeaderTask.assignee_kind == tb.KIND_SUPERVISOR,
+    # this only keeps years of finished rows — and the leaders' own brigadirs'
+    # tasks — out of the read.
+    q = db.query(LeaderTask).filter(
         LeaderTask.created_at < end,
         or_(LeaderTask.status != "done", LeaderTask.completed_at >= start),
-    ).all()
+        or_(LeaderTask.assignee_kind == tb.KIND_SUPERVISOR,
+            and_(func.coalesce(LeaderTask.assignee_kind, tb.KIND_LEADER) == tb.KIND_LEADER,
+                 or_(*[LeaderTask.created_by_profile.like(f"{r}:%") for r in tb.MANAGER_ROLES]))),
+    )
+    rows = [t for t in q.all() if tb.set_from_above(t)]
 
     # Scope — plant and shift are the page's filter bar; a locked viewer's
     # plant wins (`factory_scope`).
     plant = factory_scope.resolve_factory(db, payload, factory)
     mgrs = {m.id: m for m in db.query(Manager).all()}
+    leaders = {
+        p.id: p for p in db.query(RoleProfile).filter(
+            RoleProfile.id.in_([t.leader_profile_id for t in rows
+                                if tb.kind_of(t) == tb.KIND_LEADER and t.leader_profile_id] or [0])
+        )
+    }
 
     def _unit_in(m) -> bool:
         if m is None or m.archived:
@@ -474,11 +517,15 @@ def day_tasks(
             return False
         return shift not in (1, 2) or m.shift == shift
 
-    # The viewer's rights over a brigadir's row, resolved once — the owning
-    # router's own predicate (`brigadir_tasks._can_manage`): an admin, the
-    # shift manager covering the unit, a top-manager from the first day.
+    # The viewer's rights, resolved once — each the owning router's predicate.
+    # A brigadir's row: `brigadir_tasks._can_manage` (an admin, the shift
+    # manager covering the unit, a top-manager from the first day), reached
+    # through either door. A leader's row lives on THIS router, behind the
+    # TASK page: read by whoever holds it, written by `_governs_from_top`.
     door = page_allowed(db, payload, _bt.PAGE, _bt.DAY_PAGE)
+    task_page = is_admin or page_allowed(db, payload, "tasks")
     top = tb.top_sets(payload)
+    acts_from_top = tb.from_top(payload)
     managed = (set(shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True))
                if role == "shift-manager" else set())
 
@@ -488,27 +535,38 @@ def day_tasks(
         m = mgrs.get(t.supervisor_manager_id)
         if st is None or not _unit_in(m):
             continue
-        thread = bool(door and (is_admin or top or m.id in managed))
-        entries.append((
-            {"kind": tb.KIND_SUPERVISOR, "id": m.id, "name": m.name, "shift": m.shift},
-            {
-                "id": t.id,
-                "kind": tb.KIND_SUPERVISOR,
-                "text": t.task_text,
-                "status": t.status,
-                "state": st["state"],
-                "late": st["late"],
-                "days_late": st["days_late"],
-                "due_date": t.due_date.isoformat() if t.due_date else None,
-                "done_day": st["done_day"].isoformat() if st["done_day"] else None,
-                "urgent": tb.is_urgent(t),
-                "created_by_name": t.created_by_name,
-                "creator_role": tb.creator_role(t.created_by_profile),
-                "comment_count": 0,
-                "thread": thread,
-                "can_comment": thread,
-            },
-        ))
+        kind = tb.kind_of(t)
+        if kind == tb.KIND_SUPERVISOR:
+            person = {"kind": kind, "id": m.id, "name": m.name,
+                      "unit_name": None, "shift": m.shift}
+            thread = bool(door and (is_admin or top or m.id in managed))
+            can_comment = thread
+        elif kind == tb.KIND_LEADER and t.leader_profile_id is not None:
+            prof = leaders.get(t.leader_profile_id)
+            person = {"kind": kind, "id": t.leader_profile_id,
+                      "name": (prof.name if prof else None) or t.leader_name,
+                      "unit_name": m.name, "shift": m.shift}
+            thread = bool(task_page)
+            can_comment = bool(task_page and acts_from_top)
+        else:
+            continue            # a shift manager's own task, a legacy row no profile names
+        entries.append((person, {
+            "id": t.id,
+            "kind": kind,
+            "text": t.task_text,
+            "status": t.status,
+            "state": st["state"],
+            "late": st["late"],
+            "days_late": st["days_late"],
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "done_day": st["done_day"].isoformat() if st["done_day"] else None,
+            "urgent": tb.is_urgent(t),
+            "created_by_name": t.created_by_name,
+            "creator_role": tb.creator_role(t.created_by_profile),
+            "comment_count": 0,
+            "thread": thread,
+            "can_comment": can_comment,
+        }))
 
     ids = [task["id"] for _, task in entries]
     if ids:
@@ -525,10 +583,11 @@ def day_tasks(
         "show": True,
         "date": day.isoformat(),
         "is_today": day == today,
-        # May this viewer set a brigadir a task from the block — the picker the
-        # owning router would hand them.
+        # The tiers «Vazifa berish» may offer this viewer — per tier, what the
+        # owning router would let them set (a leader's needs the TASK page).
         "can_create": {
             tb.KIND_SUPERVISOR: bool(door and _bt._can_create_anywhere(db, payload)),
+            tb.KIND_LEADER: bool(task_page and acts_from_top),
         },
         **task_day.fold(entries),
     }
@@ -548,7 +607,7 @@ def list_assignable_leaders(
     in the bell until the profile is claimed.
     """
     role = payload.get("role")
-    if role not in ("admin", "supervisor"):
+    if not _may_set(payload):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     profiles = identity.list_leader_profiles(
         db, payload.get("role_id") if role == "supervisor" else None
@@ -589,7 +648,7 @@ def create_task(
     payload: dict = Depends(require_page("tasks")),
 ):
     role = payload.get("role")
-    if role not in ("admin", "supervisor"):
+    if not _may_set(payload):
         raise HTTPException(status_code=403, detail="Only supervisors and admins can create tasks")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
@@ -649,16 +708,11 @@ def create_task(
         comment_count = 1
 
     # Reaches every account working as this leader — and waits in the bell if
-    # nobody has claimed the profile yet.
-    notify_profile(
-        db, f"leader:{prof.id}", nkey="task_created",
-        params={
-            "creator_name": payload.get("full_name"),
-            "date": body.due_date,
-            "task": _snippet(t.task_text),
-        },
-        exclude_account=sub, subject=("task", t.id)
-    )
+    # nobody has claimed the profile yet. WHICH notice is the board core's call
+    # (`tb.notice_kwargs`): a brigadir's task is «Yangi vazifa», one set from
+    # the top goes out as its own card.
+    notify_profile(db, f"leader:{prof.id}", exclude_account=sub,
+                   **tb.notice_kwargs(payload, t))
 
     db.commit()
     db.refresh(t)

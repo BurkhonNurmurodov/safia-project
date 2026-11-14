@@ -423,6 +423,10 @@ try:
     backfill_leader_page_access()
     open_cells_page_to_supervisors()
     open_production_page_to_managers()
+    # «Vazifalar» for top-managers — a no-op until the first day
+    # (`task_board.OPEN_FROM`); mirrored in app/main.py's lifespan.
+    from app.services import task_board as _task_board
+    _task_board.open_page_to_top_managers()
     seed_admins()
     seed_languages()
     seed_managers_and_sources()

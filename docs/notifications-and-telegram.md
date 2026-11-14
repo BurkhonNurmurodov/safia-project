@@ -276,3 +276,25 @@ Telegram DM. Umarbek Karimov named the people-exchange notices as unwanted.
   `staff_live._notify` both ask `sm_told(nkey, params)` before adding the
   shift-managers. A new unit notice reaches them by default — add its key to
   `SM_QUIET` when it is only news.
+
+## A task from the top is its own notice (`task_from_top`, 2026-11-14)
+
+The operator: «the notifications should appear in the bot too, like different,
+like it is a very crucial task from top». A task an admin, a top-manager or a
+shift-manager sets is announced with `task_from_top`, never the plain
+`task_created` a brigadir's task for their leader keeps:
+
+- the DM is a CARD — «🚨 Rahbariyatdan muhim vazifa», the task as a quote, who
+  set it with their role in the reader's language (`creator_role` →
+  `_TASK_SETTER_LABELS`), the deadline, «bajarilishini rahbariyat kuzatadi» —
+  promoted from its `_NOTIF_STRINGS` row by its `_NOTIF_TG_ICON` entry, so the
+  bell and the DM are one string;
+- **a button under it opens the task** (`task_board.open_markup` →
+  `/tasks?open=<id>`), plain — colour on a button means a decision;
+- the bell row is `type="warning"`; the category is «tasks» by the `task_`
+  prefix, so the «Vazifalar» Telegram switch mutes it like any task notice.
+
+`services/task_board.notice_kwargs` is the ONE call the three task routers
+make, and `created_nkey` decides which key: an admin's task is from the top
+today, a top- or shift-manager's from the first day (`OPEN_FROM`). The record
+of the feature is `docs/tasks-and-concerns.md`, «Tasks set from above».

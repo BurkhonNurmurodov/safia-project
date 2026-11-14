@@ -232,18 +232,50 @@ button — the task's chat is where a word is said); a day shows **everything
 unfinished plus what was finished that day**; and it is **the admins' alone
 first** — he names the day everybody else gets it.
 
-**The same day, after seeing it (v4.521.0): «only brigadirs' tasks».** The
-block on the shift day is the BRIGADIR tier alone — what a top-manager, a
-shift-manager or an admin sets for a brigadir. It shipped (v4.520.0) with the
-shift managers' own tasks and the leader tasks an admin or a manager had set
-as two more groups; both left the block and stay on `/tasks`. The
-shift-manager tier itself is untouched.
+**The same day, twice more.** v4.521.0 cut the block to the brigadir tier on
+an answer read too narrowly; an hour later he said it whole, and that is the
+rule in force (v4.522.0): «the task which assigned by admins, top managers and
+shift managers to brigadirs and liders should be shown in the shift day … the
+task will be given from liders part from tasks … and the notifications should
+appear in the bot too, like different, like it is a very crucial task from
+top». So:
+
+- **The block shows BRIGADIRS and LEADERS** — every brigadir's task, and a
+  leader's task when an admin, a top-manager or a shift-manager set it
+  (`tb.set_from_above`). A task the unit's own brigadir set for a leader is not
+  there; a shift manager's own task is not there. Both stay on `/tasks`.
+- **Managers set a leader's task too** (`routers/tasks.py`, `_may_set`): a
+  shift-manager and a top-manager, for ANY leader, from the first day — an
+  admin always could. Over a leader's task set from the top they keep a
+  manager's hand (status, the flame, the thread — `_governs_from_top`); a task
+  the unit's own brigadir set they only read, as before. The unit's brigadir
+  still governs every task of their leaders, whoever set it.
+- **A task from the top is announced by its OWN notice — `task_from_top`.**
+  `tb.created_nkey` picks it when the setter acts from the top (`tb.from_top`:
+  an admin today; a top- or shift-manager from the first day), and
+  `tb.notice_kwargs` is the ONE call all three routers make. The DM is a card
+  («🚨 Rahbariyatdan muhim vazifa», the task quoted, who set it with their
+  role, the deadline, «bajarilishini rahbariyat kuzatadi») with a button under
+  it that opens the task (`/tasks?open=<id>`); the bell row is the same text in
+  the warning colour. A brigadir's task for their leader stays the plain
+  «Yangi vazifa» (`task_created`), always. **Until the first day a shift
+  manager's task for a brigadir also stays plain** — nothing a non-admin does
+  changed before the announcement.
+- **Tasks are set on Liderlar → «Vazifalar».** A top-manager does not hold that
+  page by default, so on the first day the role is added to the stored Access
+  matrix's `tasks` list, once (`tb.open_page_to_top_managers`, flag
+  `tasks_page_top_managers_2026_11_v1` — a later untick on the Access tab
+  stays unticked). It runs at startup and from the day read, because the first
+  day may come with no deploy on it. Before the day: a no-op.
 
 - **THE FIRST DAY IS ONE CONSTANT — `task_board.OPEN_FROM`, None until he names
-  it.** Before it: only an admin sees the «Rahbariyat vazifalari» block, and a
-  top-manager sets nothing (exactly as before this shipped). On it and after:
-  top-managers and shift-managers see the block, and a top-manager sets and
-  governs tasks (`tb.top_sets`). There is NO browser twin of the date — the
+  it.** Before it: only an admin sees the «Rahbariyat vazifalari» block, a
+  top-manager sets nothing, a shift manager sets a brigadir's task as before
+  (the plain notice) and no leader's. On it and after: top- and shift-managers
+  see the block and set tasks for brigadirs and leaders with the loud notice, a
+  top-manager for shift managers too (`tb.top_sets`, `tb.from_top`), and
+  top-managers are given «Vazifalar». **An admin's own act never waits**: a
+  task an admin sets is from the top today. There is NO browser twin of the date — the
   block asks the server (`show`), the form asks the server which tiers it may
   offer — so naming the day is one line in one file. Delete
   `test_no_day_is_named_yet` (`tests/test_task_day.py`) in that commit.
@@ -288,13 +320,15 @@ shift-manager tier itself is untouched.
 (`routers/tasks.py::day_tasks` reads and scopes, `services/task_day.py` folds —
 no database in the fold, `tests/test_task_day.py` feeds it plain objects).
 
-- **Which tasks**: the BRIGADIR tier and nothing else
-  (`assignee_kind == "supervisor"`) — set by an admin, a shift-manager or a
-  top-manager, which is everybody who can set one, so no creator test is
-  needed. A leader's task and a shift manager's own are NOT in the block,
-  whoever set them. Inside the page's plant and shift; archived units left
-  out. **«Vazifa berish» in the block sets a brigadir's task only** — a task
-  the block would not then show is not offered from it.
+- **Which tasks**: set from the top for a brigadir or a leader
+  (`tb.set_from_above` — a brigadir's always is, since only an admin, a
+  shift-manager or a top-manager can set one; a LEADER's only when its
+  creator's profile says so, since most are set by the unit's brigadir and a
+  row from before profile keys cannot tell). A shift manager's own task is NOT
+  in the block. Inside the page's plant and shift; archived units left out.
+  **«Vazifa berish» in the block offers the tiers the block shows** — a
+  brigadir's, and a leader's for a viewer who holds «Vazifalar» and acts from
+  the top; never a task the block would not then show.
 - **Which day**: set on or before it AND (still open on it OR finished on it).
   Finished earlier = left; set later = not arrived. The day stepper reaches the
   block (the «Smena hisoboti» board under it still does not). A day is
@@ -305,17 +339,18 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   counts what the status column says, this block asks who is late; both add up.
   A past day cannot know whether a task was already started: one open now
   answers with its current status, one finished on a later day reads `doing`.
-- **It is a board of BRIGADIRS**: one tile per brigadir, **worst first**
-  (`task_day.fold`: late → going → done; more late tasks, longer late, more
-  open work), the first nine on screen and «Yana N brigadir» under them. The
-  stack runs overdue · todo · doing · done so the red starts at one edge on
-  every tile; the tile prints «done/total» and a red count of late tasks. A
-  tile opens that brigadir's tasks (a `Modal`): state, text, deadline with the
-  days late, who set it, the chat, and «Vazifa berish» pre-filled with them.
-- **No `LevelChip` on a tile**: a brigadir's identity hue is red, and a red
-  chip on every row of a board whose red means «not doing» would read as a
-  verdict. The fold stays tier-blind (a person is keyed by kind and id), so
-  the router alone decides whose tasks the block is handed.
+- **It is a board of PEOPLE**: one tile per person, in two groups (brigadirs,
+  then leaders), each **worst first** (`task_day.fold`: late → going → done;
+  more late tasks, longer late, more open work), six on screen and «Yana N
+  kishi» under them. The stack runs overdue · todo · doing · done so the red
+  starts at one edge on every tile; the tile prints «done/total» and a red
+  count of late tasks. A tile opens that person's tasks (a `Modal`): state,
+  text, deadline with the days late, who set it, the chat, and «Vazifa berish»
+  pre-filled with them.
+- **The tier is a caption, never a `LevelChip` on a tile**: a brigadir's
+  identity hue is red, and a red chip on every row of a board whose red means
+  «not doing» would read as a verdict. The fold stays tier-blind (a person is
+  keyed by kind and id), so the router alone decides whose tasks it is handed.
 - The block draws nothing for a reader it is not for (`show: false`, a refused
   read) — only a browser that was shown it before gets its skeleton.
 

@@ -229,15 +229,9 @@ def create_task(
         ))
         comment_count = 1
 
-    notify_profile(
-        db, f"shift-manager:{prof.id}", nkey="task_created",
-        params={
-            "creator_name": payload.get("full_name"),
-            "date": body.due_date,
-            "task": _snippet(t.task_text),
-        },
-        exclude_account=sub, subject=("task", t.id)
-    )
+    # Always a task from the top — only an admin or a top-manager sets one.
+    notify_profile(db, f"shift-manager:{prof.id}", exclude_account=sub,
+                   **tb.notice_kwargs(payload, t))
 
     db.commit()
     db.refresh(t)

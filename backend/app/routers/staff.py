@@ -1251,6 +1251,17 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новая задача от {creator_name}", "Срок: {date}\n{task}"),
         "en": ("New task from {creator_name}", "Due: {date}\n{task}"),
     },
+    # A task set FROM THE TOP — by an admin, a top-manager or a shift-manager
+    # (2026-11-14, the operator: «like different, like it is a very crucial task
+    # from top»). Its own key, so the DM is its own card (_NOTIF_TG_ICON below)
+    # and never reads like an ordinary «Yangi vazifa». `services/task_board`
+    # decides who sends it (`created_nkey`) and with what (`notice_kwargs`).
+    "task_from_top": {
+        "uz": ("Rahbariyatdan muhim vazifa", "«{task}»\n\n👤 Kim berdi: {creator_name} · {creator_role_label}\n📅 Muddat: {date}\n❗️ Nazoratda: bajarilishini rahbariyat kuzatadi"),
+        "uz_cyrl": ("Раҳбариятдан муҳим вазифа", "«{task}»\n\n👤 Ким берди: {creator_name} · {creator_role_label}\n📅 Муддат: {date}\n❗️ Назоратда: бажарилишини раҳбарият кузатади"),
+        "ru": ("Важная задача от руководства", "«{task}»\n\n👤 Поставил: {creator_name} · {creator_role_label}\n📅 Срок: {date}\n❗️ На контроле: выполнение отслеживает руководство"),
+        "en": ("Important task from management", "“{task}”\n\n👤 Set by: {creator_name} · {creator_role_label}\n📅 Due: {date}\n❗️ Watched: management follows its progress"),
+    },
     "task_status_changed": {
         "uz": ("{actor_name} vazifa holatini o'zgartirdi", "Yangi holat: {status_label}\n{task}"),
         "uz_cyrl": ("{actor_name} вазифа ҳолатини ўзгартирди", "Янги ҳолат: {status_label}\n{task}"),
@@ -1305,6 +1316,15 @@ _TASK_STATUS_LABELS = {
 # Concern escalation-level labels — resolved from the raw ``concern_level``
 # param at view time (same mechanism as task_status). Wording matches the
 # concerns page's level pills.
+# Who set a task FROM THE TOP, said beside their name in the reader's language
+# (the `task_from_top` card). Only the three roles that can — `task_board
+# .MANAGER_ROLES`; any other value prints nothing after the name.
+_TASK_SETTER_LABELS = {
+    "admin":         {"uz": "administrator",  "uz_cyrl": "администратор",  "ru": "администратор",    "en": "administrator"},
+    "top-manager":   {"uz": "top menejer",    "uz_cyrl": "топ менежер",    "ru": "топ-менеджер",     "en": "top manager"},
+    "shift-manager": {"uz": "smena menejeri", "uz_cyrl": "смена менежери", "ru": "менеджер смены",   "en": "shift manager"},
+}
+
 _CONCERN_LEVEL_LABELS = {
     "leader":        {"uz": "Lider",           "uz_cyrl": "Лидер",           "ru": "Лидер",            "en": "Leader"},
     "supervisor":    {"uz": "Brigadir",        "uz_cyrl": "Бригадир",        "ru": "Бригадир",         "en": "Supervisor"},
@@ -1468,6 +1488,9 @@ def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
     if "concern_level" in params:
         by_lang = _CONCERN_LEVEL_LABELS.get(params["concern_level"], {})
         values["level_label"] = by_lang.get(lang) or by_lang.get("en") or params["concern_level"]
+    if "creator_role" in params:
+        by_lang = _TASK_SETTER_LABELS.get(params["creator_role"], {})
+        values["creator_role_label"] = by_lang.get(lang) or by_lang.get("en") or ""
     # A concern raised by the cell's own leader printed the one name twice, under
     # two labels ("Лидер: X … Хавотир эгаси: X"), which told the reader nothing
     # the first row hadn't. Blank the duplicate and let _render_body take the
@@ -1511,6 +1534,8 @@ _NOTIF_TG_ICON = {
     "concern_escalated": "⬆️",
     "concern_returned": "↩️",
     "concern_comment": "💬",
+    # The one task notice that is a card: a task set from the top.
+    "task_from_top": "🚨",
 }
 
 # HTML-formatted Telegram bodies for notifications whose DM should render richer

@@ -360,16 +360,10 @@ def create_task(
         comment_count = 1
 
     # Reaches every account working as this brigadir — and waits in the bell if
-    # nobody has claimed the profile yet.
-    notify_profile(
-        db, f"supervisor:{mgr.id}", nkey="task_created",
-        params={
-            "creator_name": payload.get("full_name"),
-            "date": body.due_date,
-            "task": _snippet(t.task_text),
-        },
-        exclude_account=sub, subject=("task", t.id)
-    )
+    # nobody has claimed the profile yet. WHICH notice is the board core's call
+    # (`tb.notice_kwargs`): a task from the top goes out as its own card.
+    notify_profile(db, f"supervisor:{mgr.id}", exclude_account=sub,
+                   **tb.notice_kwargs(payload, t))
 
     db.commit()
     db.refresh(t)

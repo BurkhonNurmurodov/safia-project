@@ -1,19 +1,21 @@
 /**
- * «Rahbariyat vazifalari» — the tasks management set for BRIGADIRS, on «Smena
- * kunligi».
+ * «Rahbariyat vazifalari» — the tasks set FROM THE TOP for brigadirs and
+ * leaders, on «Smena kunligi».
  *
- * The operator (2026-11-14): tasks a top-manager, a shift-manager or an admin
- * sets must show on the shift day, «easy visible for top managers to say like
- * you are not doing or good doing» — and, the same day, «only brigadirs'
- * tasks»: a leader's task and a shift manager's own stay on /tasks. So this is
- * a board of BRIGADIRS, not a table of tasks: one tile per brigadir who was
- * set work, worst first, the answer readable before anything is opened —
+ * The operator (2026-11-14): «the task which assigned by admins, top managers
+ * and shift managers to brigadirs and liders should be shown in the shift
+ * day», «easy visible for top managers to say like you are not doing or good
+ * doing». A task the unit's own brigadir set for a leader is not here, and
+ * neither is a shift manager's own — both stay on /tasks. So this is a board
+ * of PEOPLE, not a table of tasks: one tile per brigadir or leader who was set
+ * work from the top, worst first, the answer readable before anything is
+ * opened —
  *
  *   red   something is past its date («Bajarilmayapti»)
  *   grey / yellow   open work, all of it in time
  *   green everything they were set is done
  *
- * and a tile opens that brigadir's tasks, each with its chat.
+ * and a tile opens that person's tasks, each with its chat.
  *
  * `GET /api/tasks/day` is the whole read (`services/task_day.py` holds the
  * rule of what a day contains and the four states). The SERVER decides who
@@ -44,7 +46,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fmtDate } from "../../utils/targets";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
-import { KIND_SUP, endpointFor } from "../../utils/taskTiers";
+import { TIERS, KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
 
 // Worst first, left to right — the red starts at the same edge on every tile,
 // so who is late reads straight down the column.
@@ -76,9 +78,9 @@ const TONE = {
   done:  { Icon: Check,         fill: STATUS_COLOR.done, ink: "var(--status-ok)" },
 };
 
-// Brigadirs shown before «yana N» — the list is worst first, so the slice on
-// screen is the people to talk to (three rows of three on a wide screen).
-const SHOWN = 9;
+// People shown per group before «yana N» — each list is worst first, so the
+// slice on screen is the people to talk to (two rows of three on a wide screen).
+const SHOWN = 6;
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
@@ -111,7 +113,7 @@ export default function DayTasksCard({ day, params }) {
   const [personKey, setPersonKey] = useState(null);     // whose tasks are open
   const [thread, setThread] = useState(null);           // the task whose chat is open
   const [form, setForm] = useState(null);               // the task form's opening state
-  const [showAll, setShowAll] = useState(false);        // every brigadir, not the top slice
+  const [expanded, setExpanded] = useState({});         // group → show every person
   // Whether this browser was shown the block last time — so a reader who has
   // it gets its skeleton while it loads instead of a block dropping in above
   // the board. Never a right: the server decides (`show`).
@@ -132,6 +134,10 @@ export default function DayTasksCard({ day, params }) {
 
   const people = useMemo(() => data?.people || [], [data]);
   const totals = data?.totals;
+  // Brigadirs, then leaders — the org chart's own order.
+  const groups = useMemo(
+    () => TIERS.map((kind) => ({ kind, rows: people.filter((p) => p.kind === kind) })).filter((g) => g.rows.length),
+    [people]);
   const maxTotal = people.reduce((m, p) => Math.max(m, p.total), 0);
   // Read off the fresh payload, so an open dialog follows a refetch.
   const person = personKey ? people.find((p) => p.key === personKey) : null;
@@ -151,15 +157,16 @@ export default function DayTasksCard({ day, params }) {
   const unit = t("tasks.itemsUnit");
   const parts = STATE_ORDER.map((s) => ({ key: s, label: stateLabel(s), color: STATE_FILL[s], value: totals?.[s] || 0 }));
   const barParts = STATE_ORDER.map((s) => ({ key: s, label: stateLabel(s), color: STATE_FILL[s] }));
-  // The block sets a task at its own tier only — a brigadir's.
-  const createKinds = data?.can_create?.[KIND_SUP] ? [KIND_SUP] : [];
+  // The block sets a task at the tiers it shows — the server says which of
+  // them this viewer may.
+  const createKinds = [KIND_SUP, KIND_LEADER].filter((k) => data?.can_create?.[k]);
   const toneLabel = (p) => t(`dayTasks.tone.${p.tone}`);
   const dateLabel = fmtDate(data?.date || day, t);
 
   const tile = (p) => (
     <RankedBar
       key={p.key}
-      row={{ ...p, label: tl(p.name) || "—", title: tl(p.name) }}
+      row={{ ...p, label: tl(p.name) || "—", title: p.unit_name ? `${tl(p.name)} · ${tl(p.unit_name)}` : tl(p.name) }}
       max={maxTotal}
       parts={barParts}
       unit={unit}
@@ -234,27 +241,44 @@ export default function DayTasksCard({ day, params }) {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-1.5 mt-4">
-              {(showAll ? people : people.slice(0, SHOWN)).map(tile)}
-            </div>
-            {people.length > SHOWN && (
-              <div className="mt-1.5">
-                <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)}>
-                  {showAll ? t("dayTasks.showLess") : t("dayTasks.showMore").replace("{n}", people.length - SHOWN)}
-                </Button>
-              </div>
-            )}
+            {groups.map((g) => {
+              const all = !!expanded[g.kind];
+              const rows = all ? g.rows : g.rows.slice(0, SHOWN);
+              const more = g.rows.length - SHOWN;
+              return (
+                <div key={g.kind} className="mt-4">
+                  <div className="text-[11px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-3)" }}>
+                    {t(`dayTasks.grp.${g.kind}`)} · {g.rows.length}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-1.5">
+                    {rows.map(tile)}
+                  </div>
+                  {more > 0 && (
+                    <div className="mt-1.5">
+                      <Button size="sm" variant="ghost"
+                        onClick={() => setExpanded((e) => ({ ...e, [g.kind]: !all }))}>
+                        {all ? t("dayTasks.showLess") : t("dayTasks.showMore").replace("{n}", more)}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </>
         )}
       </div>
 
-      {/* One brigadir's tasks on that day */}
+      {/* One person's tasks on that day */}
       {person && (
         <Modal
           onClose={() => setPersonKey(null)}
           maxWidth="max-w-xl"
           title={tl(person.name) || "—"}
-          subtitle={`${t(`tasks.tier.${person.kind}`)} · ${t("dayTasks.doneOf").replace("{d}", person.done).replace("{n}", person.total)}`}
+          subtitle={[
+            t(`tasks.tier.${person.kind}`),
+            person.unit_name ? tl(person.unit_name) : null,
+            t("dayTasks.doneOf").replace("{d}", person.done).replace("{n}", person.total),
+          ].filter(Boolean).join(" · ")}
           footer={
             <>
               <Button variant="secondary" onClick={() => setPersonKey(null)}>{t("dayTasks.close")}</Button>

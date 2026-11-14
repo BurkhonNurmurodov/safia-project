@@ -447,6 +447,10 @@ async def lifespan(app: FastAPI):
     later(backfill_leader_page_access)
     later(open_cells_page_to_supervisors)
     later(open_production_page_to_managers)
+    # «Vazifalar» for top-managers — a no-op until the first day
+    # (`task_board.OPEN_FROM`), once per database after it.
+    from app.services import task_board as _task_board
+    later(_task_board.open_page_to_top_managers)
     run(seed_admins)
     run(seed_languages)
     run(seed_managers_and_sources)
