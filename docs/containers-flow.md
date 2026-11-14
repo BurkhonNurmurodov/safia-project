@@ -22,23 +22,29 @@ containers row from production and move it into the new button».
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».
-- **Who presses what** (2026-11-14, the operator: «show this page for Fozilova
-  Dilafruz, she is the member of AXO and she has to create the requests»):
-  - **A holder of `container-flow` who is not an admin is AXO.** The page shows
-    them «AXO», «Hammasi» and «Hisobot»; they ISSUE an hour, file a «Qo'lda
-    so'rov» (also offered on the empty state while no unit is enrolled — the
-    way she creates a request before any unit is switched on), settle a
-    dispute («Hammasi» → ⋮ → «Hal qilish»), read the history and the report.
-    The endpoints behind the page key (`PAGE` in `routers/container_flow.py`):
-    board, issue, manual, settle, history, teams, settings (read), readiness,
-    report and its Excel.
-  - **Admins only** (`verify_admin`): Logistics' delivery and send-back, a
-    leader's answer, «Majburan yopish» and writing the settings — and the
-    «Logistika», «Liderlar» and «Sozlamalar» tabs. Logistics and leaders get
-    accounts later (the operator: «we gonna create for them accounts, for now
-    just leave it»).
-  - First holder: **Fozilova Dilafruz** (guest profile, AXO) —
-    `startup.dilafruz_container_flow`, docs/data-fixes.md.
+- **Who presses what** — two page keys, both admin-only until granted; either
+  opens the page (`page: [...]` on the nav link and the route —
+  `canAccessPage` takes a LIST, any of them):
+  - **`container-flow` is AXO** (the operator, 2026-11-14: «show this page for
+    Fozilova Dilafruz, she is the member of AXO and she has to create the
+    requests»): «So'rovlar» → «Yangi so'rov», cancelling one, the «AXO» tab
+    (issuing an hour), settling a dispute from «Hammasi».
+  - **`container-logistics` is Logistics** (the same day: AXO «should not
+    choose the brigadirs, she has to choose Nuriddin aka, he is the guy from
+    logistics, and Nuriddin aka has to choose the brigadirs»): the requests
+    addressed to them on «So'rovlar» → «Brigadirlarga taqsimlash», and the
+    «Logistika» tab (a batch's delivery / send-back).
+  - Both read «So'rovlar», «Hammasi» and «Hisobot». A logistics person who is
+    not AXO sees only the requests addressed to them.
+  - **Admins only** (`verify_admin`): a leader's answer, «Majburan yopish»,
+    writing the settings — the «Liderlar» and «Sozlamalar» tabs.
+  - The server says who the viewer is (`GET /settings` → `admin`, `axo`,
+    `logistics`, `_roles`); the tabs follow it. Guards: `PAGE` (AXO), `LOGI`
+    (Logistics), `ANY` (either) in `routers/container_flow.py`.
+  - Holders: **Fozilova Dilafruz** (guest, AXO —
+    `startup.dilafruz_container_flow`) and **Nuriddin aka** («Kutish mas'uli»
+    profile, Logistics — `startup.nuriddin_container_logistics`);
+    docs/data-fixes.md.
 - **Nothing here sends a message to anybody** — no Telegram, no notification;
   that comes with the first-day date the operator names.
 
@@ -66,7 +72,7 @@ containers row from production and move it into the new button».
   plan takes nothing back.
 - **The deadline** (`_due`): delivery by H − 60 for a batch drafted on time;
   a batch that could only be drafted later (a plan typed late, people not yet
-  counted, a top-up, a manual request) is due 60 minutes after its draft —
+  counted, a top-up) is due 60 minutes after its draft —
   judged from when it existed. *This answers the plan's open question 1 with a
   default; the operator has not ruled on it.*
 - **The steps** — each a `FlowError(code)` when the state or the numbers do not
@@ -83,8 +89,31 @@ containers row from production and move it into the new button».
 - **The split** (`split`): each team its frozen due when enough arrived (a
   surplus stays with the batch); otherwise cut in proportion by LARGEST
   REMAINDER, so the parts add up to what was delivered.
-- **Manual request** (`manual`, the page's «Qo'lda so'rov»): unit, hour, team,
-  counts — for a line the hours cannot see. Same steps, kind `manual`.
+- **A REQUEST — AXO → a logistics person → brigadirs** (2026-11-14; tables
+  `container_requests` + `container_request_parts`, `create_request` /
+  `assign_request` / `cancel_request` / `requests_of`). AXO never picks a
+  brigadir: a request is the counts per container type, the production hour
+  and ONE logistics person. **Who can be picked** (`logistics_people`) is every
+  profile with a PERSONAL grant of `page.view.container-logistics` — opening
+  the page to a whole role does not make its members addressees. Due an hour
+  before its hour (or an hour after it was made, if made later — `_due`).
+  The addressee (or an admin) splits it across brigadirs — a row per brigadir,
+  a count per requested type, any non-archived brigadir; no type over what was
+  asked (`over`), fewer needs a reason; the request is then `assigned` and
+  CLOSED — nobody confirms the arrival yet (the operator's pick). `late` = split
+  after the deadline. AXO / an admin may cancel one still waiting, with a note.
+  **The counts start from the hour's figure** (2026-11-14, the operator: «when
+  we choose the hours the number of containers should appear by default, then
+  if it is incorrect they will correct it by hand»): picking an hour on «Yangi
+  so'rov» fills every count with the «Konteynerlar» page's number for that
+  hour — the whole plant, every configured non-archived unit's
+  `hourly_containers.unit_hours` summed (`plant_hours`, `GET /hour-need`,
+  kept a minute; the page's own filters are not applied). A hand edit sticks
+  until another hour is picked; a field that differs says «Hisob bo'yicha: N»,
+  and an hour with no figure says so and leaves the counts to the hand.
+  This REPLACED the first day's «Qo'lda so'rov», which had AXO pick the
+  brigadir and the team (`manual`, removed; kind `manual` stays readable in the
+  report). Requests are not in «Hisobot» yet.
 - **History**: `container_events`, one row per step (who, when, counts,
   reason) — the batch's «Tarix». The «Jurnal» row of each request is the
   action log's (`containers.*` in `ROUTES`, category `shopfloor`;
@@ -124,8 +153,8 @@ hover): five long names pushed the status and the actions off a laptop.
 
 ### Not built (the plan's remaining parts — ask first)
 
-- Logistics accounts and their page key; a leader's own card; the brigadir's
-  read-only view.
+- A leader's own card; the brigadir's read-only view; a brigadir confirming a
+  request's containers arrived; requests in «Hisobot».
 - Every notification and Telegram message, and the escalation chain.
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.

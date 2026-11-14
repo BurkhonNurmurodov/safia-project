@@ -10,7 +10,6 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import FormField from "../components/ui/FormField";
-import StyledSelect from "../components/ui/StyledSelect";
 import CountStepper from "../components/ui/CountStepper";
 import ActionMenu from "../components/ui/ActionMenu";
 import EmptyState from "../components/ui/EmptyState";
@@ -24,6 +23,7 @@ import {
 } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
+import { RequestsTab, NewRequestModal } from "../components/containers/FlowRequests";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
@@ -35,25 +35,27 @@ import api from "../utils/api";
 // platform drafts each enrolled unit's batch two hours ahead with the need
 // FROZEN on it; AXO issues the hour, Logistics confirms it at the unit, the
 // platform splits it between the unit's teams and each leader accepts a share.
-// docs/containers-flow.md. ADMINS ONLY while it is tried out — an admin presses
-// every step, and nothing here messages the floor. A holder of the page key
-// `container-flow` who is not an admin is AXO (Fozilova Dilafruz, 2026-11-14):
-// they see AXO, Hammasi and Hisobot and take AXO's steps — issue, a manual
-// request, settling a dispute; the other tabs and steps stay with admins.
+// docs/containers-flow.md. Nothing here messages the floor.
+//
+// Who sees what comes from the server (`/settings` → admin / axo / logistics):
+// `container-flow` is AXO (Fozilova Dilafruz) — a REQUEST to a logistics
+// person, issuing an hour, settling a dispute; `container-logistics` is
+// Logistics (Nuriddin aka) — splitting a request across brigadirs, a batch's
+// delivery; a leader's answer, a forced close and the settings are admins'.
 const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
-const TABS = ["axo", "logistics", "leaders", "all", "report", "settings"];
-const AXO_TABS = ["axo", "all", "report"];
+const TABS = ["requests", "axo", "logistics", "leaders", "all", "report", "settings"];
+const tabsFor = (r) => TABS.filter((k) => r.admin
+  || k === "requests" || k === "all" || k === "report"
+  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
   const { t } = useLang();
   const toast = useToast();
   const qc = useQueryClient();
-  const [tabSaved, setTab] = usePersistentState("cflow_tab", "axo");
+  const [tabSaved, setTab] = usePersistentState("cflow_tab", "requests");
   const isAdmin = useAuth()?.auth?.role === "admin";
-  const tabs = isAdmin ? TABS : AXO_TABS;
-  const tab = tabs.includes(tabSaved) ? tabSaved : "axo";
   const [picked, setPicked] = useState(null);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -62,7 +64,7 @@ export default function ContainerFlow() {
   }, []);
   const live = liveDay(tashkentNow());
   const day = picked ?? live;
-  const [manualOpen, setManualOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
 
   const board = useQuery({
     queryKey: ["cflow-board", day],
@@ -73,13 +75,16 @@ export default function ContainerFlow() {
     queryKey: ["cflow-settings"],
     queryFn: () => api.get("/api/container-flow/settings").then((r) => r.data),
   });
+  const roles = { admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics };
+  const tabs = tabsFor(roles);
+  const tab = tabs.includes(tabSaved) ? tabSaved : "requests";
   const refresh = () => qc.invalidateQueries({ queryKey: ["cflow-board"] });
   const done = (msg) => { toast.success(msg); refresh(); };
   const fail = (e) => toast.error(errText(t, e));
 
   const batches = board.data?.batches ?? [];
   const enrolled = settings.data?.units ?? null;
-  const onFlow = tab !== "report" && tab !== "settings";
+  const onFlow = !["report", "settings", "requests"].includes(tab);
   const nothingOn = onFlow && enrolled != null && enrolled.length === 0 && !board.isLoading && batches.length === 0;
   const ctx = { t, day, batches, loading: board.isLoading, done, fail, refresh };
 
@@ -90,10 +95,9 @@ export default function ContainerFlow() {
         <SegmentedToggle asTabs value={tab} onChange={setTab}
           options={tabs.map((k) => ({ value: k, label: t(`cflow.tab.${k}`) }))} />
         {tab !== "report" && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
-        {onFlow && (
-          <Button size="lg" variant="secondary" icon={<PackagePlus size={15} />} className="ml-auto"
-            onClick={() => setManualOpen(true)}>
-            {t("cflow.manual")}
+        {roles.axo && tab !== "settings" && tab !== "report" && (
+          <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => setNewOpen(true)}>
+            {t("cflow.req.new")}
           </Button>
         )}
       </div>
@@ -105,8 +109,9 @@ export default function ContainerFlow() {
           message={t(isAdmin ? "cflow.noUnitsMsg" : "cflow.noUnitsAxo")}
           action={isAdmin
             ? <Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>
-            : <Button icon={<PackagePlus size={15} />} onClick={() => setManualOpen(true)}>{t("cflow.manual")}</Button>} />
-      ) : tab === "axo" ? <AxoTab {...ctx} />
+            : <Button onClick={() => setTab("requests")}>{t("cflow.tab.requests")}</Button>} />
+      ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={() => setNewOpen(true)} />
+        : tab === "axo" ? <AxoTab {...ctx} />
         : tab === "logistics" ? <LogisticsTab {...ctx} />
         : tab === "leaders" ? <LeadersTab {...ctx} />
         : tab === "all" ? <AllTab {...ctx} isAdmin={isAdmin} />
@@ -114,10 +119,12 @@ export default function ContainerFlow() {
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}
 
-      {manualOpen && (
-        <ManualModal t={t} day={day} units={settings.data?.all_units ?? []}
-          onClose={() => setManualOpen(false)}
-          onDone={() => { setManualOpen(false); done(t("cflow.manualDone")); }} onFail={fail} />
+      {newOpen && (
+        <NewRequestModal t={t} day={day} onClose={() => setNewOpen(false)}
+          onDone={() => {
+            setNewOpen(false); setTab("requests"); toast.success(t("cflow.req.sent"));
+            qc.invalidateQueries({ queryKey: ["cflow-requests"] });
+          }} onFail={fail} />
       )}
       {toast.node}
     </Layout>
@@ -621,65 +628,6 @@ function NoteModal({ t, title, subtitle, label, hint, confirm, danger, post, onC
       )}>
       <FormField label={label} required hint={hint}>
         <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className={fieldCls} style={fieldStyle} />
-      </FormField>
-    </Modal>
-  );
-}
-
-// A request made by hand — for a line the hours cannot see.
-function ManualModal({ t, day, units, onClose, onDone, onFail }) {
-  const { tl } = useTranslit();
-  const [unit, setUnit] = useState(null);
-  const [hour, setHour] = useState(() => Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
-  const [team, setTeam] = useState(null);
-  const [counts, setCounts] = useState({});
-  const [note, setNote] = useState("");
-  const teams = useQuery({
-    queryKey: ["cflow-teams", unit, day], enabled: unit != null,
-    queryFn: () => api.get("/api/container-flow/teams", { params: { manager_id: unit, day } }).then((r) => r.data.teams),
-  });
-  const teamOpts = (teams.data ?? []).map((x) => ({
-    value: `${x.work_center}|${x.group}`,
-    label: [x.work_center, x.group, x.cell_code, tl(x.leader)].filter(Boolean).join(" · "),
-  }));
-  const any = KEYS.some((k) => counts[k] > 0);
-  const m = usePost(() => {
-    const [work_center, group] = team.split("|");
-    return api.post("/api/container-flow/manual", {
-      manager_id: unit, day, hour, work_center, group,
-      counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])), note,
-    });
-  }, { onDone, onFail });
-  return (
-    <Modal onClose={onClose} title={t("cflow.manual")} subtitle={t("cflow.manualSub")} maxWidth="max-w-xl"
-      footer={(
-        <>
-          <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button loading={m.isPending} disabled={unit == null || !team || !any} onClick={() => m.mutate()}>{t("cflow.manualSend")}</Button>
-        </>
-      )}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label={t("containers.brigadir")} required>
-          <StyledSelect searchable value={unit} onChange={(v) => { setUnit(v); setTeam(null); }} placeholder={t("cflow.pick")}
-            options={units.map((u) => ({ value: u.id, label: tl(u.name) }))} />
-        </FormField>
-        <FormField label={t("cflow.hour")} required>
-          <StyledSelect value={hour} onChange={setHour}
-            options={Array.from({ length: 32 }, (_, h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
-        </FormField>
-      </div>
-      <FormField label={t("cflow.team")} required hint={unit != null && !teams.isLoading && !teamOpts.length ? t("cflow.noTeams") : undefined}>
-        <StyledSelect searchable value={team} onChange={setTeam} disabled={unit == null} placeholder={t("cflow.pick")} options={teamOpts} />
-      </FormField>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {KEYS.map((k) => (
-          <FormField key={k} label={t(`production.cont.${k}`)}>
-            <CountStepper min={0} value={counts[k] ?? null} placeholder="0" onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />
-          </FormField>
-        ))}
-      </div>
-      <FormField label={t("cflow.comment")}>
-        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className={fieldCls} style={fieldStyle} />
       </FormField>
     </Modal>
   );

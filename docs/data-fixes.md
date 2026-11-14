@@ -396,6 +396,17 @@ profile, same «exactly one match» rule and admin DM: grants
 `page.view.container-flow` (docs/containers-flow.md — AXO's steps: issuing,
 manual requests, settling a dispute). Nothing she held is revoked.
 
+## Nuriddin aka → «Konteyner berish» as Logistics (`startup.nuriddin_container_logistics`, 2026-11-14)
+
+The operator: Dilafruz «should not choose the brigadirs, she has to choose
+Nuriddin aka, he is the guy from logistics, and Nuriddin aka has to choose the
+brigadirs». A one-shot (flag
+`oneshot:idle_owner_nuriddin_container_logistics_nov14`, `later`) on the ONE
+«Kutish mas'uli» (`idle-owner`) profile whose name holds «Nuriddin»: grants
+`page.view.container-logistics` (docs/containers-flow.md), which also makes
+him an addressee of AXO's requests. Not exactly one match → nothing changes
+and the admins get a DM saying so. Nothing he held is revoked.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three

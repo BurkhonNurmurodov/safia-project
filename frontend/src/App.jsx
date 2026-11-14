@@ -660,7 +660,7 @@ function AppWithLang() {
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
             <Route path="/containers" element={<AuthGate><RequirePage page="containers"><Containers /></RequirePage></AuthGate>} />
             {/* «Konteyner berish» — page key `container-flow` (AXO's steps; the rest admin-only). */}
-            <Route path="/containers/flow" element={<AuthGate><RequirePage page="container-flow"><ContainerFlow /></RequirePage></AuthGate>} />
+            <Route path="/containers/flow" element={<AuthGate><RequirePage page={["container-flow", "container-logistics"]}><ContainerFlow /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />

@@ -239,16 +239,77 @@ class FlowTest(unittest.TestCase):
             flow.deliver(self.db, b.id, None, None, None, "mitsu")
         self.assertTrue(b.late)
 
-    def test_manual_request(self):
-        b = flow.manual(self.db, 1, DAY, 11, "a2894", "a", {"box": 5, "grey": 0}, "no norm yet", "admin")
+    def test_request_to_logistics_split_across_brigadirs(self):
+        from app.models import ProfilePermission, RoleProfile
+        self.db.execute(flow.text("DELETE FROM container_request_parts"))
+        self.db.execute(flow.text("DELETE FROM container_requests"))
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        if self.db.get(Manager, 2) is None:
+            self.db.add(Manager(id=2, name="Unit Two", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
         self.db.commit()
-        got = flow.one(self.db, b)
-        self.assertEqual((got["kind"], got["lines"][0]["need"], got["teams"][0]["leader"]),
-                         ("manual", 5, "Leader A"))
+        self.assertEqual(flow.logistics_people(self.db), [{"key": nk, "name": "Nuriddin aka"}])
+        with self.assertRaises(flow.FlowError) as e:                       # only a logistics person
+            flow.create_request(self.db, DAY, 10, "guest:99", {"yellow": 40}, "", "axo", "guest:1")
+        self.assertEqual(e.exception.code, "logistics")
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 40, "bucket": 12, "grey": 0}, "tez", "axo", "guest:1")
+        self.db.commit()
+        self.assertEqual((r.lines, r.status, r.logistics_name), ({"yellow": 40, "bucket": 12}, "requested", "Nuriddin aka"))
+        with self.assertRaises(flow.FlowError) as e:                       # somebody else's request
+            flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 40}}], None, None, "x", "idle-owner:0", False)
+        self.assertEqual(e.exception.code, "not_yours")
+        with self.assertRaises(flow.FlowError) as e:                       # more than asked
+            flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 30}},
+                                                {"manager_id": 2, "counts": {"yellow": 20}}], None, None, "n", nk, False)
+        self.assertEqual(e.exception.code, "over")
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as e:                       # fewer needs a reason
+            flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 20}}], None, None, "n", nk, False)
+        self.assertEqual(e.exception.code, "reason")
+        self.db.rollback()
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 20, "bucket": 12}},
+                                            {"manager_id": 2, "counts": {"yellow": 20}}], None, None, "n", nk, False)
+        self.db.commit()
+        got = flow.requests_of(self.db, DAY, nk)[0]
+        self.assertEqual(got["status"], "assigned")
+        self.assertEqual({p["manager_id"]: p["counts"] for p in got["parts"]},
+                         {1: {"yellow": 20, "bucket": 12}, 2: {"yellow": 20}})
+        self.assertEqual(flow.requests_of(self.db, DAY, "idle-owner:0"), [])   # not addressed to them
         with self.assertRaises(flow.FlowError):
-            flow.manual(self.db, 1, DAY, 11, "A2894", "", {}, "", "admin")
-        self.assertEqual(self.draft(7), 1)               # a manual batch is no regular draft: hour 9 still gets one
+            flow.cancel_request(self.db, r.id, "x", "axo")                 # done — no cancel
+        r2 = flow.create_request(self.db, DAY, 11, nk, {"box": 3}, "", "axo", "guest:1")
+        with self.assertRaises(flow.FlowError):
+            flow.cancel_request(self.db, r2.id, " ", "axo")
+        flow.cancel_request(self.db, r2.id, "kerak emas", "axo")
+        self.assertEqual(r2.status, "cancelled")
+        self.db.query(ProfilePermission).filter_by(profile_key=nk).update({"mode": "deny"})
+        self.db.commit()
+        self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
+
+class PlantHoursTest(unittest.TestCase):
+    """The request form's default is the «Konteynerlar» page's hour: every
+    configured, non-archived unit's `unit_hours`, summed."""
+
+    def test_sums_configured_units_and_keeps_a_minute(self):
+        from unittest import mock as m
+        from app.routers import production
+        dashes = {1: ({9: {"yellow": 18}, 25: {"box": 2}}, {}), 2: ({9: {"yellow": 6, "round": 3}}, {})}
+        db = m.MagicMock()
+        db.query.return_value.filter.return_value.all.return_value = [(1,), (2,), (3,)]
+        flow._hours_cache.clear()
+        with m.patch.object(production, "_configured_manager_ids", return_value={1, 2}), \
+             m.patch.object(production, "_build_dashboard", side_effect=lambda db, mid, day: mid), \
+             m.patch.object(flow.hourly_containers, "unit_hours", side_effect=lambda mid: dashes[mid]) as uh:
+            got = flow.plant_hours(db, DAY)
+            self.assertEqual(got, {9: {"yellow": 24, "round": 3}, 25: {"box": 2}})
+            flow.plant_hours(db, DAY)
+            self.assertEqual(uh.call_count, 2)          # unit 3 has no «Zagruzka fayli»; the 2nd read is kept
+        flow._hours_cache.clear()
 
 
 class PageKeyTest(unittest.TestCase):
@@ -258,9 +319,10 @@ class PageKeyTest(unittest.TestCase):
     def test_page_key_and_capability(self):
         from app import capabilities
         from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
-        self.assertIn("container-flow", PAGE_KEYS)
-        self.assertEqual(DEFAULT_PAGE_ACCESS["container-flow"], [])
-        self.assertIn("page.view.container-flow", {c["key"] for c in capabilities.CAPABILITIES})
+        for key in ("container-flow", "container-logistics"):
+            self.assertIn(key, PAGE_KEYS)
+            self.assertEqual(DEFAULT_PAGE_ACCESS[key], [])
+            self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
 
     def test_axo_doors_and_admin_doors(self):
         """AXO's steps and the reads take the page key; Logistics', a
@@ -271,14 +333,20 @@ class PageKeyTest(unittest.TestCase):
         for route in r.router.routes:
             deps = [d.call for d in route.dependant.dependencies]
             guard[(next(iter(route.methods)), route.path)] = (
-                "admin" if verify_admin in deps else "page" if r.PAGE in deps else "?")
+                "admin" if verify_admin in deps else "axo" if r.PAGE in deps
+                else "logistics" if r.LOGI in deps else "any" if r.ANY in deps else "?")
         p = "/api/container-flow"
-        for k in [("GET", f"{p}/board"), ("POST", f"{p}/issue"), ("POST", f"{p}/manual"),
-                  ("POST", f"{p}/batches/{{batch_id}}/settle"), ("GET", f"{p}/report"),
-                  ("GET", f"{p}/settings"), ("GET", f"{p}/teams")]:
-            self.assertEqual(guard[k], "page", k)
+        for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
+                  ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
+                  ("GET", f"{p}/logistics"), ("GET", f"{p}/hour-need")]:
+            self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
-                  ("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
+                  ("POST", f"{p}/requests/{{request_id}}/assign"), ("GET", f"{p}/units")]:
+            self.assertEqual(guard[k], "logistics", k)
+        for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"),
+                  ("GET", f"{p}/settings"), ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
+            self.assertEqual(guard[k], "any", k)
+        for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
                   ("PUT", f"{p}/settings")]:
             self.assertEqual(guard[k], "admin", k)
         self.assertNotIn("?", guard.values())

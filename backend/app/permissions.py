@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen", "container-flow"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "api", "kitchen", "container-flow", "container-logistics"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -188,6 +188,10 @@ DEFAULT_PAGE_ACCESS = {
     # a leader's, a forced close and the settings stay with admins
     # (docs/containers-flow.md). First holder: Fozilova Dilafruz (AXO).
     "container-flow": [],
+    # «Konteyner berish» as LOGISTICS — a request addressed to them, split
+    # across brigadirs; a batch's delivery. A person holding it by a personal
+    # grant is an addressee AXO can pick. First holder: Nuriddin aka.
+    "container-logistics": [],
     # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
     # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
     # operator opens it: a token reads every cell's plan and people.

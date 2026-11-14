@@ -30,7 +30,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerEvent,
-                        ContainerShare, Manager)
+                        ContainerRequest, ContainerRequestPart, ContainerShare, Manager,
+                        ProfilePermission, RoleProfile)
 from app.services import hourly_containers
 
 logger = logging.getLogger(__name__)
@@ -446,29 +447,6 @@ def force_close(db: Session, batch_id: int, note, actor) -> ContainerBatch:
     return b
 
 
-def manual(db: Session, manager_id: int, day: date, hour: int, work_center: str, group: str,
-           counts: dict, note, actor) -> ContainerBatch:
-    """A request made by hand, for what the platform cannot plan (a line with
-    no labour standard, no people or no capacity has no hour, so no batch). It
-    travels the same steps and is counted apart in the report."""
-    if db.get(Manager, manager_id) is None:
-        raise FlowError("unit")
-    wc = str(work_center or "").strip().upper()
-    if not wc or not (0 <= int(hour) <= 47):
-        raise FlowError("team")
-    c = {k: _count(v) for k, v in (counts or {}).items() if k in KEYS and v}
-    if not c:
-        raise FlowError("count")
-    group = str(group or "").strip().upper()
-    meta = {"work_center": wc, "group": group, "rest": False}
-    for t in unit_teams(db, manager_id, day):
-        if t["work_center"] == wc and (t.get("group") or "") == group and not t.get("rest"):
-            meta = _meta(t)
-            break
-    return _create(db, manager_id, day, int(hour), "manual", [(meta, c)], now(), actor,
-                   (note or "").strip() or None)
-
-
 # ── reading ─────────────────────────────────────────────────────────────────
 
 def _iso(v) -> Optional[str]:
@@ -644,4 +622,198 @@ def readiness(db: Session, day: date) -> list:
         untimed = sum(sum(t["untimed"].values()) for t in hourly_containers.unit_teams(dash))
         out.append({"id": m.id, "name": m.name, "shift": m.shift, "lines": len(planned),
                     "with_cap": len(with_cap), "timed": timed, "untimed": untimed})
+    return out
+
+
+# ── requests: AXO → a logistics person → brigadirs ──────────────────────────
+# 2026-11-14, the operator: AXO «should not choose the brigadirs, she has to
+# choose Nuriddin aka, he is the guy from logistics, and Nuriddin aka has to
+# choose the brigadirs». A request names the counts, the hour and ONE logistics
+# person; that person splits it across brigadirs, which closes it.
+
+LOGISTICS_CAP = "page.view.container-logistics"
+
+
+def profile_name(db: Session, key: str) -> Optional[str]:
+    role, _, ref = (key or "").partition(":")
+    if not ref.isdigit():
+        return None
+    if role == "supervisor":
+        m = db.get(Manager, int(ref))
+        return m.name if m else None
+    if role == "admin":
+        from app.models import Admin
+        a = db.query(Admin).filter_by(profile_id=int(ref)).first()
+        ref = str(a.profile_id) if a else ref
+    p = db.get(RoleProfile, int(ref))
+    return p.name if p else None
+
+
+def logistics_people(db: Session) -> list:
+    """Who a request can be addressed to: every PROFILE holding a personal
+    grant of the Logistics page (`page.view.container-logistics`; one row per
+    profile and capability, so a deny replaces the grant). Opening the page to a whole role on the Access tab does not make
+    its members addressees — a request goes to a person."""
+    rows = db.query(ProfilePermission).filter(ProfilePermission.capability == LOGISTICS_CAP,
+                                              ProfilePermission.mode == "grant").all()
+    keys = sorted({r.profile_key for r in rows})
+    out = [{"key": k, "name": profile_name(db, k) or k} for k in keys]
+    return sorted(out, key=lambda x: x["name"])
+
+
+def _clean_counts(counts: dict) -> dict:
+    return {k: _count(v) for k, v in (counts or {}).items() if k in KEYS and v}
+
+
+def create_request(db: Session, day: date, hour: int, logistics_key: str, counts: dict,
+                   note, actor, actor_key) -> ContainerRequest:
+    if not (0 <= int(hour) <= 47):
+        raise FlowError("hour")
+    people = {p["key"]: p["name"] for p in logistics_people(db)}
+    if logistics_key not in people:
+        raise FlowError("logistics")
+    c = _clean_counts(counts)
+    if not c:
+        raise FlowError("count")
+    at = now()
+    r = ContainerRequest(day=day, hour=int(hour), lines=c, note=(note or "").strip() or None,
+                         logistics_key=logistics_key, logistics_name=people[logistics_key],
+                         status="requested", due_at=_due(hour_start(day, int(hour)), at),
+                         created_at=at, created_by=actor, created_key=actor_key)
+    db.add(r)
+    db.flush()
+    return r
+
+
+def _request(db: Session, request_id: int) -> ContainerRequest:
+    r = db.query(ContainerRequest).filter(ContainerRequest.id == request_id).with_for_update().first()
+    if r is None:
+        raise FlowError("gone")
+    return r
+
+
+def assign_request(db: Session, request_id: int, parts: list, reason, comment, actor,
+                   actor_key, is_admin: bool) -> ContainerRequest:
+    """The logistics person splits the request across brigadirs: `parts` is
+    [{manager_id, counts}]. No type may go over what was asked; fewer needs a
+    reason. Only the addressee (or an admin) may do it, once."""
+    r = _request(db, request_id)
+    if r.status != "requested":
+        raise FlowError("state")
+    if not is_admin and actor_key != r.logistics_key:
+        raise FlowError("not_yours")
+    given: dict = {}
+    clean = []
+    for p in parts or []:
+        mid = int(p.get("manager_id") or 0)
+        c = _clean_counts(p.get("counts"))
+        if not c:
+            continue
+        if db.get(Manager, mid) is None:
+            raise FlowError("unit")
+        for k, n in c.items():
+            if k not in r.lines:
+                raise FlowError("type")
+            given[k] = given.get(k, 0) + n
+        clean.append((mid, c))
+    if not clean:
+        raise FlowError("count")
+    if any(given.get(k, 0) > n for k, n in r.lines.items()):
+        raise FlowError("over")
+    if any(given.get(k, 0) < n for k, n in r.lines.items()):
+        r.short_reason, r.short_comment = _why(reason, comment)
+    merged: dict = {}
+    for mid, c in clean:
+        for k, n in c.items():
+            merged[(mid, k)] = merged.get((mid, k), 0) + n
+    for (mid, k), n in merged.items():
+        db.add(ContainerRequestPart(request_id=r.id, manager_id=mid, ctype=k, count=n))
+    at = now()
+    r.status, r.assigned_at, r.assigned_by, r.late = "assigned", at, actor, at > r.due_at
+    return r
+
+
+def cancel_request(db: Session, request_id: int, note, actor) -> ContainerRequest:
+    r = _request(db, request_id)
+    if r.status != "requested":
+        raise FlowError("state")
+    note = (note or "").strip()
+    if not note:
+        raise FlowError("note")
+    r.status, r.cancelled_at, r.cancelled_by, r.cancel_note = "cancelled", now(), actor, note
+    return r
+
+
+def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> list:
+    """The day's requests (only those addressed to `logistics_key` when given),
+    with their parts and each part's brigadir."""
+    at = now()
+    q = db.query(ContainerRequest).filter(ContainerRequest.day == day)
+    if logistics_key is not None:
+        q = q.filter(ContainerRequest.logistics_key == logistics_key)
+    rows = q.order_by(ContainerRequest.hour, ContainerRequest.id).all()
+    parts: dict = {}
+    if rows:
+        for p in db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id.in_([r.id for r in rows])).order_by(ContainerRequestPart.id).all():
+            parts.setdefault(p.request_id, []).append(p)
+    mids = {p.manager_id for ps in parts.values() for p in ps}
+    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    out = []
+    for r in rows:
+        by_unit: dict = {}
+        for p in parts.get(r.id, []):
+            u = by_unit.setdefault(p.manager_id, {"manager_id": p.manager_id,
+                                                  "unit": getattr(units.get(p.manager_id), "name", None),
+                                                  "counts": {}})
+            u["counts"][p.ctype] = p.count
+        out.append({
+            "id": r.id, "day": r.day.isoformat(), "hour": r.hour,
+            "lines": {k: r.lines[k] for k in KEYS if k in (r.lines or {})}, "note": r.note,
+            "logistics_key": r.logistics_key, "logistics_name": r.logistics_name,
+            "status": r.status, "due_at": _iso(r.due_at), "created_at": _iso(r.created_at),
+            "created_by": r.created_by, "assigned_at": _iso(r.assigned_at), "assigned_by": r.assigned_by,
+            "late": r.late, "overdue": r.status == "requested" and at > r.due_at,
+            "short_reason": r.short_reason, "short_comment": r.short_comment,
+            "cancelled_at": _iso(r.cancelled_at), "cancelled_by": r.cancelled_by, "cancel_note": r.cancel_note,
+            "parts": list(by_unit.values()),
+        })
+    return out
+
+
+# ── the hour's figure for a request ─────────────────────────────────────────
+# 2026-11-14, the operator, on «Yangi so'rov»: «when we choose the hours the
+# number of containers should appear by default, then if it is incorrect they
+# will correct it by hand». The figure is the «Konteynerlar» page's own —
+# every non-archived unit with a «Zagruzka fayli», `hourly_containers
+# .unit_hours` summed per clock hour (what `/api/shift-report/containers-hourly`
+# answers without a filter) — kept a minute, like that endpoint.
+_HOURS_TTL_S = 60
+_hours_cache: dict = {}
+
+
+def plant_hours(db: Session, day: date) -> dict:
+    """{hour: {ctype: n}} for the whole plant on `day` (hours past 23 belong
+    to the production day that started them)."""
+    import time as _time
+    from fastapi import HTTPException
+    from app.routers import production
+    got = _hours_cache.get(day)
+    if got and _time.monotonic() - got[0] < _HOURS_TTL_S:
+        return got[1]
+    started = _time.monotonic()
+    configured = production._configured_manager_ids(db)
+    out: dict = {}
+    for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all():
+        if mid not in configured:
+            continue
+        try:
+            h_map, _u = hourly_containers.unit_hours(production._build_dashboard(db, mid, day))
+        except HTTPException:
+            continue
+        for h, e in h_map.items():
+            o = out.setdefault(int(h), {})
+            for k, n in e.items():
+                o[k] = o.get(k, 0) + n
+    _hours_cache[day] = (started, out)
     return out
