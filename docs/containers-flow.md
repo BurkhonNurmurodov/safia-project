@@ -111,6 +111,16 @@ containers row from production and move it into the new button».
   kept a minute; the page's own filters are not applied). A hand edit sticks
   until another hour is picked; a field that differs says «Hisob bo'yicha: N»,
   and an hour with no figure says so and leaves the counts to the hand.
+  **A request its addressee has not opened yet looks NEW** (2026-11-14, the
+  operator: Nuriddin aka could not tell an incoming request from the rest):
+  `container_requests.seen_at` (`startup.add_container_request_seen`, a
+  boot `run` step) is set the first time the ADDRESSEE opens «Brigadirlarga
+  taqsimlash» (`POST /seen/{id}`, `mark_seen` — AXO or an admin opening it
+  clears nothing; in `_SKIP`, not «Jurnal»: attention, not an act). Until
+  then his row is tinted gold with a gold edge, bold, a «Yangi» chip and a
+  filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
+  (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
+  else sees the mark.
   This REPLACED the first day's «Qo'lda so'rov», which had AXO pick the
   brigadir and the team (`manual`, removed; kind `manual` stays readable in the
   report). Requests are not in «Hisobot» yet.

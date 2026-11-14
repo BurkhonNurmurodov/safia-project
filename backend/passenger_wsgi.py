@@ -69,6 +69,7 @@ try:
         seed_verifix_sync,
         add_cell_one_process,
         add_leader_ended_on,
+        add_container_request_seen,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -234,6 +235,7 @@ try:
     add_dispute_ruling_column()
     add_cell_one_process()
     add_leader_ended_on()
+    add_container_request_seen()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()

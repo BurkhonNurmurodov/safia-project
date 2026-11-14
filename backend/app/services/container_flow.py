@@ -744,6 +744,17 @@ def cancel_request(db: Session, request_id: int, note, actor) -> ContainerReques
     return r
 
 
+def mark_seen(db: Session, request_id: int, actor_key) -> bool:
+    """The addressee opened the request: it stops looking new. Only the
+    person it is addressed to clears it — an admin or AXO opening it does
+    not. Returns whether anything changed."""
+    r = db.get(ContainerRequest, request_id)
+    if r is None or not actor_key or r.logistics_key != actor_key or r.seen_at is not None:
+        return False
+    r.seen_at = now()
+    return True
+
+
 def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> list:
     """The day's requests (only those addressed to `logistics_key` when given),
     with their parts and each part's brigadir."""
@@ -776,7 +787,7 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "late": r.late, "overdue": r.status == "requested" and at > r.due_at,
             "short_reason": r.short_reason, "short_comment": r.short_comment,
             "cancelled_at": _iso(r.cancelled_at), "cancelled_by": r.cancelled_by, "cancel_note": r.cancel_note,
-            "parts": list(by_unit.values()),
+            "seen_at": _iso(r.seen_at), "parts": list(by_unit.values()),
         })
     return out
 

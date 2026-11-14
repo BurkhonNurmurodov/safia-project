@@ -2131,6 +2131,14 @@ def add_leader_ended_on() -> None:
                     "leader ended_on column")
 
 
+def add_container_request_seen() -> None:
+    """2026-11-14: `container_requests.seen_at` — when the addressed logistics
+    person first opened the request; NULL = still new to them. Pure DDL,
+    idempotent, no flag; every ORM read of a request selects it."""
+    _ensure_columns((("container_requests", (("seen_at", "TIMESTAMPTZ"),), None),),
+                    "container request seen_at column")
+
+
 UNBIND_ENDED_FLAG = "oneshot:unbind_ended_leaders_nov13"
 # The operator, 2026-11-13 («Yes, remove both»): the two leaders Verifix
 # dismissed before a dismissal took access away, who still held a Telegram link.

@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI):
         seed_verifix_sync,
         add_cell_one_process,
         add_leader_ended_on,
+        add_container_request_seen,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -248,6 +249,7 @@ async def lifespan(app: FastAPI):
     run(add_dispute_ruling_column)
     run(add_cell_one_process)
     run(add_leader_ended_on)
+    run(add_container_request_seen)
     run(add_last_seen_column)
     run(add_tg_name_column)
     run(add_edit_requests_batch_id)

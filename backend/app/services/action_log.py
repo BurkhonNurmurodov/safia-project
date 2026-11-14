@@ -596,6 +596,8 @@ _SKIP = (
     # «Nomzodlarni baholash»: a judge's per-tap verdict / note and feedback
     # drafts. The submitted scorecard is the recorded act.
     "/api/assessment/draft/",
+    # «Konteyner berish»: the addressee opened a request (its «new» mark goes).
+    "/api/container-flow/seen/",
     # The bell's read marks: a viewer opened their notifications or tapped
     # one. Telemetry about attention, never a change to anybody's records.
     "/api/notifications/read",

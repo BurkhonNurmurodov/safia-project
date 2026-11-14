@@ -23,7 +23,7 @@ import {
 } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
-import { RequestsTab, NewRequestModal } from "../components/containers/FlowRequests";
+import { RequestsTab, NewRequestModal, isFresh } from "../components/containers/FlowRequests";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
@@ -77,6 +77,14 @@ export default function ContainerFlow() {
   });
   const roles = { admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics };
   const tabs = tabsFor(roles);
+  // The «So'rovlar» tab counts the requests its viewer has not opened yet
+  // (the same query the tab reads — fetched once).
+  const reqs = useQuery({
+    queryKey: ["cflow-requests", day],
+    queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
+    refetchInterval: REFRESH_MS,
+  });
+  const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
   const tab = tabs.includes(tabSaved) ? tabSaved : "requests";
   const refresh = () => qc.invalidateQueries({ queryKey: ["cflow-board"] });
   const done = (msg) => { toast.success(msg); refresh(); };
@@ -93,7 +101,21 @@ export default function ContainerFlow() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* The tabs first: they never move when a tab drops the day control. */}
         <SegmentedToggle asTabs value={tab} onChange={setTab}
-          options={tabs.map((k) => ({ value: k, label: t(`cflow.tab.${k}`) }))} />
+          options={tabs.map((k) => ({
+            value: k,
+            label: k === "requests" && freshN > 0 ? (
+              <span className="inline-flex items-center gap-1.5">
+                {t(`cflow.tab.${k}`)}
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-[18px] text-center tabular-nums"
+                  title={t("cflow.req.freshCount").replace("{n}", freshN)}
+                  style={tab === "requests"
+                    ? { background: "var(--bg-card)", color: "var(--text-1)" }
+                    : { background: "var(--brand)", color: "var(--on-brand)" }}>
+                  {freshN}
+                </span>
+              </span>
+            ) : t(`cflow.tab.${k}`),
+          }))} />
         {tab !== "report" && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
         {roles.axo && tab !== "settings" && tab !== "report" && (
           <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => setNewOpen(true)}>

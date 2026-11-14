@@ -6066,6 +6066,9 @@ class ContainerRequest(Base):
     cancelled_at   = Column(DateTime(timezone=True), nullable=True)
     cancelled_by   = Column(String, nullable=True)
     cancel_note    = Column(Text, nullable=True)
+    # When the addressee first opened it (2026-11-14, the operator: a request
+    # Nuriddin aka has not opened yet must look NEW). NULL = not opened.
+    seen_at        = Column(DateTime(timezone=True), nullable=True)
 
 
 class ContainerRequestPart(Base):

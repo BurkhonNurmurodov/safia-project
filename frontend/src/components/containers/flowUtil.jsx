@@ -33,6 +33,8 @@ const TONES = {
   warn: ["#eab308", "var(--status-warn)"],
   bad: ["#ef4444", "var(--status-bad)"],
   idle: ["#94a3b8", "var(--text-3)"],
+  // Not a status: a request its addressee has not opened yet.
+  fresh: ["#C8973F", "var(--brand-text)"],
 };
 
 export function Chip({ tone = "idle", icon: Icon, title, children }) {

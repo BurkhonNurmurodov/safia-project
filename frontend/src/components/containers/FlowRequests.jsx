@@ -4,7 +4,7 @@
 // it. docs/containers-flow.md.
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Ban, Check, ClipboardList, Plus, Split, Trash2 } from "lucide-react";
+import { Ban, Check, ClipboardList, Plus, Sparkles, Split, Trash2 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import FormField from "../ui/FormField";
@@ -21,6 +21,11 @@ import {
 } from "./flowUtil";
 
 const REFRESH_MS = 60_000;
+
+// A request still waiting that its addressee has not opened yet (2026-11-14,
+// the operator: Nuriddin aka must see which requests are new). Only for the
+// person it is addressed to — AXO and admins see every row plain.
+export const isFresh = (r, me) => r.status === "requested" && !r.seen_at && !!me && r.logistics_key === me;
 
 function StateChip({ r, t }) {
   if (r.status === "requested" && r.overdue) return <Chip tone="bad">{t("cflow.st.overdue")}</Chip>;
@@ -40,6 +45,11 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   const list = q.data?.requests ?? [];
   const me = q.data?.me;
   const done = (msg) => { toast.success(msg); q.refetch(); };
+  // Opening the split is «opening» the request: its «new» mark goes.
+  const openAssign = (r) => {
+    setAssign(r);
+    if (isFresh(r, me)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
+  };
   const fail = (e) => toast.error(errText(t, e));
   const mayAssign = (r) => r.status === "requested" && roles.logistics && (roles.admin || r.logistics_key === me);
   const unitsLine = (r) => r.parts.map((p) => `${tl(p.unit) || "—"}: ${KEYS.filter((k) => p.counts[k])
@@ -77,9 +87,12 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
             const given = {};
             for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
             const line = unitsLine(r);
+            const fresh = isFresh(r, me);
             return (
-              <tr key={r.id} className="text-sm">
-                <td className="px-3 py-2 tabular-nums whitespace-nowrap font-medium" style={{ color: "var(--text-1)" }}>{span(r.hour)}</td>
+              <tr key={r.id} className={`text-sm ${fresh ? "font-semibold" : ""}`}
+                style={fresh ? { background: "color-mix(in srgb, var(--brand) 17%, transparent)" } : undefined}>
+                <td className="px-3 py-2 tabular-nums whitespace-nowrap font-medium" title={fresh ? t("cflow.req.freshHint") : undefined}
+                  style={{ color: "var(--text-1)", boxShadow: fresh ? "inset 3px 0 0 var(--brand)" : undefined }}>{span(r.hour)}</td>
                 <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-1)" }} title={r.note || undefined}>
                   {tl(r.logistics_name) || "—"}
                 </td>
@@ -96,6 +109,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
                 })}
                 <td className="px-3 py-2 text-center">
                   <span className="inline-flex items-center gap-1">
+                    {fresh && <Chip tone="fresh" icon={Sparkles} title={t("cflow.req.freshHint")}>{t("cflow.req.fresh")}</Chip>}
                     <StateChip r={r} t={t} />
                     {r.late && <Chip tone="bad" title={t("cflow.late")}>{t("cflow.req.lateShort")}</Chip>}
                   </span>
@@ -110,7 +124,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
                 <td className="px-3 py-1.5">
                   <span className="flex items-center justify-end gap-1 min-w-[140px]">
                     {mayAssign(r) && (
-                      <Button size="sm" tint icon={<Split size={13} />} onClick={() => setAssign(r)}>{t("cflow.req.assign")}</Button>
+                      <Button size="sm" tint={!fresh} icon={<Split size={13} />} onClick={() => openAssign(r)}>{t("cflow.req.assign")}</Button>
                     )}
                     <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={[
                       roles.axo && r.status === "requested" && {

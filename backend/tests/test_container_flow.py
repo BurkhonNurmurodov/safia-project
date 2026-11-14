@@ -259,6 +259,15 @@ class FlowTest(unittest.TestCase):
         r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 40, "bucket": 12, "grey": 0}, "tez", "axo", "guest:1")
         self.db.commit()
         self.assertEqual((r.lines, r.status, r.logistics_name), ({"yellow": 40, "bucket": 12}, "requested", "Nuriddin aka"))
+        self.assertIsNone(flow.requests_of(self.db, DAY, nk)[0]["seen_at"])     # new to him
+        self.assertFalse(flow.mark_seen(self.db, r.id, "guest:1"))             # AXO opening it clears nothing
+        self.assertFalse(flow.mark_seen(self.db, r.id, None))
+        self.assertTrue(flow.mark_seen(self.db, r.id, nk))                     # he opened it
+        first = r.seen_at
+        self.assertFalse(flow.mark_seen(self.db, r.id, nk))                    # the first open stays
+        self.assertEqual(r.seen_at, first)
+        self.db.commit()
+        self.assertIsNotNone(flow.requests_of(self.db, DAY, nk)[0]["seen_at"])
         with self.assertRaises(flow.FlowError) as e:                       # somebody else's request
             flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 40}}], None, None, "x", "idle-owner:0", False)
         self.assertEqual(e.exception.code, "not_yours")
@@ -341,7 +350,8 @@ class PageKeyTest(unittest.TestCase):
                   ("GET", f"{p}/logistics"), ("GET", f"{p}/hour-need")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
-                  ("POST", f"{p}/requests/{{request_id}}/assign"), ("GET", f"{p}/units")]:
+                  ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
+                  ("GET", f"{p}/units")]:
             self.assertEqual(guard[k], "logistics", k)
         for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"),
                   ("GET", f"{p}/settings"), ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:

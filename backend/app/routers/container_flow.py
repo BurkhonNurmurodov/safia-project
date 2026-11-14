@@ -309,6 +309,15 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": _me(db, payload)}
 
 
+@router.post("/seen/{request_id}")
+def post_seen(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
+    """The addressee opened a request — it stops being marked new for them."""
+    changed = flow.mark_seen(db, request_id, _me(db, payload))
+    if changed:
+        db.commit()
+    return {"ok": True, "changed": changed}
+
+
 @router.get("/hour-need")
 def get_hour_need(day: date = Query(...), db: Session = Depends(get_db),
                   payload: dict = Depends(PAGE)):
