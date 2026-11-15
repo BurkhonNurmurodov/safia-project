@@ -18,7 +18,7 @@ import { moveTab, movePage, orderApps, orderPages, orderTabs } from "../../utils
 import { appNodeId, screenNodeId, tabNodeId } from "../../utils/orgTree";
 import { fill } from "../../pages/admin/orgChartText";
 import { ROLE_ICON, roleHue } from "./orgNode";
-import { accountTarget, pageCap, pageKeys, profileTarget, screenKind } from "./appsNode";
+import { KIND_HUE, accountTarget, kindHue, pageCap, pageKeys, profileTarget, screenKind } from "./appsNode";
 import { Fact, Muted, Section, Tag } from "./OrgDetails";
 
 /**
@@ -72,11 +72,14 @@ function Row({ lead, title, sub, onClick }) {
   );
 }
 
-const Glyph = ({ icon: Icon, danger, hue }) => (
+// A row's glyph: an app's in its own tile colour (`hue`), a menu tab's or a
+// screen's in its kind's (`ink`, appsNode.js KIND_HUE) — red where it can
+// destroy data.
+const Glyph = ({ icon: Icon, danger, hue, ink }) => (
   <span
     data-app-hue={hue}
-    className="grid place-items-center w-5 flex-shrink-0"
-    style={{ color: hue ? "rgb(var(--hue))" : danger ? RED : "var(--text-3)" }}
+    className={`grid place-items-center w-5 flex-shrink-0 ${!hue && (danger || ink) ? "chat-ink" : ""}`}
+    style={hue ? { color: "rgb(var(--hue))" } : danger || ink ? { "--ink": danger ? RED : ink } : { color: "var(--text-3)" }}
   >
     <Icon size={14} aria-hidden="true" />
   </span>
@@ -92,7 +95,7 @@ function ScreenList({ links, appId, tabId, ed, A, onSelect }) {
         key: l.to,
         render: () => (
           <Row
-            lead={<Glyph icon={l.icon} danger={l.danger} />} title={t(l.key)}
+            lead={<Glyph icon={l.icon} danger={l.danger} ink={KIND_HUE.screen} />} title={t(l.key)}
             onClick={() => onSelect(screenNodeId(l.to))}
           />
         ),
@@ -307,7 +310,7 @@ function AppBody({ node, ed, acc, A, ui, onSelect }) {
           <ul className="space-y-0.5">
             {ed.layout.loose.map((l) => (
               <li key={l.to}>
-                <Row lead={<Glyph icon={l.icon} danger={l.danger} />} title={t(l.key)} onClick={() => onSelect(screenNodeId(l.to))} />
+                <Row lead={<Glyph icon={l.icon} danger={l.danger} ink={KIND_HUE.screen} />} title={t(l.key)} onClick={() => onSelect(screenNodeId(l.to))} />
               </li>
             ))}
           </ul>
@@ -338,7 +341,7 @@ function AppBody({ node, ed, acc, A, ui, onSelect }) {
               key: tab.id,
               render: () => (
                 <Row
-                  lead={<Glyph icon={tab.icon} danger={tab.danger} />} title={navName(tab, t, lang)} sub={tab.links.length}
+                  lead={<Glyph icon={tab.icon} danger={tab.danger} ink={KIND_HUE.tab} />} title={navName(tab, t, lang)} sub={tab.links.length}
                   onClick={() => onSelect(tabNodeId(app.id, tab))}
                 />
               ),
@@ -516,13 +519,16 @@ export function AppNodeLead({ node, size = 44 }) {
   const Icon = node.kind === "app" ? (node.loose ? PackageOpen : node.app.icon)
     : node.kind === "tab" ? (node.tab.top ? List : node.tab.icon) : node.link.icon;
   const danger = node.kind === "tab" ? node.tab.danger : node.kind === "screen" ? node.link.danger : false;
+  // A menu tab's and a screen's glyph in their kind's colour, as on the card.
+  const ink = hue ? null : danger ? RED : kindHue(node);
   return (
     <span
       data-app-hue={hue ?? undefined}
-      className="grid place-items-center rounded-xl flex-shrink-0"
+      className={`grid place-items-center rounded-xl flex-shrink-0 ${ink ? "chat-ink" : ""}`}
       style={{ width: size, height: size, ...(hue
         ? { color: "rgb(var(--hue))", background: "rgba(var(--hue), .14)" }
-        : { background: "var(--bg-inner)", color: danger ? RED : "var(--text-2)", border: "1px solid var(--border)" }) }}
+        : ink ? { "--ink": ink, background: `${ink}1f` }
+          : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }) }}
     >
       <Icon size={Math.round(size * 0.45)} aria-hidden="true" />
     </span>

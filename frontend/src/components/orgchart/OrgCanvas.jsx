@@ -9,6 +9,7 @@ import BrandLogo from "../ui/BrandLogo";
 import ProfileAvatar from "../ui/ProfileAvatar";
 import { NODE_H, NODE_W, layoutTree, pathTo } from "../../utils/orgTree";
 import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
+import { kindHue } from "./appsNode";
 
 /**
  * «Tashkiliy tuzilma» — the canvas: the tree drawn as cards and connectors on
@@ -94,6 +95,9 @@ const Card = memo(function Card({
     || p.accounts.some((a) => Object.keys(a.grants).length > 0 || a.denies.length > 0))
     : Boolean(flag?.personal);
   const under = node.people - (isLeaf(node) ? 1 : 0);
+  // The «Ilovalar» view: an app, a menu tab and a screen each wear their
+  // kind's colour (appsNode.js); a card of the people chart has none.
+  const kind = kindHue(node);
 
   let lead;
   if (node.kind === "person") {
@@ -108,9 +112,9 @@ const Card = memo(function Card({
   } else if (node.kind === "app") {
     lead = node.loose ? <IconChip icon={PackageOpen} /> : <AppChip icon={node.app.icon} hue={node.app.hue} />;
   } else if (node.kind === "tab") {
-    lead = <IconChip icon={node.tab.top ? List : node.tab.icon} hue={node.tab.danger ? "#ef4444" : undefined} />;
+    lead = <IconChip icon={node.tab.top ? List : node.tab.icon} hue={node.tab.danger ? "#ef4444" : kind} />;
   } else if (node.kind === "screen") {
-    lead = <IconChip icon={node.link.icon} hue={node.link.danger ? "#ef4444" : undefined} />;
+    lead = <IconChip icon={node.link.icon} hue={node.link.danger ? "#ef4444" : kind} />;
   } else if (node.kind === "group") {
     lead = <IconChip icon={ROLE_ICON[node.role] ?? UserRound} hue={roleHue(node.role)} />;
   } else {
@@ -135,8 +139,8 @@ const Card = memo(function Card({
           opacity: dim ? 0.36 : 1,
           background: selected
             ? "linear-gradient(var(--brand-bg), var(--brand-bg)), var(--bg-card)"
-            : "var(--bg-card)",
-          border: `1px ${hollow ? "dashed" : "solid"} ${selected ? "var(--brand)" : "var(--border-md)"}`,
+            : kind ? `linear-gradient(${kind}17, ${kind}17), var(--bg-card)` : "var(--bg-card)",
+          border: `1px ${hollow ? "dashed" : "solid"} ${selected ? "var(--brand)" : kind ? `${kind}80` : "var(--border-md)"}`,
           boxShadow: selected ? "0 0 0 1px var(--brand), 0 4px 14px rgba(0,0,0,.10)" : "0 1px 2px rgba(0,0,0,.06)",
           outlineColor: "var(--brand)",
         }}

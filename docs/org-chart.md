@@ -125,6 +125,18 @@ and `pages/admin/OrgApps.jsx`.
   (`homeMin` 0.65 here). `OrgCanvas` is the same canvas — a leaf is a person
   there and a screen here; `sceneKey` keeps an edit (a new tree object every
   time) from re-fitting the view.
+- **Each kind wears its own colour** (the operator, the same day: «apps, menu
+  tabs and screens should be visible different from one another in terms of
+  colour»): an app's card is BLUE, a menu tab's ORANGE, a screen's TEAL — the
+  card's wash and border, and a menu tab's or a screen's glyph
+  (`appsNode.js` `KIND_HUE` / `kindHue`, from `CATEGORY_COLORS`). An app's
+  glyph keeps its own tile colour: that is the app. The trio stays apart for a
+  colour-blind reader, and none of the three is a status colour or the brand
+  gold a SELECTED card wears. The two placeholders («Ilovaga kirmagan», an
+  app's «Menyu tabsiz» row) are neither and stay uncoloured; a page that can
+  destroy data keeps its red glyph. The toolbar's count is the legend — a
+  swatch beside «N ta ilova · N ta menyu tab · N ta ekran» — and the panel's
+  header and list glyphs follow the same colours.
 - **The structure is a LAYOUT, stored** — `services/nav_layout.py`, one
   `app_settings` row `nav_layout`; its record is `docs/navigation-and-shell.md`
   «The launcher's structure is a layout». From here: the order of apps, of an

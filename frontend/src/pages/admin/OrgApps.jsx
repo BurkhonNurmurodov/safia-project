@@ -8,7 +8,7 @@ import { FilterPanel, PickFilter } from "../../components/ui/ColumnFilter";
 import OrgCanvas from "../../components/orgchart/OrgCanvas";
 import AppsDetails from "../../components/orgchart/AppsDetails";
 import { NavFormModal, RemoveAppModal } from "../../components/orgchart/AppsDialogs";
-import { pageKeys, profileOpens, screenKind, useAppNodeText } from "../../components/orgchart/appsNode";
+import { KIND_HUE, pageKeys, profileOpens, screenKind, useAppNodeText } from "../../components/orgchart/appsNode";
 import { useCanvasHeight } from "../../components/orgchart/useCanvasHeight";
 import { useLang } from "../../context/LangContext";
 import useIsMobile from "../../hooks/useIsMobile";
@@ -275,8 +275,21 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {head}
         <FilterPanel sections={sections} chipsWrap />
-        <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
-          {fill(A.summary, { a: layout.apps.length, s: tree.root.people })}
+        {/* The count IS the legend: each kind's colour beside how many there are. */}
+        <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+          {[
+            ["app", fill(A.nApps, { n: layout.apps.length })],
+            ["tab", fill(A.nTabs, { n: layout.apps.reduce((n, a) => n + a.tabs.length - 1, 0) })],
+            ["screen", fill(A.nScreens, { n: tree.root.people })],
+          ].map(([kind, label]) => (
+            <span key={kind} className="inline-flex items-center gap-1.5">
+              <span
+                className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0"
+                style={{ background: `${KIND_HUE[kind]}40`, border: `1px solid ${KIND_HUE[kind]}` }}
+              />
+              {label}
+            </span>
+          ))}
         </span>
       </div>
 

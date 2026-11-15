@@ -4,7 +4,22 @@
 import { useCallback } from "react";
 import { useLang } from "../../context/LangContext";
 import { navName } from "../../utils/navLayout";
+import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { fill } from "../../pages/admin/orgChartText";
+
+// What KIND of thing a card is, as a colour (2026-11-15, the operator: «apps,
+// menu tabs and screens should be visible different from one another in terms
+// of colour»): the card's wash and border, and a menu tab's or a screen's
+// glyph. An app's glyph keeps its own tile colour — that is the app. Blue,
+// orange and teal: the three that stay apart for a colour-blind reader, and
+// none is a status (red / yellow / green) or the brand gold a selected card
+// wears. The two placeholders — «in no app», an app's «no menu tab» row — are
+// neither, and stay uncoloured.
+export const KIND_HUE = { app: CATEGORY_COLORS[2], tab: CATEGORY_COLORS[4], screen: CATEGORY_COLORS[6] };
+export const kindHue = (node) => (
+  node.kind === "app" ? (node.loose ? null : KIND_HUE.app)
+    : node.kind === "tab" ? (node.tab.top ? null : KIND_HUE.tab)
+      : node.kind === "screen" ? KIND_HUE.screen : null);
 
 // A page-access key's capability — one entry per person opens or closes it.
 export const pageCap = (key) => `page.view.${key}`;
