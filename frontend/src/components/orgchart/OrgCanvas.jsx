@@ -1,13 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsDownUp, ChevronsUpDown,
+  Check, ChevronDown, ChevronUp, ChevronsDownUp, ChevronsUpDown,
   Clock3, Factory, KeyRound, List, LocateFixed, Lock, Minus, PackageOpen, Plus, UserRound,
   UserRoundX,
 } from "lucide-react";
 import Button from "../ui/Button";
 import BrandLogo from "../ui/BrandLogo";
 import ProfileAvatar from "../ui/ProfileAvatar";
-import { NODE_H, NODE_W, layoutTree, layoutTreeH, pathTo } from "../../utils/orgTree";
+import { NODE_H, NODE_W, layoutTree, pathTo } from "../../utils/orgTree";
 import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
 
 /**
@@ -25,15 +25,15 @@ import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
  * re-renders one transform and not two hundred cards.
  *
  * The same canvas draws the «Ilovalar» view — apps, menu tabs and screens
- * (`dir="h"`: laid left to right, utils/orgTree.js `layoutTreeH`; `text` names
- * its nodes; `flags` marks a screen: admins only, a personal entry). A leaf is
+ * (`text` names its nodes; `flags` marks a screen: admins only, a personal
+ * entry; `stack` is its stacking rule — screens alone, one column). A leaf is
  * a person there and a screen here; everything else is the same card.
  */
 
 // K_HOME_MIN is the smallest a card is still READ at: a fit never shrinks
 // below it — a tree wider than that runs off the edges instead (the whole of
 // an opened plant fitted to the screen is a row of specks at 30%). A caller
-// may lower it (`homeMin`) where the first sight is one short column.
+// may lower it (`homeMin`).
 const K_MIN = 0.25, K_MAX = 1.6, K_HOME_MIN = 0.9;
 const isLeaf = (node) => node.kind === "person" || node.kind === "screen";
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -81,7 +81,7 @@ function AppChip({ icon: Icon, hue }) {
 }
 
 const Card = memo(function Card({
-  node, root, x, y, selected, dim, mark, hits, lensOn, open, P, text, flag, side, onSelect, onToggle,
+  node, root, x, y, selected, dim, mark, hits, lensOn, open, P, text, flag, onSelect, onToggle,
 }) {
   const { title, sub } = text(node, root);
   const p = node.profile;
@@ -171,13 +171,9 @@ const Card = memo(function Card({
           aria-label={`${open ? P.collapse : P.expand}: ${title}`}
           title={open ? P.collapse : P.expand}
           onClick={() => onToggle(node.id)}
-          className={`absolute flex items-center gap-0.5 h-[22px] px-2 rounded-full text-[11px] font-semibold tabular-nums whitespace-nowrap before:absolute before:-inset-2 before:content-[''] ${side ? "" : "left-1/2"}`}
+          className="absolute left-1/2 flex items-center gap-0.5 h-[22px] px-2 rounded-full text-[11px] font-semibold tabular-nums whitespace-nowrap before:absolute before:-inset-2 before:content-['']"
           style={{
-            // Under the card in a top-down tree; beside it, on the line to its
-            // children, in a left-to-right one.
-            ...(side
-              ? { left: NODE_W + 6, top: "50%", transform: "translateY(-50%)" }
-              : { bottom: -11, transform: "translateX(-50%)" }),
+            bottom: -11, transform: "translateX(-50%)",
             background: "var(--bg-card)", border: "1px solid var(--border-md)",
             color: "var(--text-2)", boxShadow: "0 1px 2px rgba(0,0,0,.08)",
           }}
@@ -189,9 +185,7 @@ const Card = memo(function Card({
             </span>
           )}
           {open && !(lensOn && hits > 0) ? null : <span>{lensOn && hits > 0 ? under : `+${under}`}</span>}
-          {side
-            ? (open ? <ChevronLeft size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />)
-            : (open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />)}
+          {open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
         </button>
       )}
     </div>
@@ -234,7 +228,7 @@ const Scene = memo(function Scene({
             hits={leaf ? n - (mark ? 1 : 0) : n}
             lensOn={lensOn}
             open={expanded.has(node.id)}
-            flag={flags?.get(node.id)} side={layout.dir === "h"}
+            flag={flags?.get(node.id)}
             P={P} text={text} onSelect={onSelect} onToggle={onToggle}
           />
         );
@@ -246,13 +240,13 @@ const Scene = memo(function Scene({
 export default function OrgCanvas({
   tree, expanded, selected, marks, hits, lensOn, P, command, insetLeft = 0,
   onSelect, onToggle, onExpandAll, onCollapseAll, height, children,
-  dir = "v", text: nodeText, flags, homeMin = K_HOME_MIN, sceneKey,
+  stack, text: nodeText, flags, homeMin = K_HOME_MIN, sceneKey,
 }) {
   const ownText = useNodeText(P);
   const text = nodeText ?? ownText;
   const layout = useMemo(
-    () => (dir === "h" ? layoutTreeH : layoutTree)(tree.root, expanded),
-    [tree, expanded, dir],
+    () => layoutTree(tree.root, expanded, stack),
+    [tree, expanded, stack],
   );
   const trail = useMemo(
     () => new Set(selected ? pathTo(tree.index, selected) : []),
@@ -295,13 +289,11 @@ export default function OrgCanvas({
     const all = Math.min((room - 2 * pad) / l.width, (v.h - 2 * pad - 44) / l.height);
     const k = clamp(all, floor, 1);
     const rootMid = (l.pos.get(tr.root.id)?.x ?? 0) + NODE_W / 2;
-    const fits = l.width * k <= room - 2 * pad;
     moveTo({
       k,
-      // Too wide: a top-down tree keeps its root in the middle; a
-      // left-to-right one starts at its root, on the left.
-      x: fits ? inset + (room - l.width * k) / 2
-        : l.dir === "h" ? inset + pad : inset + room / 2 - rootMid * k,
+      x: l.width * k <= room - 2 * pad
+        ? inset + (room - l.width * k) / 2
+        : inset + room / 2 - rootMid * k,
       y: pad,
     }, animate);
   }, [moveTo]);

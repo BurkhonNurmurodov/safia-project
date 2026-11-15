@@ -18,13 +18,13 @@ import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { APP_LINKS, navName } from "../../utils/navLayout";
 import { removeTab } from "../../utils/navLayoutEdit";
-import { appNodeId, buildAppsTree, nodesUnder, pathTo } from "../../utils/orgTree";
+import { APPS_STACK, appNodeId, buildAppsTree, nodesUnder, pathTo } from "../../utils/orgTree";
 import { fill } from "./orgChartText";
 
 /**
  * «Tashkiliy tuzilma», the «Ilovalar» view — the launcher's structure as the
- * same chart: the platform → its apps → their menu tabs → the screens, laid
- * left to right. Here the operator ARRANGES it (the order of everything, a new
+ * same chart: the platform → its apps in a row → their menu tabs in a row →
+ * the screens of each as one column. Here the operator ARRANGES it (the order of everything, a new
  * app or menu tab, a screen or a menu tab moved, an app or a tab taken away)
  * and decides who opens each screen — the roles and, one by one, the people.
  *
@@ -282,7 +282,7 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
 
       <div ref={boxRef}>
         <OrgCanvas
-          dir="h" sceneKey="apps" homeMin={0.7}
+          stack={APPS_STACK} sceneKey="apps" homeMin={0.65}
           tree={tree} expanded={expanded} selected={node ? selected : null}
           marks={marks} hits={hits} lensOn={lensOn} P={P} command={command}
           text={text} flags={flags}

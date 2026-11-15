@@ -138,8 +138,16 @@ function rounded(pts) {
  * children show. Returns `{ nodes: [{ node, x, y }], links: [{ id, d }],
  * pos: Map(id → {x, y}), width, height }` — a link's `id` is its CHILD's, so
  * the path to a selected node can be drawn in colour.
+ *
+ * `stack` narrows the stacking rule for a tree that wants it: `only` — stack
+ * children of that KIND alone (so empty menu tabs still sit in a row), `cols`
+ * — the widest a stack gets (1 = one plain column, however long).
  */
-export function layoutTree(root, expanded) {
+export function layoutTree(root, expanded, stack = {}) {
+  const maxCols = stack.cols ?? STACK_COLS;
+  const stacks = (kids) => (stack.only
+    ? kids.every((k) => k.kind === stack.only)
+    : kids.every((k) => !k.children.length));
   const box = new Map();
   const kidsOf = (n) => (expanded.has(n.id) ? n.children : []);
 
@@ -147,8 +155,8 @@ export function layoutTree(root, expanded) {
     const kids = kidsOf(n);
     let b;
     if (!kids.length) b = { w: NODE_W, h: NODE_H, mode: "leaf" };
-    else if (kids.every((k) => !k.children.length)) {
-      const cols = Math.min(STACK_COLS, Math.ceil(kids.length / STACK_ROWS));
+    else if (stacks(kids)) {
+      const cols = Math.min(maxCols, Math.ceil(kids.length / STACK_ROWS));
       const rows = Math.ceil(kids.length / cols);
       const area = cols * (STACK_INDENT + NODE_W) + (cols - 1) * STACK_COL_GAP;
       b = { w: Math.max(NODE_W, area), h: NODE_H + GAP_Y + rows * NODE_H + (rows - 1) * STACK_GAP,
@@ -209,12 +217,18 @@ export function layoutTree(root, expanded) {
 //
 // `layout` is a RESOLVED layout (utils/navLayout.js). A node's `people` is the
 // number of screens at or under it — the field the canvas's cards count by.
+//
+// It is drawn by the same `layoutTree` as the people (2026-11-15, the operator:
+// «make everything horizontal except from screens»): the apps in a row under
+// the platform, an app's menu tabs in a row under it, and the SCREENS of an
+// app or a menu tab as one column under it (`APPS_STACK`).
 
 /** Node ids: an app `a:<id>`, a menu tab `t:<id>` (an app's own row `t:<app>:top`), a screen `p:<path>`. */
 export const appNodeId = (id) => `a:${id}`;
 export const tabNodeId = (appId, tab) => (tab.top ? `t:${appId}:top` : `t:${tab.id}`);
 export const screenNodeId = (to) => `p:${to}`;
 export const LOOSE_ID = "a:~";
+export const APPS_STACK = { only: "screen", cols: 1 };
 
 export function buildAppsTree(layout) {
   const screen = (link, app, tab) => ({ id: screenNodeId(link.to), kind: "screen", link, app, tab, children: [] });
@@ -259,54 +273,4 @@ export function nodesUnder(node, kind, out = []) {
   if (node.kind === kind) out.push(node);
   for (const c of node.children) nodesUnder(c, kind, out);
   return out;
-}
-
-const H_GAP_X = 76;   // between a parent and its children's column (holds the pill and the trunk)
-const H_GAP_Y = 10;   // between the cards of one column
-
-/**
- * The same answer as `layoutTree`, laid LEFT TO RIGHT as an outline: a node's
- * children are a column to its right, starting on its own line. A three-level
- * tree of long lists (an app's thirty screens) reads top to bottom and scrolls
- * the way a page does; laid top-down, fourteen apps side by side are 3 500px.
- * `dir: "h"` tells the canvas where a card's fold pill sits.
- */
-export function layoutTreeH(root, expanded) {
-  const box = new Map();
-  const kidsOf = (n) => (expanded.has(n.id) ? n.children : []);
-
-  (function measure(n) {
-    const kids = kidsOf(n);
-    let w = NODE_W, h = NODE_H;
-    if (kids.length) {
-      let kw = 0, kh = 0;
-      for (const k of kids) { const b = measure(k); kw = Math.max(kw, b.w); kh += b.h; }
-      kh += (kids.length - 1) * H_GAP_Y;
-      w = NODE_W + H_GAP_X + kw;
-      h = Math.max(NODE_H, kh);
-    }
-    const b = { w, h };
-    box.set(n.id, b);
-    return b;
-  })(root);
-
-  const nodes = [], links = [], pos = new Map();
-  (function place(n, left, top) {
-    pos.set(n.id, { x: left, y: top });
-    nodes.push({ node: n, x: left, y: top });
-    const kids = kidsOf(n);
-    if (!kids.length) return;
-    const kx = left + NODE_W + H_GAP_X;
-    const trunk = kx - 16, mid = top + NODE_H / 2;
-    let y = top;
-    for (const k of kids) {
-      place(k, kx, y);
-      const km = y + NODE_H / 2;
-      links.push({ id: k.id, d: rounded([[left + NODE_W, mid], [trunk, mid], [trunk, km], [kx, km]]) });
-      y += box.get(k.id).h + H_GAP_Y;
-    }
-  })(root, 0, 0);
-
-  const b = box.get(root.id);
-  return { nodes, links, pos, width: b.w, height: b.h, dir: "h" };
 }

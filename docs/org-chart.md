@@ -113,11 +113,18 @@ and `pages/admin/OrgApps.jsx`.
   its menu tabs → the screens. An app with no menu tab holds its screens
   directly; one with some gets a «Menyu tabsiz» node for the screens that sit
   under the app's own name. Screens in NO app (the assistant, as shipped) hang
-  under a dashed «Ilovaga kirmagan». It is laid **left to right**
-  (`layoutTreeH`, `dir="h"` on `OrgCanvas`): fourteen apps side by side are
-  3 500px, and an app's thirty screens read as a column. `OrgCanvas` is the
-  same canvas — a leaf is a person there and a screen here; `sceneKey` keeps an
-  edit (a new tree object every time) from re-fitting the view.
+  under a dashed «Ilovaga kirmagan». It is drawn **top-down like the people,
+  with the screens alone as a column** (the operator, 2026-11-15, an hour after
+  the first cut, which ran left to right: «make everything horizontal except
+  from screens»): the apps in a row under the platform, an app's menu tabs in
+  a row under it, and the screens of an app or a menu tab as ONE column under
+  it, however long (`layoutTree`'s `stack` — `APPS_STACK` = screens only, one
+  column; the people's rule, ≤ 8 rows × ≤ 4 columns of any leaves, is
+  unchanged). Fourteen apps side by side are ~3 500px, so the first sight
+  keeps the platform in the middle and the row runs off both edges, to drag
+  (`homeMin` 0.65 here). `OrgCanvas` is the same canvas — a leaf is a person
+  there and a screen here; `sceneKey` keeps an edit (a new tree object every
+  time) from re-fitting the view.
 - **The structure is a LAYOUT, stored** — `services/nav_layout.py`, one
   `app_settings` row `nav_layout`; its record is `docs/navigation-and-shell.md`
   «The launcher's structure is a layout». From here: the order of apps, of an
