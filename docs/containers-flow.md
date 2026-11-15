@@ -14,8 +14,13 @@ containers row from production and move it into the new button».
   «Oshxona»). It holds two rows:
   - **«Konteynerlar»** (`/containers`, the TV board, `docs/shift-report.md`) —
     MOVED out of the Production app by `app: "containers"`. Its page key and
-    access are unchanged, and for anybody without the launcher the row stays
-    in the Production group (the launcher's own rule).
+    access are unchanged.
+- **Without the launcher (a shift-manager, a brigadir) both rows sit in the
+  sidebar's own «Konteynerlar» section**, right after Production — `group:
+  "containers"`, a NAV_GROUPS entry of its own (2026-11-15, the operator, on a
+  shift-manager's sidebar: «it should be outside the production»). Until then
+  they fell into the Production group; a top-manager or admin with no app open
+  (the whole register) saw the same.
   - **«Konteyner berish»** (`/containers/flow`, `pages/ContainerFlow.jsx`) —
     page key **`container-flow`** (admin-only by default, `[]`; from
     2026-11-14 — it was `adminOnly` with no key on its first day).
