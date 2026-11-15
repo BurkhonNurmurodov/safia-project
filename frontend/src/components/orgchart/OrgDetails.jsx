@@ -33,7 +33,7 @@ const BLUE = "#3b82f6", RED = "#ef4444";
 // yet (the name search answers). A guest or an admin is opened by id only.
 const PLANT_ROLES = new Set(["top-manager", "shift-manager", "supervisor", "leader", "idle-owner"]);
 
-function Section({ title, count, children }) {
+export function Section({ title, count, children }) {
   return (
     <section>
       <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>
@@ -45,7 +45,7 @@ function Section({ title, count, children }) {
   );
 }
 
-function Tag({ tone, icon: Icon, title, strike = false, children }) {
+export function Tag({ tone, icon: Icon, title, strike = false, children }) {
   const hue = tone === "grant" ? BLUE : tone === "deny" ? RED : null;
   return (
     <span
@@ -61,7 +61,7 @@ function Tag({ tone, icon: Icon, title, strike = false, children }) {
   );
 }
 
-function Fact({ label, children }) {
+export function Fact({ label, children }) {
   return (
     <div className="flex items-baseline gap-3 text-xs">
       <span className="w-20 flex-shrink-0" style={{ color: "var(--text-3)" }}>{label}</span>
@@ -70,7 +70,7 @@ function Fact({ label, children }) {
   );
 }
 
-const Muted = ({ children }) => (
+export const Muted = ({ children }) => (
   <p className="text-xs leading-snug" style={{ color: "var(--text-3)" }}>{children}</p>
 );
 

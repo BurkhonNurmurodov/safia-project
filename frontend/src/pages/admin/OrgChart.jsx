@@ -1,23 +1,31 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, FileText, KeyRound, Network } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../../components/ui/Button";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import EmptyState from "../../components/ui/EmptyState";
 import Modal from "../../components/ui/Modal";
+import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import StyledSelect from "../../components/ui/StyledSelect";
+import { useToast } from "../../components/ui/Toast";
 import { FilterPanel, PickFilter } from "../../components/ui/ColumnFilter";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import OrgCanvas from "../../components/orgchart/OrgCanvas";
 import { useNodeText } from "../../components/orgchart/orgNode";
 import OrgDetails from "../../components/orgchart/OrgDetails";
+import { useCanvasHeight } from "../../components/orgchart/useCanvasHeight";
 import { useLang } from "../../context/LangContext";
 import useIsMobile from "../../hooks/useIsMobile";
+import { useLeaveGuard } from "../../hooks/useLeaveGuard";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { PAGES } from "../../config/pages";
+import { PAGES, ROLE_LABEL_KEYS } from "../../config/pages";
 import { buildTree, pathTo, peopleUnder } from "../../utils/orgTree";
+import OrgApps from "./OrgApps";
+import { APPS_TXT } from "./orgAppsText";
 import { TXT, fill } from "./orgChartText";
+import { useAppsEditor } from "./useAppsEditor";
 
 /**
  * «Tashkiliy tuzilma» (/panel/orgchart) — the platform's people as one chart:
@@ -38,6 +46,13 @@ import { TXT, fill } from "./orgChartText";
  *
  * `?n=<node id>` is the open panel, so «back» from the card it led to returns
  * to the same person. The opened branches are remembered per device.
+ *
+ * The page has a SECOND view, «Ilovalar» (`?v=apps`, OrgApps.jsx): the
+ * launcher's apps, menu tabs and screens as the same kind of chart — and that
+ * one is edited. The shell at the bottom of this file holds the switch, the
+ * chart's data and the draft (useAppsEditor.js), so unsaved changes survive a
+ * look at the people and back; its save bar sits in the canvas's corner in
+ * both views (an overlay — it never moves the chart).
  */
 
 const PAGE_LABEL = Object.fromEntries(PAGES.map((p) => [p.key, p.labelKey]));
@@ -56,18 +71,11 @@ const opens = (access, page) => access.all || access.pages.some((r) => r.page ==
 const defaultOpen = (tree) =>
   ["root", ...tree.root.children.filter((n) => n.kind === "factory").map((n) => n.id)];
 
-export default function OrgChart() {
-  const { t, lang } = useLang();
-  const P = TXT[lang] || TXT.uz;
+function OrgPeople({ data, P, head, corner }) {
+  const { t } = useLang();
   const wide = !useIsMobile(1024);
   const text = useNodeText(P);
-
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ["admin-org-chart"],
-    queryFn: () => api.get("/admin/org-chart").then((r) => r.data),
-    staleTime: 30_000,
-  });
-  const tree = useMemo(() => (data ? buildTree(data) : null), [data]);
+  const tree = useMemo(() => buildTree(data), [data]);
 
   // ── what is open ────────────────────────────────────────────────────────
   const [open, setOpen] = usePersistentState("orgchart.open", null);
@@ -126,7 +134,9 @@ export default function OrgChart() {
   }, [tree, selected, reveal, ask]);
 
   // ── the two lenses ──────────────────────────────────────────────────────
-  const [page, setPage] = useState(null);
+  // `?pg=<page>` arrives from the «Ilovalar» view's «Kim ochadi»: the people
+  // who open that screen, lit up.
+  const [page, setPage] = useState(() => sp.get("pg") || null);
   const [mark, setMark] = useState(null);
   const lensOn = Boolean(page || mark);
 
@@ -212,20 +222,7 @@ export default function OrgChart() {
   ];
 
   // ── the canvas fills what is left of the screen ─────────────────────────
-  const boxRef = useRef(null);
-  const [top, setTop] = useState(null);
-  useLayoutEffect(() => {
-    const measure = () => {
-      const el = boxRef.current;
-      if (!el) return;
-      const main = el.closest("main");
-      setTop(Math.round(el.getBoundingClientRect().top + (main ? main.scrollTop : 0)));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [isLoading, isError]);
-  const height = `max(420px, calc(100dvh - ${top ?? 220}px - 2.75rem - var(--tg-safe-bottom, 0px)))`;
+  const [boxRef, height] = useCanvasHeight();
 
   const expandAll = useCallback(() => {
     if (!tree) return;
@@ -234,33 +231,20 @@ export default function OrgChart() {
   }, [tree, setOpen, ask]);
   const collapseAll = useCallback(() => { setOpen(["root"]); ask("fit"); }, [setOpen, ask]);
 
-  if (isLoading) {
+  if (!tree.root.people) {
     return (
       <div>
-        <div className="flex gap-2 mb-3">
-          <SkeletonBlock className="h-[38px] w-full sm:w-72 rounded-lg" />
-          <SkeletonBlock className="h-[38px] w-28 rounded-xl" />
-        </div>
-        <SkeletonBlock className="rounded-2xl" style={{ height: "max(420px, calc(100dvh - 17rem))" }} />
+        <div className="mb-3">{head}</div>
+        <EmptyState icon={Network} title={P.empty} message="" showUploadLink={false} height="h-64" />
       </div>
     );
-  }
-  if (isError || !tree) {
-    return (
-      <EmptyState
-        tone="danger" icon={Network} title={P.loadFail} message="" showUploadLink={false} height="h-64"
-        action={<Button variant="secondary" size="md" loading={isFetching} onClick={() => refetch()}>{P.retry}</Button>}
-      />
-    );
-  }
-  if (!tree.root.people) {
-    return <EmptyState icon={Network} title={P.empty} message="" showUploadLink={false} height="h-64" />;
   }
 
   const nodeText = node ? text(node, tree.root) : null;
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
+        {head}
         <StyledSelect
           className="w-full sm:w-72"
           searchable searchPlaceholder={P.findSearch} placeholder={P.find} ariaLabel={P.find}
@@ -282,10 +266,12 @@ export default function OrgChart() {
           onSelect={select} onToggle={toggle} onExpandAll={expandAll} onCollapseAll={collapseAll}
           height={height}
         >
+          <div className="absolute right-3 top-3 max-w-[calc(100%-1.5rem)] flex flex-col items-end gap-2 pointer-events-none">
+          {corner}
           {lensOn && (
             <div
               data-org-nopan
-              className="absolute right-3 top-3 max-w-[calc(100%-1.5rem)] flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
+              className="pointer-events-auto max-w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
               style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)", cursor: "default", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
               role="status"
             >
@@ -307,6 +293,7 @@ export default function OrgChart() {
               )}
             </div>
           )}
+          </div>
           {wide && node && (
             <aside
               data-org-nopan
@@ -329,5 +316,139 @@ export default function OrgChart() {
         </Modal>
       )}
     </div>
+  );
+}
+
+// The draft's bar, in the canvas's top-right corner in both views: an overlay,
+// so its coming and going never moves the chart.
+function SaveBar({ ed, A, onSave, onDiscard }) {
+  return (
+    <div
+      data-org-nopan role="status"
+      className="pointer-events-auto max-w-full flex items-center gap-1.5 rounded-xl pl-3 pr-1.5 py-1.5 text-xs"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--brand)", color: "var(--text-1)", cursor: "default", boxShadow: "0 4px 14px rgba(0,0,0,.12)" }}
+    >
+      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--brand)" }} />
+      <span className="truncate font-medium mr-1">{fill(A.unsavedN, { n: ed.changes })}</span>
+      <Button variant="ghost" size="md" disabled={ed.saving} onClick={onDiscard}>{A.discard}</Button>
+      <Button variant="primary" size="md" loading={ed.saving} onClick={onSave}>{A.save}</Button>
+    </div>
+  );
+}
+
+export default function OrgChart() {
+  const { t, lang } = useLang();
+  const P = TXT[lang] || TXT.uz;
+  const A = APPS_TXT[lang] || APPS_TXT.uz;
+  const toast = useToast();
+
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ["admin-org-chart"],
+    queryFn: () => api.get("/admin/org-chart").then((r) => r.data),
+    staleTime: 30_000,
+  });
+
+  // The «Ilovalar» draft lives here, above both views.
+  const ed = useAppsEditor(data);
+  useLeaveGuard(ed.dirty);
+  const [asking, setAsking] = useState(false);
+
+  const [sp, setSp] = useSearchParams();
+  const view = sp.get("v") === "apps" ? "apps" : "people";
+  // A node id means something in one view only, so a switch closes the panel.
+  const show = useCallback((v, pg) => {
+    setSp((prev) => {
+      const q = new URLSearchParams(prev);
+      q.delete("n");
+      if (v === "apps") q.set("v", "apps"); else q.delete("v");
+      if (pg) q.set("pg", pg); else q.delete("pg");
+      return q;
+    }, { replace: true });
+  }, [setSp]);
+  const showPeople = useCallback((pg) => show("people", pg), [show]);
+
+  // Taking a page away from a ROLE pulls it off every phone holding that role
+  // at once, so those ticks are read back before they ship — the Access
+  // matrix's own rule («Sahifa ruxsatlari»), in its own words.
+  const removals = useMemo(() => Object.entries(ed.roleDraft).flatMap(([page, row]) =>
+    Object.entries(row).filter(([, on]) => !on).map(([role]) => ({ page, role }))), [ed.roleDraft]);
+  const [confirming, setConfirming] = useState(false);
+
+  const save = async () => {
+    setConfirming(false);
+    try {
+      await ed.save();
+      toast.success(A.saved);
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? `${A.saveFail}: ${detail}` : A.saveFail);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div>
+        <div className="flex gap-2 mb-3">
+          <SkeletonBlock className="h-[38px] w-44 rounded-xl" />
+          <SkeletonBlock className="h-[38px] w-full sm:w-72 rounded-lg" />
+          <SkeletonBlock className="h-[38px] w-28 rounded-xl" />
+        </div>
+        <SkeletonBlock className="rounded-2xl" style={{ height: "max(420px, calc(100dvh - 17rem))" }} />
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <EmptyState
+        tone="danger" icon={Network} title={P.loadFail} message="" showUploadLink={false} height="h-64"
+        action={<Button variant="secondary" size="md" loading={isFetching} onClick={() => refetch()}>{P.retry}</Button>}
+      />
+    );
+  }
+
+  const head = (
+    <SegmentedToggle
+      asTabs value={view} onChange={(v) => show(v)}
+      options={[["people", A.viewPeople], ["apps", A.viewApps]]}
+    />
+  );
+  const corner = ed.dirty
+    ? <SaveBar ed={ed} A={A} onSave={() => (removals.length ? setConfirming(true) : save())} onDiscard={() => setAsking(true)} />
+    : null;
+
+  return (
+    <>
+      {view === "apps"
+        ? <OrgApps key="apps" data={data} ed={ed} P={P} A={A} head={head} corner={corner} onShowPeople={showPeople} />
+        : <OrgPeople key="people" data={data} P={P} head={head} corner={corner} />}
+      <ConfirmDialog
+        open={asking}
+        title={A.discardTitle} message={fill(A.discardMsg, { n: ed.changes })}
+        confirmLabel={A.discard} cancelLabel={A.keepEditing}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => { ed.discard(); setAsking(false); }}
+      />
+      <ConfirmDialog
+        open={confirming}
+        title={t("admin.access.confirmTitle")}
+        message={(
+          <>
+            <p className="mb-2">{t("admin.access.confirmMsg").replace("{n}", removals.length)}</p>
+            <ul className="space-y-0.5">
+              {removals.slice(0, 8).map((c) => (
+                <li key={`${c.page}:${c.role}`} style={{ color: "#ef4444" }}>
+                  − {t(PAGE_LABEL[c.page] ?? `nav.${c.page}`)} · {t(ROLE_LABEL_KEYS[c.role])}
+                </li>
+              ))}
+              {removals.length > 8 && <li>… +{removals.length - 8}</li>}
+            </ul>
+          </>
+        )}
+        confirmLabel={A.save} cancelLabel={A.cancel}
+        onCancel={() => setConfirming(false)}
+        onConfirm={save}
+      />
+      {toast.node}
+    </>
   );
 }

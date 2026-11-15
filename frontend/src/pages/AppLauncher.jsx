@@ -5,6 +5,7 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { appEntry } from "../utils/apps";
+import { navName } from "../utils/navLayout";
 import { useLauncher } from "../hooks/useLauncher";
 import api from "../utils/api";
 import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
@@ -85,25 +86,25 @@ function lettered(text, n) {
 }
 
 export default function AppLauncher() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
-  const { apps, may, loading } = useLauncher();
+  const { apps, may, layout, loading } = useLauncher();
   const who = tl(auth?.full_name || "").trim();
   const [before, after = ""] = t("apps.hello").split("{name}");
   const plain = who ? `${before}${who}${after}` : `${before.replace(/[,\s]+$/, "")}${after}`;
   const n = { i: 0, plan: typingPlan(plain, typeEnd(apps.length)) };
 
   // The /staff queue — what waits on an ADMIN (the sidebar's own badge rule:
-  // a top-manager approves nothing there, so their HR tile carries none). It
-  // sits on HR since the People pages moved there (2026-11-15).
+  // a top-manager approves nothing there, so their tile carries none). It
+  // sits on the app holding /staff — HR as the code ships it (2026-11-15).
   const { data: pending } = useQuery({
     queryKey: ["staff-documents-pending-count"],
     queryFn: () => api.get("/api/staff/documents/pending-count").then((r) => r.data),
     enabled: auth?.role === "admin",
     refetchInterval: 30_000,
   });
-  const badges = { hr: pending?.count ?? 0 };
+  const badges = { [layout.appOf.get("/staff")]: pending?.count ?? 0 };
 
   // A top-manager's tiles wait for their page access (an admin's never do).
   // With no app at all — every page closed to them — the overview's own gate
@@ -124,13 +125,14 @@ export default function AppLauncher() {
         </h2>
         <nav aria-label={t("apps.title")}>
           <ul className="apps-grid">
-            {apps.map(({ id, labelKey, icon: Icon, hue }, i) => {
-              const name = t(labelKey);
+            {apps.map((a, i) => {
+              const { id, icon: Icon, hue } = a;
+              const name = navName(a, t, lang);
               const count = badges[id] || 0;
               return (
                 <li key={id} style={{ "--i": i }}>
                   <Link
-                    to={appEntry(id, may)}
+                    to={appEntry(id, may, layout)}
                     className="app-tile"
                     data-app-hue={hue}
                     aria-label={count > 0 ? `${name} (${count})` : undefined}

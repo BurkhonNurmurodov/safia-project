@@ -90,5 +90,79 @@ profile page, which the chart links to.
   `ADMIN_NAV` entry (a canvas, not a column of forms).
 - Words: `pages/admin/orgChartText.js` (four languages, beside the page);
   role, page, capability and scope names come from the platform's own keys.
-- **Not built:** changing anything from the chart, cells or workers as nodes,
-  an export, the chart for anybody but an admin.
+- **Not built:** changing anything from the PEOPLE chart (the «Ilovalar» view
+  below is the one that is edited), cells or workers as nodes, an export, the
+  chart for anybody but an admin.
+
+## «Ilovalar» — the launcher's apps, menu tabs and screens on the same chart (`?v=apps`, 2026-11-15)
+
+The operator, on a screenshot of the chart: «I should be able to switch this
+org structure to see not people but also to see apps/menu tabs/screens. From
+this place, I should be able to change order, or create/delete new app, move
+screen or menu tabs from one to another or create/delete new menu tabs, move
+screens from one menu tab to another. And most importantly, see/change what
+type of users and which users can see them».
+
+A `SegmentedToggle` heads the toolbar: **«Odamlar» | «Ilovalar»**
+(`?v=apps`; a switch closes the open panel — a node id means something in one
+view only). `pages/admin/OrgChart.jsx` is the shell (the switch, the chart's
+data, the draft and its save bar) over `OrgPeople` (the chart above, unchanged)
+and `pages/admin/OrgApps.jsx`.
+
+- **The tree** (`utils/orgTree.js` `buildAppsTree`): the platform → each app →
+  its menu tabs → the screens. An app with no menu tab holds its screens
+  directly; one with some gets a «Menyu tabsiz» node for the screens that sit
+  under the app's own name. Screens in NO app (the assistant, as shipped) hang
+  under a dashed «Ilovaga kirmagan». It is laid **left to right**
+  (`layoutTreeH`, `dir="h"` on `OrgCanvas`): fourteen apps side by side are
+  3 500px, and an app's thirty screens read as a column. `OrgCanvas` is the
+  same canvas — a leaf is a person there and a screen here; `sceneKey` keeps an
+  edit (a new tree object every time) from re-fitting the view.
+- **The structure is a LAYOUT, stored** — `services/nav_layout.py`, one
+  `app_settings` row `nav_layout`; its record is `docs/navigation-and-shell.md`
+  «The launcher's structure is a layout». From here: the order of apps, of an
+  app's menu tabs and of the screens in a list (`SortableList` in the panel of
+  the node that HOLDS them); a new app or menu tab (`NavFormModal`: a name in
+  four languages through `LangTextInput`, an icon from `config/appIcons.js`, a
+  tile colour); renaming / re-iconing any of them (one the code ships keeps its
+  own name while the field is blank); a screen moved to another app / menu tab
+  / no app (two `StyledSelect`s on the screen's panel); a menu tab moved, with
+  its screens, to another app; an app or menu tab taken away. **A screen is
+  never lost**: removing a menu tab leaves its screens in the app, removing an
+  app asks where they go (`RemoveAppModal`), and the Admin app cannot be
+  removed. «Standart tuzilma» goes back to what the code ships.
+- **Who sees a screen** — on the screen's panel: one tick per ROLE (the Access
+  matrix's row for its page key; a screen answering to several keys shows each)
+  and the PEOPLE it was opened for or closed to one by one (`page.view.<key>`
+  entries on a position — or a login's, which can be removed here and are added
+  on «Shaxsiy ruxsatlar»), with the scope picker where the page has one. An
+  app's and a menu tab's panel carry «Kim ko'radi»: per role how many of its
+  screens it opens, and a tick that opens or closes ALL of them. An `adminOnly`
+  screen and an admin-app page say why they cannot be opened to a role (the
+  latter lists the capabilities that open it and who holds one). «Kim ochadi»
+  switches to the people chart with that page's lens on (`?pg=`).
+- **Two lenses**: «Rol» and «Xodim» light up the screens a role or ONE person
+  opens (`profileOpens` — the sidebar's own rule), a folded app says how many;
+  a card's subline says «Hamma rollar» / «Adminlar + N ta rol» / «Faqat
+  adminlar», a lock marks a screen no role can be given, a blue key a personal
+  entry, a gold dot an unsaved change.
+- **Everything is a DRAFT until «Saqlash»** (`pages/admin/useAppsEditor.js`,
+  held by the shell so it survives a look at the people chart; `useLeaveGuard`).
+  The bar sits in the canvas's top-right corner in both views — an overlay, it
+  never moves the chart. A save sends up to three things: `PUT
+  /admin/nav-layout` (the whole layout, or `null` when it equals the code's),
+  `PUT /admin/page-access` (the matrix read FRESH with only the ticks changed
+  here applied — it never undoes what somebody ticked on «Sahifa ruxsatlari»
+  meanwhile), and one `PUT /admin/capabilities` diff per person. Taking a page
+  away from a role is read back first, in the Access matrix's own dialog. A
+  failed step keeps the rest of the draft and shows the reason.
+- **Access rules are not repeated here**: the ticks are the matrix's, the
+  personal entries are capabilities, both saved through the endpoints the two
+  registers use. Moving a screen changes who sees an app's TILE (whoever opens
+  one of its screens), never who may open the screen.
+- Words: `pages/admin/orgAppsText.js`. The checks that were run: the default
+  layout draws what the launcher drew before (a node script over
+  `utils/navLayout.js`), and the page driven in headless Chrome on stubbed data.
+- **Not built:** dragging a card on the canvas (order and moves are in the
+  panel), hiding a screen, renaming a screen, the grouped sidebar of the roles
+  without the launcher, an undo beyond «Standart tuzilma».

@@ -7,6 +7,7 @@ import { SkeletonCard, SkeletonTable } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCapabilities } from "../../hooks/useCapabilities";
+import { useLauncher } from "../../hooks/useLauncher";
 import { ADMIN_NAV, ADMIN_HOME, adminPage, adminAllows, firstAdminPage } from "../../config/adminNav";
 import { appEntry } from "../../utils/apps";
 import { ADMIN_PAGES } from "./adminPages";
@@ -102,8 +103,14 @@ function PageSkeleton() {
 export function AdminHome() {
   const { auth } = useAuth();
   const { capTabs, isLoading } = useCapabilities();
+  const { layout } = useLauncher();
   const isAdmin = auth?.role === "admin";
-  if (isAdmin) return <Navigate to={appEntry("admin")} replace />;
+  if (isAdmin) {
+    // Where the app was left — or, when the operator's layout left the admin
+    // app with no page of its own, the first admin page there is.
+    const to = appEntry("admin", undefined, layout);
+    return <Navigate to={to === "/" ? adminPage(firstAdminPage(true).id) : to} replace />;
+  }
   if (isLoading) return <PageLoader where="caps" />;
   const first = firstAdminPage(false, capTabs);
   return <Navigate to={first ? adminPage(first.id) : "/"} replace />;

@@ -970,6 +970,39 @@ def admin_update_page_access(
     return {"status": "ok", "pages": pages}
 
 
+# ── «Ilovalar tuzilmasi» — the launcher's apps, menu tabs and screens ─────────
+# Arranged on the org chart's «Ilovalar» view (services/nav_layout.py). The
+# layout is READ with the page-access answer (`settings.page_access_payload`),
+# so there is no GET here. `verify_admin`: it moves every launcher role's
+# pages, and it sits on the page that shows the whole permission system.
+
+class NavLayoutPayload(BaseModel):
+    layout: Optional[dict] = None    # None → back to the coded default
+
+
+@router.put("/nav-layout")
+def admin_set_nav_layout(
+    payload: NavLayoutPayload,
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    from app.services import nav_layout
+    before = nav_layout.get(db)
+    try:
+        layout = nav_layout.save(db, payload.layout)
+    except nav_layout.LayoutError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    was, now = nav_layout.counts(before), nav_layout.counts(layout)
+    action_log.enrich(
+        target_kind="page",
+        details=[("app", now[0]), ("page", now[2])],
+        changes=[(k, a if before else None, b if layout else None)
+                 for k, a, b in zip(("app", "tab", "page"), was, now)
+                 if (a if before else None) != (b if layout else None)],
+    )
+    return {"status": "ok", "nav": layout}
+
+
 # ── Per-profile capabilities ──────────────────────────────────────────────────
 # The per-person half of the permission system (see app/capabilities.py). Always
 # `verify_admin`, never `require_cap`: the power to hand out powers is

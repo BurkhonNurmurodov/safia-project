@@ -16,9 +16,10 @@ import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
-import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
+import { ALL_LINKS, NAV_GROUPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
 import { idleSolutionsOpenFor } from "../../config/idleSolutions";
-import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
+import { openApp, rememberPage } from "../../utils/apps";
+import { navName } from "../../utils/navLayout";
 import { useLauncher } from "../../hooks/useLauncher";
 import useLeaveRef from "../../hooks/useLeaveRef";
 import GlobalSearch from "./GlobalSearch";
@@ -50,7 +51,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const leaveDim = useLeaveRef();
   const location = useLocation();
   const { auth } = useAuth();
-  const { t }    = useLang();
+  const { t, lang } = useLang();
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
@@ -114,12 +115,15 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // nothing else; the launcher at «/» is the way to the others. A page no app
   // lists keeps the app it was opened from (utils/apps.js); with none yet, or
   // an app holding nothing this viewer may open, the whole register shows,
-  // grouped as before.
-  const { on: launcher, may } = useLauncher();
-  const appId = launcher ? openApp(location.pathname) : null;
-  const appLinks = appId ? linksOfApp(appId, may) : [];
-  const app = appLinks.length ? APPS.find(a => a.id === appId) : null;
-  useEffect(() => { if (launcher) rememberPage(location.pathname); }, [launcher, location.pathname]);
+  // grouped as before. The apps, their menu tabs and what sits in each are
+  // the viewer's LAYOUT (utils/navLayout.js): the code's own, or the one the
+  // operator arranged on the org chart.
+  const { on: launcher, may, layout } = useLauncher();
+  const appId = launcher ? openApp(location.pathname, layout) : null;
+  const appDef = appId ? layout.byId.get(appId) : null;
+  const appLinks = appDef ? appDef.links.filter(may) : [];
+  const app = appLinks.length ? appDef : null;
+  useEffect(() => { if (launcher) rememberPage(location.pathname, layout); }, [launcher, location.pathname, layout]);
   // The admin app's pages this viewer may open — every one for an admin, the
   // pages their grants name for anybody else (a grantee has no launcher, so
   // these rows ARE their way in; the footer's single «Admin» row is gone).
@@ -135,20 +139,24 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     ];
 
   // Grouped mode only past the threshold — grouping helps a 20-row register,
-  // it would just add chrome to a supervisor's 6 links. An app that names
-  // `sections` (the admin app's four) is always grouped by them instead.
-  const sections = app?.sections ?? null;
+  // it would just add chrome to a supervisor's 6 links. Inside an app the
+  // layout's MENU TABS are the sections (the admin app's four, HR's «Verifix
+  // (test)», any the operator made): its own row of screens first, headerless
+  // and flush under the app's name, then each tab as a folder — and an app
+  // whose tabs hold nothing this viewer may open stays one flat list.
+  const sections = app ? app.tabs : null;
   const groupDefs = sections ?? NAV_GROUPS;
-  // Inside such an app a link sits in the section it names (`section`, the
-  // admin pages), else in the section carrying its nav group's id (HR's
-  // «Verifix (test)» folder), else in the first one.
-  const groupOf = (l) => (sections
-    ? l.section ?? (sections.some(s => s.id === l.group) ? l.group : sections[0].id)
-    : l.group);
+  const groupOf = (l) => (sections ? layout.tabOf.get(l.to) : l.group);
   const fallbackGroup = sections ? sections[0].id : "system";
-  const grouped = sections ? true : !app && links.length > GROUP_THRESHOLD;
+  const grouped = sections
+    ? sections.some(s => !s.top && s.links.some(may))
+    : links.length > GROUP_THRESHOLD;
   const byGroup = new Map(groupDefs.map(g => [g.id, []]));
   links.forEach(l => (byGroup.get(groupOf(l)) ?? byGroup.get(fallbackGroup)).push(l));
+  // A section with a header row: a menu tab inside an app, a named nav group
+  // in the whole register.
+  const hasHead = (g) => (sections ? !g.top : Boolean(g.labelKey));
+  const headName = (g) => (sections ? navName(g, t, lang) : t(g.labelKey));
 
   // Segment-safe, exactly like NavLink's own matching: /zagruzka-cell is NOT
   // inside /zagruzka, so it can't light up (or open) the wrong section.
@@ -402,7 +410,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 className="flex-1 min-w-0 truncate whitespace-nowrap leading-5 transition-all duration-200"
                 style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden" }}
               >
-                {t(app.labelKey)}
+                {navName(app, t, lang)}
               </span>
             </div>
           )}
@@ -411,7 +419,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           {grouped && groupDefs.map((g) => {
             const items = byGroup.get(g.id);
             if (!items.length) return null;
-            const collapsed = Boolean(g.labelKey) && openGroup !== g.id;
+            const head = hasHead(g);
+            const collapsed = head && openGroup !== g.id;
             const activeInside = items.some(l => isLinkActive(l.to));
             // Pending Verifix work (/staff) must stay visible
             // with «Люди» collapsed — the counts bubble up onto the group header.
@@ -426,13 +435,13 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                     kinds share one vertical rhythm and one icon column. On the
                     icon rail it shrinks to its icon and stays clickable, so
                     every section remains reachable there. */}
-                {g.labelKey && (
+                {head && (
                   <button
                     type="button"
                     onClick={() => toggleGroup(g.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-grp-${g.id}`}
-                    title={!expanded ? t(g.labelKey) : undefined}
+                    title={!expanded ? headName(g) : undefined}
                     className="nav-item w-full flex items-center rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors px-2.5 py-2.5 md:py-2"
                     style={{
                       gap: "12px",
@@ -453,7 +462,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                       className="flex-1 min-w-0 truncate whitespace-nowrap text-left leading-5 transition-all duration-200"
                       style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden" }}
                     >
-                      {t(g.labelKey)}
+                      {headName(g)}
                     </span>
                     {expanded && (
                       <span className="flex items-center gap-1.5 flex-shrink-0">
@@ -478,7 +487,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 )}
                 {/* Headerless section (Активность / catch-all): a thin divider
                     is its only landmark, at either width. */}
-                {!g.labelKey && g.id !== "top" && (
+                {!head && g.id !== "top" && (
                   <div className="mx-2 my-2" style={{ borderTop: "1px solid var(--border)" }} />
                 )}
                 {/* The rail collapses with the sidebar: same open section, same
@@ -492,7 +501,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                   {/* Only rows under a visible folder header indent — the
                       headerless Обзор / Активность sections stay flush. */}
                   <div className="space-y-0.5">
-                    {items.map(l => renderLink(l, Boolean(g.labelKey)))}
+                    {items.map(l => renderLink(l, head))}
                   </div>
                 </div>
               </div>

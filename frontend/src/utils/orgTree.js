@@ -199,3 +199,114 @@ export function layoutTree(root, expanded) {
   const b = box.get(root.id);
   return { nodes, links, pos, width: b.w, height: b.h };
 }
+
+// ── «Ilovalar» — the launcher's structure as the same kind of tree ──────────
+//
+//   platform ─┬─ app ─┬─ screen                       (an app with no menu tab)
+//             │       ├─ «no menu tab» ─ screens      (…with some: its own row)
+//             │       └─ menu tab ─ screens
+//             └─ «in no app» ─ screens
+//
+// `layout` is a RESOLVED layout (utils/navLayout.js). A node's `people` is the
+// number of screens at or under it — the field the canvas's cards count by.
+
+/** Node ids: an app `a:<id>`, a menu tab `t:<id>` (an app's own row `t:<app>:top`), a screen `p:<path>`. */
+export const appNodeId = (id) => `a:${id}`;
+export const tabNodeId = (appId, tab) => (tab.top ? `t:${appId}:top` : `t:${tab.id}`);
+export const screenNodeId = (to) => `p:${to}`;
+export const LOOSE_ID = "a:~";
+
+export function buildAppsTree(layout) {
+  const screen = (link, app, tab) => ({ id: screenNodeId(link.to), kind: "screen", link, app, tab, children: [] });
+  const children = layout.apps.map((app) => {
+    const [top, ...folders] = app.tabs;
+    const node = { id: appNodeId(app.id), kind: "app", app, children: [] };
+    if (!folders.length) node.children = top.links.map((l) => screen(l, app, top));
+    else {
+      const tabs = top.links.length ? [top, ...folders] : folders;
+      node.children = tabs.map((tab) => ({
+        id: tabNodeId(app.id, tab), kind: "tab", tab, app,
+        children: tab.links.map((l) => screen(l, app, tab)),
+      }));
+    }
+    return node;
+  });
+  if (layout.loose.length) {
+    children.push({
+      id: LOOSE_ID, kind: "app", loose: true, app: null,
+      children: layout.loose.map((l) => screen(l, null, null)),
+    });
+  }
+  const root = { id: "root", kind: "root", apps: true, children };
+  const index = new Map();
+  (function walk(n, parent) {
+    n.parent = parent;
+    index.set(n.id, n);
+    n.people = n.kind === "screen" ? 1 : 0;
+    n.tabs = 0;
+    for (const c of n.children) {
+      walk(c, n);
+      n.people += c.people;
+      if (c.kind === "tab" && !c.tab.top) n.tabs += 1;
+    }
+  })(root, null);
+  root.appCount = layout.apps.length;
+  return { root, index };
+}
+
+/** Every node of one kind at or under `node`, in the chart's order. */
+export function nodesUnder(node, kind, out = []) {
+  if (node.kind === kind) out.push(node);
+  for (const c of node.children) nodesUnder(c, kind, out);
+  return out;
+}
+
+const H_GAP_X = 76;   // between a parent and its children's column (holds the pill and the trunk)
+const H_GAP_Y = 10;   // between the cards of one column
+
+/**
+ * The same answer as `layoutTree`, laid LEFT TO RIGHT as an outline: a node's
+ * children are a column to its right, starting on its own line. A three-level
+ * tree of long lists (an app's thirty screens) reads top to bottom and scrolls
+ * the way a page does; laid top-down, fourteen apps side by side are 3 500px.
+ * `dir: "h"` tells the canvas where a card's fold pill sits.
+ */
+export function layoutTreeH(root, expanded) {
+  const box = new Map();
+  const kidsOf = (n) => (expanded.has(n.id) ? n.children : []);
+
+  (function measure(n) {
+    const kids = kidsOf(n);
+    let w = NODE_W, h = NODE_H;
+    if (kids.length) {
+      let kw = 0, kh = 0;
+      for (const k of kids) { const b = measure(k); kw = Math.max(kw, b.w); kh += b.h; }
+      kh += (kids.length - 1) * H_GAP_Y;
+      w = NODE_W + H_GAP_X + kw;
+      h = Math.max(NODE_H, kh);
+    }
+    const b = { w, h };
+    box.set(n.id, b);
+    return b;
+  })(root);
+
+  const nodes = [], links = [], pos = new Map();
+  (function place(n, left, top) {
+    pos.set(n.id, { x: left, y: top });
+    nodes.push({ node: n, x: left, y: top });
+    const kids = kidsOf(n);
+    if (!kids.length) return;
+    const kx = left + NODE_W + H_GAP_X;
+    const trunk = kx - 16, mid = top + NODE_H / 2;
+    let y = top;
+    for (const k of kids) {
+      place(k, kx, y);
+      const km = y + NODE_H / 2;
+      links.push({ id: k.id, d: rounded([[left + NODE_W, mid], [trunk, mid], [trunk, km], [kx, km]]) });
+      y += box.get(k.id).h + H_GAP_Y;
+    }
+  })(root, 0, 0);
+
+  const b = box.get(root.id);
+  return { nodes, links, pos, width: b.w, height: b.h, dir: "h" };
+}

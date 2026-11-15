@@ -4,7 +4,9 @@ import { hedged } from "../utils/hedge";
 import { DEFAULT_PAGE_ACCESS } from "../config/pages";
 
 // Fetches the admin-configured page-access matrix. Falls back to the defaults
-// (which match the original behavior) until the request resolves.
+// (which match the original behavior) until the request resolves. The same
+// answer carries `nav` — the launcher's apps, menu tabs and screens as the
+// operator arranged them (utils/navLayout.js resolves it; null = the code's).
 export function usePageAccess() {
   const { data, isLoading } = useQuery({
     queryKey: ["page-access"],
@@ -16,6 +18,7 @@ export function usePageAccess() {
   });
   return {
     access: data?.pages ?? DEFAULT_PAGE_ACCESS,
+    nav: data?.nav ?? null,
     isLoading,
   };
 }

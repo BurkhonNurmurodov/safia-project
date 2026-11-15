@@ -209,10 +209,18 @@ def page_access_payload(db: Session) -> dict:
     # the first menu drawn on that day already carries it. A no-op otherwise.
     from app.services import task_board
     task_board.open_page_to_top_managers()
+    # `nav` — the launcher's apps, menu tabs and screens as the operator
+    # arranged them on the org chart (services/nav_layout.py), or None for the
+    # coded default. It rides here because every route already waits on this
+    # answer and the sign-in already carries it: the sidebar and the launcher
+    # know their structure with no request of their own. Access is unchanged
+    # by it; a bundle from before it ignores the key.
+    from app.services import nav_layout
     return {
         "pages":            get_page_access(db),
         "page_keys":        PAGE_KEYS,
         "toggleable_roles": TOGGLEABLE_ROLES,
+        "nav":              nav_layout.get(db),
     }
 
 

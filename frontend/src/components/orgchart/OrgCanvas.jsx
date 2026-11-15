@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Check, ChevronDown, ChevronUp, ChevronsDownUp, ChevronsUpDown, Clock3, Factory,
-  KeyRound, LocateFixed, Minus, Plus, UserRound, UserRoundX,
+  Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsDownUp, ChevronsUpDown,
+  Clock3, Factory, KeyRound, List, LocateFixed, Lock, Minus, PackageOpen, Plus, UserRound,
+  UserRoundX,
 } from "lucide-react";
 import Button from "../ui/Button";
 import BrandLogo from "../ui/BrandLogo";
 import ProfileAvatar from "../ui/ProfileAvatar";
-import { NODE_H, NODE_W, layoutTree, pathTo } from "../../utils/orgTree";
+import { NODE_H, NODE_W, layoutTree, layoutTreeH, pathTo } from "../../utils/orgTree";
 import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
 
 /**
@@ -22,12 +23,19 @@ import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
  *
  * The scene (cards + connectors) is memoised apart from the view, so a drag
  * re-renders one transform and not two hundred cards.
+ *
+ * The same canvas draws the «Ilovalar» view — apps, menu tabs and screens
+ * (`dir="h"`: laid left to right, utils/orgTree.js `layoutTreeH`; `text` names
+ * its nodes; `flags` marks a screen: admins only, a personal entry). A leaf is
+ * a person there and a screen here; everything else is the same card.
  */
 
 // K_HOME_MIN is the smallest a card is still READ at: a fit never shrinks
 // below it — a tree wider than that runs off the edges instead (the whole of
-// an opened plant fitted to the screen is a row of specks at 30%).
+// an opened plant fitted to the screen is a row of specks at 30%). A caller
+// may lower it (`homeMin`) where the first sight is one short column.
 const K_MIN = 0.25, K_MAX = 1.6, K_HOME_MIN = 0.9;
+const isLeaf = (node) => node.kind === "person" || node.kind === "screen";
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 const GREEN = "#22c55e", YELLOW = "#eab308", BLUE = "#3b82f6";
@@ -59,16 +67,33 @@ function Badge({ icon: Icon, hue, title }) {
   );
 }
 
+// An app's glyph in its tile colour (index.css `[data-app-hue]`).
+function AppChip({ icon: Icon, hue }) {
+  return (
+    <span
+      data-app-hue={hue}
+      className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0"
+      style={{ color: "rgb(var(--hue))", background: "rgba(var(--hue), .14)" }}
+    >
+      <Icon size={17} aria-hidden="true" />
+    </span>
+  );
+}
+
 const Card = memo(function Card({
-  node, root, x, y, selected, dim, mark, hits, lensOn, open, P, text, onSelect, onToggle,
+  node, root, x, y, selected, dim, mark, hits, lensOn, open, P, text, flag, side, onSelect, onToggle,
 }) {
   const { title, sub } = text(node, root);
   const p = node.profile;
   const vacant = node.kind === "person" && !p.accounts.length;
-  const personal = node.kind === "person" && (
+  // Nothing behind it yet: a position nobody claimed, an app with no screen,
+  // the screens that sit in no app.
+  const hollow = vacant || Boolean(node.loose) || ((node.kind === "app" || node.kind === "tab") && !node.people);
+  const personal = node.kind === "person" ? (
     Object.keys(p.grants).length > 0 || p.denies.length > 0
-    || p.accounts.some((a) => Object.keys(a.grants).length > 0 || a.denies.length > 0));
-  const under = node.people - (node.kind === "person" ? 1 : 0);
+    || p.accounts.some((a) => Object.keys(a.grants).length > 0 || a.denies.length > 0))
+    : Boolean(flag?.personal);
+  const under = node.people - (isLeaf(node) ? 1 : 0);
 
   let lead;
   if (node.kind === "person") {
@@ -80,6 +105,12 @@ const Card = memo(function Card({
     );
   } else if (node.kind === "root") {
     lead = <BrandLogo className="w-9 h-9 rounded-xl flex-shrink-0" />;
+  } else if (node.kind === "app") {
+    lead = node.loose ? <IconChip icon={PackageOpen} /> : <AppChip icon={node.app.icon} hue={node.app.hue} />;
+  } else if (node.kind === "tab") {
+    lead = <IconChip icon={node.tab.top ? List : node.tab.icon} hue={node.tab.danger ? "#ef4444" : undefined} />;
+  } else if (node.kind === "screen") {
+    lead = <IconChip icon={node.link.icon} hue={node.link.danger ? "#ef4444" : undefined} />;
   } else if (node.kind === "group") {
     lead = <IconChip icon={ROLE_ICON[node.role] ?? UserRound} hue={roleHue(node.role)} />;
   } else {
@@ -105,7 +136,7 @@ const Card = memo(function Card({
           background: selected
             ? "linear-gradient(var(--brand-bg), var(--brand-bg)), var(--bg-card)"
             : "var(--bg-card)",
-          border: `1px ${vacant ? "dashed" : "solid"} ${selected ? "var(--brand)" : "var(--border-md)"}`,
+          border: `1px ${hollow ? "dashed" : "solid"} ${selected ? "var(--brand)" : "var(--border-md)"}`,
           boxShadow: selected ? "0 0 0 1px var(--brand), 0 4px 14px rgba(0,0,0,.10)" : "0 1px 2px rgba(0,0,0,.06)",
           outlineColor: "var(--brand)",
         }}
@@ -124,8 +155,12 @@ const Card = memo(function Card({
         <span className="flex items-center gap-1 flex-shrink-0">
           {mark === "on" && <Badge icon={Check} hue={GREEN} title={P.lensOpen} />}
           {mark === "part" && <Badge icon={Check} hue={YELLOW} title={P.lensLogin} />}
-          {personal && <Badge icon={KeyRound} hue={BLUE} title={P.personalTip} />}
+          {personal && <Badge icon={KeyRound} hue={BLUE} title={flag?.personalTip ?? P.personalTip} />}
           {vacant && <Badge icon={UserRoundX} title={P.vacantTip} />}
+          {flag?.locked && <Badge icon={Lock} title={flag.lockedTip} />}
+          {flag?.changed && (
+            <span title={flag.changedTip} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--brand)" }} />
+          )}
         </span>
       </button>
 
@@ -136,9 +171,13 @@ const Card = memo(function Card({
           aria-label={`${open ? P.collapse : P.expand}: ${title}`}
           title={open ? P.collapse : P.expand}
           onClick={() => onToggle(node.id)}
-          className="absolute left-1/2 flex items-center gap-0.5 h-[22px] px-2 rounded-full text-[11px] font-semibold tabular-nums whitespace-nowrap before:absolute before:-inset-2 before:content-['']"
+          className={`absolute flex items-center gap-0.5 h-[22px] px-2 rounded-full text-[11px] font-semibold tabular-nums whitespace-nowrap before:absolute before:-inset-2 before:content-[''] ${side ? "" : "left-1/2"}`}
           style={{
-            bottom: -11, transform: "translateX(-50%)",
+            // Under the card in a top-down tree; beside it, on the line to its
+            // children, in a left-to-right one.
+            ...(side
+              ? { left: NODE_W + 6, top: "50%", transform: "translateY(-50%)" }
+              : { bottom: -11, transform: "translateX(-50%)" }),
             background: "var(--bg-card)", border: "1px solid var(--border-md)",
             color: "var(--text-2)", boxShadow: "0 1px 2px rgba(0,0,0,.08)",
           }}
@@ -150,7 +189,9 @@ const Card = memo(function Card({
             </span>
           )}
           {open && !(lensOn && hits > 0) ? null : <span>{lensOn && hits > 0 ? under : `+${under}`}</span>}
-          {open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+          {side
+            ? (open ? <ChevronLeft size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />)
+            : (open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />)}
         </button>
       )}
     </div>
@@ -158,7 +199,7 @@ const Card = memo(function Card({
 });
 
 const Scene = memo(function Scene({
-  layout, root, expanded, selected, trail, marks, hits, lensOn, P, text, onSelect, onToggle,
+  layout, root, expanded, selected, trail, marks, hits, lensOn, P, text, flags, onSelect, onToggle,
 }) {
   // Top-down, left-to-right — the order Tab should walk the cards in.
   const cards = useMemo(
@@ -181,17 +222,19 @@ const Scene = memo(function Scene({
         </g>
       </svg>
       {cards.map(({ node, x, y }) => {
-        const mark = node.kind === "person" ? marks?.get(node.id) : undefined;
+        const leaf = isLeaf(node);
+        const mark = leaf ? marks?.get(node.id) : undefined;
         const n = hits?.get(node.id) || 0;
         return (
           <Card
             key={node.id} node={node} root={root} x={x} y={y}
             selected={selected === node.id}
-            dim={lensOn && (node.kind === "person" ? !mark : n === 0)}
+            dim={lensOn && (leaf ? !mark : n === 0)}
             mark={lensOn ? mark : undefined}
-            hits={node.kind === "person" ? n - (mark ? 1 : 0) : n}
+            hits={leaf ? n - (mark ? 1 : 0) : n}
             lensOn={lensOn}
             open={expanded.has(node.id)}
+            flag={flags?.get(node.id)} side={layout.dir === "h"}
             P={P} text={text} onSelect={onSelect} onToggle={onToggle}
           />
         );
@@ -203,9 +246,14 @@ const Scene = memo(function Scene({
 export default function OrgCanvas({
   tree, expanded, selected, marks, hits, lensOn, P, command, insetLeft = 0,
   onSelect, onToggle, onExpandAll, onCollapseAll, height, children,
+  dir = "v", text: nodeText, flags, homeMin = K_HOME_MIN, sceneKey,
 }) {
-  const text = useNodeText(P);
-  const layout = useMemo(() => layoutTree(tree.root, expanded), [tree, expanded]);
+  const ownText = useNodeText(P);
+  const text = nodeText ?? ownText;
+  const layout = useMemo(
+    () => (dir === "h" ? layoutTreeH : layoutTree)(tree.root, expanded),
+    [tree, expanded, dir],
+  );
   const trail = useMemo(
     () => new Set(selected ? pathTo(tree.index, selected) : []),
     [tree, selected],
@@ -219,8 +267,8 @@ export default function OrgCanvas({
   // What the handlers and the effects below read: the latest of everything,
   // without re-subscribing a listener on every drag frame. Written first among
   // the layout effects, so each one after it sees this render's values.
-  const live = useRef({ view, vp, layout, insetLeft, tree });
-  useLayoutEffect(() => { live.current = { view, vp, layout, insetLeft, tree }; });
+  const live = useRef({ view, vp, layout, insetLeft, tree, homeMin });
+  useLayoutEffect(() => { live.current = { view, vp, layout, insetLeft, tree, homeMin }; });
 
   useLayoutEffect(() => {
     const el = vpRef.current;
@@ -241,17 +289,19 @@ export default function OrgCanvas({
   // the whole tree when it fits at a size a card still reads at; otherwise the
   // root in the middle and the branches running off both edges, to drag.
   const fit = useCallback((animate = true) => {
-    const { vp: v, layout: l, insetLeft: inset, tree: tr } = live.current;
+    const { vp: v, layout: l, insetLeft: inset, tree: tr, homeMin: floor } = live.current;
     if (!v.w || !v.h) return;
     const pad = 28, room = Math.max(160, v.w - inset);
     const all = Math.min((room - 2 * pad) / l.width, (v.h - 2 * pad - 44) / l.height);
-    const k = clamp(all, K_HOME_MIN, 1);
+    const k = clamp(all, floor, 1);
     const rootMid = (l.pos.get(tr.root.id)?.x ?? 0) + NODE_W / 2;
+    const fits = l.width * k <= room - 2 * pad;
     moveTo({
       k,
-      x: l.width * k <= room - 2 * pad
-        ? inset + (room - l.width * k) / 2
-        : inset + room / 2 - rootMid * k,
+      // Too wide: a top-down tree keeps its root in the middle; a
+      // left-to-right one starts at its root, on the left.
+      x: fits ? inset + (room - l.width * k) / 2
+        : l.dir === "h" ? inset + pad : inset + room / 2 - rootMid * k,
       y: pad,
     }, animate);
   }, [moveTo]);
@@ -268,13 +318,16 @@ export default function OrgCanvas({
     }, true);
   }, [moveTo]);
 
-  // The first sight of a tree is the whole of it.
+  // The first sight of a tree is the whole of it. A tree that is EDITED in
+  // place (the «Ilovalar» view) names itself with `sceneKey`, so an edit —
+  // a new tree object every time — never throws the reader back to the start.
   const fitted = useRef(null);
+  const scene = sceneKey ?? tree;
   useLayoutEffect(() => {
-    if (!vp.w || !vp.h || fitted.current === tree) return;
-    fitted.current = tree;
+    if (!vp.w || !vp.h || fitted.current === scene) return;
+    fitted.current = scene;
     fit(false);
-  }, [tree, vp.w, vp.h, fit]);
+  }, [scene, vp.w, vp.h, fit]);
 
   // A branch opened or folded: the pressed card stays where it was on screen.
   const anchor = useRef(null);
@@ -446,7 +499,7 @@ export default function OrgCanvas({
       >
         <Scene
           layout={layout} root={tree.root} expanded={expanded} selected={selected} trail={trail}
-          marks={marks} hits={hits} lensOn={lensOn} P={P} text={text}
+          marks={marks} hits={hits} lensOn={lensOn} P={P} text={text} flags={flags}
           onSelect={onSelect} onToggle={toggle}
         />
       </div>

@@ -161,6 +161,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/admin/users/{}/roles/{}",                  "identity", "identity.role_removed"),
     (("DELETE",), "/admin/users/{}",                           "identity", "identity.user_deleted"),
     (("PUT",),    "/admin/page-access",                        "identity", "identity.page_access_saved"),
+    (("PUT",),    "/admin/nav-layout",                         "identity", "identity.nav_layout_saved"),
     (("PUT",),    "/admin/capabilities",                       "identity", "identity.capabilities_saved"),
     (("POST",),   "/admin/capabilities/copy",                  "identity", "identity.capabilities_copied"),
     (("POST",),   "/api/profiles/admin/switch-role",           "identity", "identity.profile_role_switched"),

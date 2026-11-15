@@ -144,6 +144,29 @@ untouched.
   had a twin NEXT to the tile. ARC is the repair department: its icon (tile and sidebar
   row) is `Repair` in `navLinks.js`, a wrench crossed with a screwdriver drawn
   on lucide's grid with `createLucideIcon` — plain `Wrench` is «Perenaladka».
+- **The launcher's structure is a layout** (2026-11-15, the operator — the
+  org chart's «Ilovalar» view, `docs/org-chart.md`). Everything above —
+  `APPS`, a link's `app`, `GROUP_APP`, an app's `sections` — is now the
+  DEFAULT, what a platform nobody rearranged draws. Over it lies ONE stored
+  layout (`services/nav_layout.py`, `app_settings.nav_layout`): which apps
+  exist and in what order, each app's own screens and its menu tabs, the
+  screens in no app, and the name / icon / colour of anything the operator made
+  or renamed. `utils/navLayout.js` `resolveLayout(stored)` is THE answer the
+  sidebar, the launcher and `utils/apps.js` read (`useLauncher().layout`;
+  every function of `apps.js` takes it as its last argument). **Once the
+  operator has saved a layout, a code change to a page's `app` moves nothing
+  for them** — it changes the default only; say so when asked to «put X in app
+  Y», and do it on the chart or in the stored layout. What the code still
+  owns: the REGISTER of screens. A screen is its path; a stored path no bundle
+  knows is dropped, and a screen the layout does not place sits where the code
+  puts it (its app re-made if the layout no longer has it) — so a new page
+  shows up by itself and a stale layout can never hide one. The server keeps
+  the SHAPE only (ids, labels, lists of paths) — it holds no list of pages.
+  The layout rides in the page-access answer (`settings.page_access_payload`
+  `nav`, so the sign-in seeds it and a bundle from before ignores it); an
+  admin's tiles now wait for that answer like everybody's. The /staff badge
+  sits on whichever app holds `/staff`. Access is untouched by any of it, and
+  so is the grouped sidebar of the roles without the launcher.
 - **The overview answers at `/overview`** for a launcher role (`adminPath`); the
   sidebar, the header search and `DocumentTitle` map `/` there. `/overview`
   works for every role (same `RequirePage`).
