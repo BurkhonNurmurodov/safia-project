@@ -824,16 +824,21 @@ same with the hair part too» — and, shown the layout, «Yes, like this».
   back to name order).
 
 
-## «Davomat» prints the count, «80/98» (2026-11-15)
+## «Davomat» prints the %, with «80/98» small in its corner (2026-11-15)
 
-The operator: «that brigadir has 98 people but came 80 — like 80/98». The
-«Davomat» cell of «Smena hisoboti» prints (came + on leave) / on the list
-instead of the percentage — the very fraction its colour is painted from, so
-the tile's colour (`ATT_SEGMENTS`) and the number never disagree. The list
-(«/98») is smaller and dimmer, so the eye reads who came first; the % leads
-the cell's tooltip, above the spelled-out «(keldi … + ta'til …) ÷ ro'yxatda …».
-Sorting, bands, legend and the link are unchanged. A payload without `came` /
-`roster` keeps printing the %. Frontend only (`attCell` in
+The operator: «that brigadir has 98 people but came 80 — like 80/98». First
+shipped (v4.537.0) as the count IN PLACE of the %; the same day the operator
+asked for the opposite weighting — «I prefer the percentage, but the number
+should be in the same box, in smaller size». So the «Davomat» cell of
+«Smena hisoboti» prints the % in the middle, as before, and (came + on leave)
+/ on the list small (9px on a phone, 10px from sm) in its BOTTOM-RIGHT
+corner — the very fraction the % and the colour (`ATT_SEGMENTS`) come from.
+The corner is the «Sifat nazorati %» cell's own device, so the row stays one
+line high (a count on a second line would break the one-line rule); the % is
+lifted 4px so a «178/196» never touches it. The % also leads the tooltip,
+above «(keldi … + ta'til …) ÷ ro'yxatda …». Sorting, bands, legend and the
+link are unchanged. A payload without `came` / `roster`, and the «O'rtacha»
+rows (a mean has no count), print the % alone. Frontend only (`attCell` in
 `components/overview/ShiftReportTable.jsx`).
 
 ## «O'rtacha» — an average row under the board (2026-11-15)

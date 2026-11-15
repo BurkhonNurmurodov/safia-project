@@ -762,11 +762,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // fraction, who is still to come and when Verifix was read. A blank has no
   // link: nothing on another page fills a read that has not happened yet.
   //
-  // The cell prints the COUNT, not the rate (the operator, 2026-11-15: «that
-  // brigadir has 98 people but came 80 — like 80/98»): (came + on leave) /
-  // on the list, the very fraction its colour is painted from, with the list
-  // dimmer so the eye reads who came first. The % leads the tooltip. A
-  // payload without the counts keeps printing the %.
+  // The cell prints the RATE, and the COUNT small in its bottom-right corner
+  // (the operator, 2026-11-15: first «80/98» in place of the %, then «I prefer
+  // the percentage, but the number should be in the same box, smaller»):
+  // (came + on leave) / on the list, the very fraction the % and the colour
+  // come from. The corner is the quality cell's own device, so the row stays
+  // one line high; the % is lifted 4px so a «178/196» never touches it. A
+  // payload without the counts — and the «O'rtacha» rows — print the % alone.
   const attCell = (cell, r, date) => {
     const blank = !!cell?.reason;
     const has = !blank && isNum(cell?.value);
@@ -782,15 +784,19 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       : undefined;
     return figTd({
       tone: has ? attTone(cell.value) : null,
-      paint: has ? segmentFill(cell.value, ATT_SEGMENTS) : undefined,
+      paint: has
+        ? { ...segmentFill(cell.value, ATT_SEGMENTS), ...(hasCount ? { position: "relative" } : null) }
+        : undefined,
       title,
       target: has ? staffTarget(r, date) : null,
       children: blank ? <Blank reason={cell.reason} />
         : hasCount ? (
-          <span className="whitespace-nowrap">
-            {cell.came + (isNum(cell.on_leave) ? cell.on_leave : 0)}
-            <span className="font-normal opacity-75 text-[10px] sm:text-[11px]">/{cell.roster}</span>
-          </span>
+          <>
+            <span className="relative -top-1">{pctText(cell.value)}</span>
+            <span className="pointer-events-none absolute right-[3px] bottom-[3px] sm:right-1.5 sm:bottom-1 whitespace-nowrap font-medium leading-none text-[9px] sm:text-[10px] opacity-80">
+              {cell.came + (isNum(cell.on_leave) ? cell.on_leave : 0)}/{cell.roster}
+            </span>
+          </>
         )
         : has ? pctText(cell.value)
         : <span style={{ color: "var(--text-4)" }}>—</span>,
