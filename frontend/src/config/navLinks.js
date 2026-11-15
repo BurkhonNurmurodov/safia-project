@@ -187,21 +187,21 @@ export const NAV_GROUPS = [
 // utils/launcherRoles.js). For them «/» is a grid of these tiles — a
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
-// pages. An app is a nav group by default; ARC, the overview (with the reports),
-// the activity page, HR, automation and the kitchen are apps of their own (a
-// link's `app`).
+// pages. An app is a nav group by default; ARC, the overview (with the reports
+// and the Cells group), the activity page, HR (with the People group),
+// automation and the kitchen are apps of their own (a link's `app`, or its
+// group's entry in `GROUP_APP`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
 export const APPS = [
   { id: "overview",  labelKey: "nav.overview",      icon: LayoutDashboard, hue: "gold" },
   { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
-  { id: "people",    labelKey: "navgrp.people",     icon: UsersRound,      hue: "sky" },
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
-  // HR's monthly KPIs — the leaders' and the brigadirs' (2026-11-03).
+  // HR — the People group's pages (2026-11-15, `GROUP_APP`), then the monthly
+  // KPIs, the leaders' and the brigadirs' (2026-11-03).
   { id: "hr",        labelKey: "apps.hr",           icon: BriefcaseBusiness, hue: "fuchsia" },
   { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
   { id: "arc",       labelKey: "nav.arc",           icon: Repair,          hue: "rose" },
-  { id: "cells",     labelKey: "navgrp.cells",      icon: Grid3x3,         hue: "teal" },
   { id: "education", labelKey: "navgrp.education",  icon: GraduationCap,   hue: "indigo" },
   { id: "verifix",   labelKey: "navgrp.verifix",    icon: ScanFace,        hue: "cyan" },
   { id: "lab",       labelKey: "navgrp.lab",        icon: TestTubes,       hue: "pink" },
@@ -236,7 +236,13 @@ export const ADMIN_PAGE_LINKS = ADMIN_NAV.map((n) => ({
   section: n.group, tab: n.id, capKey: n.capKey, danger: n.danger,
 }));
 
-export const appOf = (link) => link.app ?? link.group;
+// A whole nav group that sits inside another app on the launcher (2026-11-15,
+// the operator: «Cells also should be in Overview. People app's screens
+// should be in HR app») — a new page of such a group follows it by itself.
+// The sidebar's grouped register (everybody without the launcher) is untouched.
+const GROUP_APP = { cells: "overview", people: "hr" };
+
+export const appOf = (link) => link.app ?? GROUP_APP[link.group] ?? link.group;
 
 // For a launcher role «/» is the launcher, so the overview answers at /overview.
 export const adminPath = (to) => (to === "/" ? "/overview" : to);

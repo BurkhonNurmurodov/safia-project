@@ -66,7 +66,7 @@ untouched.
   (`linksOfApp(id, may)`), and an app holding none of them falls back to the
   whole register. Their tiles wait for page access (a loader, never a flash
   of every app); with no app at all the launcher hands «/» to `/overview`'s
-  own gate (their first page, or «no access»). The People tile's /staff badge
+  own gate (their first page, or «no access»). The HR tile's /staff badge (the People tile's until 2026-11-15)
   stays an admin's (the sidebar's badge rule — a top-manager approves nothing
   there), and the greeting's typing ends as THEIR last tile settles.
 
@@ -77,7 +77,15 @@ untouched.
   Overview» — `app: "overview"`; it was an app of its own from 2026-11-03,
   out of the Laboratory app, and that tile is gone; its page access is
   unchanged, admins only by default, so a viewer without it has a one-page
-  Overview app, and for everybody else it stays in the Laboratory group); «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
+  Overview app, and for everybody else it stays in the Laboratory group);
+  **a whole GROUP can sit inside another app** (`GROUP_APP` in `navLinks.js`,
+  2026-11-15, the operator: «Cells also should be in Overview. People app's
+  screens should be in HR app») — the Cells group («Yacheykalar»,
+  «Perenaladka») is in the Overview app after the overview itself, and the
+  People group («Odam soni»'s three pages, «Davomat») opens the HR app ahead
+  of the two KPI pages; the «Cells» and «People» tiles are gone, a new page
+  of either group follows it by itself, page access is unchanged, and the
+  grouped sidebar of everybody without the launcher is untouched; «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
   hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
   moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
   for everybody else both stay in the Liderlar group); «Avtomatika»
@@ -98,7 +106,7 @@ untouched.
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Sixteen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Fourteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. **A tile's name is ONE short word where it can be**: a
   name wider than a phone's tile (~96px at 360px) breaks mid-word, so the
@@ -122,7 +130,7 @@ untouched.
   capability grantee sees the admin pages their grants open as rows of their
   own sidebar (see «The admin app»).
 - **A tile opens where the app was left** (localStorage `appLastPage`), else
-  its first page. The People tile carries the /staff queue count (same query
+  its first page. The HR tile carries the /staff queue count (same query
   key as the sidebar's badge).
 - **Light by design:** the launcher fetches one count and imports no chart, so
   an admin's start no longer pays for the overview's requests and ApexCharts.
@@ -181,7 +189,7 @@ untouched.
   on purpose («loyalty, peace, premium»): the tiles gather in on arrival, the
   clouds breathe and turn one after another as a wave, a band of light
   crosses the tiles in turn, the treats bob and turn a few degrees, a tile
-  lifts on hover, the People badge ripples. **Only opacity and transforms
+  lifts on hover, the HR tile's badge ripples. **Only opacity and transforms
   animate** — never a CSS filter, blur, box-shadow or backdrop-filter — so a
   phone's compositor carries it; the light pools are size-capped GPU layers;
   prefers-reduced-motion stills all of it. Two

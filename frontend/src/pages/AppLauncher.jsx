@@ -95,14 +95,15 @@ export default function AppLauncher() {
   const n = { i: 0, plan: typingPlan(plain, typeEnd(apps.length)) };
 
   // The /staff queue — what waits on an ADMIN (the sidebar's own badge rule:
-  // a top-manager approves nothing there, so their People tile carries none).
+  // a top-manager approves nothing there, so their HR tile carries none). It
+  // sits on HR since the People pages moved there (2026-11-15).
   const { data: pending } = useQuery({
     queryKey: ["staff-documents-pending-count"],
     queryFn: () => api.get("/api/staff/documents/pending-count").then((r) => r.data),
     enabled: auth?.role === "admin",
     refetchInterval: 30_000,
   });
-  const badges = { people: pending?.count ?? 0 };
+  const badges = { hr: pending?.count ?? 0 };
 
   // A top-manager's tiles wait for their page access (an admin's never do).
   // With no app at all — every page closed to them — the overview's own gate
