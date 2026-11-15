@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Layout from "../components/layout/Layout";
@@ -9,6 +10,7 @@ import { navName } from "../utils/navLayout";
 import { useLauncher } from "../hooks/useLauncher";
 import api from "../utils/api";
 import LauncherBackdrop from "../components/launcher/LauncherBackdrop";
+import AppPeek from "../components/launcher/AppPeek";
 import PageLoader from "../components/ui/PageLoader";
 
 /**
@@ -36,7 +38,18 @@ import PageLoader from "../components/ui/PageLoader";
  * at once on its own beat (`--d`), a caret standing after the newest one
  * (`--s` = how long until the next), blinking a few times after the last
  * before it goes; a screen reader is handed the whole sentence once.
+ *
+ * A tile HOVERED with a mouse shows what is inside its app (2026-11-15, the
+ * operator) — components/launcher/AppPeek.jsx: the app's own screens, then
+ * each menu tab with its screens, every one a link. The tile's own press is
+ * unchanged. The panel waits `PEEK_OPEN` before the first one opens (a pointer
+ * crossing the grid opens nothing), follows the pointer from tile to tile at
+ * once after that, and stays `PEEK_CLOSE` after the pointer leaves, so it can
+ * travel from the tile onto the panel. ↓ on a focused tile opens it on its
+ * first screen. A finger has no hover: on a phone nothing changes.
  */
+
+const PEEK_OPEN = 220, PEEK_CLOSE = 160;
 
 // A typist's beat — never metronomic: an uneven key rhythm, a breath after
 // punctuation. Deterministic (by the letter's place), so a re-render never
@@ -106,6 +119,36 @@ export default function AppLauncher() {
   });
   const badges = { [layout.appOf.get("/staff")]: pending?.count ?? 0 };
 
+  // The app whose screens are showing — `{ id, el, focus }`: its tile's
+  // element (what the panel hangs on) and `focus` when the keyboard opened
+  // it. ONE timer carries both waits (see PEEK_OPEN above).
+  const [peek, setPeek] = useState(null);
+  const timer = useRef(0);
+  const later = (fn, ms) => { clearTimeout(timer.current); timer.current = setTimeout(fn, ms); };
+  const hold = () => clearTimeout(timer.current);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const closePeek = (refocus) => {
+    hold();
+    if (refocus) peek?.el.focus();
+    setPeek(null);
+  };
+  const peekApp = peek && apps.find((a) => a.id === peek.id);
+  // The sidebar's own order: the app's own row of screens under its name,
+  // then each menu tab — only what this viewer may open.
+  const peekGroups = peekApp
+    ? peekApp.tabs.map((tab) => ({
+      id: tab.id,
+      app: tab.top,
+      name: navName(tab.top ? peekApp : tab, t, lang),
+      icon: tab.top ? peekApp.icon : tab.icon,
+      danger: tab.danger,
+      links: tab.links.filter(may).map((l) => ({
+        to: l.to, label: t(l.key), icon: l.icon, danger: l.danger,
+        count: l.to === "/staff" ? pending?.count ?? 0 : 0,
+      })),
+    })).filter((g) => g.links.length > 0)
+    : [];
+
   // A top-manager's tiles wait for their page access (an admin's never do).
   // With no app at all — every page closed to them — the overview's own gate
   // answers: it sends them to the one page they may open, or says «no access».
@@ -133,9 +176,24 @@ export default function AppLauncher() {
                 <li key={id} style={{ "--i": i }}>
                   <Link
                     to={appEntry(id, may, layout)}
-                    className="app-tile"
+                    className={`app-tile${peek?.id === id ? " is-open" : ""}`}
                     data-app-hue={hue}
                     aria-label={count > 0 ? `${name} (${count})` : undefined}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType !== "mouse") return;
+                      const el = e.currentTarget;
+                      if (peek) { hold(); if (peek.id !== id) setPeek({ id, el }); }
+                      else later(() => setPeek({ id, el }), PEEK_OPEN);
+                    }}
+                    onPointerLeave={(e) => {
+                      if (e.pointerType === "mouse") later(() => setPeek(null), PEEK_CLOSE);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ArrowDown") return;
+                      e.preventDefault();
+                      hold();
+                      setPeek({ id, el: e.currentTarget, focus: true });
+                    }}
                   >
                     <span className="app-icon">
                       <span className="app-aura" aria-hidden="true" />
@@ -153,6 +211,19 @@ export default function AppLauncher() {
           </ul>
         </nav>
       </div>
+      {peekApp && peekGroups.length > 0 && (
+        <AppPeek
+          key={peekApp.id}
+          anchor={peek.el}
+          hue={peekApp.hue}
+          label={navName(peekApp, t, lang)}
+          groups={peekGroups}
+          focus={peek.focus}
+          onEnter={hold}
+          onLeave={() => later(() => setPeek(null), PEEK_CLOSE)}
+          onClose={closePeek}
+        />
+      )}
     </Layout>
   );
 }

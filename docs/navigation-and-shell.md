@@ -182,6 +182,35 @@ untouched.
 - **A tile opens where the app was left** (localStorage `appLastPage`), else
   its first page. The HR tile carries the /staff queue count (same query
   key as the sidebar's badge).
+- **A hovered tile shows what is inside its app** (2026-11-15, the operator:
+  «when I hover over the app, the screens and menu tabs inside should be
+  visible and I should be able to go by pressing to a certain screen») —
+  `components/launcher/AppPeek.jsx`, wired in `pages/AppLauncher.jsx`. The
+  panel lists the app's own screens under its name, then one column per menu
+  tab, in the sidebar's order (`app.tabs` of the viewer's layout, narrowed by
+  `may`, so it never offers a screen they cannot open); every row is a link,
+  and the `/staff` row carries the tile's count. The tile's own press is
+  unchanged (the app where it was left). **Mouse and keyboard only**: the
+  handlers ignore every pointer but a mouse, so a phone is untouched.
+  - Timing (`PEEK_OPEN` 220ms, `PEEK_CLOSE` 160ms): the first panel waits, so a
+    pointer crossing the grid opens nothing; once one is open the next tile's
+    replaces it at once; it stays 160ms after the pointer leaves, and the panel
+    laps 6px over the tile's padding, so the pointer never crosses a gap.
+  - Keyboard: ↓ on a focused tile opens it on its first screen; ↑ ↓ Home End
+    walk; Escape and Tab close it and hand focus back to the tile.
+  - Placement: under the tile, centred; over it when only that side has the
+    room; BESIDE it at the screen's whole height when neither does (the admin
+    app on a laptop). Never over the header. A menu tab of more than ten
+    screens is laid in two or three columns of its own (`TALL`), so one long
+    tab does not decide the panel's height.
+  - It is portaled to `<body>` — every tile is a stacking context (its arrival
+    animation fills), so a panel inside one paints under the next tile. It
+    enters as `.pop` and leaves through `useLeaveRef`; the tile stays lifted
+    (`.app-tile.is-open`) while its panel is open. Skin: `.app-peek` in
+    `index.css`, the launcher's glass a shade more solid, the app's hue on the
+    rim, the app's name and the row under the pointer. **No percentage in a
+    column's `min-width`** — against the max-content panel it resolves to 0
+    while the panel is sized, and the columns wrap.
 - **Light by design:** the launcher fetches one count and imports no chart, so
   an admin's start no longer pays for the overview's requests and ApexCharts.
   `preloadOpenedRoute` preloads the launcher, not the overview, once

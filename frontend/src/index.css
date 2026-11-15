@@ -1347,6 +1347,13 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   [data-theme="light"] .app-tile:hover .app-aura { opacity: .3; }
   .app-tile:hover .app-name { color: var(--text-1); }
 }
+/* A tile whose screens are showing (`.app-peek` below) stays lifted while the
+   pointer is on its panel — set by a mouse or the keyboard only. */
+.app-tile.is-open .app-glass { transform: translateY(-4px); }
+.app-tile.is-open .app-aura { transform: scale(1.14); opacity: .5; }
+[data-theme="light"] .app-tile.is-open .app-aura { opacity: .3; }
+.app-tile.is-open .app-name { color: var(--text-1); }
+[data-theme="light"] .app-tile.is-open .app-name { color: #3d200f; }
 .app-tile:active .app-glass { transform: translateY(-1px) scale(.95); transition-duration: .14s; }
 .app-tile:focus-visible .app-glass { outline: 2px solid var(--brand); outline-offset: 4px; }
 
@@ -1376,6 +1383,69 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   animation: badgeRing 3.6s ease-out infinite 1.6s;
 }
 @keyframes badgeRing { 0% { opacity: .9; scale: 1; } 60%, 100% { opacity: 0; scale: 1.7; } }
+
+/* What is INSIDE an app, while its tile is hovered (2026-11-15, the operator;
+   components/launcher/AppPeek.jsx): the app's own screens under its name,
+   then one column per menu tab — every row a link. The launcher's glass, a
+   shade more solid so a list reads on it: a dark pane by night, warm cream by
+   day with the tile names' chocolate; the rim, the app's name and a row under
+   the pointer wear the app's hue (`data-app-hue`, the triples below). It
+   enters as a `.pop` out of its tile and leaves through `leaveRef`. The blur
+   is static, and taken from 768px up like the tiles' (a finger never opens
+   this). Columns wrap on a narrow screen; a long menu tab is laid in two or
+   three columns of its own (`--cols`); a panel taller than the room it has
+   scrolls inside itself. */
+.app-peek {
+  --peek-ink: var(--text-1); --peek-dim: var(--text-3);
+  position: fixed; top: 0; left: 0; z-index: 80;
+  width: max-content; max-width: min(calc(100vw - 16px), 1040px);
+  padding: 6px; border-radius: 16px;
+  overflow-y: auto; overscroll-behavior: contain;
+  color: var(--peek-ink);
+  background: rgba(21,23,30,.9);
+  border: 1px solid rgba(var(--rim), .4);
+  box-shadow: 0 20px 48px -14px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.3);
+}
+@media (min-width: 768px) {
+  .app-peek { -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%); }
+}
+[data-theme="light"] .app-peek {
+  --peek-ink: #3d200f; --peek-dim: #7a5236;
+  background: rgba(255,251,244,.93);
+  border-color: rgba(var(--rim), .3);
+  box-shadow: 0 20px 48px -16px rgba(90,55,15,.42), 0 2px 8px rgba(60,40,10,.1);
+}
+.app-peek-cols { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.app-peek-col {
+  --cols: 1;
+  /* No percentage here: against a max-content panel it resolves to 0 while
+     the panel is sized and to its width after, and the columns wrap. */
+  flex: 0 1 auto; min-width: calc(184px * var(--cols)); max-width: calc(264px * var(--cols)); padding: 2px;
+}
+.app-peek-list { column-count: var(--cols); column-gap: 4px; }
+.app-peek-cap {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px 6px;
+  font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--peek-dim);
+}
+.app-peek-cap svg { width: 14px; height: 14px; flex-shrink: 0; }
+.app-peek-cap.is-app { color: rgb(var(--hue)); }
+.app-peek-cap.is-danger svg, .app-peek-row.is-danger svg { color: #ef4444; }
+.app-peek-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; break-inside: avoid;
+  font-size: 13.5px; line-height: 20px; color: var(--peek-ink); text-decoration: none; outline: none;
+  transition: background-color .12s var(--ease-out);
+}
+.app-peek-row svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--peek-dim); transition: color .12s var(--ease-out); }
+.app-peek-row:hover, .app-peek-row:focus-visible { background: rgba(var(--glow), .16); }
+.app-peek-row:hover svg, .app-peek-row:focus-visible svg { color: rgb(var(--hue)); }
+.app-peek-row:focus-visible { box-shadow: inset 0 0 0 2px rgba(var(--glow), .7); }
+.app-peek-row:active { background: rgba(var(--glow), .26); }
+.app-peek-count {
+  margin-left: auto; flex-shrink: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #ef4444; color: #fff; font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 
 [data-app-hue="gold"]    { --hue: 212,169,92;  --glow: 200,151,63; --cloud: 222,190,130; --rim: 168,124,52; }
 [data-app-hue="blue"]    { --hue: 96,165,250;  --glow: 59,130,246; --rim: 37,99,235; }
@@ -1564,8 +1634,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 @media (prefers-reduced-motion: reduce) {
   .apps-grid > li, .apps-hello-ch, .apps-hello-ch::after, .apps-backdrop, .apps-light, .apps-float, .app-aura::before, .app-sheen::after { animation: none; }
   .apps-mote, .app-badge::after { display: none; }
-  .app-aura, .app-glass, .app-name, .hdr-apps { transition: none; }
-  .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura { transform: none; }
+  .app-aura, .app-glass, .app-name, .hdr-apps, .app-peek-row, .app-peek-row svg { transition: none; }
+  .app-tile:hover .app-glass, .app-tile:active .app-glass, .app-tile:hover .app-aura,
+  .app-tile.is-open .app-glass, .app-tile.is-open .app-aura { transform: none; }
 }
 
 /* /tg-user — the Telegram-profile page's tap targets (pages/TgProfile.jsx). */
