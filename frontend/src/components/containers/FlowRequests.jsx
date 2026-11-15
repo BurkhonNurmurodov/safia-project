@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import CountStepper from "../ui/CountStepper";
@@ -103,6 +104,12 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   });
   const [assign, setAssign] = useState(null);
   const [cancel, setCancel] = useState(null);
+  // an admin deletes a request outright — any state (2026-11-15, the operator)
+  const [del, setDel] = useState(null);
+  const delM = useMutation({
+    mutationFn: (r) => api.delete(`/api/container-flow/requests/${r.id}`),
+    onSuccess: () => { setDel(null); done(t("cflow.req.deleted")); },
+  });
   const list = q.data?.requests ?? [];
   const me = q.data?.me;
   const done = (msg) => { toast.success(msg); q.refetch(); };
@@ -121,6 +128,10 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
     mayCancel(r) && {
       key: "cancel", label: t("cflow.req.cancel"), icon: Ban, tone: "danger", onSelect: () => setCancel(r),
       disabled: cancelBlocked(r), title: cancelBlocked(r) ? t("cflow.req.cancelBlocked") : undefined,
+    },
+    roles.admin && {
+      key: "delete", label: t("cflow.req.delete"), icon: Trash2, tone: "danger",
+      onSelect: () => { delM.reset(); setDel(r); },
     },
   ];
   const empty = (
@@ -185,6 +196,15 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       {cancel && (
         <CancelModal t={t} r={cancel} onClose={() => setCancel(null)}
           onDone={() => { setCancel(null); done(t("cflow.req.cancelled")); }} onFail={fail} />
+      )}
+      {del && (
+        <ConfirmDialog tone="danger" icon={<Trash2 size={18} />}
+          title={t("cflow.req.deleteTitle").replace("{span}", span(del.hour))}
+          message={t(del.status === "assigned" ? "cflow.req.deleteMsgSplit" : "cflow.req.deleteMsg")
+            .replace("{x}", countsText(t, del.lines))}
+          confirmLabel={t("cflow.req.delete")} loading={delM.isPending}
+          error={delM.error ? errText(t, delM.error) : null}
+          onCancel={() => setDel(null)} onConfirm={() => delM.mutate(del)} />
       )}
     </div>
   );

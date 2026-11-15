@@ -799,6 +799,20 @@ def cancel_request(db: Session, request_id: int, note, actor) -> ContainerReques
     return r
 
 
+def delete_request(db: Session, request_id: int) -> ContainerRequest:
+    """An ADMIN removes a request outright, in any state (2026-11-15, the
+    operator: «put access for admins to delete the requests») — a test, a
+    duplicate, a mistake no cancel may touch (a confirmed split). Its parts go
+    with it, and it leaves «Hisobot» and «Tahlil» as if it never existed;
+    the action register keeps what it was. A card already in Telegram then
+    answers «So'rov topilmadi». Nobody is told."""
+    r = _request(db, request_id)
+    db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == r.id).delete(
+        synchronize_session=False)
+    db.delete(r)
+    return r
+
+
 def mark_seen(db: Session, request_id: int, actor_key) -> bool:
     """The addressee opened the request: it stops looking new. Only the
     person it is addressed to clears it — an admin or AXO opening it does

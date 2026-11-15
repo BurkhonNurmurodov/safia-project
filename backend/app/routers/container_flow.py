@@ -14,7 +14,8 @@ docs/containers-flow.md). Two doors:
   — and writes nothing.
 - `RECV` (page key `container-receive`): a brigadir confirming what reached
   their line — only their own unit; admins any. Admin-only until granted.
-- `verify_admin`: a leader's answer, a forced close, the settings.
+- `verify_admin`: a leader's answer, a forced close, the settings, deleting
+  a request outright.
 
 The messages: a new / cancelled request to its logistics person
 (`flow.notify_later`), and a split request to each of its brigadirs with
@@ -457,6 +458,24 @@ def post_cancel(request_id: int, body: NoteBody, db: Session = Depends(get_db),
     flow.notify_later(r.id, "cancelled")
     flow.notify_split_cancelled_later(r.id)     # tells the brigadirs only if it had been split
     return _req_out(db, r, r.day)
+
+
+@router.delete("/requests/{request_id}")
+def delete_request(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+    """Admins only: the request and its split, gone — any state."""
+    try:
+        r = flow.delete_request(db, request_id)
+        snap = {"day": r.day, "hour": r.hour, "status": r.status, "lines": dict(r.lines or {}),
+                "to": r.logistics_name}
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=404 if e.code == "gone" else 409, detail=e.code)
+    action_log.enrich(target_kind="container_request", target_id=request_id, day=snap["day"],
+                      target_name=snap["to"],
+                      details=[("hour", f"{snap['hour'] % 24:02d}:00"), ("status", snap["status"]),
+                               ("counts", ", ".join(f"{k} {n}" for k, n in snap["lines"].items()))])
+    return {"ok": True, "id": request_id}
 
 
 @router.get("/requests/{request_id}/split-hint")

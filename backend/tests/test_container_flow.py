@@ -347,6 +347,16 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(flow.receipts_of(self.db, DAY, 1)[0]["received"], {"yellow": 18})
         self.assertEqual(flow.receive_from_bot(self.db, r.id, 1, 5001)[0], "already")
         self.assertEqual(flow.receive_from_bot(self.db, 999999, 1, 5001)[0], "gone")
+        # an admin deletes it outright — even confirmed, which no cancel may touch
+        flow.delete_request(self.db, r.id)
+        self.db.commit()
+        self.assertEqual([x for x in flow.requests_of(self.db, DAY) if x["id"] == r.id], [])
+        self.assertEqual(self.db.query(flow.ContainerRequestPart).filter_by(request_id=r.id).count(), 0)
+        self.assertEqual(flow.receive_from_bot(self.db, r.id, 1, 5001)[0], "gone")   # the old card
+        with self.assertRaises(flow.FlowError) as e:
+            flow.delete_request(self.db, r.id)
+        self.assertEqual(e.exception.code, "gone")
+        self.db.rollback()
 
     def test_cancel_after_split_and_the_reminder(self):
         """A split request can still be withdrawn (its brigadirs told, the bot
@@ -719,7 +729,7 @@ class PageKeyTest(unittest.TestCase):
                   ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
             self.assertEqual(guard[k], "any", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
-                  ("PUT", f"{p}/settings")]:
+                  ("PUT", f"{p}/settings"), ("DELETE", f"{p}/requests/{{request_id}}")]:
             self.assertEqual(guard[k], "admin", k)
         self.assertNotIn("?", guard.values())
 

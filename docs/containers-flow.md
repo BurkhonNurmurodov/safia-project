@@ -192,6 +192,16 @@ containers row from production and move it into the new button».
   filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
   (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
   else sees the mark.
+- **An admin deletes a request outright** (2026-11-15, the operator: «put
+  access for admins to delete the requests, I tested it and cannot delete
+  it»): ⋮ → «O'chirish» on any request, in ANY state — a confirmed split
+  included, which no cancel may touch — behind a danger `ConfirmDialog`.
+  `DELETE /requests/{id}` (`verify_admin`, `delete_request`): the request and
+  its parts are gone, and leave «Hisobot» and «Tahlil»; nobody is told; the
+  action register keeps what it was (`containers.request_deleted`, its hour,
+  state and counts). A Telegram card of it then answers «So'rov topilmadi».
+  Cancelling stays AXO's everyday tool; deleting is for tests, duplicates and
+  mistakes.
 - **A brigadir's LIMIT** (2026-11-15, the operator: «we have to put a limit
   for brigadirs, they don't have to get extra containers — after the
   calculation they have a limit, and the extra they don't have to take»):
