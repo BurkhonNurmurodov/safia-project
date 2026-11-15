@@ -696,7 +696,10 @@ def stops(
         # «Sizni kutmoqda» (`waiting`): None for a reader nothing waits on by role
         "todo": None if todo is None else {
             "from": todo["from"].isoformat(), "to": todo["to"].isoformat(),
-            "stops": [{**s, "why": why} for s, why in todo["stops"]],
+            # the very rows the solutions were attached to: waiting() may have
+            # read its own copy of a stop the period's list also holds, and that
+            # copy never got `solutions` (the page crashed on it, 2026-11-15)
+            "stops": [{**shown[s["id"]], "why": why} for s, why in todo["stops"]],
             "unanswered": todo["unanswered"], "overdue": todo["overdue"],
             "written": todo["written"], "written_rows": todo["written_rows"],
         },

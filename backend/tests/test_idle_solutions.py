@@ -741,6 +741,19 @@ class Page(unittest.TestCase):
         self.assertEqual(ims.waiting_count(db=self.db, payload=ADMIN),
                          {"unanswered": 0, "overdue": 0, "total": 0})
 
+    def test_every_waiting_stop_carries_its_solutions(self):
+        # the period on screen ends yesterday: the waiting list reads its own
+        # window, and a stop in both lists must still arrive whole
+        self.write(self.OWNER, "s3", text="the owner's answer")
+        got = ims.stops(date_from=ago(30), date_to=ago(1), shift=None, factory=None,
+                        manager_id=[], db=self.db, payload=SUP1)
+        todo = {s["id"]: s for s in got["todo"]["stops"]}
+        self.assertTrue(todo)
+        for s in todo.values():
+            self.assertIn("solutions", s)
+            self.assertIn("state", s)
+        self.assertEqual(todo[self.stop["s3"]]["solutions"][0]["text"], "the owner's answer")
+
     def test_the_pages_filters_narrow_the_list_too(self):
         got = ims.stops(date_from=ago(30), date_to=TODAY, shift=None, factory=None,
                         manager_id=[2], db=self.db, payload=self.OWNER)

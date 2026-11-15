@@ -1332,3 +1332,8 @@ on that day nothing could wait.
   brigadir is reported only for stops filed from 2026-11-15 on, never for the
   backlog.
 - Test: `test_the_backlog_waits_but_is_never_reported`.
+- **Fixed the same day**: with stops now waiting, a brigadir's page crashed
+  («Bo'lim ochilmadi») whenever the period on screen did not reach today —
+  `waiting()` then read its own copy of a stop the period's list also holds,
+  and that copy never got `solutions`. The payload now serves the very rows
+  the solutions were attached to (`test_every_waiting_stop_carries_its_solutions`).
