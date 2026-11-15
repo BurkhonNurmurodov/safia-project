@@ -98,8 +98,16 @@ untouched.
   (test)» header, open while one of them is; the sidebar seats a link by its
   `section`, else by its nav `group` where a section carries that id, else in
   the first section (admin-only pages, so a top-manager's HR shows no folder);
-  **«Kaizen»** (2026-11-15, the operator — `kaizen`, `TrendingUp`, hue `blue`,
-  after Quality) holds «Kaizen loyihalari» and «Notion vazifalari», out of the
+  **«Planning»** (2026-11-15, the operator: «a new app called Planning (in
+  other languages Plan)» — `planning`, `CalendarDays`, hue `sky`, after
+  Production) holds «Plan Prognoz» (`/trudoyomkost`), out of the Production app
+  by its `app: "planning"` — the operator's correction: «don't put Plan
+  fulfillment in Plan app, Plan prognoz should be in that app», so «Plan
+  Bajarish» stays in Production (page access unchanged); the **Leaders tile wears the people glyph** `UsersRound`
+  (2026-11-15, the operator — the sidebar's Liderlar group keeps its crown);
+  **«Projects & Tasks»** («Loyihalar va vazifalar» / «Проекты и задачи»;
+  2026-11-15, the operator — `kaizen`, named «Kaizen» for an hour that day,
+  `TrendingUp`, hue `blue`, after Quality) holds «Kaizen loyihalari» and «Notion vazifalari», out of the
   Quality app, and «Vazifalar», out of the Liderlar app, by their
   `app: "kaizen"` (page access unchanged; for everybody else each stays in its
   group); «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
@@ -123,12 +131,14 @@ untouched.
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Thirteen tiles (Verifix out, Kaizen in) fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Fourteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. **A tile's name is ONE short word where it can be**: a
-  name wider than a phone's tile (~96px at 360px) breaks mid-word, so the
-  automation app is «Avtomatika» / «Автоматика», never «Avtomatlashtirish» /
-  «Автоматизация» (the second fits at 375px and breaks at 360px). Amber is
+  name wider than a phone's tile (~96px at 360px) breaks mid-word, which is why
+  the automation app was «Avtomatika» / «Автоматика» — until 2026-11-15, when
+  the operator asked for «Avtomatizatsiya» / «Автоматизация» in Uzbek and
+  Russian knowing that (it fits at 375px and breaks at 360px; do not shorten
+  it back unasked). Amber is
   the hue because its look-alikes — the overview's gold by night,
   Production's orange by day — sit a row away; red, green and purple each
   had a twin NEXT to the tile. ARC is the repair department: its icon (tile and sidebar

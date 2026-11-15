@@ -9,7 +9,7 @@ import {
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, Package, PackageCheck, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, TrendingUp, UsersRound, Wrench, createLucideIcon,
+  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, CalendarDays, TrendingUp, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 import { idleSolutionsRoles } from "./idleSolutions";
@@ -71,7 +71,9 @@ export const ALL_LINKS = [
   { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive", "container-watch"], key: "nav.containerFlow", icon: PackageCheck, group: "containers", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
-  { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
+  // «Plan Prognoz» — on the launcher the «Planning» app's page (2026-11-15,
+  // the operator); for anybody else it stays in Production.
+  { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod", app: "planning" },
   // «O'z vaqtida yetkazish» — the on-time delivery report (the logistics
   // team's «on time report» sheet, read by the server). Admin-only by default.
   { to: "/ontime", page: "ontime", key: "nav.ontime", icon: Truck, group: "prod" },
@@ -206,7 +208,12 @@ export const NAV_GROUPS = [
 export const APPS = [
   { id: "overview",  labelKey: "nav.overview",      icon: LayoutDashboard, hue: "gold" },
   { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
-  { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
+  // «Planning» / «Plan» (2026-11-15, the operator): «Plan Prognoz» first,
+  // out of Production («Plan Bajarish» stays there). Sky: free since the People tile went.
+  { id: "planning",  labelKey: "apps.planning",     icon: CalendarDays,    hue: "sky" },
+  // The people glyph, not the group's crown (2026-11-15, the operator) — the
+  // People tile that wore it is gone; the grouped sidebar keeps the crown.
+  { id: "leaders",   labelKey: "navgrp.leaders",    icon: UsersRound,      hue: "violet" },
   // HR — the People group's pages (2026-11-15, `GROUP_APP`), then the monthly
   // KPIs, the leaders' and the brigadirs' (2026-11-03).
   // `sections`: its own pages flush under the app's name (`top` — headerless,
@@ -215,7 +222,8 @@ export const APPS = [
   { id: "hr",        labelKey: "apps.hr",           icon: BriefcaseBusiness, hue: "fuchsia",
     sections: [{ id: "top" }, { id: "verifix", labelKey: "navgrp.verifix", icon: ScanFace }] },
   { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
-  // «Kaizen» (2026-11-15, the operator): «Kaizen loyihalari», «Notion
+  // «Projects & Tasks» (2026-11-15, the operator — named «Kaizen» for an
+  // hour that day; the id stays `kaizen`): «Kaizen loyihalari», «Notion
   // vazifalari» and «Vazifalar» — out of Quality and Liderlar. Blue: free
   // since «Hisobotlar» lost its tile, and no neighbour wears it.
   { id: "kaizen",    labelKey: "apps.kaizen",       icon: TrendingUp,      hue: "blue" },
@@ -225,8 +233,9 @@ export const APPS = [
   // The plant's machines read by the platform (2026-11-12, the operator) —
   // «Pechlar» first, out of the Laboratory. Its tile shows only to somebody
   // who may open one of its pages: admins, while `ovens` stays admin-only.
-  // «Avtomatika» / «Автоматика», not the longer verbal noun: that one breaks
-  // mid-word on a phone's tile.
+  // «Avtomatizatsiya» / «Автоматизация» (2026-11-15, the operator's call —
+  // it was «Avtomatika» because the long word breaks mid-word on a 360px
+  // phone's tile; do not shorten it back unasked).
   { id: "automation", labelKey: "apps.automation",  icon: Cpu,             hue: "amber" },
   // «Oshxona» — the kitchen's app (2026-11-12, the operator): the people at
   // work in the factory now. Its tile shows to whoever may open `kitchen`.
