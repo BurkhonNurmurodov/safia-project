@@ -717,3 +717,28 @@ no switch (v4.527.0). It holds every open task and the ones finished in the
 last 7 days. The plant and the shift reach it. It reads `GET /api/tasks/day`
 behind the page's own guard (`overview` / `shift-daily`), and a reader it is not
 for gets `show: false` and no block at all — never an error card.
+
+## «Sifat nazorati %» is one cell cut corner to corner (2026-11-15)
+
+The operator: «make the box in one and divide the box in two by lines from
+corner to corner … and the hover box write all information about it, with
+hair and without hair».
+
+- **One column again, one cell per brigadir, split by a diagonal** from the
+  top-right corner to the bottom-left one (`splitCell`): the top-left triangle
+  is «soch bilan» (`quality_work`, its % band's fill, its % in the top-left
+  corner), the bottom-right triangle «sochsiz» (`quality_work_nohair`, its own
+  band and %). One CSS `linear-gradient(to bottom right, …)` — its 50% line runs
+  through exactly those two corners at any cell shape — with a 2px rule in the
+  card's colour between the halves. A half with no figure stays unfilled with
+  «—»; a cell with neither is the usual blank. Row height unchanged.
+- **The hover box holds both halves in full**: per half its name and %, its
+  fraction («01.10 dan beri bartaraf etilgan / bartaraf etilishi kerak edi
+  21/76»; «01.11 dan beri bartaraf etilgan / qolgan  1/4») and its all-time
+  rate, the halves divided by a rule.
+- **Header**: «Sifat nazorati %» with the two half names under it, left and
+  right, each a sort button for its half (`LaneLabels`, no `colSpan` now); the
+  header's own press sorts by «soch bilan». The cell's link opens the Quality
+  page «Soch bilan». Every column is 14% again.
+- The payload is unchanged; the two-tile layout of 2026-11-14 is gone.
+

@@ -131,8 +131,7 @@ const SORT_VALUE = {
 // percentage, the most open concerns. A third press returns to name order.
 const FIRST_DIR = { name: "asc", load: "asc", att: "asc", compl: "asc", quality: "asc", qualityNoHair: "asc", concerns: "desc" };
 const DEFAULT_SORT = { key: "name", dir: "asc" };
-// The name, four single lanes and «Sifat nazorati %»'s pair.
-const COLS = 7;
+const COLS = 6;
 
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
 
@@ -225,10 +224,12 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push six columns past a phone's width.
-// «Sifat nazorati %» heads TWO lanes (the operator, 2026-11-14: «divide this
-// column in two and make it with hair and without hair»): its header carries a
-// third line, the lane labels, each over its own lane and each a sort control
-// for it. The header's own press sorts by the first lane («soch bilan»).
+// «Sifat nazorati %» is ONE cell cut corner to corner — «soch bilan» in the
+// top-left triangle, «sochsiz» in the bottom-right (the operator, 2026-11-15:
+// «make the box in one and divide the box in two by lines from corner to
+// corner»). Its header carries a third line naming the two halves, left and
+// right, each a sort control for its half; the header's own press sorts by
+// «soch bilan».
 function LaneLabels({ lanes, sort, onSort }) {
   return (
     <span className="mt-1 grid w-full grid-cols-2">
@@ -253,11 +254,10 @@ function LaneLabels({ lanes, sort, onSort }) {
   );
 }
 
-// The pair's header spans both lanes edge to edge, so each lane label sits
-// over its own lane; the single lanes narrow from 14% to 12% to make room.
-const TH_PAIR = "align-bottom sm:w-[22%] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
+// The split cell's header: its half labels run edge to edge under the title.
+const TH_PAIR = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
   + "[&>span>span:first-child]:flex-1 [&>span>span:first-child]:w-full max-sm:[&_.lucide-chevrons-up-down]:hidden";
-const TH_FIG = "align-bottom sm:w-[12%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
+const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
 // The cell IS the swatch — square, full-bleed, and ruled by a 1px line of the
 // CARD's own colour, which is the загрузка heatmap's cell exactly. Two earlier
@@ -547,36 +547,51 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       allTime: all && !all.reason && isNum(all.value) ? pctText(all.value) : null,
     };
   };
+  // The split cell's hover box: EVERYTHING about both halves (the operator,
+  // 2026-11-15: «in the hover box write all information about it, with hair
+  // and without hair») — per half its name and percentage, the fraction it is
+  // counted from and the all-time rate.
+  const qualityPct = (r, noHair) => {
+    const c = qualityCell(r, noHair);
+    return c && !c.reason && isNum(c.value) ? pctText(c.value) : "—";
+  };
   // Its spoken form, for the link's aria-label.
-  const qualityTitle = (r, noHair = false) => {
-    const open = qualityOpen(r, noHair);
-    if (noHair && !open) return undefined;
-    if (open) {
-      return [open.lane, `${open.caption}: ${open.text}`,
-        open.allTime ? `${t("overview.sr.qAllTime")}: ${open.allTime}` : null].filter(Boolean).join("\n");
-    }
+  const qualityTitle = (r) => {
+    const lines = [false, true].flatMap((noHair) => {
+      const open = qualityOpen(r, noHair);
+      if (!open) return [];
+      return [`${open.lane}: ${qualityPct(r, noHair)}`, `${open.caption}: ${open.text}`,
+        open.allTime ? `${t("overview.sr.qAllTime")}: ${open.allTime}` : null].filter(Boolean);
+    });
+    if (lines.length) return lines.join("\n");
     const rows = qualityRows(r);
     return rows
       ? `${t("overview.sr.qLeftTitle")}: ${rows.map((x) => `${x.label} ${x.left}`).join(", ")}`
       : undefined;
   };
-  const qualityTip = (r, noHair = false) => {
-    const open = qualityOpen(r, noHair);
-    if (noHair && !open) return null;
-    if (open) {
+  const qualityTip = (r) => {
+    const halves = [false, true].map((noHair) => [noHair, qualityOpen(r, noHair)]).filter(([, o]) => o);
+    if (halves.length) {
       return (
         <div className="whitespace-nowrap">
-          <div className="mb-1 font-semibold first-letter:uppercase">{open.lane}</div>
-          <div className="flex items-baseline justify-between gap-6">
-            <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
-            <span className="text-sm font-semibold tabular-nums">{open.text}</span>
-          </div>
-          {open.allTime && (
-            <div className="mt-1 flex items-baseline justify-between gap-6">
-              <span className="font-medium" style={{ color: "var(--text-3)" }}>{t("overview.sr.qAllTime")}</span>
-              <span className="font-semibold tabular-nums">{open.allTime}</span>
+          {halves.map(([noHair, open], i) => (
+            <div key={open.lane} className={i ? "mt-2 border-t pt-2" : ""} style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-baseline justify-between gap-6">
+                <span className="font-semibold first-letter:uppercase">{open.lane}</span>
+                <span className="text-sm font-bold tabular-nums">{qualityPct(r, noHair)}</span>
+              </div>
+              <div className="mt-1 flex items-baseline justify-between gap-6">
+                <span className="font-medium" style={{ color: "var(--text-3)" }}>{open.caption}</span>
+                <span className="font-semibold tabular-nums">{open.text}</span>
+              </div>
+              {open.allTime && (
+                <div className="mt-0.5 flex items-baseline justify-between gap-6">
+                  <span className="font-medium" style={{ color: "var(--text-3)" }}>{t("overview.sr.qAllTime")}</span>
+                  <span className="font-semibold tabular-nums">{open.allTime}</span>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       );
     }
@@ -597,6 +612,46 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         </table>
       </div>
     );
+  };
+
+  // ONE cell, two halves: a diagonal from the top-right corner to the bottom-
+  // left one, each triangle in its own band's fill, each figure in its own
+  // corner in its own fill's ink. `to bottom right` puts the gradient's 50% line
+  // exactly through those two corners whatever the cell's shape; the 2px rule
+  // between the halves is the card's colour, like the heatmap's grid. A half
+  // with no figure stays unfilled and prints «—»; a cell with neither is the
+  // usual blank.
+  const splitCell = (r) => {
+    const a = qualityCell(r);
+    const b = qualityCell(r, true);
+    const has = (c) => !!c && !c.reason && isNum(c.value);
+    if (!has(a) && !has(b)) {
+      return figCell(a, resolvedTone, (c) => pctText(c.value), qualityTitle(r), qualityTarget(r), qualityTip(r));
+    }
+    const fa = has(a) ? toneFill(resolvedTone(a.value)) : null;
+    const fb = has(b) ? toneFill(resolvedTone(b.value)) : null;
+    const bg = (f) => f?.background ?? "transparent";
+    const paint = {
+      background: `linear-gradient(to bottom right, ${bg(fa)} calc(50% - 1px), var(--bg-card) calc(50% - 1px), `
+        + `var(--bg-card) calc(50% + 1px), ${bg(fb)} calc(50% + 1px))`,
+    };
+    const fig = (c, f) => (has(c)
+      ? <span style={{ color: f.color }}>{pctText(c.value)}</span>
+      : <span style={{ color: "var(--text-4)" }}>—</span>);
+    return figTd({
+      paint,
+      title: qualityTitle(r),
+      tipNode: qualityTip(r),
+      target: qualityTarget(r),
+      children: (
+        <span className="relative block text-[11px] sm:text-xs">
+          {/* holds the row's one-line height; the figures sit in the corners */}
+          <span className="invisible">0</span>
+          <span className="absolute left-0 -top-[7px] font-bold leading-none">{fig(a, fa)}</span>
+          <span className="absolute right-0 -bottom-[7px] font-bold leading-none">{fig(b, fb)}</span>
+        </span>
+      ),
+    });
   };
 
   const figCell = (cell, toneFn, render, extraTitle, target, tipNode) => {
@@ -661,7 +716,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         <td className="px-2 sm:px-3 py-2.5">
           <SkeletonBlock className={`h-3.5 ${SK_NAME[i % SK_NAME.length]}`} />
         </td>
-        {[0, 1, 2, 3, 4, 5].map((j) => (
+        {[0, 1, 2, 3, 4].map((j) => (
           <td key={j} className="p-0 border" style={RULE}>
             <SkeletonBlock className="h-[36px] w-full" style={{ borderRadius: 0 }} />
           </td>
@@ -727,22 +782,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               {attCell(r.att, r, g.today)}
               {figCell(r.compl, vypTone, (c) => pctText(c.value), complTitle(r.compl),
                 productionTarget(r.compl, r, g.yesterday))}
-              {/* Two lanes of the one column — with hair, then without. Each
-                  percentage is solved from 1 October ÷ had to solve
-                  (`qualityCell`); each hover box names its lane and spells
-                  the fraction out («21/76») over its all-time rate
-                  (`qualityOpen`). Counts
-                  were printed in the cell itself for a few minutes on
-                  2026-11-13 and the operator took them back out, as on
-                  2026-09-16. */}
-              {figCell(qualityCell(r), resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r), qualityTarget(r), qualityTip(r))}
-              {/* «sochsiz» prints its percentage; its hover box carries the
-                  counts as solved / LEFT («1/4»: 1 solved since the 1st of
-                  the month, 4 still not solved) — the operator moved them
-                  there on 2026-11-14 after an hour in the cell. */}
-              {figCell(qualityCell(r, true), resolvedTone, (c) => pctText(c.value),
-                qualityTitle(r, true), qualityTarget(r, true), qualityTip(r, true))}
+              {/* ONE cell cut corner to corner: «soch bilan» top-left,
+                  «sochsiz» bottom-right (`splitCell`); the hover box carries
+                  both halves in full (`qualityTip`). */}
+              {splitCell(r)}
               {figTd({ tone: concernsTone(open_), target: concernsTarget(r), children: open_ })}
             </tr>
           );
@@ -867,7 +910,6 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                   onSort={onSort}
                   align="center"
                   cls={lanes ? TH_PAIR : TH_FIG}
-                  colSpan={lanes ? lanes.length : undefined}
                   alsoActive={on}
                   hint={hint}
                   label={lanes ? (
