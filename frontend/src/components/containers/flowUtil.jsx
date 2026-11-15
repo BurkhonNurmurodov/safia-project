@@ -185,3 +185,15 @@ export const TYPE_COLORS = { yellow: "#eab308", round: "#f97316", grey: "#94a3b8
 // The on-time band for a WHOLE percent (58, not 0.58 — `statusBands` judges
 // fractions): "ok" | "warn" | "bad" | null.
 export const onTimeTone = (pct) => (pct == null ? null : ontimeTone(pct / 100));
+
+// ── keeping the page's parts in step (2026-11-15) ────────────────────────────
+// The app keeps every answer a minute, and across reloads (App.jsx's
+// QueryClient: staleTime 60 s + a persister). A request deleted on «So'rovlar»
+// stayed on «Qabul» from that copy — on the deleter's screen and on the
+// brigadir's phone. So: every write on this page re-reads EVERY «cflow-» query
+// (`refreshFlow`), and the two lists people act on — «So'rovlar» and «Qabul» —
+// are re-read whenever they are opened or the app comes back to the front
+// (`LIVE_LIST`), the kept copy shown only for the moment the new one takes.
+export const refreshFlow = (qc) =>
+  qc.invalidateQueries({ predicate: (q) => String(q.queryKey?.[0] ?? "").startsWith("cflow-") });
+export const LIVE_LIST = { staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always" };

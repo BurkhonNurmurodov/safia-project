@@ -6,7 +6,7 @@
 // shift- and top-managers watching (`container-watch`) see every unit, no button.
 // docs/containers-flow.md.
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clock, PackageCheck, PencilLine } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -17,7 +17,7 @@ import { SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk } from "./flowUtil";
+import { KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk, refreshFlow, LIVE_LIST } from "./flowUtil";
 
 const REFRESH_MS = 60_000;
 
@@ -31,18 +31,26 @@ function ReceiptChip({ x, t }) {
 
 export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onOpened }) {
   const { tl } = useTranslit();
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["cflow-receipts", day],
     queryFn: () => api.get("/api/container-flow/receipts", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
+    ...LIVE_LIST,
   });
+  // a card whose request was deleted or cancelled meanwhile says so and leaves the list
+  const failed = (e) => {
+    const code = e?.response?.data?.detail;
+    toast.error(code === "gone" ? t("cflow.rcv.gone") : code === "state" ? t("cflow.rcv.changed") : errText(t, e));
+    refreshFlow(qc);
+  };
   const [edit, setEdit] = useState(null);
   const list = q.data?.receipts ?? [];
   const waiting = list.filter((x) => !x.received).length;
   const all = useMutation({
     mutationFn: (x) => api.post(`/api/container-flow/requests/${x.request_id}/receive`, { manager_id: x.manager_id }),
-    onSuccess: () => { toast.success(t("cflow.rcv.saved")); q.refetch(); },
-    onError: (e) => toast.error(errText(t, e)),
+    onSuccess: () => { toast.success(t("cflow.rcv.saved")); refreshFlow(qc); },
+    onError: failed,
   });
   // an admin reads every unit; a brigadir only theirs — their own cards need no name
   const showUnit = q.data?.unit == null;
@@ -133,8 +141,8 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
 
       {edit && (
         <ReceiveModal t={t} x={edit} onClose={() => setEdit(null)}
-          onDone={() => { setEdit(null); toast.success(t("cflow.rcv.saved")); q.refetch(); }}
-          onFail={(e) => toast.error(errText(t, e))} />
+          onDone={() => { setEdit(null); toast.success(t("cflow.rcv.saved")); refreshFlow(qc); }}
+          onFail={(e) => { setEdit(null); failed(e); }} />
       )}
     </div>
   );

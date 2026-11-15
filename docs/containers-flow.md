@@ -202,6 +202,18 @@ containers row from production and move it into the new button».
   state and counts). A Telegram card of it then answers «So'rov topilmadi».
   Cancelling stays AXO's everyday tool; deleting is for tests, duplicates and
   mistakes.
+- **The page's parts stay in step** (2026-11-15, the operator: «I deleted it
+  from requests but the receipts part — the brigadir still has the
+  request»). The app keeps every answer a minute AND across reloads
+  (App.jsx: `staleTime` 60 s + a persister), and a write refreshed only its
+  own list, so «Qabul» kept showing a deleted request from that copy — on the
+  deleter's screen and on the brigadir's phone. Now every write on the page
+  re-reads EVERY `cflow-…` query (`flowUtil.refreshFlow`), and «So'rovlar» and
+  «Qabul» re-read whenever they are opened or the app comes back to the front
+  (`LIVE_LIST`: `staleTime 0`, `refetchOnMount` / `refetchOnWindowFocus`
+  «always»); the kept copy shows only for the moment the new one takes. A
+  card confirmed on a request deleted meanwhile says so («So'rov o'chirilgan»)
+  and leaves the list.
 - **A brigadir's LIMIT** (2026-11-15, the operator: «we have to put a limit
   for brigadirs, they don't have to get extra containers — after the
   calculation they have a limit, and the extra they don't have to take»):

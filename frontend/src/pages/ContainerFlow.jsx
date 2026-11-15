@@ -19,7 +19,7 @@ import { useToast } from "../components/ui/Toast";
 import { tashkentNow, prevISO } from "../components/production/HourlyContainers";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, StatusChip, KindChip, TeamLabel, ReasonFields, reasonOk,
-  byHour, lineOf, fieldCls, fieldStyle,
+  byHour, lineOf, fieldCls, fieldStyle, refreshFlow, LIVE_LIST,
 } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
@@ -116,6 +116,7 @@ export default function ContainerFlow() {
     queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
     enabled: flowSide,
+    ...LIVE_LIST,
   });
   const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
   const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
@@ -190,7 +191,7 @@ export default function ContainerFlow() {
         <NewRequestModal t={t} day={day} initialHour={newOpen.hour} onClose={() => setNewOpen(null)}
           onDone={() => {
             setNewOpen(null); setTab("requests"); toast.success(t("cflow.req.sent"));
-            qc.invalidateQueries({ queryKey: ["cflow-requests"] });
+            refreshFlow(qc);
           }} onFail={fail} />
       )}
       {toast.node}

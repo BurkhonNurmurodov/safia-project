@@ -14,7 +14,7 @@
 // Below md every request is a card (Nuriddin aka is on the floor with a
 // phone); from md up it is the table.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Plus, Sparkles, Split, Trash2, Wand2,
 } from "lucide-react";
@@ -34,6 +34,7 @@ import api from "../../utils/api";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
+  refreshFlow, LIVE_LIST,
 } from "./flowUtil";
 
 const REFRESH_MS = 60_000;
@@ -97,10 +98,12 @@ function PartLine({ p, t, tl }) {
 export function RequestsTab({ t, day, roles, toast, onNew }) {
   const { tl } = useTranslit();
   const now = useNow();
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["cflow-requests", day],
     queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
+    ...LIVE_LIST,
   });
   const [assign, setAssign] = useState(null);
   const [cancel, setCancel] = useState(null);
@@ -112,7 +115,8 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   });
   const list = q.data?.requests ?? [];
   const me = q.data?.me;
-  const done = (msg) => { toast.success(msg); q.refetch(); };
+  // a write here changes «Qabul», «Tahlil» and «Hisobot» too — re-read them all
+  const done = (msg) => { toast.success(msg); refreshFlow(qc); };
   const fail = (e) => toast.error(errText(t, e));
   const mayAssign = (r) => r.status === "requested" && roles.logistics && (roles.admin || r.logistics_key === me);
   // AXO withdraws a request while it waits — or after its split (2026-11-15),
