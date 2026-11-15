@@ -2,7 +2,8 @@
 // their line from a split request — «Hammasi keldi» in one tap, or the counts
 // that actually came with a reason. Page key `container-receive`, admin-only
 // until the operator opens it to the brigadirs; a brigadir sees and confirms
-// only their own unit, an admin every unit (and may confirm for one).
+// only their own unit, an admin every unit (and may confirm for one); the
+// shift- and top-managers watching (`container-watch`) see every unit, no button.
 // docs/containers-flow.md.
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -45,6 +46,9 @@ export default function FlowReceive({ t, day, toast, isAdmin }) {
   });
   // an admin reads every unit; a brigadir only theirs — their own cards need no name
   const showUnit = q.data?.unit == null;
+  // who may confirm: an admin, or the brigadir on their own unit — the managers
+  // watching (`container-watch`) read every unit and press nothing
+  const canAct = isAdmin || q.data?.unit != null;
 
   if (q.isError) {
     return <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, q.error)} />;
@@ -53,7 +57,7 @@ export default function FlowReceive({ t, day, toast, isAdmin }) {
     <div className="flex flex-col gap-3">
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={PackageCheck} title={t("cflow.rcv.title")} size="lg"
-          subtitle={t(isAdmin ? "cflow.rcv.subAdmin" : "cflow.rcv.sub")}
+          subtitle={t(showUnit ? "cflow.rcv.subAdmin" : "cflow.rcv.sub")}
           right={q.isLoading || !list.length ? null
             // the slot stays filled once there is a list: a confirm never moves the cards under it
             : waiting > 0 ? <Chip tone="warn">{t("cflow.rcv.waiting").replace("{n}", waiting)}</Chip>
@@ -100,7 +104,7 @@ export default function FlowReceive({ t, day, toast, isAdmin }) {
                     </p>
                   )}
                 </div>
-                {open && (
+                {open && canAct && (
                   <div className="px-3.5 pb-3.5 grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                     <Button size="lg" variant="secondary" icon={<PencilLine size={15} />} onClick={() => setEdit(x)}>
                       {t("cflow.rcv.other")}

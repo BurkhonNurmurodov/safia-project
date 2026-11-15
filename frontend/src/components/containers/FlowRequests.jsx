@@ -118,7 +118,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   ];
   const empty = (
     <span className="inline-flex flex-col items-center gap-3">
-      {t(roles.axo ? "cflow.req.noneAxo" : "cflow.req.noneLog")}
+      {t(roles.axo || roles.watch ? "cflow.req.noneAxo" : "cflow.req.noneLog")}
       {roles.axo && <Button icon={<Plus size={14} />} onClick={() => onNew()}>{t("cflow.req.new")}</Button>}
     </span>
   );
@@ -126,7 +126,10 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {roles.axo && <DayStrip t={t} day={day} list={list} loading={q.isLoading} now={now} onPick={onNew} />}
+      {/* the managers watching see the strip too; only AXO taps an hour into a request */}
+      {(roles.axo || roles.watch) && (
+        <DayStrip t={t} day={day} list={list} loading={q.isLoading} now={now} onPick={roles.axo ? onNew : null} />
+      )}
 
       {/* phone: a card per request */}
       <div className="md:hidden flex flex-col gap-2.5">
@@ -143,7 +146,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       {/* md+: the table */}
       <div className="hidden md:block">
         <TableCard icon={ClipboardList} title={t("cflow.req.title")}
-          subtitle={t(roles.axo ? "cflow.req.subAxo" : "cflow.req.subLog")} headSize="lg"
+          subtitle={t(roles.axo || roles.watch ? "cflow.req.subAxo" : "cflow.req.subLog")} headSize="lg"
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{list.length}</span>}>
           <thead>
             <tr>
@@ -360,7 +363,7 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
   const busy = loading || need.isLoading;
   return (
     <section className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <SectionHead icon={CalendarClock} title={t("cflow.strip.title")} subtitle={t("cflow.strip.sub")}
+      <SectionHead icon={CalendarClock} title={t("cflow.strip.title")} subtitle={t(onPick ? "cflow.strip.sub" : "cflow.strip.subWatch")}
         right={busy || !hours.length ? null
           // the slot stays filled: a request made from here never moves the strip
           : missing > 0 ? <Chip tone={anyMissed ? "bad" : "warn"} icon={AlertTriangle}>{t("cflow.strip.missing").replace("{n}", missing)}</Chip>
@@ -378,11 +381,12 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
                 t("cflow.strip.tipNeed").replace("{n}", e.need),
                 t("cflow.strip.tipAsked").replace("{n}", e.asked),
                 t(`cflow.strip.st.${st}`),
-                t("cflow.strip.tipTap"),
-              ].join(" · ");
+                onPick && t("cflow.strip.tipTap"),
+              ].filter(Boolean).join(" · ");
+              const Tile = onPick ? "button" : "div";
               return (
-                <button key={e.hour} type="button" data-hour={e.hour} title={tip} aria-label={tip}
-                  onClick={() => onPick(e.hour)}
+                <Tile key={e.hour} data-hour={e.hour} title={tip} aria-label={tip}
+                  {...(onPick ? { type: "button", onClick: () => onPick(e.hour) } : { role: "img" })}
                   className="shrink-0 w-[68px] h-[56px] rounded-xl flex flex-col items-center justify-center gap-0.5"
                   style={{
                     background: c.bg, border: `1.5px ${c.dashed ? "dashed" : "solid"} ${c.line}`,
@@ -394,7 +398,7 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
                   <span className="text-[11px] font-semibold tabular-nums" style={{ color: c.ink }}>
                     {e.need > 0 ? `${fmt(e.asked)}/${fmt(e.need)}` : fmt(e.asked)}
                   </span>
-                </button>
+                </Tile>
               );
             })}
         </div>

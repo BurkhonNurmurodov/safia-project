@@ -65,8 +65,9 @@ export const ALL_LINKS = [
   // «Konteynerlar oqimi» — AXO → Logistics → Leader, hour by hour
   // (docs/containers-flow.md). Three page keys, admin-only until granted:
   // `container-flow` is AXO (Fozilova Dilafruz), `container-logistics` is
-  // Logistics (Nuriddin aka), `container-receive` a brigadir's «Qabul» — any opens it.
-  { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive"], key: "nav.containerFlow", icon: PackageCheck, group: "prod", app: "containers" },
+  // Logistics (Nuriddin aka), `container-receive` a brigadir's «Qabul»,
+  // `container-watch` the shift- and top-managers watching — any opens it.
+  { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive", "container-watch"], key: "nav.containerFlow", icon: PackageCheck, group: "prod", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },

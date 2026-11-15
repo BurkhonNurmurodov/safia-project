@@ -43,14 +43,15 @@ import api from "../utils/api";
 // person, issuing an hour, settling a dispute; `container-logistics` is
 // Logistics (Nuriddin aka) — splitting a request across brigadirs, a batch's
 // delivery; `container-receive` is a brigadir confirming what reached their
-// line («Qabul», their own unit only); a leader's answer, a forced close and
-// the settings are admins'.
+// line («Qabul», their own unit only); `container-watch` is the shift- and
+// top-managers WATCHING (2026-11-15): every reading tab, no button; a
+// leader's answer, a forced close and the settings are admins'.
 const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
 const TABS = ["requests", "receive", "axo", "logistics", "leaders", "all", "report", "settings"];
 const tabsFor = (r) => TABS.filter((k) => r.admin
-  || ((k === "requests" || k === "all" || k === "report") && (r.axo || r.logistics))
-  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics) || (k === "receive" && r.receive));
+  || ((k === "requests" || k === "all" || k === "report") && (r.axo || r.logistics || r.watch))
+  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics) || (k === "receive" && (r.receive || r.watch)));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
@@ -77,10 +78,10 @@ export default function ContainerFlow() {
   });
   const roles = {
     admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics,
-    receive: isAdmin || !!settings.data?.receive,
+    receive: isAdmin || !!settings.data?.receive, watch: isAdmin || !!settings.data?.watch,
   };
   // a brigadir holding only «Qabul» reads nothing of the AXO / logistics side
-  const flowSide = roles.axo || roles.logistics;
+  const flowSide = roles.axo || roles.logistics || roles.watch;
   const board = useQuery({
     queryKey: ["cflow-board", day],
     queryFn: () => api.get("/api/container-flow/board", { params: { day } }).then((r) => r.data),
@@ -151,7 +152,7 @@ export default function ContainerFlow() {
         : tab === "axo" ? <AxoTab {...ctx} />
         : tab === "logistics" ? <LogisticsTab {...ctx} />
         : tab === "leaders" ? <LeadersTab {...ctx} />
-        : tab === "all" ? <AllTab {...ctx} isAdmin={isAdmin} />
+        : tab === "all" ? <AllTab {...ctx} isAdmin={isAdmin} canSettle={roles.axo} />
         : tab === "report" ? <FlowReport t={t} toast={toast} />
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}
@@ -494,7 +495,7 @@ function LeadersTab({ t, batches, loading, done, fail }) {
 }
 
 // ── Every batch of the day ──────────────────────────────────────────────────
-function AllTab({ t, batches, loading, done, fail, isAdmin }) {
+function AllTab({ t, batches, loading, done, fail, isAdmin, canSettle }) {
   const [hist, setHist] = useState(null);
   const [close, setClose] = useState(null);
   const [settle, setSettle] = useState(null);
@@ -540,7 +541,7 @@ function AllTab({ t, batches, loading, done, fail, isAdmin }) {
                 <td className="px-3 py-1.5">
                   <ActionMenu label={`${t("cflow.actions")}: ${b.unit ?? ""} ${span(b.hour)}`} items={[
                     { key: "hist", label: t("cflow.history"), icon: History, onSelect: () => setHist(b) },
-                    b.status === "disputed" && { key: "settle", label: t("cflow.lead.settle"), icon: Scale, onSelect: () => setSettle(b) },
+                    canSettle && b.status === "disputed" && { key: "settle", label: t("cflow.lead.settle"), icon: Scale, onSelect: () => setSettle(b) },
                     isAdmin && b.status !== "closed" && { key: "close", label: t("cflow.close"), icon: Lock, tone: "danger", onSelect: () => setClose(b) },
                   ]} />
                 </td>

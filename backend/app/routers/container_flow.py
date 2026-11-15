@@ -9,6 +9,9 @@ docs/containers-flow.md). Two doors:
   First holder: Nuriddin aka.
 - `ANY` (either key): reading the board, the requests, the history, the
   report. Both keys are admin-only until granted.
+- `container-watch` (shift- and top-managers by default, 2026-11-15) reads
+  everything the page shows — it joins `ANY`, `WHO` and the receipts' `RECW`
+  — and writes nothing.
 - `RECV` (page key `container-receive`): a brigadir confirming what reached
   their line — only their own unit; admins any. Admin-only until granted.
 - `verify_admin`: a leader's answer, a forced close, the settings.
@@ -38,9 +41,10 @@ router = APIRouter(prefix="/api/container-flow", tags=["container-flow"])
 
 PAGE = require_page("container-flow")
 LOGI = require_page("container-logistics")
-ANY = require_page("container-flow", "container-logistics")
+ANY = require_page("container-flow", "container-logistics", "container-watch")
 RECV = require_page("container-receive")
-WHO = require_page("container-flow", "container-logistics", "container-receive")
+RECW = require_page("container-receive", "container-watch")
+WHO = require_page("container-flow", "container-logistics", "container-receive", "container-watch")
 
 
 def _roles(db: Session, payload: dict) -> dict:
@@ -48,11 +52,11 @@ def _roles(db: Session, payload: dict) -> dict:
     from app.capabilities import capability_pages, caller_denied_pages
     from app.permissions import get_page_access, role_can_access
     if payload.get("role") == "admin":
-        return {"admin": True, "axo": True, "logistics": True, "receive": True, "unit": None}
+        return {"admin": True, "axo": True, "logistics": True, "receive": True, "watch": True, "unit": None}
     access, caps, denied = get_page_access(db), capability_pages(db, payload), caller_denied_pages(db, payload)
     can = lambda k: role_can_access(payload.get("role"), [k], access, caps, denied)  # noqa: E731
     return {"admin": False, "axo": can("container-flow"), "logistics": can("container-logistics"),
-            "receive": can("container-receive"), "unit": _my_unit(payload)}
+            "receive": can("container-receive"), "watch": can("container-watch"), "unit": _my_unit(payload)}
 
 
 def _my_unit(payload: dict) -> Optional[int]:
@@ -338,7 +342,7 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     """The day's requests. AXO and admins see every one; a logistics person
     who is not AXO sees only those addressed to them."""
     r = _roles(db, payload)
-    mine = None if (r["admin"] or r["axo"]) else (_me(db, payload) or "—")
+    mine = None if (r["admin"] or r["axo"] or r["watch"]) else (_me(db, payload) or "—")
     return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": _me(db, payload)}
 
 
@@ -353,7 +357,7 @@ def post_seen(request_id: int, db: Session = Depends(get_db), payload: dict = De
 
 @router.get("/hour-need")
 def get_hour_need(day: date = Query(...), db: Session = Depends(get_db),
-                  payload: dict = Depends(PAGE)):
+                  payload: dict = Depends(ANY)):
     """The plant's containers per hour on `day` — the «Konteynerlar» page's
     figures — so a new request starts from the hour's number."""
     hours = flow.plant_hours(db, day)
@@ -452,9 +456,9 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
 
 
 @router.get("/receipts")
-def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(RECV)):
+def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(RECW)):
     """The day's split requests per brigadir: a brigadir sees their own unit,
-    everybody else (admins) every unit."""
+    everybody else (admins, the managers watching) every unit."""
     mine = _my_unit(payload) if payload.get("role") != "admin" else None
     return {"day": day.isoformat(), "unit": mine, "receipts": flow.receipts_of(db, day, mine)}
 

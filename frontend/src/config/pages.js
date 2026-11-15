@@ -52,6 +52,7 @@ export const PAGES = [
   { tier: "test", key: "container-flow", route: "/containers/flow", labelKey: "nav.containerFlow" },
   { tier: "test", key: "container-logistics", route: "/containers/flow", labelKey: "nav.containerLogistics" },
   { tier: "test", key: "container-receive", route: "/containers/flow", labelKey: "nav.containerReceive" },
+  { tier: "test", key: "container-watch", route: "/containers/flow", labelKey: "nav.containerWatch" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -111,6 +112,7 @@ export const DEFAULT_PAGE_ACCESS = {
   // …as Logistics: a request addressed to them, split across brigadirs.
   "container-logistics": [],
   "container-receive": [],
+  "container-watch": ["top-manager", "shift-manager"],
   // «API» — personal tokens for the external read API. Admin-only until the
   // operator opens it: a token reads every cell's plan and people.
   api: [],

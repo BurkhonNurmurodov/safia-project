@@ -411,6 +411,9 @@ class PageKeyTest(unittest.TestCase):
             self.assertIn(key, PAGE_KEYS)
             self.assertEqual(DEFAULT_PAGE_ACCESS[key], [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
+        # the managers watch the whole page and press nothing on it
+        self.assertIn("container-watch", PAGE_KEYS)
+        self.assertEqual(DEFAULT_PAGE_ACCESS["container-watch"], ["top-manager", "shift-manager"])
 
     def test_axo_doors_and_admin_doors(self):
         """AXO's steps and the reads take the page key; Logistics', a
@@ -423,18 +426,24 @@ class PageKeyTest(unittest.TestCase):
             guard[(next(iter(route.methods)), route.path)] = (
                 "admin" if verify_admin in deps else "axo" if r.PAGE in deps
                 else "logistics" if r.LOGI in deps else "any" if r.ANY in deps
-                else "receive" if r.RECV in deps else "who" if r.WHO in deps else "?")
+                else "receive" if r.RECV in deps else "receive+watch" if r.RECW in deps
+                else "who" if r.WHO in deps else "?")
         p = "/api/container-flow"
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
-                  ("GET", f"{p}/logistics"), ("GET", f"{p}/hour-need")]:
+                  ("GET", f"{p}/logistics")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
                   ("GET", f"{p}/units"), ("GET", f"{p}/requests/{{request_id}}/split-hint")]:
             self.assertEqual(guard[k], "logistics", k)
-        for k in [("GET", f"{p}/receipts"), ("POST", f"{p}/requests/{{request_id}}/receive")]:
-            self.assertEqual(guard[k], "receive", k)
+        self.assertEqual(guard[("POST", f"{p}/requests/{{request_id}}/receive")], "receive")
+        self.assertEqual(guard[("GET", f"{p}/receipts")], "receive+watch")
+        self.assertEqual(guard[("GET", f"{p}/hour-need")], "any")
+        # watching opens no write: every POST / PUT but the Excel export keeps a door the watch key is not on
+        for (method, path), g in guard.items():
+            if method in ("POST", "PUT") and not path.endswith("/report.xlsx"):
+                self.assertNotIn(g, ("any", "who", "receive+watch"), (method, path))
         self.assertEqual(guard[("GET", f"{p}/settings")], "who")
         for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"),
                   ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:

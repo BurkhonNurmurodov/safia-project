@@ -22,7 +22,8 @@ containers row from production and move it into the new button».
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».
-- **Who presses what** — two page keys, both admin-only until granted; either
+- **Who presses what** — the page keys below, admin-only until granted (all
+  but the watch key); any
   opens the page (`page: [...]` on the nav link and the route —
   `canAccessPage` takes a LIST, any of them):
   - **`container-flow` is AXO** (the operator, 2026-11-14: «show this page for
@@ -51,6 +52,16 @@ containers row from production and move it into the new button».
     operator opens it to the brigadirs (the page-access grant is the gate; a
     holder of only this key sees the «Qabul» tab and nothing of the AXO /
     logistics side — `WHO` reads `/settings`, `RECV` the receipts).
+  - **`container-watch` is the shift- and top-managers WATCHING** (2026-11-15,
+    the operator: «make it visible for shift managers and top managers too»,
+    asked and answered: the whole page, watch only). The one key that is NOT
+    admin-only by default: `["top-manager", "shift-manager"]`. It joins every
+    READ — `ANY` (board, requests, history, teams, readiness, report and its
+    Excel, `hour-need`), `WHO` (`/settings`) and `RECW` (the receipts) — and
+    no write: a test walks every POST / PUT and fails if one takes the key.
+    A watcher sees «So'rovlar» (all requests, «Kun rejasi» with inert tiles),
+    «Qabul» (every unit, no button), «Hammasi» (no «Hal qilish») and
+    «Hisobot»; no «Yangi so'rov», no split, no settings.
 - **The one message** (2026-11-14): a new or cancelled request DMs its
   logistics person (`notify_request`, keys `container_request_new` /
   `_cancelled`, a button opening the page; category «other», subject `page`
