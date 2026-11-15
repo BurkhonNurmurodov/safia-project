@@ -224,12 +224,10 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push six columns past a phone's width.
-// «Sifat nazorati %» is ONE cell cut corner to corner — «soch bilan» in the
-// top-left triangle, «sochsiz» in the bottom-right (the operator, 2026-11-15:
-// «make the box in one and divide the box in two by lines from corner to
-// corner»). Its header carries a third line naming the two halves, left and
-// right, each a sort control for its half; the header's own press sorts by
-// «soch bilan».
+// «Sifat nazorati %» is ONE cell in two halves side by side — «soch bilan»
+// left, «sochsiz» right (`splitCell`). Its header carries a third line naming
+// the two halves over them, each a sort control for its half; the header's own
+// press sorts by «soch bilan».
 function LaneLabels({ lanes, sort, onSort }) {
   return (
     <span className="mt-1 grid w-full grid-cols-2">
@@ -446,7 +444,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // `tipNode` draws the box's content in place of the `title` text (the
   // quality cell's little table); `title` then stays its spoken form, and the
   // «opens on …» line still follows.
-  const figTd = ({ tone, paint, title, tipNode, target, children }) => {
+  // `bare` drops the cell's own padding, for children that paint edge to edge
+  // themselves (the quality cell's two halves).
+  const figTd = ({ tone, paint, title, tipNode, target, children, bare = false }) => {
     const hint = target ? fill(t("overview.sr.goto"), { page: target.page }) : null;
     const fullTitle = [title, hint].filter(Boolean).join("\n") || undefined;
     const node = tipNode ? (
@@ -457,7 +457,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     ) : null;
     return (
       <td
-        className={`${TD_FIG} ${target ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+        className={`${TD_FIG} ${target || bare ? "p-0" : TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
         style={{ ...(paint ?? toneFill(tone)), ...RULE }}
         onMouseEnter={fullTitle ? (e) => showTip(e, fullTitle, node) : undefined}
         onMouseLeave={fullTitle ? () => setTip(null) : undefined}
@@ -465,7 +465,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         {target ? (
           <Link
             to={target.to}
-            className={`${LINK_CLS} ${TD_PAD}`}
+            className={`${LINK_CLS} ${bare ? "" : TD_PAD}`}
             aria-label={fullTitle ? fullTitle.replace(/\n/g, ". ") : undefined}
           >
             {children}
@@ -614,13 +614,14 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     );
   };
 
-  // ONE cell, two halves: a diagonal from the top-right corner to the bottom-
-  // left one, each triangle in its own band's fill, each figure in its own
-  // corner in its own fill's ink. `to bottom right` puts the gradient's 50% line
-  // exactly through those two corners whatever the cell's shape; the 2px rule
-  // between the halves is the card's colour, like the heatmap's grid. A half
-  // with no figure stays unfilled and prints «—»; a cell with neither is the
-  // usual blank.
+  // ONE cell, two halves SIDE BY SIDE: «soch bilan» on the left, «sochsiz» on
+  // the right, each in its own band's fill with its % centred, a 2px rule in
+  // the card's colour between them — the heatmap's own grid line. It was a
+  // corner-to-corner diagonal for a morning (2026-11-15); the operator found
+  // the line jagged, the corner figures badly placed, the row taller and the
+  // shape messy, and the halves match the header's «soch bilan · sochsiz»
+  // labels left and right. A half with no figure stays unfilled with «—»; a
+  // cell with neither is the usual blank. Same one-line height as every cell.
   const splitCell = (r) => {
     const a = qualityCell(r);
     const b = qualityCell(r, true);
@@ -628,39 +629,28 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     if (!has(a) && !has(b)) {
       return figCell(a, resolvedTone, (c) => pctText(c.value), qualityTitle(r), qualityTarget(r), qualityTip(r));
     }
-    const fa = has(a) ? toneFill(resolvedTone(a.value)) : null;
-    const fb = has(b) ? toneFill(resolvedTone(b.value)) : null;
-    const bg = (f) => f?.background ?? "transparent";
-    // Drawn as an SVG stretched over the cell, not a CSS gradient: a gradient's
-    // hard stop along a shallow diagonal is not anti-aliased and showed as a
-    // jagged, dashed-looking dark line (the operator's screenshot, 2026-11-15).
-    // Two triangles plus one smooth 1.5px rule in the card's colour, whatever
-    // the cell's shape (`preserveAspectRatio="none"`, a non-scaling stroke).
-    const paint = { position: "relative" };
-    const fig = (c, f) => (has(c)
-      ? <span style={{ color: f.color }}>{pctText(c.value)}</span>
-      : <span style={{ color: "var(--text-4)" }}>—</span>);
+    const half = (c) => {
+      const tone = has(c) ? resolvedTone(c.value) : null;
+      return (
+        <span
+          className={`flex-1 min-w-0 ${TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
+          style={toneFill(tone)}
+        >
+          {has(c) ? pctText(c.value) : <span style={{ color: "var(--text-4)" }}>—</span>}
+        </span>
+      );
+    };
     return figTd({
-      paint,
+      bare: true,
       title: qualityTitle(r),
       tipNode: qualityTip(r),
       target: qualityTarget(r),
       children: (
-        <>
-          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100"
-            preserveAspectRatio="none" aria-hidden="true">
-            <polygon points="0,0 100,0 0,100" fill={bg(fa)} />
-            <polygon points="100,0 100,100 0,100" fill={bg(fb)} />
-            <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke" />
-          </svg>
-          <span className="relative block text-[11px] sm:text-xs">
-            {/* holds the row's one-line height; the figures sit in the corners */}
-            <span className="invisible">0</span>
-            <span className="absolute left-0.5 -top-[6px] font-bold leading-none">{fig(a, fa)}</span>
-            <span className="absolute right-0.5 -bottom-[6px] font-bold leading-none">{fig(b, fb)}</span>
-          </span>
-        </>
+        <span className="flex w-full items-stretch">
+          {half(a)}
+          <span aria-hidden="true" className="w-[2px] flex-shrink-0" style={{ background: "var(--bg-card)" }} />
+          {half(b)}
+        </span>
       ),
     });
   };

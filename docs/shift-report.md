@@ -746,4 +746,12 @@ hair and without hair».
   anti-aliased and read as a jagged, dashed dark line). `splitCell` stretches
   one SVG over the cell (`preserveAspectRatio="none"`): two triangles in the
   halves' fills and one 1.5px non-scaling rule in `--bg-card`.
+- **…replaced the same morning by two halves SIDE BY SIDE in one cell** (the
+  operator, after the SVG: «still wrong» — the line jagged, the figures badly
+  placed, the row too tall, the shape messy). THE STANDING cell: `splitCell`
+  renders one `td` holding two flex halves — «soch bilan» left, «sochsiz»
+  right — each in its own band's fill with its % centred at the board's normal
+  padding, a 2px `--bg-card` rule between them; the row is one line like every
+  other. `figTd` gained `bare` (no own padding) for it. The hover box, header
+  labels, sorting and link are unchanged.
 
