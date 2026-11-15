@@ -1386,9 +1386,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 
 /* What is INSIDE an app, while its tile is hovered (2026-11-15, the operator;
    components/launcher/AppPeek.jsx): the app's own screens under its name,
-   then one column per menu tab — every row a link. The launcher's glass, a
-   shade more solid so a list reads on it: a dark pane by night, warm cream by
-   day with the tile names' chocolate; the rim, the app's name and a row under
+   then one column per menu tab — every row a link. The launcher's glass
+   (the clear pane is in the 768px block below): a dark tint by night, a warm
+   cream one by day with the tile names' chocolate; the rim, the app's name and a row under
    the pointer wear the app's hue (`data-app-hue`, the triples below). It
    enters as a `.pop` out of its tile and leaves through `leaveRef`. The blur
    is static, and taken from 768px up like the tiles' (a finger never opens
@@ -1406,14 +1406,45 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   border: 1px solid rgba(var(--rim), .4);
   box-shadow: 0 20px 48px -14px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.3);
 }
-@media (min-width: 768px) {
-  .app-peek { -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%); }
-}
 [data-theme="light"] .app-peek {
   --peek-ink: #3d200f; --peek-dim: #7a5236;
   background: rgba(255,251,244,.93);
   border-color: rgba(var(--rim), .3);
   box-shadow: 0 20px 48px -16px rgba(90,55,15,.42), 0 2px 8px rgba(60,40,10,.1);
+}
+/* GLASS like the tiles (the operator, 2026-11-15: «should be glassy like the
+   apps, not just white background»): where the blur exists (768px up — the
+   only place this panel opens) the pane turns clear — a light sheen over a
+   faint wash of the app's own hue, the scene blurred behind it — with the
+   tiles' soft rim in the app's darker shade and a lit top edge. The blur is
+   heavier than a tile's so the macarons behind melt into a wash and a list
+   still reads; the solid values above stay as the no-blur fallback. */
+@media (min-width: 768px) {
+  .app-peek {
+    -webkit-backdrop-filter: blur(22px) saturate(160%); backdrop-filter: blur(22px) saturate(160%);
+    background:
+      linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 45%, rgba(255,255,255,0)),
+      rgba(var(--glow), .06),
+      rgba(21,23,30,.52);
+    border-color: rgba(var(--rim), .32);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.10),
+      inset 0 0 6px rgba(var(--rim), .22),
+      0 20px 48px -14px rgba(var(--glow), .35),
+      0 2px 8px rgba(0,0,0,.3);
+  }
+  [data-theme="light"] .app-peek {
+    background:
+      linear-gradient(145deg, rgba(255,255,255,.55), rgba(255,255,255,.22) 45%, rgba(255,255,255,.12)),
+      rgba(var(--glow), .07),
+      rgba(255,248,236,.28);
+    border-color: rgba(var(--rim), .26);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.7),
+      inset 0 0 6px rgba(var(--rim), .16),
+      0 20px 48px -16px rgba(var(--glow), .38),
+      0 2px 8px rgba(60,40,10,.08);
+  }
 }
 .app-peek-cols { display: flex; flex-wrap: wrap; align-items: flex-start; }
 .app-peek-col {
