@@ -71,11 +71,13 @@ untouched.
   there), and the greeting's typing ends as THEIR last tile settles.
 
 - **An app is a nav group** — `APPS` in `config/navLinks.js` (order, label,
-  icon, `hue`). A link's `app` moves it into an app of its own: ARC, the
-  overview, «Hisobotlar» (2026-11-03, the operator — out of the Laboratory
-  app; its page access is unchanged, admins only by default, and for
-  everybody else it stays in the Laboratory group) and the users-activity
-  page are one-page apps; «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
+  icon, `hue`). A link's `app` moves it into an app of its own: ARC and the
+  users-activity page are one-page apps; the «Overview» app holds the
+  overview and «Hisobotlar» (2026-11-15, the operator: «Reports should be in
+  Overview» — `app: "overview"`; it was an app of its own from 2026-11-03,
+  out of the Laboratory app, and that tile is gone; its page access is
+  unchanged, admins only by default, so a viewer without it has a one-page
+  Overview app, and for everybody else it stays in the Laboratory group); «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
   hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
   moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
   for everybody else both stay in the Liderlar group); «Avtomatika»
@@ -96,7 +98,7 @@ untouched.
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Seventeen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Sixteen tiles fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. **A tile's name is ONE short word where it can be**: a
   name wider than a phone's tile (~96px at 360px) breaks mid-word, so the

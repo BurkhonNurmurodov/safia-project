@@ -109,10 +109,11 @@ export const ALL_LINKS = [
   { to: "/live", page: "live", key: "nav.live", icon: MonitorDot, group: "lab" },
   // «Hisobotlar» — the platform's period report, every section folded out of
   // the page that owns it and downloadable as a document. Laboratory,
-  // admin-only until the operator opens it on the Access tab. On the admin
-  // launcher it is an app of its own (2026-11-03, the operator), not a
-  // Laboratory page; for anybody else it stays in the Laboratory group.
-  { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab", app: "reports" },
+  // admin-only until the operator opens it on the Access tab. On the
+  // launcher it is a page of the «Overview» app (2026-11-15, the operator:
+  // «Reports should be in Overview» — it was an app of its own from
+  // 2026-11-03); for anybody else it stays in the Laboratory group.
+  { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab", app: "overview" },
   // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
   // candidate. Laboratory, admin-only until the operator opens it to judges.
   { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
@@ -186,14 +187,13 @@ export const NAV_GROUPS = [
 // utils/launcherRoles.js). For them «/» is a grid of these tiles — a
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
-// pages. An app is a nav group by default; ARC, the overview, the reports,
+// pages. An app is a nav group by default; ARC, the overview (with the reports),
 // the activity page, HR, automation and the kitchen are apps of their own (a
 // link's `app`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
 // The assistant has no tile: the header's button already opens it everywhere.
 export const APPS = [
   { id: "overview",  labelKey: "nav.overview",      icon: LayoutDashboard, hue: "gold" },
-  { id: "reports",   labelKey: "nav.reports",       icon: FileBarChart,    hue: "blue" },
   { id: "prod",      labelKey: "navgrp.production", icon: Factory,         hue: "orange" },
   { id: "people",    labelKey: "navgrp.people",     icon: UsersRound,      hue: "sky" },
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
