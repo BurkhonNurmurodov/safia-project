@@ -101,7 +101,6 @@ export const ALL_LINKS = [
   // «Brigadirlar KPI» — HR's monthly brigadir KPI: turnover and the quality
   // register's corrective measures computed, mentoring / KRU / payout to come.
   { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders", app: "hr" },
-  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system", app: "activity" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
@@ -114,6 +113,11 @@ export const ALL_LINKS = [
   // «Reports should be in Overview» — it was an app of its own from
   // 2026-11-03); for anybody else it stays in the Laboratory group.
   { to: "/reports", page: "reports", key: "nav.reports", icon: FileBarChart, group: "lab", app: "overview" },
+  // «Foydalanuvchilar faolligi» — on the launcher the last page of the
+  // «Overview» app (2026-11-15, the operator: «Activity should be also in
+  // Overview» — it was a one-page app of its own); the only row of the
+  // headerless `system` group for everybody else, so its place here is free.
+  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system", app: "overview" },
   // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
   // candidate. Laboratory, admin-only until the operator opens it to judges.
   { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
@@ -187,8 +191,8 @@ export const NAV_GROUPS = [
 // utils/launcherRoles.js). For them «/» is a grid of these tiles — a
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
-// pages. An app is a nav group by default; ARC, the overview (with the reports
-// and the Cells group), the activity page, HR (with the People group),
+// pages. An app is a nav group by default; ARC, the overview (with the reports,
+// the activity page and the Cells group), HR (with the People group),
 // automation and the kitchen are apps of their own (a link's `app`, or its
 // group's entry in `GROUP_APP`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
@@ -209,7 +213,7 @@ export const APPS = [
   // «Pechlar» first, out of the Laboratory. Its tile shows only to somebody
   // who may open one of its pages: admins, while `ovens` stays admin-only.
   // «Avtomatika» / «Автоматика», not the longer verbal noun: that one breaks
-  // mid-word on a phone's tile (the reason `apps.activity` is one word).
+  // mid-word on a phone's tile.
   { id: "automation", labelKey: "apps.automation",  icon: Cpu,             hue: "amber" },
   // «Oshxona» — the kitchen's app (2026-11-12, the operator): the people at
   // work in the factory now. Its tile shows to whoever may open `kitchen`.
@@ -219,9 +223,6 @@ export const APPS = [
   // the containers themselves are («сарик контенер»), and its look-alikes
   // (gold, amber) sit rows away from it.
   { id: "containers", labelKey: "apps.containers",  icon: Package,         hue: "yellow" },
-  // The page's own name («Foydalanuvchilar faolligi») breaks mid-word on a
-  // phone's tile; the tile says it in one word.
-  { id: "activity",  labelKey: "apps.activity",     icon: Activity,        hue: "lime" },
   // Its pages come from config/adminNav.js; inside it the sidebar groups them
   // by `sections` (the four admin groups) instead of listing one flat column.
   { id: "admin",     labelKey: "nav.admin",         icon: Settings,        hue: "slate", sections: ADMIN_GROUPS },
