@@ -580,6 +580,10 @@ def day_tasks(
             thread = bool(door and (is_admin or top or m.id in managed))
             can_comment = thread
             can_remind = bool(thread and acts_from_top)
+            # The status picker on the row (2026-11-15) — the brigadir PATCH's
+            # own rule: whoever runs the unit's board finishes it.
+            options = tb.status_choices(finisher=thread, mover=thread,
+                                        from_top=True, current=t.status)
         elif kind == tb.KIND_LEADER and t.leader_profile_id is not None:
             prof = leaders.get(t.leader_profile_id)
             person = {"kind": kind, "id": t.leader_profile_id,
@@ -588,6 +592,10 @@ def day_tasks(
             thread = bool(task_page)
             can_comment = bool(task_page and acts_from_top)
             can_remind = can_comment
+            # A leader's task from the top: a manager over it finishes it
+            # (`_status_choices`), through the TASK page's router.
+            options = tb.status_choices(finisher=can_comment, mover=can_comment,
+                                        from_top=True, current=t.status)
         else:
             continue            # a shift manager's own task, a legacy row no profile names
         entries.append((person, {
@@ -606,6 +614,7 @@ def day_tasks(
             "comment_count": 0,
             "thread": thread,
             "can_comment": can_comment,
+            "status_options": options,
             # «Eslatish» — only about a task still open on the day shown.
             "can_remind": bool(can_remind and st["state"] != "done" and t.status != "done"),
         }))

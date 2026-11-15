@@ -12,6 +12,13 @@
  *   its text, its deadline with the days late, who set it —
  *   and «Eslatish», one press that asks them in the bot whether it is done.
  *
+ * EACH TASK'S STATUS IS SET HERE TOO (2026-11-15, the operator: «can you put
+ * here done or in process or to do»): the row's pill is `StatusSelect`, the
+ * one Vazifalar uses, offering exactly the server's `status_options` — the
+ * owning router's own rule (`task_board.status_choices`), so it never offers
+ * what the PATCH would refuse. «Muddati o'tgan» is no status, so a late task
+ * keeps a red ⚠ beside its pill (and its red deadline line).
+ *
  * A person's line carries their answer in one mark: red — something is past
  * its date; green — everything they were set is done; grey — open work, all of
  * it in time. A task the unit's own brigadir set for a leader is not here, and
@@ -47,7 +54,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BellRing, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
-import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR } from "../ui/TaskQueue";
+import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR, StatusSelect } from "../ui/TaskQueue";
 import Button from "../ui/Button";
 import CommentsModal, { CommentsButton } from "../ui/CommentsModal";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -69,13 +76,6 @@ const STATE_FILL = {
   todo: STATUS_COLOR.todo,
   doing: STATUS_COLOR.doing,
   done: STATUS_COLOR.done,
-};
-// Ink on the card holds AA on both themes; a 500 fill does not.
-const STATE_INK = {
-  overdue: "var(--status-bad)",
-  todo: "var(--text-3)",
-  doing: "var(--status-warn)",
-  done: "var(--status-ok)",
 };
 const STATE_LABEL = {
   overdue: "tasks.kpiOverdue",
@@ -100,16 +100,6 @@ function ToneChip({ tone, label }) {
     <span className="grid place-items-center w-5 h-5 rounded-full flex-shrink-0"
       style={{ background: `${fill}24`, color: ink }} title={label} aria-label={label} role="img">
       <Icon size={11} strokeWidth={2.5} />
-    </span>
-  );
-}
-
-function StatePill({ state, label }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
-      style={{ background: `${STATE_FILL[state]}24`, color: STATE_INK[state] }}>
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: STATE_FILL[state] }} />
-      {label}
     </span>
   );
 }
@@ -173,6 +163,17 @@ export default function DayTasksCard({ params }) {
   });
   const remindingId = remind.isPending ? remind.variables?.task?.id : null;
 
+  // The row's status, set where it is read — through the router that owns the
+  // task's tier, exactly as on Vazifalar. A refusal says why, in a toast.
+  const setStatus = useMutation({
+    mutationFn: ({ task, status }) =>
+      api.patch(`${endpointFor(task.kind)}/${task.id}/status`, { status }).then((r) => r.data),
+    onSuccess: refresh,
+    onError: (e) => { toast.error(e?.response?.data?.detail || t("tasks.saveError")); refresh(); },
+  });
+  const savingStatusId = setStatus.isPending ? setStatus.variables?.task?.id : null;
+  const statusLabel = (s) => t(`tasks.status.${s}`);
+
   // Folding from the END of a long list would leave the reader a screen below
   // the block — bring its head back into view.
   const fold = () => {
@@ -218,10 +219,24 @@ export default function DayTasksCard({ params }) {
     const name = tl(p.name) || "—";
     return (
       <li key={task.id}
-        className="px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 sm:grid sm:grid-cols-[8.5rem_minmax(0,1fr)_13rem_9.5rem] lg:grid-cols-[8.5rem_minmax(0,1fr)_13rem_11rem_9.5rem]"
+        className="px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 sm:grid sm:grid-cols-[12.5rem_minmax(0,1fr)_13rem_9.5rem] lg:grid-cols-[12.5rem_minmax(0,1fr)_13rem_11rem_9.5rem]"
         style={{ borderTop: line }}>
         <span className="inline-flex items-center gap-1.5 min-w-0 max-sm:order-1">
-          <StatePill state={task.state} label={stateLabel(task.state)} />
+          <StatusSelect
+            status={task.status}
+            statusLabel={statusLabel}
+            saving={savingStatusId === task.id}
+            editable={(task.status_options || []).length > 0}
+            options={task.status_options || []}
+            onChange={(s) => setStatus.mutate({ task, status: s })}
+          />
+          {task.state === "overdue" && (
+            <span className="inline-flex flex-shrink-0" style={{ color: "var(--status-bad)" }}
+              title={`${stateLabel("overdue")} · ${t("dayTasks.lateBy").replace("{n}", task.days_late)}`}
+              aria-label={stateLabel("overdue")} role="img">
+              <AlertTriangle size={13} />
+            </span>
+          )}
           {task.urgent && (
             <span className="inline-flex flex-shrink-0" style={{ color: URGENT_COLOR }} title={t("tasks.urgentOn")} aria-label={t("tasks.urgentOn")} role="img">
               <Flame size={13} />
@@ -241,15 +256,19 @@ export default function DayTasksCard({ params }) {
           {setter ? t("dayTasks.setBy").replace("{name}", setter) : ""}
         </span>
         <span className="inline-flex items-center justify-end gap-1.5 max-sm:order-2 max-sm:ml-auto">
+          {/* On a phone the label hides behind the bell (the status picker
+              needs the line's width); the button keeps its name. */}
           {task.can_remind && (task.reminded ? (
-            <Button size="sm" variant="success" tint disabled icon={<Check size={12} />} title={t("dayTasks.remindSentTip")}>
-              {t("dayTasks.remindSent")}
+            <Button size="sm" variant="success" tint disabled icon={<Check size={12} />}
+              title={t("dayTasks.remindSentTip")} aria-label={t("dayTasks.remindSent")}>
+              <span className="max-sm:hidden">{t("dayTasks.remindSent")}</span>
             </Button>
           ) : (
             <Button size="sm" variant="primary" tint icon={<BellRing size={12} />}
               loading={remindingId === task.id} title={t("dayTasks.remindTip")}
+              aria-label={`${t("dayTasks.remind")}: ${name}`}
               onClick={() => remind.mutate({ task, name })}>
-              {t("dayTasks.remind")}
+              <span className="max-sm:hidden">{t("dayTasks.remind")}</span>
             </Button>
           ))}
           {task.thread && (

@@ -449,6 +449,15 @@ comments the uploading the picture or file». Asked: the assignee keeps «to do�
   alone; its notice then quotes «📎 name, name». Not in the exam: the sandbox
   chat takes words only, so `/tasks` turns attachments off while
   `isExamOn()`.
+- **The status is set on «Smena kunligi» too** (the operator, the same day:
+  «can you put here done or in process or to do»). Each task's pill in the
+  block is `StatusSelect`, offering the day read's per-task `status_options`
+  — the owning router's rule again (a brigadir's task: whoever runs the
+  unit's board; a leader's task from the top: a manager over it, through the
+  TASK page) — and saving through that router's PATCH; a refusal is a toast.
+  «Muddati o'tgan» is no status, so a late task keeps a red ⚠ beside its pill.
+  On a phone «Eslatish» shows as its bell alone, so the picker, the bell and
+  the chat stay on one line.
 - **The bot cards say how to answer**: `task_from_top` gained «📎 Bajarganda:
   izohga rasm yoki fayl yuboring — «Bajarildi»ni rahbariyat belgilaydi», and
   `task_reminder`'s answer row now asks for a reply with a photo or file

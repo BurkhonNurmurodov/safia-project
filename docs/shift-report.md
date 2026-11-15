@@ -754,4 +754,13 @@ hair and without hair».
   padding, a 2px `--bg-card` rule between them; the row is one line like every
   other. `figTd` gained `bare` (no own padding) for it. The hover box, header
   labels, sorting and link are unchanged.
+- **…and back to the diagonal, formatted properly** (the operator: «I want
+  diagonal lines, just work on the formatting, it should be the one box»).
+  THE STANDING cell: `splitCell` stretches one SVG over the `td` — two
+  triangles in the halves' fills, a 2px non-scaling `--bg-card` rule from the
+  top-right to the bottom-left corner — at the board's normal padding and
+  one-line height; «soch bilan»'s % in the top-left corner, «sochsiz»'s in the
+  bottom-right, inset 8px / 5px (3px and 10.5px text on a phone), each in its
+  own fill's ink. The header's half names sit at its left and right edges, over
+  their corners. Checked in a mock-up at 150px and 58px wide before shipping.
 

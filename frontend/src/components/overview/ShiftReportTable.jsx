@@ -224,14 +224,14 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // Below `sm` a figure header stacks its sort chevron under the label and shows
 // it only on the column that is sorted — a chevron beside every label is what
 // would push six columns past a phone's width.
-// «Sifat nazorati %» is ONE cell in two halves side by side — «soch bilan»
-// left, «sochsiz» right (`splitCell`). Its header carries a third line naming
-// the two halves over them, each a sort control for its half; the header's own
-// press sorts by «soch bilan».
+// «Sifat nazorati %» is ONE cell cut corner to corner — «soch bilan» top-left,
+// «sochsiz» bottom-right (`splitCell`). Its header carries a third line naming
+// the halves at the left and right edges, over their corners, each a sort
+// control for its half; the header's own press sorts by «soch bilan».
 function LaneLabels({ lanes, sort, onSort }) {
   return (
-    <span className="mt-1 grid w-full grid-cols-2">
-      {lanes.map((l) => {
+    <span className="mt-1 flex w-full justify-between gap-1">
+      {lanes.map((l, i) => {
         const on = sort?.key === l.k;
         return (
           <button
@@ -240,7 +240,7 @@ function LaneLabels({ lanes, sort, onSort }) {
             title={l.title}
             aria-pressed={on}
             onClick={(e) => { e.stopPropagation(); onSort(l.k); }}
-            className="min-w-0 px-0.5 text-center text-[11px] max-[359px]:text-[10.5px] sm:text-[10.5px] font-semibold whitespace-nowrap outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
+            className={`min-w-0 px-0.5 ${i ? "text-right" : "text-left"} text-[11px] max-[359px]:text-[10.5px] sm:text-[10.5px] font-semibold whitespace-nowrap outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]`}
             style={{ color: on ? "var(--brand-text)" : "var(--text-3)" }}
           >
             <span className="sm:hidden">{l.short}</span>
@@ -614,14 +614,19 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     );
   };
 
-  // ONE cell, two halves SIDE BY SIDE: «soch bilan» on the left, «sochsiz» on
-  // the right, each in its own band's fill with its % centred, a 2px rule in
-  // the card's colour between them — the heatmap's own grid line. It was a
-  // corner-to-corner diagonal for a morning (2026-11-15); the operator found
-  // the line jagged, the corner figures badly placed, the row taller and the
-  // shape messy, and the halves match the header's «soch bilan · sochsiz»
-  // labels left and right. A half with no figure stays unfilled with «—»; a
-  // cell with neither is the usual blank. Same one-line height as every cell.
+  // ONE cell cut by a diagonal from its top-right corner to its bottom-left
+  // one (the operator, 2026-11-15: «I want diagonal lines, just work on the
+  // formatting, it should be the one box»): «soch bilan» fills the top-left
+  // triangle with its % in the top-left corner, «sochsiz» the bottom-right one
+  // with its % in the bottom-right corner, each in its own band's fill and ink.
+  // Drawn as ONE SVG stretched over the cell (`preserveAspectRatio="none"`):
+  // two triangles and a 2px non-scaling rule in the card's colour — smooth at
+  // any cell shape, where a CSS gradient's hard stop showed a jagged line. The
+  // cell keeps the board's padding and one-line height; the figures sit in the
+  // corners, inset so they clear the rule (smaller on a phone, where the cell
+  // is ~55px wide). A half with no figure stays unfilled with «—»; a cell with
+  // neither is the usual blank. Two side-by-side halves stood here for an
+  // hour first; the operator wanted the diagonal back.
   const splitCell = (r) => {
     const a = qualityCell(r);
     const b = qualityCell(r, true);
@@ -629,28 +634,31 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     if (!has(a) && !has(b)) {
       return figCell(a, resolvedTone, (c) => pctText(c.value), qualityTitle(r), qualityTarget(r), qualityTip(r));
     }
-    const half = (c) => {
-      const tone = has(c) ? resolvedTone(c.value) : null;
-      return (
-        <span
-          className={`flex-1 min-w-0 ${TD_PAD} ${tone === "bad" ? "font-bold" : "font-semibold"}`}
-          style={toneFill(tone)}
-        >
-          {has(c) ? pctText(c.value) : <span style={{ color: "var(--text-4)" }}>—</span>}
-        </span>
-      );
-    };
+    const fa = has(a) ? toneFill(resolvedTone(a.value)) : null;
+    const fb = has(b) ? toneFill(resolvedTone(b.value)) : null;
+    const fig = (c, f) => (has(c)
+      ? <span style={{ color: f.color }}>{pctText(c.value)}</span>
+      : <span style={{ color: "var(--text-4)" }}>—</span>);
+    const corner = "absolute font-bold leading-none text-[10.5px] sm:text-xs";
     return figTd({
-      bare: true,
+      paint: { position: "relative" },
       title: qualityTitle(r),
       tipNode: qualityTip(r),
       target: qualityTarget(r),
       children: (
-        <span className="flex w-full items-stretch">
-          {half(a)}
-          <span aria-hidden="true" className="w-[2px] flex-shrink-0" style={{ background: "var(--bg-card)" }} />
-          {half(b)}
-        </span>
+        <>
+          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100"
+            preserveAspectRatio="none" aria-hidden="true">
+            <polygon points="0,0 100,0 0,100" fill={fa?.background ?? "transparent"} />
+            <polygon points="100,0 100,100 0,100" fill={fb?.background ?? "transparent"} />
+            <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="2"
+              vectorEffect="non-scaling-stroke" />
+          </svg>
+          {/* holds the row's one-line height; the figures sit in the corners */}
+          <span className="invisible">0</span>
+          <span className={`${corner} left-[3px] top-[3px] sm:left-2 sm:top-[5px]`}>{fig(a, fa)}</span>
+          <span className={`${corner} right-[3px] bottom-[3px] sm:right-2 sm:bottom-[5px]`}>{fig(b, fb)}</span>
+        </>
       ),
     });
   };
