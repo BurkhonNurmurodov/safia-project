@@ -24,14 +24,12 @@
  * EVERY person and EVERY task, nothing held back behind «yana N». The page
  * under it no longer starts a screen and a half down.
  *
- * IT OPENS ON NOW, not on the page's day (the operator, 2026-11-14, with a
- * screenshot of thirteen tasks set that morning: «this tasks should appear in
- * shift day»). «Smena kunligi» opens on YESTERDAY — its figures are about
- * closed days — and a day is shown exactly as it stood, so every task set
- * today was missing from it. The block is a to-do list with a «remind» button,
- * a question about the present: it reads today (every open task + what was
- * finished today) unless the reader switches it to the page's day, a toggle
- * that exists only while the page is on another day.
+ * IT IS ALWAYS NOW — the page's day never reaches it (the operator,
+ * 2026-11-15: «remove the date switch, always show now and show all task»).
+ * «Smena kunligi» opens on YESTERDAY — its figures are about closed days —
+ * and a block that followed it hid every task set today. So it reads the
+ * present: every open task, and a finished one for 7 days after the day it
+ * was finished (`task_day.DONE_KEEP_DAYS`), green, with the day it was done.
  *
  * `GET /api/tasks/day` is the whole read (`services/task_day.py` holds the
  * rule of what a day contains and the four states). The SERVER decides who
@@ -49,7 +47,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BellRing, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
-import SegmentedToggle from "../ui/SegmentedToggle";
 import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR } from "../ui/TaskQueue";
 import Button from "../ui/Button";
 import CommentsModal, { CommentsButton } from "../ui/CommentsModal";
@@ -61,7 +58,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { fmtDate, todayISO } from "../../utils/targets";
+import { fmtDate } from "../../utils/targets";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { TIERS, KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
 
@@ -117,7 +114,7 @@ function StatePill({ state, label }) {
   );
 }
 
-export default function DayTasksCard({ day, params }) {
+export default function DayTasksCard({ params }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const { tl, tx } = useTranslit();
@@ -129,22 +126,16 @@ export default function DayTasksCard({ day, params }) {
   // Folded or open — remembered per browser (a convenience, never a right).
   const [open, setOpen] = usePersistentState("day_tasks_open", false);
   const cardRef = useRef(null);
-  // "now" (today's state — the default, every time the page opens) or "day"
-  // (the page's picked day, as it stood). Never remembered: a block that
-  // reopened on a past day would hide this morning's tasks again.
-  const [view, setView] = useState("now");
-  const today = todayISO();
-  const pastDay = !!day && day < today;
-  const asOfDay = pastDay && view === "day";
   // Whether this browser was shown the block last time — so a reader who has
   // it gets its skeleton while it loads instead of a block dropping in above
   // the board. Never a right: the server decides (`show`).
   const [seen, setSeen] = usePersistentState("day_tasks_seen", false);
 
-  // No date = the server's today (Tashkent), whatever this browser's clock says.
+  // Never a date: the server reads its own today (Tashkent), whatever this
+  // browser's clock and the page's day say.
   const query = useMemo(
-    () => ({ ...(asOfDay ? { date: day } : {}), ...(params?.shift ? { shift: params.shift } : {}), ...(params?.factory != null ? { factory: params.factory } : {}) }),
-    [asOfDay, day, params]);
+    () => ({ ...(params?.shift ? { shift: params.shift } : {}), ...(params?.factory != null ? { factory: params.factory } : {}) }),
+    [params]);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["day-tasks", query],
     queryFn: () => api.get("/api/tasks/day", { params: query }).then((r) => {
@@ -200,17 +191,19 @@ export default function DayTasksCard({ day, params }) {
   // The block sets a task at the tiers it shows — the server says which of
   // them this viewer may.
   const createKinds = [KIND_SUP, KIND_LEADER].filter((k) => data?.can_create?.[k]);
-  const dateLabel = fmtDate(data?.date || day, t);
-  const subtitle = asOfDay ? t("dayTasks.sub").replace("{d}", dateLabel) : t("dayTasks.subNow");
+  const subtitle = t("dayTasks.subNow");
 
   // What a task's date line says, and in which ink.
   const dueLine = (task) => {
     const due = t("dayTasks.due").replace("{d}", fmtDate(task.due_date, t));
     if (task.state === "overdue") return { text: `${due} · ${t("dayTasks.lateBy").replace("{n}", task.days_late)}`, ink: "var(--status-bad)" };
+    // A finished task says WHEN it was finished — it stays a week — and
+    // whether that was in time; its deadline moves to the hover.
     if (task.state === "done") {
+      const doneOn = t("dayTasks.doneOn").replace("{d}", fmtDate(task.done_day, t));
       return task.late
-        ? { text: `${due} · ${t("dayTasks.doneLate").replace("{n}", task.days_late)}`, ink: "var(--status-over)" }
-        : { text: `${due} · ${t("dayTasks.onTime")}`, ink: "var(--status-ok)" };
+        ? { text: `${doneOn} · ${t("dayTasks.doneLate").replace("{n}", task.days_late)}`, ink: "var(--status-over)", title: due }
+        : { text: `${doneOn} · ${t("dayTasks.onTime")}`, ink: "var(--status-ok)", title: due };
     }
     return { text: due, ink: "var(--text-3)" };
   };
@@ -239,7 +232,8 @@ export default function DayTasksCard({ day, params }) {
           style={{ color: "var(--text-1)" }} title={tx(task.text)}>
           {tx(task.text)}
         </span>
-        <span className="text-[11px] font-semibold sm:truncate max-sm:order-4" style={{ color: due.ink }} title={due.text}>
+        <span className="text-[11px] font-semibold sm:truncate max-sm:order-4" style={{ color: due.ink }}
+          title={due.title ? `${due.text} · ${due.title}` : due.text}>
           {due.text}
         </span>
         <span className="text-[11px] truncate max-lg:hidden" style={{ color: "var(--text-3)" }}
@@ -307,22 +301,8 @@ export default function DayTasksCard({ day, params }) {
         subtitle={subtitle}
         open={open}
         onToggle={() => (open ? fold() : setOpen(true))}
-        right={(pastDay || createKinds.length > 0) ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Only while the page is on another day — on today both are one. */}
-            {pastDay && (
-              <SegmentedToggle
-                size="sm"
-                ariaLabel={t("dayTasks.viewLabel")}
-                value={view}
-                onChange={setView}
-                options={[["now", t("dayTasks.viewNow")], ["day", fmtDate(day, t)]]}
-              />
-            )}
-            {createKinds.length > 0 && (
-              <Button size="md" icon={<Plus size={14} />} onClick={() => setForm({})}>{t("dayTasks.add")}</Button>
-            )}
-          </div>
+        right={createKinds.length > 0 ? (
+          <Button size="md" icon={<Plus size={14} />} onClick={() => setForm({})}>{t("dayTasks.add")}</Button>
         ) : null}
       />
       <div className="p-4">
@@ -335,7 +315,7 @@ export default function DayTasksCard({ day, params }) {
             {open && Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} className="h-16 w-full" />)}
           </div>
         ) : !people.length ? (
-          <div className="text-sm py-2" style={{ color: "var(--text-3)" }}>{asOfDay ? t("dayTasks.empty") : t("dayTasks.emptyNow")}</div>
+          <div className="text-sm py-2" style={{ color: "var(--text-3)" }}>{t("dayTasks.emptyNow")}</div>
         ) : (
           <>
             {/* The whole day in one bar, then its parts by name and number. */}

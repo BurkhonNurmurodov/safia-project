@@ -348,18 +348,27 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   kishi» cut is gone; «Yig'ish» at the end folds it back and brings the head
   into view. The head's fold is `SectionHead`'s own `onToggle` / `open` (see
   the template table), so the head is still THE section header.
-- **THE BLOCK OPENS ON NOW, not on the page's day** (v4.524.0). «Smena kunligi»
-  opens on YESTERDAY (its stepper's default — the page's figures are about
-  closed days), and a day is shown exactly as it stood, so every task set
-  today was missing: the operator sent a screenshot of thirteen tasks he had
-  set for brigadirs that morning and «this tasks should appear in shift day».
-  The block is a to-do list with a «remind» button — a question about the
-  present — so it reads TODAY (no `date` sent: the server's Tashkent today)
-  every time the page opens. While the stepper is on another day, a
-  `SegmentedToggle` in the block's head («Hozir» · «13 noyabr») switches it to
-  that day as it stood; on today the toggle does not exist. The choice is never
-  remembered — a block that reopened on a past day would hide the morning's
-  tasks again. The «Smena hisoboti» board under it still takes no day at all.
+- **THE BLOCK IS ALWAYS NOW** (v4.527.0, the operator, 2026-11-15: «remove
+  the date switch, always show now and show all task», finished ones «7 days
+  after done»). «Smena kunligi» opens on YESTERDAY (its stepper's default —
+  the page's figures are about closed days), and v4.523.0's block followed the
+  stepper and showed a day exactly as it stood, so every task set today was
+  missing (he sent a screenshot of thirteen tasks set that morning). v4.524.0
+  opened the block on «now» with a toggle back to the stepper's day; he asked
+  «what is 6 noyabr for» and had it removed. Now the stepper never reaches the
+  block and no `date` is sent: the server reads its own Tashkent today
+  (`task_day.state_now`) — **every OPEN task, and a FINISHED one for
+  `DONE_KEEP_DAYS` = 7 days after the day it was finished** (finished on the
+  15th → still listed on the 22nd, gone on the 23rd; it stays on «Vazifalar»
+  for ever). A finished task's line says «Bajarildi: 14 noyabr · o'z vaqtida»
+  (or «N kun kechikib»), its deadline on the hover; inside a person the most
+  recently finished come first, after the open ones. `state_on` (one past day
+  as it stood) is kept only for a tab still open on an older bundle, which
+  sends a `date`. The «Smena hisoboti» board under it still takes no day.
+- **«From an admin» means the giver's ROLE when they gave it** — the
+  creator's profile key (`admin:…`), recorded on the task. The operator named
+  the admins who matter (2026-11-15): Abbos, Burkhon and Nozimjon; any other
+  account holding the admin role counts the same way.
 - **Four states, and a task is in exactly one**: `done` (finished that day;
   `late` when after its deadline) · `overdue` (open, deadline before the day) ·
   `doing` · `todo`. **Late is a BUCKET here and a FLAG on `/tasks`** — that page

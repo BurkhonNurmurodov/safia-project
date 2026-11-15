@@ -34,6 +34,13 @@ started. A task that is open NOW answers with its current status; one that was
 finished on a LATER day was plainly under way, so it reads ``doing``.
 
 A DAY is Tashkent's calendar day (``task_board.TZ``).
+
+THE BLOCK READS «NOW» (2026-11-15, the operator: «remove the date switch,
+always show now and show all task» — finished ones «7 days after done»):
+``state_now`` — every OPEN task as it stands today, and a FINISHED one for
+``DONE_KEEP_DAYS`` days after the day it was finished. ``state_on`` (one past
+day as it stood) stays for a tab still open on an older bundle, which sends a
+``date``; nothing current asks for it.
 """
 from datetime import date, datetime, timezone
 from typing import Iterable, Optional
@@ -41,6 +48,11 @@ from typing import Iterable, Optional
 from app.services import task_board as tb
 
 STATES = ("overdue", "todo", "doing", "done")
+
+# How long a finished task stays in the block after the day it was finished
+# (the operator, 2026-11-15: «7 days after done»). Finished on the 15th → still
+# listed on the 22nd, gone on the 23rd. It stays on «Vazifalar» for ever.
+DONE_KEEP_DAYS = 7
 
 # Inside one person's list: what is late first, what is finished last.
 _STATE_ORDER = {"overdue": 0, "todo": 1, "doing": 2, "done": 3}
@@ -91,6 +103,41 @@ def state_on(t, day: date) -> Optional[dict]:
             "days_late": 0, "done_day": done_day}
 
 
+def state_now(t, today: date) -> Optional[dict]:
+    """One task as it stands TODAY — the block's one reading. An open task is
+    ``state_on(t, today)``; a finished one is ``done`` (``late`` when finished
+    after its deadline) until ``DONE_KEEP_DAYS`` days have passed since the day
+    it was finished, then None. A finished task nothing dated stays out."""
+    if t.status == "done":
+        done_day = local_day(t.completed_at)
+        if done_day is None or (today - done_day).days > DONE_KEEP_DAYS:
+            return None
+        late = bool(t.due_date and done_day > t.due_date)
+        return {"state": "done", "late": late,
+                "days_late": (done_day - t.due_date).days if late else 0,
+                "done_day": done_day}
+    return state_on(t, today)
+
+
+def _ordinal(d) -> int:
+    if not d:
+        return 0
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    return d.toordinal()
+
+
+def _task_key(x: dict) -> tuple:
+    """Inside one person's list: late first (longest late on top, the flame
+    above its neighbours), then to do, under way, and finished last — the most
+    recently finished first."""
+    st = x["state"]
+    if st == "done":
+        return (_STATE_ORDER[st], -_ordinal(x.get("done_day")), x["id"])
+    return (_STATE_ORDER[st], -(x.get("days_late") or 0),
+            0 if x.get("urgent") else 1, x.get("due_date") or "", x["id"])
+
+
 def tone(counts: dict) -> str:
     """A person's answer in one word: ``late`` — something is past its date;
     ``done`` — everything they were set is finished; ``going`` — open work,
@@ -134,9 +181,7 @@ def fold(entries: Iterable[tuple[dict, dict]]) -> dict:
 
     out = []
     for p in people.values():
-        p["tasks"].sort(key=lambda x: (
-            _STATE_ORDER[x["state"]], -(x.get("days_late") or 0),
-            0 if x.get("urgent") else 1, x.get("due_date") or "", x["id"]))
+        p["tasks"].sort(key=_task_key)
         p["tone"] = tone(p)
         out.append(p)
     out.sort(key=lambda p: (

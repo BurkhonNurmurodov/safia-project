@@ -315,12 +315,12 @@ export default function ShiftDaily() {
           day, per person and worst first (the operator, 2026-11-14). Above the
           board on purpose: who is not doing what they were set is the first
           thing a top manager asks.
-          It opens on NOW, not on the stepper's day (which defaults to
-          yesterday and hid every task set today); the stepper's day is a
-          second view inside it. The plant and the shift reach it. It draws
+          It is always NOW — the stepper never reaches it (it defaults to
+          yesterday and hid every task set today): every open task, and the
+          ones finished in the last 7 days. The plant and the shift reach it. It draws
           nothing for a reader it is not for — the server decides
           (`task_board.OPEN_FROM`: the admins' alone until the day is named). */}
-      <DayTasksCard day={date} params={dayParams} />
+      <DayTasksCard params={dayParams} />
 
       {/* «Smena hisoboti» — the shift's status board, under the KPI cards: one
           row per brigadir with today's load, today's attendance so far,

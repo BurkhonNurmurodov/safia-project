@@ -456,9 +456,10 @@ def day_tasks(
     # own guard, since this block sits above it.
     payload: dict = Depends(require_page("overview", "shift-daily")),
 ):
-    """The tasks set from the top for BRIGADIRS and LEADERS, as they stood on
-    ONE day, per person — the «Rahbariyat vazifalari» block (`services/task_day`
-    is the fold and the record of what a day holds).
+    """The tasks set from the top for BRIGADIRS and LEADERS as they stand NOW,
+    per person — the «Rahbariyat vazifalari» block: every open task, and a
+    finished one for `task_day.DONE_KEEP_DAYS` days (`services/task_day` is the
+    fold and the record of what the reading holds).
 
     WHO READS IT: an admin; a top-manager and a shift-manager from the first
     day on (`tb.OPEN_FROM`). Anybody else — and those two before that day —
@@ -482,14 +483,20 @@ def day_tasks(
     tb.open_page_to_top_managers()
 
     today = datetime.now(tb.TZ).date()
-    day = min(day or today, today)
-    start = datetime.combine(day, time.min, tzinfo=tb.TZ)
-    end = start + timedelta(days=1)
+    # «Hozir» is the block's ONE reading since 2026-11-15 (`task_day.state_now`
+    # — every open task, a finished one for `DONE_KEEP_DAYS` days). A `date`
+    # is only still sent by a tab open on an older bundle and is read as that
+    # day as it stood (`state_on`), so such a tab keeps working.
+    as_of = min(day, today) if day else None
+    view_day = as_of or today
+    first = as_of or (today - timedelta(days=task_day.DONE_KEEP_DAYS))
+    start = datetime.combine(first, time.min, tzinfo=tb.TZ)
+    end = datetime.combine(view_day, time.min, tzinfo=tb.TZ) + timedelta(days=1)
 
-    # Everything that can belong to the day: set before its end, and either
-    # still open or finished on it or later. `task_day.state_on` is the rule;
-    # this only keeps years of finished rows — and the leaders' own brigadirs'
-    # tasks — out of the read.
+    # Everything that can belong to the reading: set before its end, and either
+    # still open or finished inside it. `task_day` is the rule; this only keeps
+    # years of finished rows — and the leaders' own brigadirs' tasks — out of
+    # the read.
     q = db.query(LeaderTask).filter(
         LeaderTask.created_at < end,
         or_(LeaderTask.status != "done", LeaderTask.completed_at >= start),
@@ -531,7 +538,7 @@ def day_tasks(
 
     entries = []
     for t in rows:
-        st = task_day.state_on(t, day)
+        st = task_day.state_on(t, as_of) if as_of else task_day.state_now(t, today)
         m = mgrs.get(t.supervisor_manager_id)
         if st is None or not _unit_in(m):
             continue
@@ -597,8 +604,9 @@ def day_tasks(
 
     return {
         "show": True,
-        "date": day.isoformat(),
-        "is_today": day == today,
+        "date": view_day.isoformat(),
+        "is_today": view_day == today,
+        "done_keep_days": task_day.DONE_KEEP_DAYS,
         # The tiers «Vazifa berish» may offer this viewer — per tier, what the
         # owning router would let them set (a leader's needs the TASK page).
         "can_create": {

@@ -75,6 +75,30 @@ class StateOnADay(unittest.TestCase):
         self.assertIsNone(task_day.state_on(t, d(1)))
 
 
+class StateNow(unittest.TestCase):
+    """The block's one reading: open tasks, and finished ones for 7 days."""
+
+    def test_an_open_task_reads_as_today(self):
+        self.assertEqual(task_day.state_now(task("todo", due=2), DAY)["state"], "todo")
+        got = task_day.state_now(task("doing", due=-3), DAY)
+        self.assertEqual((got["state"], got["days_late"]), ("overdue", 3))
+
+    def test_a_finished_task_stays_seven_days_after_the_day_it_was_finished(self):
+        for k in (0, 1, task_day.DONE_KEEP_DAYS):
+            got = task_day.state_now(task("done", created=-20, done=-k, due=-k), DAY)
+            self.assertEqual(got["state"], "done", k)
+            self.assertEqual(got["done_day"], d(-k))
+        self.assertIsNone(task_day.state_now(
+            task("done", created=-20, done=-(task_day.DONE_KEEP_DAYS + 1)), DAY))
+
+    def test_finished_late_says_by_how_much(self):
+        got = task_day.state_now(task("done", created=-9, done=-2, due=-5), DAY)
+        self.assertEqual((got["state"], got["late"], got["days_late"]), ("done", True, 3))
+
+    def test_a_finished_task_nothing_dated_stays_out(self):
+        self.assertIsNone(task_day.state_now(task("done"), DAY))
+
+
 def entry(kind, pid, name, state, days_late=0, tid=1, **kw):
     return ({"kind": kind, "id": pid, "name": name},
             {"id": tid, "state": state, "days_late": days_late, **kw})
@@ -115,6 +139,14 @@ class Fold(unittest.TestCase):
             entry("leader", 7, "Leader", "todo", tid=2),
         ])
         self.assertEqual({p["key"] for p in out["people"]}, {"supervisor:7", "leader:7"})
+
+    def test_the_most_recently_finished_come_first_among_the_finished(self):
+        out = task_day.fold([
+            entry("supervisor", 1, "A", "done", tid=1, done_day="2026-11-10"),
+            entry("supervisor", 1, "A", "todo", tid=2),
+            entry("supervisor", 1, "A", "done", tid=3, done_day="2026-11-14"),
+        ])
+        self.assertEqual([t["id"] for t in out["people"][0]["tasks"]], [2, 3, 1])
 
     def test_a_persons_tasks_put_the_longest_late_on_top(self):
         out = task_day.fold([
