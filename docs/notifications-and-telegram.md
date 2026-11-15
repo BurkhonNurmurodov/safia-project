@@ -305,3 +305,9 @@ card shape and open-button, icon 🔔, `type="warning"`; its «⏰ Kechikdi: N k
 row exists only while the deadline has passed (`days_late` → `late_label`,
 blank otherwise, and `_render_body` drops the row). At most one per task per
 30 minutes, counted from the rows themselves.
+
+Since 2026-11-15 both cards tell the assignee HOW to answer: a task from the top
+is marked done only by a manager, so `task_from_top` ends with «📎 Bajarganda:
+izohga rasm yoki fayl yuboring — «Bajarildi»ni rahbariyat belgilaydi» and
+`task_reminder`'s «✅ Javob» row asks for a reply in the comments with a photo
+or file.

@@ -158,6 +158,10 @@ export default function CommentsModal({
   canComment = true,
   onClose,
   zIndex,
+  // Photos and files on messages and in the composer (the thread's own props,
+  // passed through) — the task chats since 2026-11-15.
+  attachments = false,
+  filesEndpoint,
 }) {
   const { t } = useLang();
   return (
@@ -171,7 +175,8 @@ export default function CommentsModal({
       bodyClassName="p-0 flex flex-col"
     >
       <CommentsThread endpoint={endpoint} queryKey={queryKey}
-        refreshKeys={refreshKeys} canComment={canComment} />
+        refreshKeys={refreshKeys} canComment={canComment}
+        attachments={attachments} filesEndpoint={filesEndpoint} />
     </Modal>
   );
 }

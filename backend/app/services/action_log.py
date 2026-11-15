@@ -350,6 +350,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/concerns/{}",                          "collab", "concern.edited"),
     (("DELETE",), "/api/concerns/{}",                          "collab", "concern.deleted"),
     (("POST",),   "/api/tasks/{}/remind",                      "collab", "task.reminded"),
+    (("POST",),   "/api/tasks/{}/comments/files/{}/send",      "collab", "task.file_sent"),
     (("PATCH",),  "/api/tasks/{}/status",                      "collab", "task.status_changed"),
     (("PATCH",),  "/api/tasks/{}/priority",                    "collab", "task.priority_changed"),
     (("POST",),   "/api/tasks/{}/comments",                    "collab", "task.comment_added"),
@@ -362,6 +363,8 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # Distinct action keys so the register can tell which tier a change was on;
     # the "{}/comments/{}" shapes must stay ABOVE the "{}" ones, first match wins.
     (("POST",),   "/api/brigadir-tasks/{}/remind",             "collab", "btask.reminded"),
+    (("POST",),   "/api/brigadir-tasks/{}/comments/files/{}/send", "collab", "btask.file_sent"),
+    (("POST",),   "/api/shift-manager-tasks/{}/comments/files/{}/send", "collab", "smtask.file_sent"),
     (("PATCH",),  "/api/brigadir-tasks/{}/status",             "collab", "btask.status_changed"),
     (("PATCH",),  "/api/brigadir-tasks/{}/priority",           "collab", "btask.priority_changed"),
     (("POST",),   "/api/brigadir-tasks/{}/comments",           "collab", "btask.comment_added"),

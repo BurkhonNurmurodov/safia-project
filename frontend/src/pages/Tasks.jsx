@@ -56,6 +56,7 @@ import {
 } from "../components/ui/AnalysisBoard";
 import TaskFormModal from "../components/tasks/TaskFormModal";
 import { ROLE_LABEL_KEYS } from "../config/pages";
+import { isExamOn } from "../utils/examMode";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -659,6 +660,7 @@ export default function Tasks() {
               statusLabel={statusLabel}
               saving={savingStatusId === r.id}
               editable={!!r.can_status}
+              options={r.status_options || STATUSES}
               onChange={(s) => statusMutation.mutate({ row: r, status: s })}
             />
           </td>
@@ -1228,6 +1230,11 @@ export default function Tasks() {
           title={t("tasks.commentsTitle")}
           subtitle={tx(commentsTask.task_text)}
           canComment={!!commentsTask.can_comment}
+          // Photos and files — a brigadir proves a task from the top with one
+          // (a manager marks it done). Not in the exam, whose sandbox chat
+          // takes words only.
+          attachments={!isExamOn()}
+          filesEndpoint={`${endpointFor(commentsTask.assignee_kind)}/${commentsTask.id}/comments/files`}
           onClose={() => setCommentsTask(null)}
         />
       )}

@@ -100,14 +100,17 @@ export function useDropdown(minHeight = 150) {
 }
 
 // Inline, editable status pill (portal dropdown ⇒ never clipped by the table).
-export function StatusSelect({ status, statusLabel, saving, editable, onChange }) {
+// `options` — the statuses THIS viewer may pick, the server's word per row
+// (`status_options`, 2026-11-15: on a task from the top the assignee may not
+// pick «done»); the current status stays shown as the pill either way.
+export function StatusSelect({ status, statusLabel, saving, editable, onChange, options = STATUSES }) {
   const { open, setOpen, dropStyle, triggerRef, setList, toggle } = useDropdown();
   const color = STATUS_COLOR[status] || "var(--text-3)";
 
   const dropdown = open
     ? createPortal(
         <div ref={setList} className="pop" data-side={dropStyle.bottom != null ? "top" : undefined} style={{ ...dropStyle, ...dropCard }}>
-          {STATUSES.map((s) => {
+          {options.map((s) => {
             const c = STATUS_COLOR[s] || "var(--text-3)";
             const isSel = s === status;
             return (

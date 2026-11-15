@@ -3380,6 +3380,26 @@ class LeaderTaskComment(Base):
     edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
 
 
+class LeaderTaskCommentFile(Base):
+    """A photo or file attached to one task comment (2026-11-15, the operator:
+    «add for comments the uploading the picture or file»). The ARCHIVE-CHANNEL
+    copy, exactly as an appeal chat's file (`LeaderAppealFile`): any type, up to
+    20 MB, streamed through the task router's `/comments/files/{id}`. The
+    pixels never live in this database. Goes with its comment (ON DELETE
+    CASCADE), and so with its task."""
+    __tablename__ = "leader_task_comment_files"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    comment_id    = Column(Integer, ForeignKey("leader_task_comments.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    name          = Column(String(255), nullable=False)
+    mime          = Column(String(160), nullable=True)
+    size          = Column(Integer, nullable=True)
+    file_id       = Column(String, nullable=False)
+    tg_message_id = Column(BigInteger, nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Broadcast(Base):
     """One admin broadcast delivered to selected profiles as Telegram DMs.
     The row is created up-front with status 'sending'; a background thread

@@ -82,7 +82,7 @@ from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.models import LeaderTask, LeaderTaskComment
+from app.models import LeaderTask, LeaderTaskComment, LeaderTaskCommentFile
 from app.routers.auth import ADMIN_ROLE_REF
 
 KIND_LEADER = "leader"
@@ -365,6 +365,32 @@ def is_urgent(t: LeaderTask) -> bool:
     return t.priority == URGENT
 
 
+# ── who may say «done» ────────────────────────────────────────────────────────
+# The operator (2026-11-15): «only shift managers, top managers and admins can
+# say its done — for them [the assignees] do not have access this part». On a
+# task set FROM THE TOP the person it was given to moves it between «to do» and
+# «doing» only, and proves the work in the thread (a photo, a file); whoever
+# runs the row marks it done — and is the only one who may reopen it. A task a
+# brigadir set their own leader keeps the old rule (the leader marks it done).
+
+TODO, DOING, DONE = "todo", "doing", "done"
+ALL_STATUSES = [TODO, DOING, DONE]
+
+
+def status_choices(*, finisher: bool, mover: bool, from_top: bool, current: str) -> list[str]:
+    """The statuses this viewer may set on this row — the whole right.
+
+    ``finisher`` runs the row (marks done, reopens); ``mover`` may touch its
+    status at all; ``from_top`` is ``set_from_above(t)``. Empty = no control."""
+    if finisher:
+        return list(ALL_STATUSES)
+    if not mover:
+        return []
+    if not from_top:
+        return list(ALL_STATUSES)
+    return [] if current == DONE else [TODO, DOING]
+
+
 def urgent_value(flag: bool) -> Optional[int]:
     return URGENT if flag else None
 
@@ -397,7 +423,121 @@ def is_comment_author(c: LeaderTaskComment, payload: dict, db: Session) -> bool:
     return c.author_role_ref is None or c.author_role_ref == profile_ref(payload)
 
 
-def serialize_comment(c: LeaderTaskComment, payload: dict, db: Session) -> dict:
+# ── photos and files on a comment (2026-11-15) ────────────────────────────────
+# The appeal chat's own machinery, reused whole: `routers/leaders.appeal_body`
+# reads the composer's multipart, `relay_uploads` checks every file and stores
+# it in the archive channel, `routers/leader_tasks._stream_tg_file` streams it
+# back. Here is only what is a TASK's: the table and who may read a file.
+
+INLINE_MIME = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
+
+
+def comment_files(db: Session, comment_ids: list[int]) -> dict[int, list]:
+    if not comment_ids:
+        return {}
+    out: dict[int, list] = {}
+    for f in (db.query(LeaderTaskCommentFile)
+              .filter(LeaderTaskCommentFile.comment_id.in_(list(comment_ids)))
+              .order_by(LeaderTaskCommentFile.id).all()):
+        out.setdefault(f.comment_id, []).append(f)
+    return out
+
+
+def file_wire(f) -> dict:
+    return {"id": f.id, "name": f.name, "mime": f.mime, "size": f.size,
+            "image": (f.mime or "") in INLINE_MIME}
+
+
+def parsed_comment(parsed: dict) -> tuple[str, list]:
+    """(text, uploads) from `appeal_body` — multipart from the composer when
+    files ride along, JSON {text} otherwise (and from every older tab). A
+    message needs words or a file."""
+    from fastapi import HTTPException
+    text = str((parsed.get("fields") or {}).get("text") or "").strip()
+    uploads = list(parsed.get("files") or [])
+    if not text and not uploads:
+        raise HTTPException(status_code=400, detail="Comment text is required")
+    if len(text) > 4000:
+        raise HTTPException(status_code=400, detail="Comment is too long")
+    return text, uploads
+
+
+def add_comment(db: Session, payload: dict, t: LeaderTask, text: str, uploads: list):
+    """Store one comment and its files; (comment, files). Every file is checked
+    and relayed BEFORE the comment is written, so one refused file refuses the
+    whole message (`relay_uploads` raises) instead of posting it half-attached.
+    Does not commit."""
+    stored = []
+    if uploads:
+        from app.routers.leaders import relay_uploads
+        stored = relay_uploads(uploads)
+    c = LeaderTaskComment(
+        task_id=t.id,
+        author_telegram_id=int(payload["sub"]),
+        author_role_ref=profile_ref(payload),
+        author_profile=identity.viewer_profile_key(db, payload),
+        author_name=payload.get("full_name"),
+        text=text,
+    )
+    db.add(c)
+    db.flush()
+    files = []
+    for f in stored:
+        row = LeaderTaskCommentFile(comment_id=c.id, name=f["name"], mime=f["mime"],
+                                    size=f["size"], file_id=f["file_id"],
+                                    tg_message_id=f["message_id"])
+        db.add(row)
+        files.append(row)
+    db.flush()
+    return c, files
+
+
+def comment_notice(text: str, files: list) -> str:
+    """What a comment notice quotes: its words, or the files it carried."""
+    if text:
+        return snippet(text, 200)
+    return snippet("📎 " + ", ".join(f.name for f in files), 200)
+
+
+def task_file(db: Session, task_id: int, fid: int):
+    """One file of THIS task's thread, or a 404 — a readable task must never
+    become a fetcher for any attachment on the platform."""
+    from fastapi import HTTPException
+    f = (db.query(LeaderTaskCommentFile)
+         .join(LeaderTaskComment, LeaderTaskComment.id == LeaderTaskCommentFile.comment_id)
+         .filter(LeaderTaskCommentFile.id == fid, LeaderTaskComment.task_id == task_id)
+         .first())
+    if f is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return f
+
+
+def stream_file(f):
+    from app.routers.leader_tasks import _stream_tg_file
+    image = (f.mime or "") in INLINE_MIME
+    return _stream_tg_file(f.file_id, name=f.name, mime=f.mime or "application/octet-stream",
+                           download=not image)
+
+
+def send_file(payload: dict, f) -> dict:
+    """Put one attachment into the caller's own Telegram chat — a mini app's
+    WebView has no downloads folder (`leader_appeals._send_file`, same reason)."""
+    from fastapi import HTTPException
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    if not tid:
+        raise HTTPException(status_code=400, detail="No Telegram chat to send to")
+    try:
+        from app.telegram_bot import bot
+        bot.send_document(tid, f.file_id, visible_file_name=f.name)
+    except Exception:
+        raise HTTPException(status_code=502,
+                            detail="Telegram did not accept the file — open the bot and try again")
+    return {"ok": True}
+
+
+def serialize_comment(c: LeaderTaskComment, payload: dict, db: Session, files=None) -> dict:
+    if files is None:
+        files = comment_files(db, [c.id]).get(c.id, [])
     return {
         "id": c.id,
         "task_id": c.task_id,
@@ -411,4 +551,5 @@ def serialize_comment(c: LeaderTaskComment, payload: dict, db: Session) -> dict:
         # Edit/delete rights of the CALLER, resolved server-side so the client
         # never has to re-derive the profile-ownership rule.
         "is_own": is_comment_author(c, payload, db),
+        "files": [file_wire(f) for f in files],
     }

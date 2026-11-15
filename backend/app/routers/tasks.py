@@ -64,6 +64,8 @@ from app.routers.staff import _notify, notify_profile
 from app.routers import brigadir_tasks as _bt
 # The tier above (top menejer → smena menejeri), asked the same way.
 from app.routers import shift_manager_tasks as _smt
+# The appeal chat's composer body: multipart with files, JSON without.
+from app.routers.leaders import appeal_body
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -169,13 +171,30 @@ def _governs_from_top(payload: dict, t: LeaderTask) -> bool:
     return tb.from_top(payload) and tb.set_from_above(t)
 
 
-def _assert_can_set_status(db: Session, payload: dict, t: LeaderTask):
-    """Status: admin, the unit's supervisor, the owning leader — and a manager
-    over a task set from the top."""
-    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
-            or _is_owning_leader(db, payload, t) or _governs_from_top(payload, t)):
+def _status_choices(db: Session, payload: dict, t: LeaderTask) -> list[str]:
+    """The statuses this caller may set on a leader's task (`tb.status_choices`).
+
+    Movers: an admin, the unit's brigadir, the owning leader, and a manager
+    over a task set from the top. On a task set FROM THE TOP only that manager
+    (an admin included) marks it done or reopens it — the leader and their
+    brigadir move it between «to do» and «doing» (the operator, 2026-11-15). A
+    task the brigadir set keeps the old rule: every mover sets any status."""
+    governs = _governs_from_top(payload, t)
+    mover = (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
+             or _is_owning_leader(db, payload, t) or governs)
+    from_top = tb.set_from_above(t)
+    return tb.status_choices(finisher=governs or (mover and not from_top), mover=mover,
+                             from_top=from_top, current=t.status)
+
+
+def _assert_can_set_status(db: Session, payload: dict, t: LeaderTask, target: str):
+    allowed = _status_choices(db, payload, t)
+    if target in allowed:
         return
-    raise HTTPException(status_code=403, detail="You can't change this task's status")
+    raise HTTPException(
+        status_code=403,
+        detail=("Only a shift manager, a top manager or an admin can mark this task done"
+                if allowed else "You can't change this task's status"))
 
 
 def _assert_can_reorder(payload: dict, t: LeaderTask):
@@ -381,18 +400,30 @@ def board(
 
     def _rights(t: LeaderTask, kind: str) -> dict:
         unit_mine = own_unit is not None and t.supervisor_manager_id == own_unit
+
+        # `status_options` is the whole status right (`tb.status_choices`) —
+        # the same predicate each owning router's PATCH applies.
+        def _status(finisher: bool, mover: bool, from_top: bool) -> dict:
+            opts = tb.status_choices(finisher=finisher, mover=mover,
+                                     from_top=from_top, current=t.status)
+            return {"can_status": bool(opts), "status_options": opts}
+
         if kind == tb.KIND_SUPERVISOR:
             manage = is_admin or top or t.supervisor_manager_id in managed
-            return {"can_edit": _owns(t), "can_status": manage or unit_mine,
+            return {"can_edit": _owns(t), **_status(manage, manage or unit_mine, True),
                     "can_reorder": manage, "can_comment": manage or unit_mine}
         if kind == tb.KIND_SHIFT_MANAGER:
             manage = is_admin or top
             mine = own_sm is not None and t.leader_profile_id == own_sm
-            return {"can_edit": _owns(t), "can_status": manage or mine,
+            return {"can_edit": _owns(t), **_status(manage, manage or mine, True),
                     "can_reorder": manage, "can_comment": manage or mine}
         lead = _owning_leader(t)
-        gov = is_admin or unit_mine or (acts_from_top and tb.set_from_above(t))
-        return {"can_edit": _owns(t), "can_status": gov or lead,
+        from_top_row = tb.set_from_above(t)
+        governs = acts_from_top and from_top_row
+        gov = is_admin or unit_mine or governs
+        mover = gov or lead
+        return {"can_edit": _owns(t),
+                **_status(governs or (mover and not from_top_row), mover, from_top_row),
                 "can_reorder": gov, "can_comment": gov or lead}
 
     def _row(t: LeaderTask) -> dict:
@@ -831,7 +862,7 @@ def set_status(
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_set_status(db, payload, t)
+    _assert_can_set_status(db, payload, t, body.status)
 
     old = t.status
     if body.status != old:
@@ -971,37 +1002,31 @@ def list_task_comments(
         .order_by(LeaderTaskComment.created_at, LeaderTaskComment.id)
         .all()
     )
-    return [_serialize_comment(c, payload, db) for c in rows]
+    files = tb.comment_files(db, [c.id for c in rows])
+    return [_serialize_comment(c, payload, db, files.get(c.id, [])) for c in rows]
 
 
 @router.post("/{task_id}/comments")
 def add_task_comment(
     task_id: int,
-    body: CommentIn,
+    parsed: dict = Depends(appeal_body),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("tasks")),
 ):
-    if not (body.text or "").strip():
-        raise HTTPException(status_code=400, detail="Comment text is required")
+    """A message in the task's thread — its words, its photos and files, or
+    both (multipart from the composer; JSON {text} from an older tab)."""
+    text, uploads = tb.parsed_comment(parsed)
     t = _get_visible_task(task_id, payload, db)
     _assert_can_comment(db, payload, t)
     sub = int(payload["sub"])
-    c = LeaderTaskComment(
-        task_id=t.id,
-        author_telegram_id=sub,
-        author_role_ref=_profile_ref(payload),
-        author_profile=identity.viewer_profile_key(db, payload),
-        author_name=payload.get("full_name"),
-        text=body.text.strip(),
-    )
-    db.add(c)
+    c, files = tb.add_comment(db, payload, t, text, uploads)
 
     # Notify the other side(s) of the thread — the assigned leader and the task's
     # creator — as PEOPLE: each gets one bell row on their profile and a DM to
     # every account working as them, minus the author's own account.
     params = {
         "author_name": payload.get("full_name"),
-        "comment": _snippet(body.text, 200),
+        "comment": tb.comment_notice(text, files),
         "task": _snippet(t.task_text),
     }
     targets = []
@@ -1022,9 +1047,26 @@ def add_task_comment(
         target_kind="comment", target_id=c.id, target_name=_snippet(t.task_text),
         unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
         day=t.due_date,
-        details=[("task_id", t.id), ("leader", t.leader_name), ("text", c.text)],
+        details=[("task_id", t.id), ("leader", t.leader_name), ("text", c.text),
+                 ("files", len(files))],
     )
-    return _serialize_comment(c, payload, db)
+    return _serialize_comment(c, payload, db, files)
+
+
+@router.get("/{task_id}/comments/files/{fid}")
+def comment_file(task_id: int, fid: int, db: Session = Depends(get_db),
+                 payload: dict = Depends(require_page("tasks"))):
+    """One photo or file of this task's thread — readable wherever the thread is."""
+    _get_visible_task(task_id, payload, db)
+    return tb.stream_file(tb.task_file(db, task_id, fid))
+
+
+@router.post("/{task_id}/comments/files/{fid}/send")
+def comment_file_send(task_id: int, fid: int, db: Session = Depends(get_db),
+                      payload: dict = Depends(require_page("tasks"))):
+    """The same file into the caller's own Telegram chat."""
+    _get_visible_task(task_id, payload, db)
+    return tb.send_file(payload, tb.task_file(db, task_id, fid))
 
 
 def _get_own_comment(task_id: int, comment_id: int, payload: dict, db: Session) -> LeaderTaskComment:

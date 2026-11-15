@@ -1257,20 +1257,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # and never reads like an ordinary «Yangi vazifa». `services/task_board`
     # decides who sends it (`created_nkey`) and with what (`notice_kwargs`).
     "task_from_top": {
-        "uz": ("Rahbariyatdan muhim vazifa", "«{task}»\n\n👤 Kim berdi: {creator_name} · {creator_role_label}\n📅 Muddat: {date}\n❗️ Nazoratda: bajarilishini rahbariyat kuzatadi"),
-        "uz_cyrl": ("Раҳбариятдан муҳим вазифа", "«{task}»\n\n👤 Ким берди: {creator_name} · {creator_role_label}\n📅 Муддат: {date}\n❗️ Назоратда: бажарилишини раҳбарият кузатади"),
-        "ru": ("Важная задача от руководства", "«{task}»\n\n👤 Поставил: {creator_name} · {creator_role_label}\n📅 Срок: {date}\n❗️ На контроле: выполнение отслеживает руководство"),
-        "en": ("Important task from management", "“{task}”\n\n👤 Set by: {creator_name} · {creator_role_label}\n📅 Due: {date}\n❗️ Watched: management follows its progress"),
+        "uz": ("Rahbariyatdan muhim vazifa", "«{task}»\n\n👤 Kim berdi: {creator_name} · {creator_role_label}\n📅 Muddat: {date}\n❗️ Nazoratda: bajarilishini rahbariyat kuzatadi\n📎 Bajarganda: izohga rasm yoki fayl yuboring — «Bajarildi»ni rahbariyat belgilaydi"),
+        "uz_cyrl": ("Раҳбариятдан муҳим вазифа", "«{task}»\n\n👤 Ким берди: {creator_name} · {creator_role_label}\n📅 Муддат: {date}\n❗️ Назоратда: бажарилишини раҳбарият кузатади\n📎 Бажарганда: изоҳга расм ёки файл юборинг — «Бажарилди»ни раҳбарият белгилайди"),
+        "ru": ("Важная задача от руководства", "«{task}»\n\n👤 Поставил: {creator_name} · {creator_role_label}\n📅 Срок: {date}\n❗️ На контроле: выполнение отслеживает руководство\n📎 Когда выполните: пришлите фото или файл в комментарии — «Выполнено» отмечает руководство"),
+        "en": ("Important task from management", "“{task}”\n\n👤 Set by: {creator_name} · {creator_role_label}\n📅 Due: {date}\n❗️ Watched: management follows its progress\n📎 When done: send a photo or file in the comments — management marks it done"),
     },
     # «Did you do this or not?» — a manager's reminder about an OPEN task,
     # pressed on «Smena kunligi» (`task_board.remind`). The «late» row is there
     # only when the deadline has passed (`late_label` is blank otherwise and the
     # row drops out).
     "task_reminder": {
-        "uz": ("Eslatma: vazifa bajarildimi?", "«{task}»\n\n👤 So'ramoqda: {actor_name} · {creator_role_label}\n📅 Muddat: {date}\n⏰ Kechikdi: {late_label}\n✅ Javob: vazifani ochib, holatini belgilang yoki izoh yozing"),
-        "uz_cyrl": ("Эслатма: вазифа бажарилдими?", "«{task}»\n\n👤 Сўрамоқда: {actor_name} · {creator_role_label}\n📅 Муддат: {date}\n⏰ Кечикди: {late_label}\n✅ Жавоб: вазифани очиб, ҳолатини белгиланг ёки изоҳ ёзинг"),
-        "ru": ("Напоминание: задача выполнена?", "«{task}»\n\n👤 Спрашивает: {actor_name} · {creator_role_label}\n📅 Срок: {date}\n⏰ Просрочено: {late_label}\n✅ Ответ: откройте задачу и отметьте статус или напишите комментарий"),
-        "en": ("Reminder: is this task done?", "“{task}”\n\n👤 Asked by: {actor_name} · {creator_role_label}\n📅 Due: {date}\n⏰ Overdue: {late_label}\n✅ Answer: open the task and set its status, or write a comment"),
+        "uz": ("Eslatma: vazifa bajarildimi?", "«{task}»\n\n👤 So'ramoqda: {actor_name} · {creator_role_label}\n📅 Muddat: {date}\n⏰ Kechikdi: {late_label}\n✅ Javob: vazifani ochib, izohga rasm yoki fayl bilan javob yozing"),
+        "uz_cyrl": ("Эслатма: вазифа бажарилдими?", "«{task}»\n\n👤 Сўрамоқда: {actor_name} · {creator_role_label}\n📅 Муддат: {date}\n⏰ Кечикди: {late_label}\n✅ Жавоб: вазифани очиб, изоҳга расм ёки файл билан жавоб ёзинг"),
+        "ru": ("Напоминание: задача выполнена?", "«{task}»\n\n👤 Спрашивает: {actor_name} · {creator_role_label}\n📅 Срок: {date}\n⏰ Просрочено: {late_label}\n✅ Ответ: откройте задачу и ответьте в комментарии — с фото или файлом"),
+        "en": ("Reminder: is this task done?", "“{task}”\n\n👤 Asked by: {actor_name} · {creator_role_label}\n📅 Due: {date}\n⏰ Overdue: {late_label}\n✅ Answer: open the task and reply in its comments, with a photo or file"),
     },
     "task_status_changed": {
         "uz": ("{actor_name} vazifa holatini o'zgartirdi", "Yangi holat: {status_label}\n{task}"),

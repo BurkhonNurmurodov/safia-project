@@ -50,6 +50,8 @@ from app.services import action_log, shift_scope, task_board as tb
 # addresses the PERSON — one bell row on the profile plus a DM to every account
 # holding it, so co-holders and successors are never silently skipped.
 from app.routers.staff import _notify, notify_profile
+# The appeal chat's composer body: multipart with files, JSON without.
+from app.routers.leaders import appeal_body
 
 router = APIRouter(prefix="/api/brigadir-tasks", tags=["brigadir-tasks"])
 
@@ -146,6 +148,10 @@ def _serialize(t: LeaderTask, comment_count: int, payload: dict, db: Session,
     mine = kind == tb.KIND_SUPERVISOR
     manage = mine and _can_manage(db, payload, t.supervisor_manager_id)
     assignee = mine and _is_assignee(payload, t)
+    # Every brigadir task is from the top: the brigadir moves it, a manager
+    # marks it done (`tb.status_choices`).
+    options = tb.status_choices(finisher=manage, mover=manage or assignee,
+                                from_top=True, current=t.status) if mine else []
     return {
         "id": t.id,
         "assignee_kind": kind,
@@ -168,7 +174,8 @@ def _serialize(t: LeaderTask, comment_count: int, payload: dict, db: Session,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "comment_count": comment_count,
         "can_edit": mine and _owns_row(db, payload, t),
-        "can_status": manage or assignee,
+        "can_status": bool(options),
+        "status_options": options,
         "can_reorder": manage,
         "can_comment": manage or assignee,
     }
@@ -456,8 +463,12 @@ def set_status(
     if body.status not in tb.VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     t = _mine(task_id, payload, db)
-    _assert(_can_manage(db, payload, t.supervisor_manager_id) or _is_assignee(payload, t),
-            "You can't change this task's status")
+    manage = _can_manage(db, payload, t.supervisor_manager_id)
+    allowed = tb.status_choices(finisher=manage, mover=manage or _is_assignee(payload, t),
+                                from_top=True, current=t.status)
+    _assert(body.status in allowed,
+            "Only a shift manager, a top manager or an admin can mark this task done"
+            if allowed else "You can't change this task's status")
 
     old = t.status
     if body.status != old:
@@ -595,38 +606,32 @@ def list_task_comments(
         .order_by(LeaderTaskComment.created_at, LeaderTaskComment.id)
         .all()
     )
-    return [tb.serialize_comment(c, payload, db) for c in rows]
+    files = tb.comment_files(db, [c.id for c in rows])
+    return [tb.serialize_comment(c, payload, db, files.get(c.id, [])) for c in rows]
 
 
 @router.post("/{task_id}/comments")
 def add_task_comment(
     task_id: int,
-    body: CommentIn,
+    parsed: dict = Depends(appeal_body),
     db: Session = Depends(get_db),
     payload: dict = Depends(_door),
 ):
-    if not (body.text or "").strip():
-        raise HTTPException(status_code=400, detail="Comment text is required")
+    """A message in the task's thread — its words, its photos and files, or
+    both (multipart from the composer; JSON {text} from an older tab)."""
+    text, uploads = tb.parsed_comment(parsed)
     t = _mine(task_id, payload, db)
     _assert(_can_manage(db, payload, t.supervisor_manager_id) or _is_assignee(payload, t),
             "You can't comment on this task")
     sub = int(payload["sub"])
-    c = LeaderTaskComment(
-        task_id=t.id,
-        author_telegram_id=sub,
-        author_role_ref=tb.profile_ref(payload),
-        author_profile=identity.viewer_profile_key(db, payload),
-        author_name=payload.get("full_name"),
-        text=body.text.strip(),
-    )
-    db.add(c)
+    c, files = tb.add_comment(db, payload, t, text, uploads)
 
     # Notify the other side(s) of the thread — the brigadir it was set for and
     # the person who set it — as PEOPLE: one bell row on the profile plus a DM
     # to every account working as them, minus the author's own account.
     params = {
         "author_name": payload.get("full_name"),
-        "comment": _snippet(body.text, 200),
+        "comment": tb.comment_notice(text, files),
         "task": _snippet(t.task_text),
     }
     targets = [k for k in (tb.assignee_key(t), t.created_by_profile) if k]
@@ -642,9 +647,27 @@ def add_task_comment(
         target_kind="comment", target_id=c.id, target_name=_snippet(t.task_text),
         unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
         day=t.due_date,
-        details=[("task_id", t.id), ("brigadir", t.supervisor_name), ("text", c.text)],
+        details=[("task_id", t.id), ("brigadir", t.supervisor_name), ("text", c.text),
+                 ("files", len(files))],
     )
-    return tb.serialize_comment(c, payload, db)
+    return tb.serialize_comment(c, payload, db, files)
+
+
+@router.get("/{task_id}/comments/files/{fid}")
+def comment_file(task_id: int, fid: int, db: Session = Depends(get_db),
+                 payload: dict = Depends(_door)):
+    """One photo or file of this task's thread — readable wherever the thread is."""
+    _visible(task_id, payload, db)
+    return tb.stream_file(tb.task_file(db, task_id, fid))
+
+
+@router.post("/{task_id}/comments/files/{fid}/send")
+def comment_file_send(task_id: int, fid: int, db: Session = Depends(get_db),
+                      payload: dict = Depends(_door)):
+    """The same file into the caller's own Telegram chat (a mini app has no
+    downloads folder)."""
+    _visible(task_id, payload, db)
+    return tb.send_file(payload, tb.task_file(db, task_id, fid))
 
 
 def _own_comment(task_id: int, comment_id: int, payload: dict, db: Session) -> LeaderTaskComment:

@@ -430,3 +430,68 @@ class ShiftManagerTier(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhoSaysDone(unittest.TestCase):
+    """«only shift managers, top managers and admins can say its done» — on a
+    task from the top the assignee moves it between to do and doing only."""
+
+    def test_the_matrix(self):
+        all3 = ["todo", "doing", "done"]
+        self.assertEqual(tb.status_choices(finisher=True, mover=True, from_top=True, current="done"), all3)
+        self.assertEqual(tb.status_choices(finisher=False, mover=True, from_top=True, current="todo"),
+                         ["todo", "doing"])
+        self.assertEqual(tb.status_choices(finisher=False, mover=True, from_top=True, current="done"), [])
+        self.assertEqual(tb.status_choices(finisher=False, mover=True, from_top=False, current="todo"), all3)
+        self.assertEqual(tb.status_choices(finisher=False, mover=False, from_top=True, current="todo"), [])
+
+    def leader_task(self, creator, status="todo"):
+        return SimpleNamespace(assignee_kind="leader", created_by_profile=creator, status=status,
+                               supervisor_manager_id=12, leader_profile_id=5, leader_role_ref=None)
+
+    def test_a_brigadir_moves_a_leaders_task_from_the_top_but_never_finishes_it(self):
+        brig = {"role": "supervisor", "role_id": 12, "sub": "4"}
+        self.assertEqual(lt._status_choices(None, brig, self.leader_task("admin:1")), ["todo", "doing"])
+        self.assertEqual(lt._status_choices(None, brig, self.leader_task("admin:1", "done")), [])
+        # …while their OWN task for the leader keeps the old rule.
+        self.assertEqual(lt._status_choices(None, brig, self.leader_task("supervisor:12")),
+                         ["todo", "doing", "done"])
+
+    def test_the_manager_who_runs_it_finishes_and_reopens_it(self):
+        self.assertEqual(lt._status_choices(None, ADMIN, self.leader_task("admin:1", "done")),
+                         ["todo", "doing", "done"])
+        with OPEN():
+            self.assertEqual(lt._status_choices(None, SM, self.leader_task("top-manager:6")),
+                             ["todo", "doing", "done"])
+            # A brigadir's own task for their leader: a manager only reads it.
+            self.assertEqual(lt._status_choices(None, SM, self.leader_task("supervisor:12")), [])
+
+    def test_a_brigadirs_own_task_from_the_top(self):
+        t = SimpleNamespace(assignee_kind="supervisor", supervisor_manager_id=12, status="doing",
+                            leader_profile_id=None)
+        brig = {"role": "supervisor", "role_id": 12, "sub": "4"}
+        manage = bt._can_manage(None, brig, 12)
+        self.assertFalse(manage)
+        self.assertEqual(tb.status_choices(finisher=manage, mover=bt._is_assignee(brig, t),
+                                           from_top=True, current=t.status), ["todo", "doing"])
+
+
+class CommentFiles(unittest.TestCase):
+    def test_words_or_a_file_but_not_neither(self):
+        self.assertEqual(tb.parsed_comment({"fields": {"text": "  ok "}, "files": []}), ("ok", []))
+        up = SimpleNamespace(filename="a.jpg")
+        self.assertEqual(tb.parsed_comment({"fields": {}, "files": [up]}), ("", [up]))
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException):
+            tb.parsed_comment({"fields": {"text": "   "}, "files": []})
+
+    def test_a_file_only_message_is_named_by_its_files_in_the_notice(self):
+        files = [SimpleNamespace(name="pech.jpg"), SimpleNamespace(name="akt.pdf")]
+        self.assertEqual(tb.comment_notice("", files), "📎 pech.jpg, akt.pdf")
+        self.assertEqual(tb.comment_notice("Bajarildi", files), "Bajarildi")
+
+    def test_an_image_is_drawn_inline_anything_else_is_a_file(self):
+        img = SimpleNamespace(id=1, name="p.jpg", mime="image/jpeg", size=10)
+        doc = SimpleNamespace(id=2, name="a.pdf", mime="application/pdf", size=10)
+        self.assertTrue(tb.file_wire(img)["image"])
+        self.assertFalse(tb.file_wire(doc)["image"])

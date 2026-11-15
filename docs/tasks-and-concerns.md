@@ -410,6 +410,50 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
 - The block draws nothing for a reader it is not for (`show: false`, a refused
   read) — only a browser that was shown it before gets its skeleton.
 
+## Only a manager marks a task from the top done; its thread takes photos and files (2026-11-15)
+
+The operator (v4.528.0): «only shift managers, top managers and admins can say
+its done — for them [the assignees] do not have access this part», and «add for
+comments the uploading the picture or file». Asked: the assignee keeps «to do» ⇄
+«doing», and the rule covers tasks from the top only.
+
+- **`task_board.status_choices` is THE status right** — `finisher` (runs the
+  row: marks done, reopens), `mover` (may touch it), `from_top`
+  (`set_from_above`), `current`. On a task FROM THE TOP a mover who is not the
+  finisher gets «to do» / «doing», and nothing once it is done (no reopening
+  either); a task a brigadir set their own leader keeps the old rule — every
+  mover, the leader included, sets any status. Each owning router's PATCH asks
+  it (`brigadir_tasks.set_status`, `tasks._status_choices`,
+  `shift_manager_tasks.set_status`), and the board serves its answer per row as
+  `status_options` (`can_status` = any), which `StatusSelect`'s new `options`
+  prop lists — the pill never offers what the PATCH refuses («Only a shift
+  manager, a top manager or an admin can mark this task done»).
+- **Who finishes**: a brigadir's task — whoever runs the unit's board (an admin,
+  a shift manager, a top-manager from the first day; `_can_manage`); a leader's
+  task from the top — a manager over it (`_governs_from_top`, an admin
+  included). On that leader task the unit's BRIGADIR is a mover now, not a
+  finisher: they and the leader move it, a manager closes it. A shift manager's
+  own task — an admin or a top-manager.
+- **Photos and files in every task thread** — `/tasks` and «Smena kunligi».
+  The appeal chat's machinery reused whole: `routers/leaders.appeal_body` reads
+  the composer (multipart with files; JSON {text} without — every older tab
+  keeps working), `relay_uploads` checks each file (≤10 per message, ≤20 MB,
+  `upload_guard`) and stores it in the ARCHIVE CHANNEL before the comment is
+  written (one refused file refuses the message), and `_stream_tg_file`
+  streams it back. New table `leader_task_comment_files` (comment →
+  `ON DELETE CASCADE`, so a deleted comment or task takes its files);
+  `task_board.add_comment` / `comment_files` / `task_file` (a file is reachable
+  only through ITS task's address) / `stream_file` / `send_file`. Each tier's
+  router serves `GET {tier}/{id}/comments/files/{fid}` and `POST …/send` (the
+  bot DMs it — a mini app has no downloads folder). A message may be a file
+  alone; its notice then quotes «📎 name, name». Not in the exam: the sandbox
+  chat takes words only, so `/tasks` turns attachments off while
+  `isExamOn()`.
+- **The bot cards say how to answer**: `task_from_top` gained «📎 Bajarganda:
+  izohga rasm yoki fayl yuboring — «Bajarildi»ni rahbariyat belgilaydi», and
+  `task_reminder`'s answer row now asks for a reply with a photo or file
+  instead of «set its status».
+
 ## Every new concern to Umarbek Karimov (`concerns.tell_watchers`, 2026-11-11)
 
 The operator (2026-11-11): Umarbek Karimov, shift manager, gets EVERY concern

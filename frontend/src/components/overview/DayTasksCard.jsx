@@ -375,6 +375,8 @@ export default function DayTasksCard({ params }) {
           title={t("tasks.commentsTitle")}
           subtitle={tx(thread.text)}
           canComment={!!thread.can_comment}
+          attachments
+          filesEndpoint={`${endpointFor(thread.kind)}/${thread.id}/comments/files`}
           onClose={() => setThread(null)}
         />
       )}
