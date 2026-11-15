@@ -78,7 +78,9 @@ MAX_PLAN_DAYS = 90      # a plan's date is at most this far ahead
 # A stop filed before it never «waits» on anybody. Once the day has come it
 # never moves LATER. The frontend's twin is `config/idleSolutions.js`
 # (`OPEN_FROM`) — set both in one commit.
-OPEN_FROM: Optional[date] = None
+# Named by the operator on 2026-11-15 («Yes, start them»): owners and the
+# Telegram reminders from that day.
+OPEN_FROM: Optional[date] = date(2026, 11, 15)
 
 # …and the roles opened EARLIER (the operator, 2026-11-15: «make it visible for
 # brigadirs, shift managers and top managers»). From EARLY_FROM these three read

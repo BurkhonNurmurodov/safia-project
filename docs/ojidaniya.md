@@ -1299,3 +1299,19 @@ The operator: «make it visible for brigadirs, shift managers and top managers»
   shift-managers' digest (`idle_solution_reminder.run` asks `is_open`).
 - Tests: `test_three_roles_have_it_from_their_own_earlier_day`; every other
   gate test switches `EARLY_FROM` off and pins `OPEN_FROM` itself.
+
+## «Kutish yechimlari» is open to everybody, reminders on (`OPEN_FROM` = 2026-11-15)
+
+The operator, the same morning, to «Should cause owners and the Telegram
+reminders start now too?»: «Yes, start them». `OPEN_FROM` is 2026-11-15 in
+both `routers/idle_solutions.py` and `config/idleSolutions.js`.
+
+- Cause owners (`idle-owner`) have the page, their waiting list and the menu
+  number; stops wait from 2026-11-15 for every role.
+- The daily reminder runs from its next slot (shift 1 and owners 10:00–12:00,
+  shift 2 22:00–24:00, every 20 minutes, once a day per person) — nothing goes
+  to somebody nothing waits on.
+- The shift-managers' digest names a brigadir only after a stop has waited
+  `ESCALATE_DAYS` (3), so its first possible message is on 2026-11-18.
+- `EARLY_FROM` / `EARLY_ROLES` stay, now earlier-or-equal to `OPEN_FROM` and
+  changing nothing.

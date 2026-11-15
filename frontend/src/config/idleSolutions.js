@@ -14,7 +14,7 @@
  * From 2026-11-15 brigadirs, shift-managers and top-managers have it EARLIER
  * (`EARLY_FROM`); cause owners still wait for `OPEN_FROM`.
  */
-export const OPEN_FROM = null;                 // "YYYY-MM-DD" once the day is named
+export const OPEN_FROM = "2026-11-15";         // named by the operator on 2026-11-15
 
 // Who the page is built for, beside admins — from its first day on.
 const ROLES = ["shift-manager", "top-manager", "supervisor", "idle-owner"];
