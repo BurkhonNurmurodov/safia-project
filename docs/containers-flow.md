@@ -13,8 +13,11 @@ containers row from production and move it into the new button».
   `Package`, hue `yellow` — a new `[data-app-hue]` pair in `index.css`; after
   «Oshxona»). It holds two rows:
   - **«Konteynerlar»** (`/containers`, the TV board, `docs/shift-report.md`) —
-    MOVED out of the Production app by `app: "containers"`. Its page key and
-    access are unchanged.
+    MOVED out of the Production app by `app: "containers"`. Its page key is
+    unchanged; **shift- and top-managers hold it from 2026-11-15** (the
+    operator: «add tv mode for shift managers and top managers» —
+    `startup.containers_tv_managers`), so the two pages of the section sit
+    side by side for them.
 - **Without the launcher (a shift-manager, a brigadir) both rows sit in the
   sidebar's own «Konteynerlar» section**, right after Production — `group:
   "containers"`, a NAV_GROUPS entry of its own (2026-11-15, the operator, on a
@@ -72,7 +75,9 @@ containers row from production and move it into the new button».
   `_cancelled`, a button opening the page; category «other», subject `page`
   `/containers/flow`) — **only while «Sozlamalar» → «Telegram xabarlari» is
   on** (`container_flow.notify_logistics`, OFF by default; a settings save from
-  an older tab without `notify` leaves it as it is). Sent on a thread after the
+  an older tab without `notify` leaves it as it is). **Switched ON on
+  2026-11-15** at the operator's word («turn on the telegram messages for
+  nuriddin aka») by `startup.container_flow_notify_on` (docs/data-fixes.md). Sent on a thread after the
   commit, so a save never waits on Telegram. Nothing else here messages
   anybody.
 

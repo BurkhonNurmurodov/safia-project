@@ -113,6 +113,8 @@ export const DEFAULT_PAGE_ACCESS = {
   "container-logistics": [],
   "container-receive": [],
   "container-watch": ["top-manager", "shift-manager"],
+  // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
+  containers: ["top-manager", "shift-manager"],
   // «API» — personal tokens for the external read API. Admin-only until the
   // operator opens it: a token reads every cell's plan and people.
   api: [],

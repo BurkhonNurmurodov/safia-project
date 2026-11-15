@@ -10550,6 +10550,88 @@ def nuriddin_container_logistics() -> None:
         db.close()
 
 
+# ── 15 Nov: Telegram on for the logistics person (docs/data-fixes.md) ───────
+# The operator, 2026-11-15: «turn on the telegram messages for nuriddin aka».
+# The «Sozlamalar» → «Telegram xabarlari» switch (`container_flow
+# .notify_logistics`) set ON once, under a flag — an admin who switches it off
+# later is not overridden on the next boot.
+CONTAINER_NOTIFY_FLAG = "oneshot:container_flow_notify_on_nov15"
+
+
+def container_flow_notify_on() -> None:
+    import html
+
+    from app.identity import profile_holders
+    from app.services import container_flow as flow
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_NOTIFY_FLAG).first():
+            return
+        row = db.get(AppSetting, flow._NOTIFY_KEY)
+        if row is None:
+            db.add(AppSetting(key=flow._NOTIFY_KEY, value="1"))
+        else:
+            row.value = "1"
+        db.add(AppSetting(key=CONTAINER_NOTIFY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        # who will actually hear: each addressee and their linked Telegram accounts
+        people = flow.logistics_people(db)
+        lines = [f"• {esc(p['name'])} — Telegram: {len(profile_holders(db, p['key']))} ta"
+                 for p in people] or ["• — (logistika xodimi yo'q)"]
+        print(f"[startup] container flow: Telegram to logistics ON ({len(people)} addressee(s))")
+        _dm_admins_plain(
+            "✅ <b>«Konteyner berish» — Telegram xabarlari yoqildi</b>\n"
+            "Yangi yoki bekor qilingan so'rov logistika xodimiga yuboriladi:\n" + "\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container flow notify on failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteyner berish» — Telegram xabarlari yoqilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
+# ── 15 Nov: the «Konteynerlar» TV board for shift- and top-managers ──────────
+# The operator, 2026-11-15: «add tv mode for shift managers and top managers».
+# The board (`/containers`, its «TV rejimi») was admin-only; the Access tab's
+# STORED matrix already names the page, so a new default alone would change
+# nothing there — the two roles are added to it once, under a flag, exactly as
+# ticking them on the Access tab would. Unticking them later sticks.
+CONTAINERS_TV_FLAG = "oneshot:containers_tv_managers_nov15"
+CONTAINERS_TV_ROLES = ("top-manager", "shift-manager")
+
+
+def containers_tv_managers() -> None:
+    import html
+
+    from app.permissions import get_page_access, set_page_access
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINERS_TV_FLAG).first():
+            return
+        matrix = get_page_access(db)
+        roles = list(matrix.get("containers", []))
+        added = [r for r in CONTAINERS_TV_ROLES if r not in roles]
+        matrix["containers"] = roles + added
+        db.add(AppSetting(key=CONTAINERS_TV_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the flag with the matrix
+        print(f"[startup] containers TV board: + {added or 'nothing (already open)'}")
+        _dm_admins_plain(
+            "✅ <b>«Konteynerlar» (TV rejimi) — smena va top menejerlarga ochildi</b>\n"
+            f"Qo'shildi: {esc(', '.join(added) or '— (allaqachon ochiq edi)')}")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] containers TV board failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteynerlar» (TV rejimi) ochilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

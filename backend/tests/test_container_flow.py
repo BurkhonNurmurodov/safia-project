@@ -246,6 +246,45 @@ class FlowTest(unittest.TestCase):
             flow.deliver(self.db, b.id, None, None, None, "mitsu")
         self.assertTrue(b.late)
 
+    def test_notify_and_tv_oneshots_run_once(self):
+        """15 Nov: the Telegram switch ON and the TV board open to the two
+        manager roles — once each; an admin's later «off» / untick sticks."""
+        from app import startup
+        from app.permissions import get_page_access, set_page_access
+
+        def access():
+            s = self.pg.Session()
+            try:
+                return get_page_access(s)["containers"]
+            finally:
+                s.close()
+
+        def matrix_with(roles):
+            s = self.pg.Session()
+            try:
+                m = get_page_access(s)
+                m["containers"] = roles
+                set_page_access(s, m)
+            finally:
+                s.close()
+
+        matrix_with([])                      # an Access-tab save that names the page, nobody ticked
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_flow_notify_on()
+            startup.containers_tv_managers()
+            self.db.expire_all()
+            self.assertTrue(flow.settings(self.db)["notify"])
+            self.assertEqual(access(), ["top-manager", "shift-manager"])
+            flow.save_settings(self.db, [1], 2, False)   # an admin switches it off, unticks the roles
+            matrix_with([])
+            startup.container_flow_notify_on()
+            startup.containers_tv_managers()
+            self.db.expire_all()
+            self.assertFalse(flow.settings(self.db)["notify"])
+            self.assertEqual(access(), [])
+            self.assertEqual(dm.call_count, 2)           # one note each, the first time only
+
     def test_split_hint_follows_each_units_hour(self):
         from app.models import ContainerRequest
         for i, n in ((12, "Bravo"), (13, "Alfa")):

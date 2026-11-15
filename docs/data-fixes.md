@@ -407,6 +407,27 @@ brigadirs». A one-shot (flag
 him an addressee of AXO's requests. Not exactly one match → nothing changes
 and the admins get a DM saying so. Nothing he held is revoked.
 
+## Telegram on for the container requests (`startup.container_flow_notify_on`, 2026-11-15)
+
+The operator: «turn on the telegram messages for nuriddin aka». A one-shot
+(flag `oneshot:container_flow_notify_on_nov15`, `later`) sets
+`container_flow.notify_logistics` = 1 — the «Sozlamalar» → «Telegram
+xabarlari» switch of «Konteyner berish» (docs/containers-flow.md). From then a
+new or cancelled request DMs its logistics person. The admins get a DM naming
+each addressee and how many Telegram accounts hold their profile (none = the
+bell row only). Once: an admin who switches it off later is not overridden.
+
+## The «Konteynerlar» TV board for shift- and top-managers (`startup.containers_tv_managers`, 2026-11-15)
+
+The operator: «add tv mode for shift managers and top managers». The board
+(`/containers`, its «TV rejimi» — docs/shift-report.md) was admin-only. The
+Access tab's STORED matrix names every page, so moving the default
+(`DEFAULT_PAGE_ACCESS["containers"]` is now `["top-manager", "shift-manager"]`)
+would not reach production by itself: a one-shot (flag
+`oneshot:containers_tv_managers_nov15`, `later`) adds the two roles to the
+stored `containers` list, as ticking them on the Access tab would, and DMs the
+admins what it added. Once: unticking them later sticks.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three

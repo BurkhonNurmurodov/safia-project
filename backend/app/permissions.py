@@ -79,7 +79,10 @@ DEFAULT_PAGE_ACCESS = {
     # containers for the day: totals, hour by hour and per brigadir, laid out
     # for a TV on the shop floor. ADMIN-ONLY until the operator opens it for
     # the people who handle containers (the Access tab, or a personal grant).
-    "containers": [],
+    # Shift- and top-managers from 2026-11-15 (the operator: «add tv mode for
+    # shift managers and top managers»; the stored matrix got them through
+    # `startup.containers_tv_managers`).
+    "containers": ["top-manager", "shift-manager"],
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
     "trudoyomkost": ["top-manager", "shift-manager"],

@@ -273,6 +273,9 @@ try:
     dilafruz_container_flow()
     from app.startup import nuriddin_container_logistics
     nuriddin_container_logistics()
+    from app.startup import container_flow_notify_on, containers_tv_managers
+    container_flow_notify_on()
+    containers_tv_managers()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     date_window_edits_nov13()
