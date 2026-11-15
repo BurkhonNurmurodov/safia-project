@@ -50,6 +50,9 @@ _TOPUP_KEY = "container_flow.topup_min"
 # OFF until an admin switches it on in «Sozlamalar» (nothing on this page
 # messages anybody before the operator says so).
 _NOTIFY_KEY = "container_flow.notify_logistics"
+# …and to each brigadir a request was split to (2026-11-15) — «Hammasi keldi»
+# confirms from Telegram, «Boshqa son» opens the card. Its own switch.
+_NOTIFY_BRIG_KEY = "container_flow.notify_brigadirs"
 _LOCK_KEY = 8_140_573_112_014_001   # distinct from every other advisory key
 
 
@@ -78,7 +81,7 @@ def team_key(work_center, group, rest) -> str:
 
 def settings(db: Session) -> dict:
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
-        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY])).all()}
+        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY, _NOTIFY_BRIG_KEY])).all()}
     try:
         units = [int(x) for x in json.loads(rows.get(_UNITS_KEY) or "[]")]
     except (ValueError, TypeError):
@@ -87,16 +90,20 @@ def settings(db: Session) -> dict:
         topup = max(1, int(rows.get(_TOPUP_KEY) or TOPUP_MIN_DEFAULT))
     except (ValueError, TypeError):
         topup = TOPUP_MIN_DEFAULT
-    return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1"}
+    return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1",
+            "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1"}
 
 
-def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None) -> dict:
-    """`notify` None leaves the switch as it is (a tab on an older bundle
-    saves without it)."""
+def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None,
+                  notify_brigadirs: Optional[bool] = None) -> dict:
+    """A switch given as None stays as it is (a tab on an older bundle saves
+    without it)."""
     vals = {_UNITS_KEY: json.dumps(sorted({int(x) for x in units})),
             _TOPUP_KEY: str(max(1, int(topup_min)))}
     if notify is not None:
         vals[_NOTIFY_KEY] = "1" if notify else "0"
+    if notify_brigadirs is not None:
+        vals[_NOTIFY_BRIG_KEY] = "1" if notify_brigadirs else "0"
     for k, v in vals.items():
         row = db.get(AppSetting, k)
         if row is None:
@@ -1068,6 +1075,143 @@ def notify_later(request_id: int, kind: str) -> None:
     """`notify_request` on a thread — a request's save never waits on Telegram."""
     import threading
     threading.Thread(target=notify_request, args=(request_id, kind), daemon=True).start()
+
+
+# ── the brigadir's card: containers split to their unit (2026-11-15) ─────────
+RECEIVE_CAP = "page.view.container-receive"
+CALLBACK = "crv"          # crv:<request id>:<manager id> — «Hammasi keldi» in the bot
+
+_TG_BRIG = {
+    "uz": {"title": "Sizga konteyner yuborildi", "hour": "Soat", "by": "Yubordi",
+           "hint": "Kelganini tasdiqlang: hammasi kelgan bo'lsa — «Hammasi keldi», kam bo'lsa — «Boshqa son».",
+           "all": "✅ Hammasi keldi", "other": "✏️ Boshqa son",
+           "done": "✅ Qabul qilindi · {at}", "already": "Bu allaqachon tasdiqlangan",
+           "not_yours": "Bu konteynerlar sizning bo'limingizga yuborilmagan", "gone": "So'rov topilmadi",
+           "failed": "Saqlanmadi — sahifada tasdiqlang"},
+    "uz_cyrl": {"title": "Сизга контейнер юборилди", "hour": "Соат", "by": "Юборди",
+                "hint": "Келганини тасдиқланг: ҳаммаси келган бўлса — «Ҳаммаси келди», кам бўлса — «Бошқа сон».",
+                "all": "✅ Ҳаммаси келди", "other": "✏️ Бошқа сон",
+                "done": "✅ Қабул қилинди · {at}", "already": "Бу аллақачон тасдиқланган",
+                "not_yours": "Бу контейнерлар сизнинг бўлимингизга юборилмаган", "gone": "Сўров топилмади",
+                "failed": "Сақланмади — саҳифада тасдиқланг"},
+    "ru": {"title": "Вам отправлены контейнеры", "hour": "Час", "by": "Отправил(а)",
+           "hint": "Подтвердите приход: всё пришло — «Всё пришло», меньше — «Другое число».",
+           "all": "✅ Всё пришло", "other": "✏️ Другое число",
+           "done": "✅ Принято · {at}", "already": "Уже подтверждено",
+           "not_yours": "Эти контейнеры отправлены не вашему участку", "gone": "Заявка не найдена",
+           "failed": "Не сохранилось — подтвердите на странице"},
+    "en": {"title": "Containers sent to you", "hour": "Hour", "by": "Sent by",
+           "hint": "Confirm what arrived: everything — «All arrived», fewer — «Different count».",
+           "all": "✅ All arrived", "other": "✏️ Different count",
+           "done": "✅ Received · {at}", "already": "Already confirmed",
+           "not_yours": "These containers were not sent to your unit", "gone": "Request not found",
+           "failed": "Not saved — confirm on the page"},
+}
+
+
+def brig_text(lang: str, key: str, **kw) -> str:
+    return (_TG_BRIG.get(lang) or _TG_BRIG["uz"])[key].format(**kw)
+
+
+def receive_open(db: Session, manager_id: int) -> bool:
+    """May this unit's brigadir open «Qabul»? — the role's page access, or a
+    personal grant on their profile (and no personal deny). A card whose
+    buttons lead to «no access» is worse than none."""
+    from app.permissions import get_page_access
+    key = f"supervisor:{int(manager_id)}"
+    own = db.query(ProfilePermission).filter(ProfilePermission.profile_key == key,
+                                             ProfilePermission.capability == RECEIVE_CAP).first()
+    if own is not None:
+        return own.mode == "grant"
+    return "supervisor" in get_page_access(db).get("container-receive", [])
+
+
+def _brig_body(r: ContainerRequest, counts: dict, lang: str) -> str:
+    from html import escape as _esc
+    from app.translit import transliterate
+    t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
+    by = transliterate(r.logistics_name or "—", lang) or "—"
+    at = r.assigned_at.astimezone(TZ).strftime("%H:%M") if r.assigned_at else ""
+    return "\n".join([
+        f"📦 <b>{_esc(t['title'], quote=False)}</b>", "",
+        f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
+        _esc(counts_text(counts, lang), quote=False),
+        f"{t['by']}: {_esc(by, quote=False)}{f' · {at}' if at else ''}", "",
+        f"<i>{_esc(t['hint'], quote=False)}</i>",
+    ])
+
+
+def _brig_markup(request_id: int, manager_id: int):
+    def _markup(lang: str):
+        from telebot import types
+        from app import tg_buttons
+        from app.config import settings as cfg
+        t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
+        kb = types.InlineKeyboardMarkup()
+        # green: it DECIDES — the receipt is written by the tap
+        kb.add(tg_buttons.approve(t["all"], f"{CALLBACK}:{request_id}:{manager_id}"))
+        kb.add(types.InlineKeyboardButton(t["other"], web_app=types.WebAppInfo(
+            url=f"{cfg.webapp_url.rstrip('/')}{NOTIFY_PAGE}?tab=receive&rcv={request_id}")))
+        return kb
+    return _markup
+
+
+def notify_split(request_id: int) -> int:
+    """Tell each brigadir of a split request what is coming to their unit —
+    one card each, only while «Sozlamalar» → brigadirs is on and only to a
+    brigadir who may open «Qabul». Own session; never raises. Returns how
+    many units were told."""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    told = 0
+    try:
+        if not settings(db)["notify_brigadirs"]:
+            return 0
+        r = db.get(ContainerRequest, request_id)
+        if r is None or r.status != "assigned":
+            return 0
+        from app.routers.staff import notify_profile
+        units: dict = {}
+        for p in db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == r.id).all():
+            units.setdefault(p.manager_id, {})[p.ctype] = p.count
+        for mid, counts in units.items():
+            if not receive_open(db, mid):
+                continue
+            notify_profile(
+                db, f"supervisor:{mid}", "container_split",
+                {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
+                type="info", html_fn=lambda lang, c=counts: _brig_body(r, c, lang),
+                markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
+            told += 1
+        db.commit()
+        return told
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: split notice failed", exc_info=True)
+        return told
+    finally:
+        db.close()
+
+
+def notify_split_later(request_id: int) -> None:
+    import threading
+    threading.Thread(target=notify_split, args=(request_id,), daemon=True).start()
+
+
+def receive_from_bot(db: Session, request_id: int, manager_id: int, telegram_id: int) -> tuple:
+    """«Hammasi keldi» tapped in the bot: the tapper must hold the unit's
+    brigadir profile (callback data is typeable and a card can be forwarded).
+    Returns (code, request): code is "done", "already", "not_yours", "gone"."""
+    from app.identity import profile_holders
+    key = f"supervisor:{int(manager_id)}"
+    if int(telegram_id) not in profile_holders(db, key):
+        return "not_yours", None
+    try:
+        r = receive(db, request_id, manager_id, None, None, None, profile_name(db, key) or key)
+    except FlowError as e:
+        db.rollback()
+        return ("already" if e.code == "state" else "gone" if e.code in ("gone", "unit") else e.code), None
+    return "done", r
 
 
 # ── the hour's figure for a request ─────────────────────────────────────────

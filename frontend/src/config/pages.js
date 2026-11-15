@@ -111,7 +111,7 @@ export const DEFAULT_PAGE_ACCESS = {
   "container-flow": [],
   // …as Logistics: a request addressed to them, split across brigadirs.
   "container-logistics": [],
-  "container-receive": [],
+  "container-receive": ["supervisor"],   // brigadirs from 2026-11-15
   "container-watch": ["top-manager", "shift-manager"],
   // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
   containers: ["top-manager", "shift-manager"],

@@ -26,6 +26,7 @@ import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, isFresh } from "../components/containers/FlowRequests";
 import FlowReceive from "../components/containers/FlowReceive";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useOpenParam } from "../hooks/useOpenParam";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
@@ -59,6 +60,11 @@ export default function ContainerFlow() {
   const toast = useToast();
   const qc = useQueryClient();
   const [tabSaved, setTab] = usePersistentState("cflow_tab", "requests");
+  // a link from a brigadir's Telegram card: ?tab=receive&rcv=<request id> opens
+  // «Qabul» on that request's card (`flow._brig_markup`)
+  const [tabParam, tabDone] = useOpenParam("tab");
+  const [rcv, rcvDone] = useOpenParam("rcv");
+  useEffect(() => { if (tabParam) { setTab(tabParam); tabDone(); } }, [tabParam, setTab, tabDone]);
   const isAdmin = useAuth()?.auth?.role === "admin";
   const [picked, setPicked] = useState(null);
   const [, tick] = useState(0);
@@ -148,7 +154,7 @@ export default function ContainerFlow() {
             ? <Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>
             : <Button onClick={() => setTab("requests")}>{t("cflow.tab.requests")}</Button>} />
       ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} />
-        : tab === "receive" ? <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} />
+        : tab === "receive" ? <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone} />
         : tab === "axo" ? <AxoTab {...ctx} />
         : tab === "logistics" ? <LogisticsTab {...ctx} />
         : tab === "leaders" ? <LeadersTab {...ctx} />

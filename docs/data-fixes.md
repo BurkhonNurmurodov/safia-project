@@ -428,6 +428,16 @@ would not reach production by itself: a one-shot (flag
 stored `containers` list, as ticking them on the Access tab would, and DMs the
 admins what it added. Once: unticking them later sticks.
 
+## «Qabul» for the brigadirs, and their card (`startup.container_receive_brigadirs`, 2026-11-15)
+
+The operator asked how brigadirs accept containers and which pages to open
+for them, and answered «Yes, both» to: open «Qabul» to brigadirs, and tell
+them in Telegram when containers are split to them. A one-shot (flag
+`oneshot:container_receive_brigadirs_nov15`, `later`) adds `supervisor` to
+the STORED access of `container-receive` (the default moves with it) and sets
+`container_flow.notify_brigadirs` = 1, then DMs the admins. Once: an untick
+or an «off» later sticks. docs/containers-flow.md.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three

@@ -197,7 +197,7 @@ DEFAULT_PAGE_ACCESS = {
     "container-logistics": [],
     # A brigadir confirming what arrived (2026-11-14) — admin-only until the
     # operator opens it to the brigadirs (docs/containers-flow.md).
-    "container-receive": [],
+    "container-receive": ["supervisor"],   # brigadirs from 2026-11-15 (`startup.container_receive_brigadirs`)
     # Watching the whole «Konteyner berish» page, no button on it (2026-11-15,
     # the operator: «make it visible for shift managers and top managers too» —
     # watch only).

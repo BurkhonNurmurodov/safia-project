@@ -285,6 +285,90 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(access(), [])
             self.assertEqual(dm.call_count, 2)           # one note each, the first time only
 
+    def test_brigadir_card_and_the_bot_button(self):
+        """A split request tells each brigadir who may open «Qabul» (switch on);
+        «Hammasi keldi» in the bot confirms only for a holder of that unit's
+        brigadir profile, once."""
+        from app.models import ProfilePermission, RoleProfile, TelegramUserRole
+        from app.permissions import get_page_access, set_page_access
+        from app.routers import staff
+        for t in ("container_request_parts", "container_requests", "profile_permissions", "telegram_user_roles"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        for i in (1, 2):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=f"Unit {i}", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.add(TelegramUserRole(telegram_id=5001, role="supervisor", role_id=1, full_name="Brig One",
+                                     status="approved", profile_key="supervisor:1"))
+        self.db.commit()
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30}, "", "axo", "guest:1")
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 18}},
+                                            {"manager_id": 2, "counts": {"yellow": 12}}], None, None, "n", nk, False)
+        self.db.commit()
+        m = get_page_access(self.db)
+        m["container-receive"] = []                 # the role closed …
+        set_page_access(self.db, m)
+        self.db.add(ProfilePermission(profile_key="supervisor:1", capability=flow.RECEIVE_CAP,
+                                      mode="grant", scope="all"))          # … unit 1 by a personal grant
+        self.db.commit()
+        self.assertTrue(flow.receive_open(self.db, 1))
+        self.assertFalse(flow.receive_open(self.db, 2))
+        sent = []   # the card as notify_profile renders it — inside the sender's session
+
+        def capture(db, key, nkey, params, **kw):
+            sent.append((key, nkey, kw["html_fn"]("uz"), kw["markup_fn"]("uz").to_dict()))
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=capture):
+            self.assertEqual(flow.notify_split(r.id), 0)          # switch off: nobody
+            flow.save_settings(self.db, [1], 2, None, True)
+            self.assertEqual(flow.notify_split(r.id), 1)          # unit 2's brigadir cannot open «Qabul»
+        key, nkey, html, markup = sent[-1]
+        self.assertEqual((key, nkey), ("supervisor:1", "container_split"))
+        self.assertIn("18", html)
+        kb = markup["inline_keyboard"]
+        self.assertEqual(kb[0][0]["callback_data"], f"crv:{r.id}:1")
+        self.assertIn(f"rcv={r.id}", kb[1][0]["web_app"]["url"])
+        # the button: somebody else's tap does nothing; the holder's confirms once
+        self.assertEqual(flow.receive_from_bot(self.db, r.id, 1, 9999)[0], "not_yours")
+        code, got = flow.receive_from_bot(self.db, r.id, 1, 5001)
+        self.assertEqual(code, "done")
+        self.db.commit()
+        self.assertEqual(flow.receipts_of(self.db, DAY, 1)[0]["received"], {"yellow": 18})
+        self.assertEqual(flow.receive_from_bot(self.db, r.id, 1, 5001)[0], "already")
+        self.assertEqual(flow.receive_from_bot(self.db, 999999, 1, 5001)[0], "gone")
+
+    def test_receive_oneshot_opens_to_brigadirs_once(self):
+        from app import startup
+        from app.permissions import get_page_access, set_page_access
+
+        def access():
+            s = self.pg.Session()
+            try:
+                return get_page_access(s)["container-receive"]
+            finally:
+                s.close()
+
+        s = self.pg.Session()
+        m = get_page_access(s)
+        m["container-receive"] = []
+        set_page_access(s, m)
+        s.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_receive_brigadirs()
+            self.db.expire_all()
+            self.assertEqual(access(), ["supervisor"])
+            self.assertTrue(flow.settings(self.db)["notify_brigadirs"])
+            flow.save_settings(self.db, [1], 2, None, False)
+            startup.container_receive_brigadirs()
+            self.db.expire_all()
+            self.assertFalse(flow.settings(self.db)["notify_brigadirs"])   # an «off» sticks
+            self.assertEqual(dm.call_count, 1)
+
     def test_split_hint_follows_each_units_hour(self):
         from app.models import ContainerRequest
         for i, n in ((12, "Bravo"), (13, "Alfa")):
@@ -448,7 +532,7 @@ class PageKeyTest(unittest.TestCase):
         from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
         for key in ("container-flow", "container-logistics", "container-receive"):
             self.assertIn(key, PAGE_KEYS)
-            self.assertEqual(DEFAULT_PAGE_ACCESS[key], [])
+            self.assertEqual(DEFAULT_PAGE_ACCESS[key], ["supervisor"] if key == "container-receive" else [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
         # the managers watch the whole page and press nothing on it
         self.assertIn("container-watch", PAGE_KEYS)

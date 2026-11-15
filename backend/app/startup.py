@@ -10632,6 +10632,53 @@ def containers_tv_managers() -> None:
         db.close()
 
 
+# ── 15 Nov: «Qabul» for the brigadirs, and their Telegram card ──────────────
+# The operator, 2026-11-15, asked «for brigadirs how they accept it, which
+# pages should be open for them» and answered «Yes, both»: the brigadir role
+# gets `container-receive` in the STORED access matrix (as ticking it on the
+# Access tab would — a new default alone would not reach it), and the
+# «Sozlamalar» switch for the brigadirs' card goes ON. Once, under a flag:
+# an untick or an «off» later sticks.
+CONTAINER_RECEIVE_FLAG = "oneshot:container_receive_brigadirs_nov15"
+
+
+def container_receive_brigadirs() -> None:
+    import html
+
+    from app.permissions import get_page_access, set_page_access
+    from app.services import container_flow as flow
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_RECEIVE_FLAG).first():
+            return
+        row = db.get(AppSetting, flow._NOTIFY_BRIG_KEY)
+        if row is None:
+            db.add(AppSetting(key=flow._NOTIFY_BRIG_KEY, value="1"))
+        else:
+            row.value = "1"
+        matrix = get_page_access(db)
+        roles = list(matrix.get("container-receive", []))
+        added = "supervisor" not in roles
+        matrix["container-receive"] = roles + (["supervisor"] if added else [])
+        db.add(AppSetting(key=CONTAINER_RECEIVE_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the switch and the flag with the matrix
+        print(f"[startup] container receipt: brigadirs {'added' if added else 'already open'}, Telegram ON")
+        _dm_admins_plain(
+            "✅ <b>«Konteyner berish» — brigadirlar qabul qiladi</b>\n"
+            "«Konteyner berish — qabul» brigadirlarga ochildi"
+            f"{'' if added else ' (allaqachon ochiq edi)'}; logistika taqsimlaganda har bir "
+            "brigadirga Telegram xabari boradi — «Hammasi keldi» tugmasi bilan.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container receipt for brigadirs failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteyner berish» — brigadirlarga ochilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

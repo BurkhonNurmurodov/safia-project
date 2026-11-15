@@ -16,8 +16,10 @@ docs/containers-flow.md). Two doors:
   their line — only their own unit; admins any. Admin-only until granted.
 - `verify_admin`: a leader's answer, a forced close, the settings.
 
-The one message: a new / cancelled request to its logistics person, only
-while «Sozlamalar» → Telegram is on (`flow.notify_later`)."""
+The messages: a new / cancelled request to its logistics person
+(`flow.notify_later`), and a split request to each of its brigadirs with
+«Hammasi keldi» in the bot (`flow.notify_split_later`) — each only while its
+«Sozlamalar» switch is on."""
 from __future__ import annotations
 
 import io
@@ -246,16 +248,18 @@ class SettingsBody(BaseModel):
     units: List[int]
     topup_min: int = Field(ge=1, le=1000)
     notify: Optional[bool] = None   # absent = unchanged (an older tab)
+    notify_brigadirs: Optional[bool] = None
 
 
 @router.put("/settings")
 def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(verify_admin)):
     was = flow.settings(db)
-    out = flow.save_settings(db, body.units, body.topup_min, body.notify)
+    out = flow.save_settings(db, body.units, body.topup_min, body.notify, body.notify_brigadirs)
     action_log.enrich(changes=[("units", len(was["units"]), len(out["units"])),
                                ("topup_min", was["topup_min"], out["topup_min"]),
-                               ("notify", was["notify"], out["notify"])])
+                               ("notify", was["notify"], out["notify"]),
+                               ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"])])
     global _drafted_at
     _drafted_at = 0.0   # the next board read drafts for a unit just enrolled
     return {**out, "all_units": _units(db)}
@@ -428,6 +432,7 @@ def post_assign(request_id: int, body: AssignBody, db: Session = Depends(get_db)
     except flow.FlowError as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
+    flow.notify_split_later(r.id)
     return _req_out(db, r, r.day)
 
 

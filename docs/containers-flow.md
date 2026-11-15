@@ -56,8 +56,10 @@ containers row from production and move it into the new button».
     docs/data-fixes.md.
   - **`container-receive` is a brigadir's «Qabul»** (2026-11-14): confirming
     what reached their line from a split request — their OWN unit only (a
-    supervisor's `role_id` is the unit), admins any. Admin-only until the
-    operator opens it to the brigadirs (the page-access grant is the gate; a
+    supervisor's `role_id` is the unit), admins any. **Open to the brigadir
+    role from 2026-11-15** (the operator asked how brigadirs accept and which
+    pages to open, and answered «Yes, both» — `startup.container_receive_brigadirs`,
+    default `["supervisor"]`); nothing else is opened to them (a
     holder of only this key sees the «Qabul» tab and nothing of the AXO /
     logistics side — `WHO` reads `/settings`, `RECV` the receipts).
   - **`container-watch` is the shift- and top-managers WATCHING** (2026-11-15,
@@ -73,11 +75,27 @@ containers row from production and move it into the new button».
 - **The one message** (2026-11-14): a new or cancelled request DMs its
   logistics person (`notify_request`, keys `container_request_new` /
   `_cancelled`, a button opening the page; category «other», subject `page`
-  `/containers/flow`) — **only while «Sozlamalar» → «Telegram xabarlari» is
+  `/containers/flow`) — **only while «Sozlamalar» → «Telegram xabarlari» →
+  «Logistika xodimiga» is
   on** (`container_flow.notify_logistics`, OFF by default; a settings save from
   an older tab without `notify` leaves it as it is). **Switched ON on
   2026-11-15** at the operator's word («turn on the telegram messages for
-  nuriddin aka») by `startup.container_flow_notify_on` (docs/data-fixes.md). Sent on a thread after the
+  nuriddin aka») by `startup.container_flow_notify_on` (docs/data-fixes.md).
+- **The brigadir's card** (2026-11-15): when the logistics person splits a
+  request, each brigadir of it gets ONE card (`notify_split`, key
+  `container_split`, subject page `/containers/flow`): the hour, their unit's
+  counts, who sent it — and two buttons. **«✅ Hammasi keldi» (green) confirms
+  in the bot** (callback `crv:<request>:<unit>`, `_crv_callback` →
+  `receive_from_bot`: the tapper must be an approved holder of
+  `supervisor:<unit>` — callback data is typeable and a card can be
+  forwarded; once; the card's buttons become a disabled «✅ Qabul qilindi ·
+  HH:MM»; logged as `containers.request_received` with `via=bot`).
+  **«✏️ Boshqa son»** opens `/containers/flow?tab=receive&rcv=<request>` —
+  «Qabul» with that card's count dialog open. Sent only while «Sozlamalar» →
+  «Brigadirlarga» is on (`container_flow.notify_brigadirs`, switched ON once by
+  the same one-shot) and only to a brigadir who may open «Qabul»
+  (`receive_open`: a personal grant / deny on the profile, else the role's
+  page access) — a card whose buttons lead to «no access» is worse than none. Sent on a thread after the
   commit, so a save never waits on Telegram. Nothing else here messages
   anybody.
 
@@ -236,7 +254,8 @@ hover): five long names pushed the status and the actions off a laptop.
 
 - A leader's own card; the brigadir's view of the AUTOMATIC batches (their
   «Qabul» covers requests only).
-- Every other notification (AXO, brigadirs, leaders) and the escalation chain.
+- Every other notification (AXO, leaders, a reminder to a brigadir who has
+  not confirmed) and the escalation chain.
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.
 - The operator's rulings on: the deadline of a late-drafted batch (a default

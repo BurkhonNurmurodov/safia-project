@@ -31,11 +31,18 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
   });
   // Telegram to the logistics person — its own switch, saved on the tap (the
   // server keeps units and the threshold as they are stored).
+  // `which` is the switch's field: `notify` (the logistics person) or
+  // `notify_brigadirs` (each brigadir a request is split to)
   const notify = useMutation({
-    mutationFn: (on) => api.put("/api/container-flow/settings", { units: data.units, topup_min: data.topup_min, notify: on }),
-    onSuccess: (_, on) => { toast.success(t(on ? "cflow.set.notifyOn" : "cflow.set.notifyOff")); onSaved(); },
+    mutationFn: ({ which, on }) => api.put("/api/container-flow/settings",
+      { units: data.units, topup_min: data.topup_min, [which]: on }),
+    onSuccess: (_, { on }) => { toast.success(t(on ? "cflow.set.notifyOn" : "cflow.set.notifyOff")); onSaved(); },
     onError: (e) => toast.error(errText(t, e)),
   });
+  const SWITCHES = [
+    { which: "notify", label: t("cflow.set.notifyLogistics"), hint: t("cflow.set.notifyHint") },
+    { which: "notify_brigadirs", label: t("cflow.set.notifyBrigadirs"), hint: t("cflow.set.notifyBrigHint") },
+  ];
   const ready = useQuery({
     queryKey: ["cflow-readiness", day],
     queryFn: () => api.get("/api/container-flow/readiness", { params: { day } }).then((r) => r.data.units),
@@ -69,12 +76,18 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
 
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={BellRing} title={t("cflow.set.notifyTitle")} subtitle={t("cflow.set.notifySub")} size="lg" />
-        <div className="px-5 pb-5 flex flex-wrap items-center gap-3">
-          {loading ? <SkeletonBlock className="h-[38px] w-48" /> : (
-            <SegmentedToggle value={data?.notify ? "on" : "off"} onChange={(v) => !notify.isPending && notify.mutate(v === "on")}
-              options={[["off", t("cflow.set.off")], ["on", t("cflow.set.on")]]} />
-          )}
-          <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.set.notifyHint")}</span>
+        <div className="px-5 pb-5 flex flex-col gap-3">
+          {SWITCHES.map((s) => (
+            <div key={s.which} className="grid grid-cols-1 sm:grid-cols-[200px_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
+              <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{s.label}</span>
+              {loading ? <SkeletonBlock className="h-[38px] w-40" /> : (
+                <SegmentedToggle value={data?.[s.which] ? "on" : "off"}
+                  onChange={(v) => !notify.isPending && notify.mutate({ which: s.which, on: v === "on" })}
+                  options={[["off", t("cflow.set.off")], ["on", t("cflow.set.on")]]} />
+              )}
+              <span className="text-xs" style={{ color: "var(--text-3)" }}>{s.hint}</span>
+            </div>
+          ))}
         </div>
       </div>
 

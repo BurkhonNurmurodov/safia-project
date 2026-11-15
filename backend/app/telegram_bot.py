@@ -6460,6 +6460,54 @@ def _fa_count(message: types.Message):
     bot.send_message(message.chat.id, forecast_answer.retired_text(_get_lang(tid)))
 
 
+# «Konteyner berish» (2026-11-15): «✅ Hammasi keldi» under the brigadir's card
+# — the containers split to their unit arrived as sent. The tapper must hold
+# that unit's brigadir profile (services/container_flow.receive_from_bot).
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("crv:"))
+def _crv_callback(call: types.CallbackQuery):
+    from app import tg_buttons
+    from app.services import container_flow as flow
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    try:
+        _, rid, mid = call.data.split(":")
+        rid, mid = int(rid), int(mid)
+    except ValueError:
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        with SessionLocal() as db:
+            code, r = flow.receive_from_bot(db, rid, mid, tid)
+            if code == "done":
+                db.commit()
+                action_log.record_bot(
+                    db, tid, "shopfloor", "containers.request_received",
+                    actor_name=flow.profile_name(db, f"supervisor:{mid}"), actor_role="supervisor",
+                    target_kind="container_request", target_id=rid, unit_id=mid,
+                    details=[("hour", f"{r.hour % 24:02d}:00"), ("via", "bot")])
+    except Exception:
+        logger.exception("container receipt: the button failed for %s", tid)
+        bot.answer_callback_query(call.id, flow.brig_text(lang, "failed"), show_alert=True)
+        return
+    if code != "done":
+        bot.answer_callback_query(call.id, flow.brig_text(lang, code), show_alert=True)
+        if code != "already":
+            return
+    at = flow.now().strftime("%H:%M")
+    if code == "done":
+        bot.answer_callback_query(call.id, flow.brig_text(lang, "done", at=at))
+    # the card keeps its text and trades its buttons for the outcome
+    try:
+        kb = types.InlineKeyboardMarkup()
+        kb.add(tg_buttons.disabled(flow.brig_text(lang, "done", at=at) if code == "done"
+                                   else flow.brig_text(lang, "already")))
+        tg_buttons.send(bot.edit_message_reply_markup, call.message.chat.id,
+                        call.message.message_id, reply_markup=kb)
+    except Exception:
+        logger.warning("container receipt: could not edit the card", exc_info=True)
+
+
 # ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»
 # restore list (services/auto_check_restore.py). Delete with that module.
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("acr:"))

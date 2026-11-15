@@ -490,6 +490,14 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новая заявка на контейнеры: {hour}", "{counts} | Срок: {due} | Отправил(а): {by}\n{note}"),
         "en": ("New container request: {hour}", "{counts} | Due: {due} | Sent by: {by}\n{note}"),
     },
+    # …and the brigadir's card when a request is split to their unit
+    # (`notify_split`; the DM is `_brig_body` with «Hammasi keldi» in the bot).
+    "container_split": {
+        "uz": ("Konteyner yuborildi: {hour}", "{counts} | Yubordi: {by}"),
+        "uz_cyrl": ("Контейнер юборилди: {hour}", "{counts} | Юборди: {by}"),
+        "ru": ("Отправлены контейнеры: {hour}", "{counts} | Отправил(а): {by}"),
+        "en": ("Containers sent: {hour}", "{counts} | Sent by: {by}"),
+    },
     "container_request_cancelled": {
         "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
         "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),

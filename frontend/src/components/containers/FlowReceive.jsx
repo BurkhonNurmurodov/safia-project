@@ -5,7 +5,7 @@
 // only their own unit, an admin every unit (and may confirm for one); the
 // shift- and top-managers watching (`container-watch`) see every unit, no button.
 // docs/containers-flow.md.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clock, PackageCheck, PencilLine } from "lucide-react";
 import Button from "../ui/Button";
@@ -29,7 +29,7 @@ function ReceiptChip({ x, t }) {
     : <Chip tone="ok" icon={Check}>{t("cflow.rcv.st.all")}</Chip>;
 }
 
-export default function FlowReceive({ t, day, toast, isAdmin }) {
+export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onOpened }) {
   const { tl } = useTranslit();
   const q = useQuery({
     queryKey: ["cflow-receipts", day],
@@ -49,6 +49,14 @@ export default function FlowReceive({ t, day, toast, isAdmin }) {
   // who may confirm: an admin, or the brigadir on their own unit — the managers
   // watching (`container-watch`) read every unit and press nothing
   const canAct = isAdmin || q.data?.unit != null;
+  // opened from the Telegram card's «Boshqa son»: that request's card, its
+  // count dialog — once its data is here; a card already confirmed just stays
+  useEffect(() => {
+    if (openId == null || !q.data) return;
+    const x = list.find((r) => String(r.request_id) === String(openId) && (q.data.unit == null || r.manager_id === q.data.unit));
+    if (x && !x.received && canAct) setEdit(x);
+    onOpened?.();
+  }, [openId, q.data, list, canAct, onOpened]);
 
   if (q.isError) {
     return <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, q.error)} />;
