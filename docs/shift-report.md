@@ -741,4 +741,9 @@ hair and without hair».
   header's own press sorts by «soch bilan». The cell's link opens the Quality
   page «Soch bilan». Every column is 14% again.
 - The payload is unchanged; the two-tile layout of 2026-11-14 is gone.
+- **The diagonal is an SVG, not a gradient** (the operator's screenshot the same
+  morning: the CSS `linear-gradient` hard stop along a shallow diagonal was not
+  anti-aliased and read as a jagged, dashed dark line). `splitCell` stretches
+  one SVG over the cell (`preserveAspectRatio="none"`): two triangles in the
+  halves' fills and one 1.5px non-scaling rule in `--bg-card`.
 

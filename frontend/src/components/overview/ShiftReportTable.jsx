@@ -631,10 +631,12 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const fa = has(a) ? toneFill(resolvedTone(a.value)) : null;
     const fb = has(b) ? toneFill(resolvedTone(b.value)) : null;
     const bg = (f) => f?.background ?? "transparent";
-    const paint = {
-      background: `linear-gradient(to bottom right, ${bg(fa)} calc(50% - 1px), var(--bg-card) calc(50% - 1px), `
-        + `var(--bg-card) calc(50% + 1px), ${bg(fb)} calc(50% + 1px))`,
-    };
+    // Drawn as an SVG stretched over the cell, not a CSS gradient: a gradient's
+    // hard stop along a shallow diagonal is not anti-aliased and showed as a
+    // jagged, dashed-looking dark line (the operator's screenshot, 2026-11-15).
+    // Two triangles plus one smooth 1.5px rule in the card's colour, whatever
+    // the cell's shape (`preserveAspectRatio="none"`, a non-scaling stroke).
+    const paint = { position: "relative" };
     const fig = (c, f) => (has(c)
       ? <span style={{ color: f.color }}>{pctText(c.value)}</span>
       : <span style={{ color: "var(--text-4)" }}>—</span>);
@@ -644,12 +646,21 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       tipNode: qualityTip(r),
       target: qualityTarget(r),
       children: (
-        <span className="relative block text-[11px] sm:text-xs">
-          {/* holds the row's one-line height; the figures sit in the corners */}
-          <span className="invisible">0</span>
-          <span className="absolute left-0 -top-[7px] font-bold leading-none">{fig(a, fa)}</span>
-          <span className="absolute right-0 -bottom-[7px] font-bold leading-none">{fig(b, fb)}</span>
-        </span>
+        <>
+          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100"
+            preserveAspectRatio="none" aria-hidden="true">
+            <polygon points="0,0 100,0 0,100" fill={bg(fa)} />
+            <polygon points="100,0 100,100 0,100" fill={bg(fb)} />
+            <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke" />
+          </svg>
+          <span className="relative block text-[11px] sm:text-xs">
+            {/* holds the row's one-line height; the figures sit in the corners */}
+            <span className="invisible">0</span>
+            <span className="absolute left-0.5 -top-[6px] font-bold leading-none">{fig(a, fa)}</span>
+            <span className="absolute right-0.5 -bottom-[6px] font-bold leading-none">{fig(b, fb)}</span>
+          </span>
+        </>
       ),
     });
   };
