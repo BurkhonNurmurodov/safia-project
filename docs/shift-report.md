@@ -835,3 +835,17 @@ the cell's tooltip, above the spelled-out «(keldi … + ta'til …) ÷ ro'yxatd
 Sorting, bands, legend and the link are unchanged. A payload without `came` /
 `roster` keeps printing the %. Frontend only (`attCell` in
 `components/overview/ShiftReportTable.jsx`).
+
+## «O'rtacha» — an average row under the board (2026-11-15)
+
+The operator, on «Smena kunligi»: «can we add average for all column here in
+the bottom of each». The shift report table ends in ONE «O'rtacha» row
+(`avgRow` in `components/overview/ShiftReportTable.jsx`), under every brigadir
+on screen — both shifts together when both are shown, unsorted, after the last
+group. Each column is the plain mean of the brigadirs' own figures, blanks
+(a `reason`, no value) left out; it is painted on the same bands as the rows
+and links nowhere, since no one page holds an average. «Davomat» prints the
+mean RATE (the rows print counts, and rosters differ in size); «Sifat nazorati
+%» is the split cell with each half averaged separately (`splitFig`, the
+drawing shared with the rows); «Xavotirlar» is the mean open count to one
+decimal. Frontend only — the payload is unchanged.

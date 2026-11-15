@@ -702,12 +702,15 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // is ~55px wide). A half with no figure stays unfilled with «—»; a cell with
   // neither is the usual blank. Two side-by-side halves stood here for an
   // hour first; the operator wanted the diagonal back.
-  const splitCell = (r) => {
-    const a = qualityCell(r);
-    const b = qualityCell(r, true);
+  const splitCell = (r) => splitFig(qualityCell(r), qualityCell(r, true), {
+    title: qualityTitle(r), tipNode: qualityTip(r), target: qualityTarget(r),
+  });
+  // The drawing itself, for any two figures — a brigadir's row, or the
+  // «O'rtacha» row under the board.
+  const splitFig = (a, b, { title, tipNode, target }) => {
     const has = (c) => !!c && !c.reason && isNum(c.value);
     if (!has(a) && !has(b)) {
-      return figCell(a, resolvedTone, (c) => pctText(c.value), qualityTitle(r), qualityTarget(r), qualityTip(r));
+      return figCell(a, resolvedTone, (c) => pctText(c.value), title, target, tipNode);
     }
     const fa = has(a) ? toneFill(resolvedTone(a.value)) : null;
     const fb = has(b) ? toneFill(resolvedTone(b.value)) : null;
@@ -717,9 +720,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const corner = "absolute font-bold leading-none text-[10.5px] sm:text-xs";
     return figTd({
       paint: { position: "relative" },
-      title: qualityTitle(r),
-      tipNode: qualityTip(r),
-      target: qualityTarget(r),
+      title,
+      tipNode,
+      target,
       children: (
         <>
           {/* The BOX fills the cell: the column itself is 90px on sm+
@@ -792,6 +795,46 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         : has ? pctText(cell.value)
         : <span style={{ color: "var(--text-4)" }}>—</span>,
     });
+  };
+
+  // «O'rtacha» — the row under the board (the operator, 2026-11-15: «add
+  // average for all column here in the bottom»): each column's plain mean over
+  // every brigadir on screen (both shifts when both are shown), blanks left
+  // out, painted on the same bands as the rows. Not a link — no one page holds
+  // an average. «Davomat» prints the mean RATE, since rosters differ in size;
+  // «Xavotirlar» the mean count to one decimal.
+  const meanOf = (cells) => {
+    const vals = cells.filter((c) => c && !c.reason && isNum(c.value)).map((c) => c.value);
+    return vals.length ? { value: vals.reduce((s, v) => s + v, 0) / vals.length } : { value: null };
+  };
+  const avgRow = () => {
+    const load = meanOf(rows.map((r) => r.load));
+    const att = meanOf(rows.map((r) => r.att));
+    const compl = meanOf(rows.map((r) => r.compl));
+    const qa = meanOf(rows.map((r) => qualityCell(r)));
+    const qb = meanOf(rows.map((r) => qualityCell(r, true)));
+    const conc = Math.round((rows.reduce((s, r) => s + (r.concerns?.open ?? 0), 0) / rows.length) * 10) / 10;
+    const hint = t("overview.sr.avgHint");
+    const hasAtt = isNum(att.value);
+    return (
+      <tr key="avg" style={{ boxShadow: "inset 0 2px 0 0 var(--border)" }}>
+        <td className="px-2 max-[359px]:px-1.5 sm:px-3 py-2 align-middle" title={hint}>
+          <span className="block text-[11.5px] sm:text-xs font-bold uppercase tracking-wide" style={{ color: "var(--text-1)" }}>
+            {t("overview.sr.avg")}
+          </span>
+        </td>
+        {figCell(load, loadTone, (c) => pctText(c.value), hint)}
+        {figTd({
+          tone: hasAtt ? attTone(att.value) : null,
+          paint: hasAtt ? segmentFill(att.value, ATT_SEGMENTS) : undefined,
+          title: hint,
+          children: hasAtt ? pctText(att.value) : <span style={{ color: "var(--text-4)" }}>—</span>,
+        })}
+        {figCell(compl, vypTone, (c) => pctText(c.value), hint)}
+        {splitFig(qa, qb, { title: hint })}
+        {figTd({ tone: concernsTone(conc), title: hint, children: conc })}
+      </tr>
+    );
   };
 
   let body;
@@ -894,9 +937,15 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         })}
       </Fragment>
     ));
+    body = (
+      <>
+        {body}
+        {avgRow()}
+      </>
+    );
   }
 
-  const right = (rows.length > 0 || isAdmin) && (
+  const right =(rows.length > 0 || isAdmin) && (
     <div className="flex items-center gap-2 flex-wrap justify-end">
       {missing > 0 && (
         <span
