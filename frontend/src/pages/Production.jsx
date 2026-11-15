@@ -229,6 +229,13 @@ const AUTOFILL_COL = "autofill";
 // (production.SAP_ROLES), so `absentCols` and the cards read this one list.
 const SAP_COLS = ["sap_plan", "sap_fact"];
 const SAP_ROLES = ["admin", "shift-manager"];
+// The ten container columns (CONTAINERS above) — capacities and counts — are
+// for these roles only from 2026-11-15 (the operator: the brigadirs' time to
+// fill the capacities is over). Like the «SAP» pair they are ABSENT for
+// everybody else, not merely hidden; the server takes a capacity from the same
+// roles (production.CONTAINER_ROLES).
+const CONTAINER_COLS = CONTAINERS.flatMap((c) => [`cap_${c.id}`, `cnt_${c.id}`]);
+const CONTAINER_ROLES = ["admin", "shift-manager"];
 // «O'lchov birligi» — the stored key («dona») to the word the reader sees. The
 // four keys are served on the payload (services/pp_uom is their one definition,
 // `catalog.uoms`), so this page holds no copy of the LIST — only of how each one
@@ -1954,6 +1961,8 @@ export default function Production() {
   const isAdmin = auth?.role === "admin";
   // May this viewer see the «SAP» columns and the two cards (`SAP_ROLES`)?
   const sapRole = SAP_ROLES.includes(auth?.role);
+  // …and the container columns (`CONTAINER_ROLES`)?
+  const containerRole = CONTAINER_ROLES.includes(auth?.role);
   // Does the unit on screen carry any group at all — a centre that lists groups,
   // or a line with a letter? Read off the dashboard, so the «Guruh» column and
   // the group controls appear the day a letter lands and not a moment before.
@@ -2007,14 +2016,15 @@ export default function Production() {
     mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
   });
   // The columns this view does not draw at all: «Guruh» on a unit with no
-  // groups, «Manba» on a day ПЛАН/ФАКТ are typed only, and the two «SAP»
+  // groups, «Manba» on a day ПЛАН/ФАКТ are typed only, the two «SAP»
   // columns for anybody outside `SAP_ROLES` (the dashboard drops their figures
-  // for everybody else too). None is offered to the picker either, since a
+  // for everybody else too), and the ten container columns outside
+  // `CONTAINER_ROLES`. None is offered to the picker either, since a
   // picker row that toggles nothing is a control that says nothing.
   const absentCols = useMemo(
     () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : []),
-           ...(sapRole ? [] : SAP_COLS)],
-    [hasGroups, typedOnly, sapRole],
+           ...(sapRole ? [] : SAP_COLS), ...(containerRole ? [] : CONTAINER_COLS)],
+    [hasGroups, typedOnly, sapRole, containerRole],
   );
   const onColsChange = (value) => {
     // The picker is never shown an absent column, and its hide-all / show-all /

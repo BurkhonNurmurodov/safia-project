@@ -4919,6 +4919,10 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
 # switch, adding, archiving, deleting — moves a figure or a stored quantity and
 # stays admin-only behind `_verify_admin`.
 UOM_ROLES = ("admin", "supervisor", "shift-manager")
+# Container capacities (`set_catalog_container`): brigadirs typed them until
+# 2026-11-15, when the operator closed that — the columns are now drawn for
+# these roles only (`CONTAINER_ROLES` in Production.jsx), and so is the write.
+CONTAINER_ROLES = ("admin", "shift-manager")
 
 
 class CatalogUomBody(BaseModel):
@@ -5058,10 +5062,11 @@ def set_catalog_container(body: CatalogContainerBody,
                           db: Session = Depends(get_db)):
     """Set one container capacity (services/pp_containers) on one or several
     catalog lines — the measure's twin (2026-10-30): the same audience
-    (UOM_ROLES), the same scope, the same dating, the same «nothing changed
-    freezes nothing». Like the measure, no figure reads a capacity — the page
-    computes the container counts from it — so it moves no stored quantity."""
-    if payload.get("role") not in UOM_ROLES:
+    (UOM_ROLES until 2026-11-15, CONTAINER_ROLES since), the same scope, the
+    same dating, the same «nothing changed freezes nothing». Like the measure,
+    no figure reads a capacity — the page computes the container counts from
+    it — so it moves no stored quantity."""
+    if payload.get("role") not in CONTAINER_ROLES:
         raise HTTPException(status_code=403,
                             detail="Not allowed to set container capacities")
     if body.field not in pp_containers.CONTAINERS:

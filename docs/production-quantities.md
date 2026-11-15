@@ -623,6 +623,15 @@ last columns, after «Pareto» (the operator's call, same day), and
   rectangle containers for a plan of 3 339 at capacity 20; it reads 167 now.
   The «Excel» button inserts the eight as values (capacities green, as typed
   inputs).
+- **Admins and shift managers only from 2026-11-15** (the operator: the
+  brigadirs had been given until a deadline to type the capacities, and it is
+  over). The ten columns are ABSENT for every other role — brigadirs and
+  leaders of every shift — like the «SAP» pair: not drawn, not offered by the
+  column picker, not in the «Excel» file (`CONTAINER_ROLES` in Production.jsx).
+  The write door follows: `PUT /api/production/catalog/containers` takes
+  `CONTAINER_ROLES` (admin, shift-manager), no longer `UOM_ROLES`, so a stale
+  brigadir tab gets a 403. The capacities they typed stay and keep feeding the
+  «Jamoalar» → «Konteynerlar» cards, «Smena kunligi» and «Konteynerlar».
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 
