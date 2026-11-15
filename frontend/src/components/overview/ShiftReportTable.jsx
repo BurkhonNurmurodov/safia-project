@@ -80,6 +80,7 @@ import {
 import TableCard, { Th } from "../ui/DataTable";
 import StatusBandsModal from "./StatusBandsModal";
 import Button from "../ui/Button";
+import KPICard from "../ui/KPICard";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
@@ -805,9 +806,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   // «O'rtacha» — the row under the board (the operator, 2026-11-15: «add
   // average for all column here in the bottom»): each column's plain mean over
-  // the brigadirs it closes, blanks left out. With both shifts on screen each
-  // shift ends in its own «O'rtacha» and the board in «Umumiy o'rtacha» over
-  // everybody (the operator, same day: «Add per-shift rows»). Painted on the
+  // the brigadirs it closes, blanks left out. Each shift ends in its own
+  // «O'rtacha» (the operator, same day: «Add per-shift rows»), and «Umumiy
+  // o'rtacha» over everybody sits under the board as cards. Painted on the
   // same bands as the rows. Not a link — no one page holds an average.
   // «Davomat» prints the mean RATE, since rosters differ in size; «Xavotirlar»
   // the mean count to one decimal.
@@ -815,72 +816,173 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const vals = cells.filter((c) => c && !c.reason && isNum(c.value)).map((c) => c.value);
     return vals.length ? { value: vals.reduce((s, v) => s + v, 0) / vals.length } : { value: null };
   };
-  // Its LOOK (the operator, same day: «make it another design, it should be
-  // seen as the average»): every brigadir row is a wall of solid tiles, so the
-  // average rows are NOT — a muted `--bg-inner` band with each figure as a
-  // rounded badge in its band's colour, centred in a plain cell. «Sifat» is
-  // two badges, with hair · without hair. The board-wide «Umumiy o'rtacha»
-  // carries a heavier rule above it than a shift's own row.
-  const avgPill = (paint, text) => (paint && text != null ? (
+  // Its LOOK — «Option B» of the design canvas the operator picked (2026-11-15,
+  // after «it should be visible, and the overall average also»): each shift's
+  // «O'rtacha» row is a GOLD band (brand tint, a 2px brand rule above, a Ø
+  // chip, the label in brand ink) whose figures are raised, rounded tiles in
+  // their band's colour — never the flat tiles every brigadir row wears. The
+  // board-wide average leaves the table: with both shifts on screen it is a
+  // row of `KPICard`s under it (`avgCards`), each split by shift. One shift on
+  // screen: its gold row IS the overall average, and no cards repeat it.
+  // The brand fill is #C8973F on both themes, so its tint is a fixed rgba.
+  const AVG_BAND = "rgba(200, 151, 63, 0.13)";
+  const avgFigs = (list) => {
+    const c = list.length ? list.reduce((s, r) => s + (r.concerns?.open ?? 0), 0) / list.length : null;
+    return {
+      load: meanOf(list.map((r) => r.load)).value,
+      att: meanOf(list.map((r) => r.att)).value,
+      compl: meanOf(list.map((r) => r.compl)).value,
+      qa: meanOf(list.map((r) => qualityCell(r))).value,
+      qb: meanOf(list.map((r) => qualityCell(r, true))).value,
+      conc: c == null ? null : Math.round(c * 10) / 10,
+    };
+  };
+  const avgPaint = {
+    load: (v) => toneFill(loadTone(v)),
+    att: (v) => segmentFill(v, ATT_SEGMENTS),
+    compl: (v) => toneFill(vypTone(v)),
+    q: (v) => toneFill(resolvedTone(v)),
+    conc: (v) => toneFill(concernsTone(v)),
+  };
+  const avgText = (k, v) => (!isNum(v) ? "—" : k === "conc" ? String(v) : pctText(v));
+  const avgPaintOf = (k, v) => (isNum(v) ? avgPaint[k](v) : null);
+  const avgDash = <span className="m-auto" style={{ color: "var(--text-4)" }}>—</span>;
+  // One raised tile; `big` is the card's figure.
+  const avgTile = (k, v, big = false) => {
+    const paint = avgPaintOf(k, v);
+    if (!paint) return avgDash;
+    return (
+      <span
+        className={`flex flex-1 items-center justify-center tabular-nums font-extrabold whitespace-nowrap ${big
+          ? "h-[60px] rounded-lg text-[26px] sm:text-[30px] font-sans"
+          : "min-h-[34px] rounded-md text-xs sm:text-[14px] shadow-[0_2px_6px_rgba(0,0,0,0.3)]"}`}
+        style={paint}
+      >
+        {avgText(k, v)}
+      </span>
+    );
+  };
+  // The quality pair as one raised tile cut corner to corner, like its cell.
+  const avgSplit = (qa, qb, big = false) => {
+    const fa = avgPaintOf("q", qa);
+    const fb = avgPaintOf("q", qb);
+    if (!fa && !fb) return avgDash;
+    const fig = (v, f) => (f
+      ? <span style={{ color: f.color }}>{pctText(v)}</span>
+      : <span style={{ color: "var(--text-4)" }}>—</span>);
+    const corner = `absolute font-extrabold leading-none tabular-nums ${big ? "text-lg sm:text-xl" : "text-[10.5px] sm:text-[13px]"}`;
+    return (
+      <span
+        className={`relative flex-1 overflow-hidden ${big ? "block h-[60px] rounded-lg" : "min-h-[34px] rounded-md shadow-[0_2px_6px_rgba(0,0,0,0.3)]"}`}
+        style={{ background: "var(--bg-inner)" }}
+      >
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polygon points="0,0 100,0 0,100" fill={fa?.background ?? "transparent"} />
+          <polygon points="100,0 100,100 0,100" fill={fb?.background ?? "transparent"} />
+          <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <span className={`${corner} ${big ? "left-2.5 top-2" : "left-[4px] top-[4px] sm:left-1.5"}`}>{fig(qa, fa)}</span>
+        <span className={`${corner} ${big ? "right-2.5 bottom-2" : "right-[4px] bottom-[4px] sm:right-1.5"}`}>{fig(qb, fb)}</span>
+      </span>
+    );
+  };
+  const qPairTitle = (f) => [
+    `${t("overview.sr.hairWith")}: ${isNum(f.qa) ? pctText(f.qa) : "—"}`,
+    `${t("overview.sr.hairWithout")}: ${isNum(f.qb) ? pctText(f.qb) : "—"}`,
+  ].join("\n");
+  const AvgMark = ({ big = false }) => (
     <span
-      className="inline-flex items-center justify-center rounded-full px-1 sm:px-2 py-[3px] text-[10.5px] sm:text-xs font-bold tabular-nums leading-none whitespace-nowrap"
-      style={paint}
+      aria-hidden="true"
+      className={`grid flex-shrink-0 place-items-center font-extrabold ${big ? "h-7 w-7 rounded-lg text-[15px]" : "h-5 w-5 rounded-md text-xs max-sm:hidden"}`}
+      style={{ background: "var(--brand)", color: "var(--on-brand)" }}
     >
-      {text}
+      Ø
     </span>
-  ) : <span style={{ color: "var(--text-4)" }}>—</span>);
+  );
   const avgTd = (title, children) => (
     <td
-      className={`${TD_FIG} ${TD_PAD}`}
+      className="p-[5px] max-sm:p-[3px] align-middle"
       style={RULE}
       onMouseEnter={(e) => showTip(e, title, null)}
       onMouseLeave={() => setTip(null)}
     >
-      {children}
+      <span className="flex">{children}</span>
     </td>
   );
-  const avgRow = (rows, key, label, overall = false) => {
-    const load = meanOf(rows.map((r) => r.load)).value;
-    const att = meanOf(rows.map((r) => r.att)).value;
-    const compl = meanOf(rows.map((r) => r.compl)).value;
-    const qa = meanOf(rows.map((r) => qualityCell(r))).value;
-    const qb = meanOf(rows.map((r) => qualityCell(r, true))).value;
-    const conc = Math.round((rows.reduce((s, r) => s + (r.concerns?.open ?? 0), 0) / rows.length) * 10) / 10;
+  const avgRow = (list, key, label) => {
+    const f = avgFigs(list);
     const hint = t("overview.sr.avgHint");
-    const pct = (v) => (isNum(v) ? pctText(v) : null);
-    const pill = (v, toneFn) => avgPill(isNum(v) ? toneFill(toneFn(v)) : null, pct(v));
-    const qTitle = [
-      `${t("overview.sr.hairWith")}: ${pct(qa) ?? "—"}`,
-      `${t("overview.sr.hairWithout")}: ${pct(qb) ?? "—"}`,
-      hint,
-    ].join("\n");
     return (
-      <tr
-        key={key}
-        style={{
-          background: "var(--bg-inner)",
-          boxShadow: `inset 0 ${overall ? 2 : 1}px 0 0 var(--border)`,
-        }}
-      >
+      <tr key={key} style={{ background: AVG_BAND, boxShadow: "inset 0 2px 0 0 var(--brand)" }}>
         <td className="px-2 max-[359px]:px-1.5 sm:px-3 py-2 align-middle" title={hint}>
-          <span
-            className="block text-[11px] sm:text-[11.5px] font-bold uppercase tracking-wider"
-            style={{ color: overall ? "var(--text-1)" : "var(--text-2)" }}
-          >
-            {label}
+          <span className="flex items-center gap-2">
+            <AvgMark />
+            <span
+              className="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider leading-snug"
+              style={{ color: "var(--brand-text)" }}
+            >
+              {label}
+            </span>
           </span>
         </td>
-        {avgTd(hint, pill(load, loadTone))}
-        {avgTd(hint, avgPill(isNum(att) ? segmentFill(att, ATT_SEGMENTS) : null, pct(att)))}
-        {avgTd(hint, pill(compl, vypTone))}
-        {avgTd(qTitle, (
-          <span className="inline-flex items-center justify-center gap-0.5 sm:gap-1">
-            {pill(qa, resolvedTone)}
-            {pill(qb, resolvedTone)}
-          </span>
-        ))}
-        {avgTd(hint, avgPill(toneFill(concernsTone(conc)), conc))}
+        {avgTd(hint, avgTile("load", f.load))}
+        {avgTd(hint, avgTile("att", f.att))}
+        {avgTd(hint, avgTile("compl", f.compl))}
+        {avgTd(`${qPairTitle(f)}\n${hint}`, avgSplit(f.qa, f.qb))}
+        {avgTd(hint, avgTile("conc", f.conc))}
       </tr>
+    );
+  };
+  // The overall average as cards, each figure split by shift underneath.
+  const avgCards = () => {
+    const all = avgFigs(rows);
+    const per = groups.map((g) => ({ key: g.shift ?? "none", name: shiftName(g.shift), f: avgFigs(g.rows) }));
+    const hint = t("overview.sr.avgHint");
+    const line = (p, k, text, dot) => (
+      <div key={p.key} className="flex items-center justify-between gap-2 text-xs">
+        <span className="flex min-w-0 items-center gap-1.5" style={{ color: "var(--text-2)" }}>
+          <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: dot ?? "var(--text-4)" }} />
+          <span className="truncate">{p.name}</span>
+        </span>
+        <span className="font-bold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{text}</span>
+      </div>
+    );
+    const card = (k, label) => (
+      <KPICard key={k} label={label} tooltip={hint} value={<span className="flex">{avgTile(k, all[k], true)}</span>}>
+        <div className="flex flex-col gap-1.5">
+          {per.map((p) => line(p, k, avgText(k, p.f[k]), avgPaintOf(k, p.f[k])?.background))}
+        </div>
+      </KPICard>
+    );
+    return (
+      <div className="mt-4">
+        <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+          <AvgMark big />
+          <span className="text-sm font-extrabold uppercase tracking-wider" style={{ color: "var(--brand-text)" }}>
+            {t("overview.sr.avgAll")}
+          </span>
+          <span className="text-xs" style={{ color: "var(--text-3)" }}>
+            {fill(t("overview.sr.avgAllSub"), { n: rows.length })}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {card("load", t("overview.sr.colLoad"))}
+          {card("att", t("overview.sr.colAtt"))}
+          {card("compl", t("overview.sr.colCompl"))}
+          <KPICard
+            key="q"
+            label={`${t("overview.sr.colQuality")} · ${t("overview.sr.hairWithShort")} / ${t("overview.sr.hairWithoutShort")}`}
+            tooltip={`${qPairTitle(all)}\n${hint}`}
+            value={<span className="flex">{avgSplit(all.qa, all.qb, true)}</span>}
+          >
+            <div className="flex flex-col gap-1.5">
+              {per.map((p) => line(p, "q",
+                `${isNum(p.f.qa) ? pctText(p.f.qa) : "—"} / ${isNum(p.f.qb) ? pctText(p.f.qb) : "—"}`))}
+            </div>
+          </KPICard>
+          {card("conc", t("overview.sr.colConcerns"))}
+        </div>
+      </div>
     );
   };
 
@@ -982,15 +1084,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
             </tr>
           );
         })}
-        {multi && avgRow(g.rows, `avg-${g.shift ?? "none"}`, t("overview.sr.avg"))}
+        {avgRow(g.rows, `avg-${g.shift ?? "none"}`, multi ? `${t("overview.sr.avg")} · ${shiftName(g.shift)}` : t("overview.sr.avg"))}
       </Fragment>
     ));
-    body = (
-      <>
-        {body}
-        {avgRow(rows, "avg", t(multi ? "overview.sr.avgAll" : "overview.sr.avg"), true)}
-      </>
-    );
   }
 
   const right =(rows.length > 0 || isAdmin) && (
@@ -1127,6 +1223,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         </thead>
         <tbody>{body}</tbody>
       </TableCard>
+
+      {multi && rows.length > 0 && !(isError && !data) && avgCards()}
 
       {isAdmin && (
         <StatusBandsModal open={bandsOpen} onClose={() => setBandsOpen(false)} bands={bands} />

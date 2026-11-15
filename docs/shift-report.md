@@ -868,3 +868,22 @@ each figure a rounded BADGE in its band's colour inside a plain cell
 (`avgPill` / `avgTd`). «Sifat nazorati %» is two badges side by side, with
 hair · without hair, both named in the hover box. «Umumiy o'rtacha» has a 2px
 rule above it and the strongest label; a shift's own «O'rtacha» a 1px rule.
+
+**Option B — the look the operator picked** (same day, from a design canvas of
+three: the muted badges then live, gold rows, and gold rows plus cards; the
+brief «it should be visible, and the overall average also»). Supersedes the
+badge look above:
+
+- **Each shift's «O'rtacha · Smena N»** closes its group as a GOLD band — the
+  brand fill at 13% (`AVG_BAND`; #C8973F on both themes, so a fixed rgba), a
+  2px brand rule above, a Ø chip and the label in `--brand-text` — whose
+  figures are raised, rounded tiles in their band's colour (`avgTile`,
+  `avgSplit` for the quality pair), never the flat tiles of a brigadir row.
+- **«Umumiy o'rtacha» leaves the table**: with both shifts on screen it is a
+  row of five `KPICard`s under it (`avgCards`) — the column's overall mean as
+  a large band-coloured tile, and under it one line per shift (a dot in that
+  shift's band colour, its figure). Two cards a row on a phone, three on sm,
+  five from lg. Its heading says how many brigadirs it covers
+  (`overview.sr.avgAllSub`).
+- **One shift on screen**: the gold row is the only average — it IS the
+  overall one, and no cards repeat it.
