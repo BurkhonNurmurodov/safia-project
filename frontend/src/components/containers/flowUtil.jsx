@@ -6,6 +6,7 @@ import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import GroupBadge from "../ui/GroupBadge";
 import { hourLabel } from "../production/HourlyContainers";
+import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
 export const REASONS = ["short", "damaged", "wrong_type", "other"];
@@ -173,3 +174,14 @@ export function CountPills({ counts, t, of }) {
     </span>
   );
 }
+
+
+// ── colours a chart reuses (one fixed hue per identity, on every chart) ─────
+// The three stages of a request's containers: asked → split → received.
+export const STAGE_COLORS = { asked: "#3b82f6", given: "#a855f7", received: "#22c55e" };
+// A container type wears its own colour wherever a chart splits by type.
+export const TYPE_COLORS = { yellow: "#eab308", round: "#f97316", grey: "#94a3b8", bucket: "#3b82f6", box: "#14b8a6" };
+
+// The on-time band for a WHOLE percent (58, not 0.58 — `statusBands` judges
+// fractions): "ok" | "warn" | "bad" | null.
+export const onTimeTone = (pct) => (pct == null ? null : ontimeTone(pct / 100));

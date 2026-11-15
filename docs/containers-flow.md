@@ -284,6 +284,54 @@ Tabs (`SegmentedToggle asTabs`, remembered in `cflow_tab`), then the day:
 Count columns are headed by short names (`cflow.ct.*`, the full name on
 hover): five long names pushed the status and the actions off a laptop.
 
+### «Tahlil», and the page rebuilt around the request flow (2026-11-15)
+
+The operator: «add more analytics with graphs … rebuild it with good design,
+all the containers app».
+
+- **Tabs** (`TABS` in `pages/ContainerFlow.jsx`): «So'rovlar» · «Qabul» ·
+  **«Tahlil»** · «Hisobot» · **«Partiyalar»** · «Sozlamalar». The four tabs of
+  the AUTOMATIC batches (AXO · Logistika · Liderlar · Hammasi) are folded into
+  ONE, «Partiyalar», its steps a small toggle inside (`BATCH_TABS`,
+  `cflow_batch_tab`); it shows to an admin always and to anybody else only
+  once a unit is enrolled — with none there is nothing in it to read. The day
+  stepper leaves the two period tabs; «Yangi so'rov» sits on «So'rovlar».
+- **«Kun holati»** on «So'rovlar» (`DayStatus`): the day's requests by where
+  they stand as ONE bar (arrived · split, waiting for receipt · waiting for
+  logistics · overdue · cancelled) and the containers asked → split →
+  received. Always the same height — every state named, 0 where none — so a
+  request made or split never moves the list.
+- **«Tahlil»** (`components/containers/FlowAnalytics.jsx`, `GET /analytics`,
+  `flow.analytics` — `ANY`, so the managers watching read it too): a period
+  (last 7 days by default) as pictures. Its `summary` IS `requests_report`'s
+  plus `confirm_pct`, `received_pct`, `avg_confirm_min`, `reminded`, so its
+  cards and «Hisobot» agree by construction.
+  - Cards, each with its own bar (`Meter` / `SplitBar`): requests by state; split
+    on time % against the 95% tick; splits confirmed by brigadirs %; containers
+    arrived %.
+  - «Tezlik»: sent → logistics opened → split → brigadir received, the average
+    time to each, and the reminders sent.
+  - Charts (ApexCharts, default tooltips): asked → split → received per day
+    (weeks from Monday past `WEEK_AFTER` = 45 days; labels thinned to the
+    card's measured width); split on time % per day, each bar in its band's
+    colour, the 95% line; containers per production hour (the peak hours);
+    per container type.
+  - «Brigadirlar bo'yicha»: given (an inline bar, relative to the largest),
+    received, missing, splits confirmed %, time to confirm, reminders.
+  - «Nega kam?»: the reasons logistics split short and brigadirs received
+    short, each one bar.
+  - Colours are fixed in `flowUtil`: `STAGE_COLORS` (asked blue · split purple
+    · received green) and `TYPE_COLORS` (a container type's own colour).
+- **The on-time colour was wrong** on «Hisobot» since v4.519.0:
+  `statusBands.ontimeTone` judges a FRACTION and was handed a whole percent, so
+  every figure read green. `flowUtil.onTimeTone(pct)` divides first; both tabs
+  use it.
+- **«Konteynerlar» board** (`/containers`): «Soatlar bo'yicha grafik»
+  (`components/containers/HourChart.jsx`) — one bar per production hour stacked
+  by container type, the hour now marked, the peak hour named; the hourly
+  table's own numbers. Not in TV mode (that board is scaled as a whole and its
+  table already shows the hours around now).
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card; the brigadir's view of the AUTOMATIC batches (their

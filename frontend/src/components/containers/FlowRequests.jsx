@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Plus, Sparkles, Split, Trash2, Wand2,
+  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Plus, Sparkles, Split, Trash2, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -26,12 +26,13 @@ import CountStepper from "../ui/CountStepper";
 import ActionMenu from "../ui/ActionMenu";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
+import { SplitBar, SplitLegend } from "../ui/Meter";
 import { tashkentNow } from "../production/HourlyContainers";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
-  useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN,
+  useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
 } from "./flowUtil";
 
 const REFRESH_MS = 60_000;
@@ -137,6 +138,8 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
         <DayStrip t={t} day={day} list={list} loading={q.isLoading} now={now} onPick={roles.axo ? onNew : null} />
       )}
 
+      <DayStatus t={t} list={list} loading={q.isLoading} />
+
       {/* phone: a card per request */}
       <div className="md:hidden flex flex-col gap-2.5">
         <SectionHead icon={ClipboardList} title={t("cflow.req.title")}
@@ -184,6 +187,53 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
           onDone={() => { setCancel(null); done(t("cflow.req.cancelled")); }} onFail={fail} />
       )}
     </div>
+  );
+}
+
+// The day at a glance (2026-11-15): its requests by where they stand, as ONE
+// bar, and the containers asked → split → received. Always the same height —
+// the legend names every state, with 0 where there is none — so a request
+// made, split or cancelled never moves the list under it.
+function DayStatus({ t, list, loading }) {
+  const live = list.filter((r) => r.status !== "cancelled");
+  const arrived = (r) => r.status === "assigned" && r.receipt && r.receipt.confirmed === r.receipt.units && r.receipt.units > 0;
+  const n = {
+    arrived: live.filter(arrived).length,
+    split: live.filter((r) => r.status === "assigned" && !arrived(r)).length,
+    waiting: live.filter((r) => r.status === "requested" && !r.overdue).length,
+    overdue: live.filter((r) => r.status === "requested" && r.overdue).length,
+    cancelled: list.length - live.length,
+  };
+  const parts = [
+    { key: "arrived", label: t("cflow.day.arrived"), value: n.arrived, color: "#22c55e" },
+    { key: "split", label: t("cflow.day.split"), value: n.split, color: STAGE_COLORS.given },
+    { key: "waiting", label: t("cflow.day.waiting"), value: n.waiting, color: "#eab308" },
+    { key: "overdue", label: t("cflow.day.overdue"), value: n.overdue, color: "#ef4444" },
+    { key: "cancelled", label: t("cflow.day.cancelled"), value: n.cancelled, color: "#94a3b8" },
+  ];
+  const asked = live.reduce((s, r) => s + sum(r.lines), 0);
+  const given = live.reduce((s, r) => s + r.parts.reduce((x, p) => x + sum(p.counts), 0), 0);
+  const got = live.reduce((s, r) => s + r.parts.reduce((x, p) => x + sum(p.received), 0), 0);
+  const stages = [["asked", asked], ["given", given], ["received", got]];
+  return (
+    <section className="rounded-2xl px-4 py-3 flex flex-col gap-2.5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+          <Activity size={15} style={{ color: "var(--brand-text)" }} />{t("cflow.day.title")}
+        </span>
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-1 ml-auto text-xs" style={{ color: "var(--text-3)" }}>
+          {stages.map(([k, v]) => (
+            <span key={k} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span className="w-2 h-2 rounded-full" aria-hidden style={{ background: STAGE_COLORS[k] }} />
+              {t(`cflow.an.stage.${k}`)}
+              <b className="tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{loading ? "…" : fmt(v)}</b>
+            </span>
+          ))}
+        </span>
+      </div>
+      {loading ? <SkeletonBlock className="h-2 w-full rounded-full" /> : <SplitBar parts={parts} height={8} />}
+      <SplitLegend parts={parts.map((p) => ({ ...p, value: loading ? "…" : p.value }))} />
+    </section>
   );
 }
 

@@ -16,8 +16,7 @@ import { tashkentNow } from "../production/HourlyContainers";
 import { exportXlsx } from "../../utils/exportXlsx";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { ontimeTone } from "../../utils/statusBands";
-import { fmt, errText, durText } from "./flowUtil";
+import { fmt, errText, durText, onTimeTone } from "./flowUtil";
 
 const PAGE = 50;
 const COLS = ["need", "issued", "delivered", "accepted", "gap_axo", "gap_logistics", "gap_dispute", "surplus"];
@@ -165,7 +164,7 @@ function RequestsReport({ t, loading, rq }) {
         <KPICard icon={ClipboardList} label={t("cflow.rq.count")} value={dash ?? fmt(s?.requests)}
           sub={s ? t("cflow.rq.countSub").replace("{a}", s.assigned).replace("{w}", s.waiting + s.overdue).replace("{c}", s.cancelled) : ""} />
         <KPICard icon={Gauge} label={t("cflow.rq.onTime")} value={dash ?? pct(s?.on_time_pct)}
-          valueColor={ontimeTone(s?.on_time_pct) ? `var(--status-${ontimeTone(s.on_time_pct)})` : undefined}
+          valueColor={onTimeTone(s?.on_time_pct) ? `var(--status-${onTimeTone(s.on_time_pct)})` : undefined}
           sub={s ? t("cflow.rq.onTimeSub").replace("{ok}", s.on_time).replace("{late}", s.late).replace("{over}", s.overdue) : ""} />
         <KPICard icon={Timer} label={t("cflow.rq.speed")} value={dash ?? mins(s?.avg_assign_min)}
           sub={s ? t("cflow.rq.speedSub").replace("{d}", mins(s.avg_seen_min)) : ""} />

@@ -283,6 +283,15 @@ def get_report(date_from: date = Query(...), date_to: date = Query(...),
     return {**flow.report(db, date_from, date_to), "requests": flow.requests_report(db, date_from, date_to)}
 
 
+@router.get("/analytics")
+def get_analytics(date_from: date = Query(...), date_to: date = Query(...),
+                  db: Session = Depends(get_db), payload: dict = Depends(ANY)):
+    """«Tahlil»: the period's requests per day, hour, container type and
+    brigadir — what the charts draw."""
+    _span(date_from, date_to)
+    return flow.analytics(db, date_from, date_to)
+
+
 class ReportXlsxBody(BaseModel):
     date_from: date
     date_to: date

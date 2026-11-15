@@ -632,6 +632,18 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(rep["reasons"]["short"], 0)
         self.assertEqual(rep["days"][0]["requests"], 2)
         self.assertEqual(rep["people"][0]["name"], "Nuriddin aka")
+        # «Tahlil»: the same period per hour, type and brigadir; its summary IS the report's
+        an = flow.analytics(self.db, DAY, DAY)
+        self.assertEqual({k: an["summary"][k] for k in sm}, sm)
+        self.assertEqual([(h["hour"], h["requests"], h["asked"], h["given"]) for h in an["hours"]], [(10, 1, 52, 52)])
+        self.assertEqual({x["ctype"]: (x["asked"], x["given"], x["received"]) for x in an["types"]},
+                         {"yellow": (40, 40, 38), "bucket": (12, 12, 12)})
+        by = {u["manager_id"]: u for u in an["units"]}
+        self.assertEqual((by[1]["given"], by[1]["received"], by[1]["missing"], by[1]["confirm_pct"]), (32, 30, 2, 100))
+        self.assertEqual((by[2]["given"], by[2]["received"], by[2]["missing"]), (20, 20, 0))
+        self.assertEqual(an["receipt_reasons"]["damaged"], 1)
+        self.assertEqual((an["days"][0]["assigned"], an["days"][0]["on_time_pct"]), (1, 100))
+        self.assertEqual((an["summary"]["confirm_pct"], an["summary"]["received_pct"]), (100, 96))
         self.db.query(ProfilePermission).filter_by(profile_key=nk).update({"mode": "deny"})
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
@@ -703,7 +715,7 @@ class PageKeyTest(unittest.TestCase):
             if method in ("POST", "PUT") and not path.endswith("/report.xlsx"):
                 self.assertNotIn(g, ("any", "who", "receive+watch"), (method, path))
         self.assertEqual(guard[("GET", f"{p}/settings")], "who")
-        for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"),
+        for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"), ("GET", f"{p}/analytics"),
                   ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
             self.assertEqual(guard[k], "any", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),

@@ -25,6 +25,7 @@ import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, isFresh } from "../components/containers/FlowRequests";
 import FlowReceive from "../components/containers/FlowReceive";
+import FlowAnalytics from "../components/containers/FlowAnalytics";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useOpenParam } from "../hooks/useOpenParam";
 import { useLang } from "../context/LangContext";
@@ -49,10 +50,20 @@ import api from "../utils/api";
 // leader's answer, a forced close and the settings are admins'.
 const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
-const TABS = ["requests", "receive", "axo", "logistics", "leaders", "all", "report", "settings"];
-const tabsFor = (r) => TABS.filter((k) => r.admin
-  || ((k === "requests" || k === "all" || k === "report") && (r.axo || r.logistics || r.watch))
-  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics) || (k === "receive" && (r.receive || r.watch)));
+// The page's tabs (2026-11-15, rebuilt): the request flow people use every
+// hour first — «So'rovlar», «Qabul» — then what it adds up to — «Tahlil» (the
+// graphs), «Hisobot» (the tables, Excel) — and the AUTOMATIC batches folded
+// into ONE tab, «Partiyalar», with its own steps inside (`BATCH_TABS`). That
+// tab shows to an admin always, to anybody else only once a unit is enrolled:
+// with none there is nothing in it to read.
+const TABS = ["requests", "receive", "analytics", "report", "batches", "settings"];
+const BATCH_TABS = ["axo", "logistics", "leaders", "all"];
+const batchTabsFor = (r) => BATCH_TABS.filter((k) => r.admin || k === "all"
+  || (k === "axo" && r.axo) || (k === "logistics" && r.logistics));
+const tabsFor = (r, enrolled) => TABS.filter((k) => r.admin
+  || ((k === "requests" || k === "analytics" || k === "report") && (r.axo || r.logistics || r.watch))
+  || (k === "batches" && enrolled && (r.axo || r.logistics || r.watch))
+  || (k === "receive" && (r.receive || r.watch)));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
@@ -94,7 +105,10 @@ export default function ContainerFlow() {
     refetchInterval: REFRESH_MS,
     enabled: flowSide,
   });
-  const tabs = tabsFor(roles);
+  const tabs = tabsFor(roles, (settings.data?.units ?? []).length > 0);
+  const batchTabs = batchTabsFor(roles);
+  const [subSaved, setSub] = usePersistentState("cflow_batch_tab", "all");
+  const sub = batchTabs.includes(subSaved) ? subSaved : batchTabs[0];
   // The «So'rovlar» tab counts the requests its viewer has not opened yet
   // (the same query the tab reads — fetched once).
   const reqs = useQuery({
@@ -111,7 +125,7 @@ export default function ContainerFlow() {
 
   const batches = board.data?.batches ?? [];
   const enrolled = settings.data?.units ?? null;
-  const onFlow = !["report", "settings", "requests", "receive"].includes(tab);
+  const onFlow = tab === "batches";
   const nothingOn = onFlow && enrolled != null && enrolled.length === 0 && !board.isLoading && batches.length === 0;
   const ctx = { t, day, batches, loading: board.isLoading, done, fail, refresh };
 
@@ -135,8 +149,8 @@ export default function ContainerFlow() {
               </span>
             ) : t(`cflow.tab.${k}`),
           }))} />}
-        {tab !== "report" && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
-        {roles.axo && !["settings", "report", "receive"].includes(tab) && (
+        {!["report", "analytics"].includes(tab) && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
+        {roles.axo && tab === "requests" && (
           <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => openNew()}>
             {t("cflow.req.new")}
           </Button>
@@ -155,10 +169,19 @@ export default function ContainerFlow() {
             : <Button onClick={() => setTab("requests")}>{t("cflow.tab.requests")}</Button>} />
       ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} />
         : tab === "receive" ? <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone} />
-        : tab === "axo" ? <AxoTab {...ctx} />
-        : tab === "logistics" ? <LogisticsTab {...ctx} />
-        : tab === "leaders" ? <LeadersTab {...ctx} />
-        : tab === "all" ? <AllTab {...ctx} isAdmin={isAdmin} canSettle={roles.axo} />
+        : tab === "batches" ? (
+          <div className="flex flex-col gap-4">
+            {batchTabs.length > 1 && (
+              <SegmentedToggle asTabs size="sm" value={sub} onChange={setSub}
+                options={batchTabs.map((k) => [k, t(`cflow.tab.${k}`)])} />
+            )}
+            {sub === "axo" ? <AxoTab {...ctx} />
+              : sub === "logistics" ? <LogisticsTab {...ctx} />
+              : sub === "leaders" ? <LeadersTab {...ctx} />
+              : <AllTab {...ctx} isAdmin={isAdmin} canSettle={roles.axo} />}
+          </div>
+        )
+        : tab === "analytics" ? <FlowAnalytics t={t} />
         : tab === "report" ? <FlowReport t={t} toast={toast} />
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}

@@ -1002,6 +1002,104 @@ def requests_report(db: Session, d_from: date, d_to: date) -> dict:
             "people": sorted(out_people, key=lambda p: p["name"] or "")}
 
 
+def analytics(db: Session, d_from: date, d_to: date) -> dict:
+    """«Tahlil» (2026-11-15, the operator: «add more analytics with graphs»):
+    the requests of a period cut the ways a chart needs — per day (the trend),
+    per production hour (the peak), per container type, per brigadir (given →
+    received, how fast they confirm, reminders), and the reasons. Everything
+    `requests_report` answers rides along (`summary`, `reasons`, `people`), so
+    the cards above the charts and the report's own agree by construction.
+    Cancelled requests count nowhere but in `summary.cancelled`."""
+    base = requests_report(db, d_from, d_to)
+    rows = db.query(ContainerRequest).filter(ContainerRequest.day >= d_from, ContainerRequest.day <= d_to,
+                                             ContainerRequest.status != "cancelled").all()
+    parts: dict = {}
+    if rows:
+        for p in db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id.in_([r.id for r in rows])).all():
+            parts.setdefault(p.request_id, []).append(p)
+    mids = {p.manager_id for ps in parts.values() for p in ps}
+    names = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    hours: dict = {}
+    types = {k: {"ctype": k, "asked": 0, "given": 0, "received": 0} for k in KEYS}
+    units: dict = {}
+    receipt_reasons = {k: 0 for k in REASONS}
+    day_x: dict = {}
+    confirm_min: list = []
+    reminded = 0
+    for r in rows:
+        h = hours.setdefault(r.hour, {"hour": r.hour, "requests": 0, "asked": 0, "given": 0})
+        h["requests"] += 1
+        for k, n in (r.lines or {}).items():
+            h["asked"] += n
+            if k in types:
+                types[k]["asked"] += n
+        dx = day_x.setdefault(r.day, {"assigned": 0, "on_time": 0, "_assign": [], "_seen": []})
+        if r.seen_at is not None:
+            dx["_seen"].append((r.seen_at - r.created_at).total_seconds() / 60)
+        if r.status != "assigned":
+            continue
+        dx["assigned"] += 1
+        dx["on_time"] += 0 if r.late else 1
+        dx["_assign"].append((r.assigned_at - r.created_at).total_seconds() / 60)
+        by_unit: dict = {}
+        for p in parts.get(r.id, []):
+            h["given"] += p.count
+            if p.ctype in types:
+                types[p.ctype]["given"] += p.count
+            by_unit.setdefault(p.manager_id, []).append(p)
+        for mid, ps in by_unit.items():
+            m = names.get(mid)
+            u = units.setdefault(mid, {"manager_id": mid, "unit": getattr(m, "name", None),
+                                       "shift": getattr(m, "shift", None), "splits": 0, "given": 0,
+                                       "confirmed": 0, "sent_confirmed": 0, "received": 0,
+                                       "missing": 0, "reminded": 0, "_min": []})
+            u["splits"] += 1
+            u["given"] += sum(p.count for p in ps)
+            if any(p.reminded_at is not None for p in ps):
+                u["reminded"] += 1
+                reminded += 1
+            if all(p.received is not None for p in ps):
+                sent, got = sum(p.count for p in ps), sum(p.received for p in ps)
+                u["confirmed"] += 1
+                u["sent_confirmed"] += sent
+                u["received"] += got
+                u["missing"] += sent - got
+                for p in ps:
+                    if p.ctype in types:
+                        types[p.ctype]["received"] += p.received
+                why = next((p.received_reason for p in ps if p.received_reason), None)
+                if why:
+                    receipt_reasons[why] = receipt_reasons.get(why, 0) + 1
+                took = (max(p.received_at for p in ps) - r.assigned_at).total_seconds() / 60
+                u["_min"].append(took)
+                confirm_min.append(took)
+    avg = lambda xs: round(sum(xs) / len(xs)) if xs else None      # noqa: E731
+    days = []
+    for d in base["days"]:
+        dx = day_x.get(date.fromisoformat(d["day"]), {"assigned": 0, "on_time": 0, "_assign": [], "_seen": []})
+        judged = dx["assigned"] + d["overdue"]
+        days.append({**d, "assigned": dx["assigned"], "on_time": dx["on_time"],
+                     "on_time_pct": round(100 * dx["on_time"] / judged) if judged else None,
+                     "avg_assign_min": avg(dx["_assign"]), "avg_seen_min": avg(dx["_seen"])})
+    out_units = []
+    for u in units.values():
+        mins = u.pop("_min")
+        u["avg_confirm_min"] = avg(mins)
+        u["confirm_pct"] = round(100 * u["confirmed"] / u["splits"]) if u["splits"] else None
+        out_units.append(u)
+    s = dict(base["summary"])
+    s["avg_confirm_min"] = avg(confirm_min)
+    s["reminded"] = reminded
+    s["confirm_pct"] = round(100 * s["confirmed"] / s["units"]) if s["units"] else None
+    s["received_pct"] = round(100 * s["received"] / s["sent_confirmed"]) if s["sent_confirmed"] else None
+    return {"from": d_from.isoformat(), "to": d_to.isoformat(), "summary": s, "days": days,
+            "hours": [hours[h] for h in sorted(hours)],
+            "types": [types[k] for k in KEYS if types[k]["asked"] or types[k]["given"]],
+            "units": sorted(out_units, key=lambda u: (-u["given"], u["unit"] or "")),
+            "reasons": base["reasons"], "receipt_reasons": receipt_reasons, "people": base["people"]}
+
+
 # ── Telegram to the addressee (behind the «Sozlamalar» switch) ──────────────
 _CT_NAMES = {
     "uz": {"yellow": "To'rtburchak", "round": "Dumaloq", "grey": "Kulrang", "bucket": "Chelak", "box": "Yashik"},

@@ -13,6 +13,7 @@ import { FilterPanel } from "../components/ui/ColumnFilter";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { HourlyTable } from "../components/overview/ContainerTotalsCard";
+import HourChart from "../components/containers/HourChart";
 import { DAY, hourLabel, tashkentNow, prevISO } from "../components/production/HourlyContainers";
 import { hasOpenDialog } from "../components/ui/dialogLayers";
 import { useFilters } from "../context/FilterContext";
@@ -227,6 +228,7 @@ function Board({ day, params, isLive, tv, t }) {
         <>
           {isLive && <HourStrip q={hourlyQ} day={day} t={t} tv={tv} />}
           {isLive && <NextByUnit q={hourlyQ} day={day} t={t} tv={tv} />}
+          {!tv && <HourChart hours={hourlyQ.data?.hours} loading={hourlyQ.isLoading} t={t} nowHour={nowHourOf(day)} />}
           <section className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 pb-4 pt-1">
             <HourlyTable day={day} params={params} t={t} refetchInterval={refetch}
               around={tv ? { before: 1, after: 6 } : null} size={tv ? "lg" : "md"} />
@@ -237,6 +239,13 @@ function Board({ day, params, isLive, tv, t }) {
       )}
     </div>
   );
+}
+
+// The production hour that is running on `day` (past 23 for the morning after), or null on another day.
+function nowHourOf(day) {
+  const now = tashkentNow();
+  const nowMin = day === now.iso ? now.min : day === prevISO(now.iso) ? now.min + DAY : null;
+  return nowMin == null ? null : Math.floor(nowMin / 60);
 }
 
 function Tile({ label, value, sub, loading, accent = false, tv }) {
