@@ -71,6 +71,7 @@ class Rec(NamedTuple):
     status: Optional[str]
     brigadir: Optional[str] = None
     fault_code: Optional[str] = None
+    category: Optional[str] = None
 
 
 def month_of(day: date) -> str:
@@ -157,7 +158,7 @@ def _current(s) -> list[Rec]:
     from app.models import QualityComplaint as QC
     return [Rec(*r) for r in s.query(
         QC.ref_no, QC.date, QC.place, QC.product, QC.description, QC.status,
-        QC.brigadir, QC.fault_code).all()]
+        QC.brigadir, QC.fault_code, QC.category).all()]
 
 
 def ensure(s, today: date) -> Optional[str]:
@@ -210,6 +211,41 @@ def keep(today: date) -> None:
 
     with SessionLocal() as s:
         ensure(s, today)
+
+
+def past_board(today: date, before: str,
+               skip_category: str) -> tuple[Optional[str], dict[int, dict]]:
+    """(taken_on, {unit id: {"hair": {"done", "total"}, "nohair": {…}}}) — of
+    the records that were OPEN when this month's list was taken AND were filed
+    before `before` (the month's 1st), how many there were and how many are
+    solved now: «are they solving the backlog or not» (the operator,
+    2026-11-15). «hair» counts every such record, «nohair» leaves
+    `skip_category` out. A record with no date is in neither (no month can
+    place it). Takes the month's list itself if nobody has yet."""
+    from app.database import SessionLocal
+    from app.models import QualityOpenBaseline as B
+    from app.services.quality_attribution import Resolver
+
+    with SessionLocal() as s:
+        on = ensure(s, today)
+        if on is None:
+            return None, {}
+        base = [(ref, fp) for ref, fp in
+                s.query(B.ref_no, B.fp).filter(B.month == month_of(today), B.fp != "").all()]
+        if not base:
+            return on, {}
+        matched = [r for r in match(base, _current(s)) if (r.date or "") and r.date < before]
+        who = Resolver(s, {r.brigadir for r in matched})
+
+        def unit_of(r: Rec) -> Optional[int]:
+            unit = who(r.place, r.brigadir, r.fault_code, r.date).unit
+            return unit["id"] if unit is not None else None
+
+        every = fold(matched, unit_of)
+        kept = fold([r for r in matched if r.category != skip_category], unit_of)
+        return on, {uid: {"hair": every.get(uid) or {"done": 0, "total": 0},
+                          "nohair": kept.get(uid) or {"done": 0, "total": 0}}
+                    for uid in set(every) | set(kept)}
 
 
 def board(today: date) -> tuple[Optional[str], dict[int, dict]]:

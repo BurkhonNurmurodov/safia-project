@@ -293,13 +293,18 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     q_month_all = shift_report.fold_quality(r for r in q_every if (r[2] or "") >= nh_from)
     q_past_all = shift_report.fold_quality(r for r in q_every if (r[2] or "") < nh_from)
     q_past_kept = shift_report.fold_quality(r for r in q_kept if (r[2] or "") < nh_from)
-    # The month's starting list of open records is still TAKEN, though the box
-    # no longer prints its count (2026-11-13): a list not taken on its day can
-    # never be taken afterwards. Its failure costs nothing here.
+    # «O'tgan oylardan: bartaraf etilgan / jami» — of the records left from
+    # earlier months (open when this month's list was taken, filed before the
+    # 1st), how many are solved now. Only the kept list can answer it: the
+    # register has no solve date. In its own session; a failure costs the box
+    # its slash, never the board (it falls back to «qolgan N»).
     try:
-        quality_baseline.keep(now.date())
+        q_past_on, q_past_open = quality_baseline.past_board(
+            now.date(), nh_from, shift_report.SKIP_CATEGORY)
     except Exception:  # noqa: BLE001
-        log.exception("shift-report: quality baseline not taken")
+        log.exception("shift-report: quality baseline failed")
+        q_past_on, q_past_open = None, {}
+    out["quality_past_since"] = q_past_on
 
     # ── Ochiq xavotirlar — open, and sitting at the brigadir's own level.
     concerns = dict(
@@ -393,8 +398,12 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     shift_report.since_cell(q_since.get(m.id)),
                     shift_report.work_cell(quality_hair.get(m.id), q_since.get(m.id)),
                     shift_report.work_cell(quality.get(m.id), q_since_kept.get(m.id)),
-                    {"hair": shift_report.box_half(q_month_all.get(m.id), q_past_all.get(m.id)),
-                     "nohair": shift_report.box_half(q_since_kept.get(m.id), q_past_kept.get(m.id))},
+                    {"hair": shift_report.box_half(q_month_all.get(m.id), q_past_all.get(m.id),
+                                                   (q_past_open.get(m.id) or {}).get("hair")
+                                                   if q_past_on else None),
+                     "nohair": shift_report.box_half(q_since_kept.get(m.id), q_past_kept.get(m.id),
+                                                     (q_past_open.get(m.id) or {}).get("nohair")
+                                                     if q_past_on else None)},
                 )
                 for m in groups[s]
             ],

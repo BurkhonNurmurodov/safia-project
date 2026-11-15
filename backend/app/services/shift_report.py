@@ -120,19 +120,27 @@ def since_cell(acc: Optional[dict]) -> dict:
     return {"done": int(acc.get("done") or 0), "total": int(acc.get("actionable") or 0)}
 
 
-def box_half(month_acc: Optional[dict], past_acc: Optional[dict]) -> dict:
+def box_half(month_acc: Optional[dict], past_acc: Optional[dict],
+             past_open: Optional[dict] = None) -> dict:
     """One half of the quality cell's hover box (the operator, 2026-11-15: «the
     part … should always be with the new month, and after that line write
     overall how many left from the past»): of the records FILED this month,
     how many needed action and how many are solved; of those filed BEFORE the
     month, how many are still not solved. `fold_quality` answers in, plain
-    counts out — a unit with nothing reads 0 / 0 / 0."""
+    counts out — a unit with nothing reads 0 / 0 / 0.
+
+    `past_open` ({"done", "total"} from `quality_baseline.past_board`, or None
+    when no month-start list could be read) adds the backlog's slash: of the
+    records left from earlier months when the month's list was taken, how many
+    are solved now — `past_done` / `past_total`, None without it."""
     m = month_acc or {}
     p = past_acc or {}
     return {
         "month_done": int(m.get("done") or 0),
         "month_total": int(m.get("actionable") or 0),
         "past_left": max(0, int(p.get("actionable") or 0) - int(p.get("done") or 0)),
+        "past_done": int(past_open.get("done") or 0) if past_open is not None else None,
+        "past_total": int(past_open.get("total") or 0) if past_open is not None else None,
     }
 
 

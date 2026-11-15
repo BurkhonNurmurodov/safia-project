@@ -805,4 +805,16 @@ same with the hair part too» — and, shown the layout, «Yes, like this».
   the box. A payload without `quality_box` keeps the previous box.
 - **The cell's percentages are unchanged** (with hair: solved since 1 October ÷
   had to solve; without hair: the same from the month's 1st).
+- **The past line has a slash too** (the operator, the same day: «put a slash
+  also for left from past months — are they solving or not»): «O'tgan
+  oylardan: bartaraf etilgan / jami  2/8» — of the records that were OPEN when
+  this month's list was taken (`quality_baseline`, the list «0/24» once used)
+  AND were filed before the 1st, how many are solved now. Only the kept list
+  can answer it: the register has no solve date. `quality_baseline.past_board`
+  folds it per unit with hair and without (`Rec` now carries `category`);
+  `box_half` adds `past_done` / `past_total`; `quality_past_since` names the
+  day the list was taken. **November 2026's list is 13.11**, so the caption
+  reads «O'tgan oylardan (13.11 holatiga): …» until December, whose list is
+  its 1st. If the list cannot be read the line falls back to «O'tgan oylardan
+  qolgan N».
 

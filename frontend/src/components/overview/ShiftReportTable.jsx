@@ -585,16 +585,29 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         lane: t(noHair ? "overview.sr.hairWithout" : "overview.sr.hairWith"),
         pct: qualityPct(r, noHair),
         month: `${h.month_done ?? 0}/${h.month_total ?? 0}`,
-        past: h.past_left ?? 0,
+        // «O'tgan oylardan: bartaraf etilgan / jami  2/8» — of the backlog
+        // left from earlier months when this month's list was taken, how many
+        // are solved now (the operator, 2026-11-15: «put a slash for left from
+        // past months too — are they solving or not»). Without the list's
+        // numbers (`past_total` null) it falls back to «qolgan N».
+        pastSlash: h.past_total != null,
+        past: h.past_total != null ? `${h.past_done ?? 0}/${h.past_total}` : h.past_left ?? 0,
       };
     });
   };
   const monthCaption = () => fill(t("overview.sr.qMonthLine"), { month: qMonthName });
+  // The list is taken on the month's first board — for November 2026 that was
+  // 13.11, so the caption names the day whenever it is not the 1st.
+  const qPastOn = data?.quality_past_since || "";
+  const pastCaption = (h) => (h.pastSlash
+    ? fill(t(qPastOn && !qPastOn.endsWith("-01") ? "overview.sr.qPastLineSince" : "overview.sr.qPastLine"),
+      { date: ddmm(qPastOn) })
+    : t("overview.sr.qPastLeft"));
   const qualityTitle = (r) => {
     const halves = boxHalves(r);
     if (halves) {
       return halves.flatMap((h) => [`${h.lane}: ${h.pct}`, `${monthCaption()}: ${h.month}`,
-        `${t("overview.sr.qPastLeft")}: ${h.past}`]).join("\n");
+        `${pastCaption(h)}: ${h.past}`]).join("\n");
     }
     const lines = [false, true].flatMap((noHair) => {
       const open = qualityOpen(r, noHair);
@@ -626,7 +639,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
                 <span className="text-sm font-bold tabular-nums">{h.pct}</span>
               </div>
               {line(monthCaption(), h.month)}
-              {line(t("overview.sr.qPastLeft"), h.past)}
+              {line(pastCaption(h), h.past)}
             </div>
           ))}
         </div>
