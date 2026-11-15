@@ -763,4 +763,11 @@ hair and without hair».
   bottom-right, inset 8px / 5px (3px and 10.5px text on a phone), each in its
   own fill's ink. The header's half names sit at its left and right edges, over
   their corners. Checked in a mock-up at 150px and 58px wide before shipping.
+- **The split column is NARROW** (the operator, next: «make the box smaller,
+  the diagonal line [in] the long box looks awful»): on sm+ its header is a
+  fixed `w-[88px]` instead of 14%, so the cell is ~88 × 36px and the diagonal a
+  clear slant (compared in a mock-up at 150, 84 and 68px — 68 crowded «100%»).
+  The half names in the header are the SHORT ones at every width — «soch» /
+  «sochsiz» (uz), «соч» / «сочсиз», «с вол.» / «без вол.», «hair» / «no hair»;
+  the hover box keeps the full ones.
 

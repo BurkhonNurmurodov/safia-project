@@ -243,8 +243,8 @@ function LaneLabels({ lanes, sort, onSort }) {
             className={`min-w-0 px-0.5 ${i ? "text-right" : "text-left"} text-[11px] max-[359px]:text-[10.5px] sm:text-[10.5px] font-semibold whitespace-nowrap outline-none hover:underline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]`}
             style={{ color: on ? "var(--brand-text)" : "var(--text-3)" }}
           >
-            <span className="sm:hidden">{l.short}</span>
-            <span className="max-sm:hidden">{l.full}</span>
+            {/* the short names at every width: the split cell is ~88px */}
+            {l.short}
           </button>
         );
       })}
@@ -253,7 +253,11 @@ function LaneLabels({ lanes, sort, onSort }) {
 }
 
 // The split cell's header: its half labels run edge to edge under the title.
-const TH_PAIR = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
+// The column is a NARROW fixed width on sm+ (the operator, 2026-11-15: «make
+// the box smaller … the diagonal line [in] the long box looks awful»): at 14%
+// a ~150 × 36px cell laid the diagonal almost flat; ~88px keeps it a clear
+// slant and still holds «100%» in each corner. The other columns take the rest.
+const TH_PAIR = "align-bottom sm:w-[88px] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
   + "[&>span>span:first-child]:flex-1 [&>span>span:first-child]:w-full max-sm:[&_.lucide-chevrons-up-down]:hidden";
 const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
