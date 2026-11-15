@@ -95,7 +95,27 @@ containers row from production and move it into the new button».
   «Brigadirlarga» is on (`container_flow.notify_brigadirs`, switched ON once by
   the same one-shot) and only to a brigadir who may open «Qabul»
   (`receive_open`: a personal grant / deny on the profile, else the role's
-  page access) — a card whose buttons lead to «no access» is worse than none. Sent on a thread after the
+  page access) — a card whose buttons lead to «no access» is worse than none.
+- **The reminder** (2026-11-15, the operator: «add a reminder for brigadirs who
+  don't confirm»; `remind_unconfirmed`, on the flow's 5-minute clock): ONE per
+  unit of a split request while its part is unconfirmed — when the hour the
+  containers are for BEGINS, or `REMIND_AFTER_MIN` (30) after the split if the
+  split came later (`remind_at`). Only inside `REMIND_WINDOW_MIN` (120) of that
+  moment, so a clock that was down never sends a burst about hours long gone.
+  The part is claimed (`container_request_parts.reminded_at`) and committed
+  BEFORE the card goes out, so two workers never send it twice. Same card and
+  buttons, headed «⏰ Konteynerlar hali tasdiqlanmagan» (key
+  `container_split_remind`); same switch and access rule. «Qabul» shows
+  «Eslatma yuborildi · HH:MM» on the card.
+- **Cancelling after the split** (2026-11-15, the operator: «open an option to
+  cancel the request after all»): AXO / an admin may withdraw a request while
+  it waits OR after its split, **until a brigadir confirms containers
+  arriving** (`received` refuses it — what reached a line is a fact a cancel
+  would erase from the report; the ⋮ item stays listed, disabled, its reason
+  in the title). Withdrawing a split request tells the logistics person and
+  each of its brigadirs (`notify_split_cancelled`, key
+  `container_split_cancelled`, no buttons); a «Hammasi keldi» tapped on the
+  old card answers that the request was cancelled and greys its buttons. Sent on a thread after the
   commit, so a save never waits on Telegram. Nothing else here messages
   anybody.
 
@@ -152,7 +172,7 @@ containers row from production and move it into the new button».
   a count per requested type, any non-archived brigadir; no type over what was
   asked (`over`), fewer needs a reason; the request is then `assigned` and
   CLOSED — nobody confirms the arrival yet (the operator's pick). `late` = split
-  after the deadline. AXO / an admin may cancel one still waiting, with a note.
+  after the deadline. AXO / an admin may cancel one with a note — while it waits, or after its split until a brigadir confirms (below).
   **The counts start from the hour's figure** (2026-11-14, the operator: «when
   we choose the hours the number of containers should appear by default, then
   if it is incorrect they will correct it by hand»): picking an hour on «Yangi
@@ -254,8 +274,8 @@ hover): five long names pushed the status and the actions off a laptop.
 
 - A leader's own card; the brigadir's view of the AUTOMATIC batches (their
   «Qabul» covers requests only).
-- Every other notification (AXO, leaders, a reminder to a brigadir who has
-  not confirmed) and the escalation chain.
+- Every other notification (AXO, leaders, a second reminder) and the
+  escalation chain.
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.
 - The operator's rulings on: the deadline of a late-drafted batch (a default

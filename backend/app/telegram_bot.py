@@ -6492,7 +6492,7 @@ def _crv_callback(call: types.CallbackQuery):
         return
     if code != "done":
         bot.answer_callback_query(call.id, flow.brig_text(lang, code), show_alert=True)
-        if code != "already":
+        if code not in ("already", "cancelled"):
             return
     at = flow.now().strftime("%H:%M")
     if code == "done":
@@ -6501,7 +6501,7 @@ def _crv_callback(call: types.CallbackQuery):
     try:
         kb = types.InlineKeyboardMarkup()
         kb.add(tg_buttons.disabled(flow.brig_text(lang, "done", at=at) if code == "done"
-                                   else flow.brig_text(lang, "already")))
+                                   else flow.brig_text(lang, code)))
         tg_buttons.send(bot.edit_message_reply_markup, call.message.chat.id,
                         call.message.message_id, reply_markup=kb)
     except Exception:

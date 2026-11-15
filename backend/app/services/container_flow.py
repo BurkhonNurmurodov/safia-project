@@ -257,6 +257,13 @@ def tick() -> None:
     except Exception:
         db.rollback()
         logger.warning("container flow tick failed", exc_info=True)
+    try:
+        n = remind_unconfirmed(db)
+        if n:
+            logger.info("container flow: reminded %s brigadir(s)", n)
+    except Exception:
+        db.rollback()
+        logger.warning("container flow reminder failed", exc_info=True)
     finally:
         db.close()
 
@@ -765,9 +772,16 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
 
 
 def cancel_request(db: Session, request_id: int, note, actor) -> ContainerRequest:
+    """AXO / an admin withdraws a request — while it waits, or after it was
+    split (2026-11-15, the operator: «open an option to cancel the request
+    after all») as long as no brigadir has confirmed containers arriving:
+    what reached a line is a fact a cancel would erase from the report."""
     r = _request(db, request_id)
-    if r.status != "requested":
+    if r.status not in ("requested", "assigned"):
         raise FlowError("state")
+    if r.status == "assigned" and db.query(ContainerRequestPart).filter(
+            ContainerRequestPart.request_id == r.id, ContainerRequestPart.received.isnot(None)).first():
+        raise FlowError("received")
     note = (note or "").strip()
     if not note:
         raise FlowError("note")
@@ -810,8 +824,10 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
                                                   "shift": getattr(units.get(p.manager_id), "shift", None),
                                                   "counts": {}, "received": None, "received_at": None,
                                                   "received_by": None, "received_reason": None,
-                                                  "received_comment": None})
+                                                  "received_comment": None, "reminded_at": None})
             u["counts"][p.ctype] = p.count
+            if p.reminded_at is not None:
+                u["reminded_at"] = _iso(p.reminded_at)
             if p.received is not None:
                 u["received"] = {**(u["received"] or {}), p.ctype: p.received}
                 u["received_at"], u["received_by"] = _iso(p.received_at), p.received_by
@@ -1082,25 +1098,25 @@ RECEIVE_CAP = "page.view.container-receive"
 CALLBACK = "crv"          # crv:<request id>:<manager id> — «Hammasi keldi» in the bot
 
 _TG_BRIG = {
-    "uz": {"title": "Sizga konteyner yuborildi", "hour": "Soat", "by": "Yubordi",
+    "uz": {"title": "Sizga konteyner yuborildi", "remind": '⏰ Konteynerlar hali tasdiqlanmagan', "cancel_title": "Konteyner so'rovi bekor qilindi", "cancelled": "Bu so'rov bekor qilingan", "hour": "Soat", "by": "Yubordi",
            "hint": "Kelganini tasdiqlang: hammasi kelgan bo'lsa — «Hammasi keldi», kam bo'lsa — «Boshqa son».",
            "all": "✅ Hammasi keldi", "other": "✏️ Boshqa son",
            "done": "✅ Qabul qilindi · {at}", "already": "Bu allaqachon tasdiqlangan",
            "not_yours": "Bu konteynerlar sizning bo'limingizga yuborilmagan", "gone": "So'rov topilmadi",
            "failed": "Saqlanmadi — sahifada tasdiqlang"},
-    "uz_cyrl": {"title": "Сизга контейнер юборилди", "hour": "Соат", "by": "Юборди",
+    "uz_cyrl": {"title": "Сизга контейнер юборилди", "remind": '⏰ Контейнерлар ҳали тасдиқланмаган', "cancel_title": 'Контейнер сўрови бекор қилинди', "cancelled": 'Бу сўров бекор қилинган', "hour": "Соат", "by": "Юборди",
                 "hint": "Келганини тасдиқланг: ҳаммаси келган бўлса — «Ҳаммаси келди», кам бўлса — «Бошқа сон».",
                 "all": "✅ Ҳаммаси келди", "other": "✏️ Бошқа сон",
                 "done": "✅ Қабул қилинди · {at}", "already": "Бу аллақачон тасдиқланган",
                 "not_yours": "Бу контейнерлар сизнинг бўлимингизга юборилмаган", "gone": "Сўров топилмади",
                 "failed": "Сақланмади — саҳифада тасдиқланг"},
-    "ru": {"title": "Вам отправлены контейнеры", "hour": "Час", "by": "Отправил(а)",
+    "ru": {"title": "Вам отправлены контейнеры", "remind": '⏰ Контейнеры ещё не подтверждены', "cancel_title": 'Заявка на контейнеры отменена', "cancelled": 'Эта заявка отменена', "hour": "Час", "by": "Отправил(а)",
            "hint": "Подтвердите приход: всё пришло — «Всё пришло», меньше — «Другое число».",
            "all": "✅ Всё пришло", "other": "✏️ Другое число",
            "done": "✅ Принято · {at}", "already": "Уже подтверждено",
            "not_yours": "Эти контейнеры отправлены не вашему участку", "gone": "Заявка не найдена",
            "failed": "Не сохранилось — подтвердите на странице"},
-    "en": {"title": "Containers sent to you", "hour": "Hour", "by": "Sent by",
+    "en": {"title": "Containers sent to you", "remind": '⏰ Containers not confirmed yet', "cancel_title": 'Container request cancelled', "cancelled": 'This request was cancelled', "hour": "Hour", "by": "Sent by",
            "hint": "Confirm what arrived: everything — «All arrived», fewer — «Different count».",
            "all": "✅ All arrived", "other": "✏️ Different count",
            "done": "✅ Received · {at}", "already": "Already confirmed",
@@ -1126,19 +1142,27 @@ def receive_open(db: Session, manager_id: int) -> bool:
     return "supervisor" in get_page_access(db).get("container-receive", [])
 
 
-def _brig_body(r: ContainerRequest, counts: dict, lang: str) -> str:
+def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split") -> str:
+    """The brigadir's card: `split` (containers sent), `remind` (still not
+    confirmed) or `cancel` (the request was withdrawn — no buttons)."""
     from html import escape as _esc
-    from app.translit import transliterate
+    from app.translit import transliterate, transliterate_text
     t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
     by = transliterate(r.logistics_name or "—", lang) or "—"
     at = r.assigned_at.astimezone(TZ).strftime("%H:%M") if r.assigned_at else ""
-    return "\n".join([
-        f"📦 <b>{_esc(t['title'], quote=False)}</b>", "",
-        f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
-        _esc(counts_text(counts, lang), quote=False),
-        f"{t['by']}: {_esc(by, quote=False)}{f' · {at}' if at else ''}", "",
-        f"<i>{_esc(t['hint'], quote=False)}</i>",
-    ])
+    head = {"split": f"📦 <b>{_esc(t['title'], quote=False)}</b>",
+            "remind": f"<b>{_esc(t['remind'], quote=False)}</b>",
+            "cancel": f"🚫 <b>{_esc(t['cancel_title'], quote=False)}</b>"}[kind]
+    rows = [head, "", f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
+            _esc(counts_text(counts, lang), quote=False)]
+    if kind == "cancel":
+        if r.cancel_note:
+            note = transliterate_text(r.cancel_note, lang) or r.cancel_note
+            rows.append(f"{(_TG.get(lang) or _TG['uz'])['why']}: {_esc(note, quote=False)}")
+        return "\n".join(rows)
+    rows += [f"{t['by']}: {_esc(by, quote=False)}{f' · {at}' if at else ''}", "",
+             f"<i>{_esc(t['hint'], quote=False)}</i>"]
+    return "\n".join(rows)
 
 
 def _brig_markup(request_id: int, manager_id: int):
@@ -1198,6 +1222,112 @@ def notify_split_later(request_id: int) -> None:
     threading.Thread(target=notify_split, args=(request_id,), daemon=True).start()
 
 
+def _units_of(db: Session, request_id: int) -> dict:
+    units: dict = {}
+    for p in db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == request_id).all():
+        units.setdefault(p.manager_id, {})[p.ctype] = p.count
+    return units
+
+
+def notify_split_cancelled(request_id: int) -> int:
+    """A request withdrawn AFTER its split: each of its brigadirs who was told
+    it is coming hears it is not (no buttons). Same switch and access rule as
+    the split card. Own session; never raises."""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    told = 0
+    try:
+        if not settings(db)["notify_brigadirs"]:
+            return 0
+        r = db.get(ContainerRequest, request_id)
+        if r is None or r.status != "cancelled":
+            return 0
+        from app.routers.staff import notify_profile
+        for mid, counts in _units_of(db, r.id).items():
+            if not receive_open(db, mid):
+                continue
+            notify_profile(
+                db, f"supervisor:{mid}", "container_split_cancelled",
+                {"hour": hour_span(r.hour), "counts": counts_text(counts), "note": r.cancel_note or ""},
+                type="warning", html_fn=lambda lang, c=counts: _brig_body(r, c, lang, "cancel"),
+                subject=("page", NOTIFY_PAGE))
+            told += 1
+        db.commit()
+        return told
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: cancel notice to brigadirs failed", exc_info=True)
+        return told
+    finally:
+        db.close()
+
+
+def notify_split_cancelled_later(request_id: int) -> None:
+    import threading
+    threading.Thread(target=notify_split_cancelled, args=(request_id,), daemon=True).start()
+
+
+# ── the reminder (2026-11-15, the operator: «add a reminder for brigadirs who
+# don't confirm») ─────────────────────────────────────────────────────────────
+# ONE reminder per unit of a split request, while its containers are still not
+# confirmed: when the hour they are for BEGINS — by then they are on the line —
+# or REMIND_AFTER_MIN after the split if the split came later than that. Only
+# inside REMIND_WINDOW_MIN of that moment, so a clock that was down (a deploy,
+# the first run of this code) never sends a burst about hours long gone. The
+# part is claimed (`reminded_at`) and committed BEFORE the card goes out, so
+# two workers never send it twice.
+REMIND_AFTER_MIN = 30
+REMIND_WINDOW_MIN = 120
+
+
+def remind_at(r: ContainerRequest) -> Optional[datetime]:
+    if r.assigned_at is None:
+        return None
+    return max(hour_start(r.day, r.hour), r.assigned_at + timedelta(minutes=REMIND_AFTER_MIN))
+
+
+def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
+    """Remind each brigadir whose part of a split request is due a reminder
+    (above). Returns how many were reminded."""
+    at = at or now()
+    if not settings(db)["notify_brigadirs"]:
+        return 0
+    from sqlalchemy import update as _update
+    from app.routers.staff import notify_profile
+    today = at.astimezone(TZ).date()
+    sent = 0
+    rows = db.query(ContainerRequest).filter(
+        ContainerRequest.status == "assigned",
+        ContainerRequest.day >= today - timedelta(days=1), ContainerRequest.day <= today).all()
+    for r in rows:
+        when = remind_at(r)
+        if when is None or not (when <= at < when + timedelta(minutes=REMIND_WINDOW_MIN)):
+            continue
+        pending: dict = {}
+        for p in db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id == r.id, ContainerRequestPart.received.is_(None),
+                ContainerRequestPart.reminded_at.is_(None)).all():
+            pending.setdefault(p.manager_id, {})[p.ctype] = p.count
+        for mid, counts in pending.items():
+            if not receive_open(db, mid):
+                continue
+            claimed = db.execute(_update(ContainerRequestPart).where(
+                ContainerRequestPart.request_id == r.id, ContainerRequestPart.manager_id == mid,
+                ContainerRequestPart.received.is_(None), ContainerRequestPart.reminded_at.is_(None),
+            ).values(reminded_at=at)).rowcount
+            db.commit()
+            if not claimed:
+                continue
+            notify_profile(
+                db, f"supervisor:{mid}", "container_split_remind",
+                {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
+                type="warning", html_fn=lambda lang, c=counts, rr=r: _brig_body(rr, c, lang, "remind"),
+                markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
+            db.commit()
+            sent += 1
+    return sent
+
+
 def receive_from_bot(db: Session, request_id: int, manager_id: int, telegram_id: int) -> tuple:
     """«Hammasi keldi» tapped in the bot: the tapper must hold the unit's
     brigadir profile (callback data is typeable and a card can be forwarded).
@@ -1206,6 +1336,9 @@ def receive_from_bot(db: Session, request_id: int, manager_id: int, telegram_id:
     key = f"supervisor:{int(manager_id)}"
     if int(telegram_id) not in profile_holders(db, key):
         return "not_yours", None
+    req = db.get(ContainerRequest, int(request_id))
+    if req is not None and req.status == "cancelled":
+        return "cancelled", None
     try:
         r = receive(db, request_id, manager_id, None, None, None, profile_name(db, key) or key)
     except FlowError as e:

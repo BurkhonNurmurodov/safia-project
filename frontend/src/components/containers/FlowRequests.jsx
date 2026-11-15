@@ -107,14 +107,20 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   const done = (msg) => { toast.success(msg); q.refetch(); };
   const fail = (e) => toast.error(errText(t, e));
   const mayAssign = (r) => r.status === "requested" && roles.logistics && (roles.admin || r.logistics_key === me);
-  const mayCancel = (r) => roles.axo && r.status === "requested";
+  // AXO withdraws a request while it waits — or after its split (2026-11-15),
+  // until a brigadir confirms containers arriving (the server's rule too)
+  const mayCancel = (r) => roles.axo && (r.status === "requested" || r.status === "assigned");
+  const cancelBlocked = (r) => r.status === "assigned" && (r.receipt?.confirmed ?? 0) > 0;
   // Opening the split is «opening» the request: its «new» mark goes.
   const openAssign = (r) => {
     setAssign(r);
     if (isFresh(r, me)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
   };
   const menu = (r) => [
-    mayCancel(r) && { key: "cancel", label: t("cflow.req.cancel"), icon: Ban, tone: "danger", onSelect: () => setCancel(r) },
+    mayCancel(r) && {
+      key: "cancel", label: t("cflow.req.cancel"), icon: Ban, tone: "danger", onSelect: () => setCancel(r),
+      disabled: cancelBlocked(r), title: cancelBlocked(r) ? t("cflow.req.cancelBlocked") : undefined,
+    },
   ];
   const empty = (
     <span className="inline-flex flex-col items-center gap-3">
@@ -643,6 +649,11 @@ function CancelModal({ t, r, onClose, onDone, onFail }) {
           <Button variant="danger" loading={m.isPending} disabled={!note.trim()} onClick={() => m.mutate()}>{t("cflow.req.cancel")}</Button>
         </>
       )}>
+      {r.status === "assigned" && (
+        <p className="text-xs rounded-xl px-3 py-2 mb-3" style={{ background: "#eab3081f", color: "var(--text-2)" }}>
+          {t("cflow.req.cancelSplitHint").replace("{n}", r.parts.length)}
+        </p>
+      )}
       <FormField label={t("cflow.req.cancelWhy")} required>
         <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className={fieldCls} style={fieldStyle} />
       </FormField>

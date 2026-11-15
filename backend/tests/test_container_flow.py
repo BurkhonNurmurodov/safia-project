@@ -341,6 +341,73 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(flow.receive_from_bot(self.db, r.id, 1, 5001)[0], "already")
         self.assertEqual(flow.receive_from_bot(self.db, 999999, 1, 5001)[0], "gone")
 
+    def test_cancel_after_split_and_the_reminder(self):
+        """A split request can still be withdrawn (its brigadirs told, the bot
+        button then says so); a unit that has not confirmed gets ONE reminder
+        when the hour begins, never a stale one."""
+        from app.models import ProfilePermission, RoleProfile, TelegramUserRole
+        from app.routers import staff
+        for t in ("container_request_parts", "container_requests", "profile_permissions", "telegram_user_roles"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        for i in (1, 2):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=f"Unit {i}", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        for mid in (1, 2):
+            self.db.add(ProfilePermission(profile_key=f"supervisor:{mid}", capability=flow.RECEIVE_CAP,
+                                          mode="grant", scope="all"))
+        self.db.add(TelegramUserRole(telegram_id=5001, role="supervisor", role_id=1, full_name="Brig One",
+                                     status="approved", profile_key="supervisor:1"))
+        self.db.commit()
+        flow.save_settings(self.db, [1], 2, None, True)
+
+        def split(hour, at):
+            with mock.patch.object(flow, "now", return_value=at):
+                r = flow.create_request(self.db, DAY, hour, nk, {"yellow": 30}, "", "axo", "guest:1")
+                flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 18}},
+                                                    {"manager_id": 2, "counts": {"yellow": 12}}],
+                                    None, None, "n", nk, False)
+            self.db.commit()
+            return r
+
+        sent = []
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=lambda db, key, nkey, params, **kw:
+                               sent.append((key, nkey, kw["html_fn"]("uz"), "markup_fn" in kw))):
+            # the reminder: split at 08:30 for 10:00 → due at 10:00 (the hour begins)
+            r = split(10, self.at(8, 30))
+            self.assertEqual(flow.remind_at(r), self.at(10))
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(9, 59)), 0)
+            flow.receive(self.db, r.id, 2, None, None, None, "Brig Two")     # unit 2 confirmed
+            self.db.commit()
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 5)), 1)   # unit 1 only
+            self.assertEqual(sent[-1][:2], ("supervisor:1", "container_split_remind"))
+            self.assertTrue(sent[-1][3])                                     # with its buttons
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 10)), 0)  # once
+            # a split later than its hour: 30 minutes after the split; past the window — never
+            late = split(11, self.at(11, 40))
+            self.assertEqual(flow.remind_at(late), self.at(12, 10))
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(14, 30)), 0)  # stale: silent
+            # the switch off: nobody
+            flow.save_settings(self.db, [1], 2, None, False)
+            r3 = split(12, self.at(9))
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(12, 1)), 0)
+            flow.save_settings(self.db, [1], 2, None, True)
+
+            # cancel after the split: allowed while nobody confirmed; brigadirs told, no buttons
+            flow.cancel_request(self.db, r3.id, "reja o'zgardi", "axo")
+            self.db.commit()
+            n = len(sent)
+            self.assertEqual(flow.notify_split_cancelled(r3.id), 2)
+            self.assertEqual({s[1] for s in sent[n:]}, {"container_split_cancelled"})
+            self.assertIn("reja o'zgardi", sent[-1][2])
+            self.assertFalse(sent[-1][3])
+        self.assertEqual(flow.receive_from_bot(self.db, r3.id, 1, 5001)[0], "cancelled")
+
     def test_receive_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access
@@ -450,8 +517,6 @@ class FlowTest(unittest.TestCase):
         self.assertEqual({p["manager_id"]: p["counts"] for p in got["parts"]},
                          {1: {"yellow": 20, "bucket": 12}, 2: {"yellow": 20}})
         self.assertEqual(flow.requests_of(self.db, DAY, "idle-owner:0"), [])   # not addressed to them
-        with self.assertRaises(flow.FlowError):
-            flow.cancel_request(self.db, r.id, "x", "axo")                 # done — no cancel
         r2 = flow.create_request(self.db, DAY, 11, nk, {"box": 3}, "", "axo", "guest:1")
         with self.assertRaises(flow.FlowError):
             flow.cancel_request(self.db, r2.id, " ", "axo")
@@ -478,6 +543,10 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         with self.assertRaises(flow.FlowError):
             flow.receive(self.db, r.id, 1, None, None, None, "b")           # once
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as e:                       # containers reached a line:
+            flow.cancel_request(self.db, r.id, "x", "axo")                 # no cancel any more
+        self.assertEqual(e.exception.code, "received")
         self.db.rollback()
         got = flow.requests_of(self.db, DAY)
         one = next(x for x in got if x["id"] == r.id)

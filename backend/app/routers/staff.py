@@ -498,6 +498,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Отправлены контейнеры: {hour}", "{counts} | Отправил(а): {by}"),
         "en": ("Containers sent: {hour}", "{counts} | Sent by: {by}"),
     },
+    # …a brigadir who has not confirmed yet (`remind_unconfirmed`, once), and a
+    # brigadir whose split was withdrawn (`notify_split_cancelled`).
+    "container_split_remind": {
+        "uz": ("Konteynerlar hali tasdiqlanmagan: {hour}", "{counts} | Yubordi: {by}"),
+        "uz_cyrl": ("Контейнерлар ҳали тасдиқланмаган: {hour}", "{counts} | Юборди: {by}"),
+        "ru": ("Контейнеры ещё не подтверждены: {hour}", "{counts} | Отправил(а): {by}"),
+        "en": ("Containers not confirmed yet: {hour}", "{counts} | Sent by: {by}"),
+    },
+    "container_split_cancelled": {
+        "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
+        "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),
+        "ru": ("Заявка на контейнеры отменена: {hour}", "{counts}\n{note}"),
+        "en": ("Container request cancelled: {hour}", "{counts}\n{note}"),
+    },
     "container_request_cancelled": {
         "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
         "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),

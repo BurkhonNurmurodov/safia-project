@@ -105,6 +105,9 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
                     {x.received && (
                       <span>{t("cflow.rcv.by").replace("{x}", tl(x.received_by) || "—").replace("{at}", hhmm(x.received_at))}</span>
                     )}
+                    {!x.received && x.reminded_at && (
+                      <span style={{ color: "var(--status-warn)" }}>{t("cflow.rcv.reminded").replace("{at}", hhmm(x.reminded_at))}</span>
+                    )}
                   </div>
                   {x.received_reason && (
                     <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>

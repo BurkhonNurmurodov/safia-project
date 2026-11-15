@@ -2145,7 +2145,8 @@ def add_container_receipt_columns() -> None:
     idempotent, no flag; every ORM read of a part selects them."""
     _ensure_columns((("container_request_parts", (
         ("received", "INTEGER"), ("received_at", "TIMESTAMPTZ"), ("received_by", "VARCHAR"),
-        ("received_reason", "VARCHAR(20)"), ("received_comment", "TEXT")), None),),
+        ("received_reason", "VARCHAR(20)"), ("received_comment", "TEXT"),
+        ("reminded_at", "TIMESTAMPTZ")), None),),
         "container receipt columns")
 
 

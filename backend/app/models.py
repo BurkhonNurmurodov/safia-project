@@ -6111,3 +6111,6 @@ class ContainerRequestPart(Base):
     received_by      = Column(String, nullable=True)
     received_reason  = Column(String(20), nullable=True)
     received_comment = Column(Text, nullable=True)
+    # The one reminder a brigadir gets while this unit's part is unconfirmed
+    # (2026-11-15, `container_flow.remind_unconfirmed`). NULL = not reminded.
+    reminded_at      = Column(DateTime(timezone=True), nullable=True)

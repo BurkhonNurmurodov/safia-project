@@ -446,6 +446,7 @@ def post_cancel(request_id: int, body: NoteBody, db: Session = Depends(get_db),
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
     flow.notify_later(r.id, "cancelled")
+    flow.notify_split_cancelled_later(r.id)     # tells the brigadirs only if it had been split
     return _req_out(db, r, r.day)
 
 

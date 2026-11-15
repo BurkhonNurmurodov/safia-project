@@ -83,7 +83,8 @@ _EXACT = {
     "idle_solution_reminder": "idle",
     "idle_solution_behind": "idle",
     "container_request_new": "other", "container_request_cancelled": "other",
-    "container_split": "other",
+    "container_split": "other", "container_split_remind": "other",
+    "container_split_cancelled": "other",
     "education_lesson_new": "learning",
     "call_forecast": "other",
     # A unit changed brigadir (2026-10-24).
