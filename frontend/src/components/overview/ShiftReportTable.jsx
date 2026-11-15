@@ -799,15 +799,17 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   // «O'rtacha» — the row under the board (the operator, 2026-11-15: «add
   // average for all column here in the bottom»): each column's plain mean over
-  // every brigadir on screen (both shifts when both are shown), blanks left
-  // out, painted on the same bands as the rows. Not a link — no one page holds
-  // an average. «Davomat» prints the mean RATE, since rosters differ in size;
-  // «Xavotirlar» the mean count to one decimal.
+  // the brigadirs it closes, blanks left out. With both shifts on screen each
+  // shift ends in its own «O'rtacha» and the board in «Umumiy o'rtacha» over
+  // everybody (the operator, same day: «Add per-shift rows»). Painted on the
+  // same bands as the rows. Not a link — no one page holds an average.
+  // «Davomat» prints the mean RATE, since rosters differ in size; «Xavotirlar»
+  // the mean count to one decimal.
   const meanOf = (cells) => {
     const vals = cells.filter((c) => c && !c.reason && isNum(c.value)).map((c) => c.value);
     return vals.length ? { value: vals.reduce((s, v) => s + v, 0) / vals.length } : { value: null };
   };
-  const avgRow = () => {
+  const avgRow = (rows, key, label) => {
     const load = meanOf(rows.map((r) => r.load));
     const att = meanOf(rows.map((r) => r.att));
     const compl = meanOf(rows.map((r) => r.compl));
@@ -817,10 +819,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const hint = t("overview.sr.avgHint");
     const hasAtt = isNum(att.value);
     return (
-      <tr key="avg" style={{ boxShadow: "inset 0 2px 0 0 var(--border)" }}>
+      <tr key={key} style={{ boxShadow: "inset 0 2px 0 0 var(--border)" }}>
         <td className="px-2 max-[359px]:px-1.5 sm:px-3 py-2 align-middle" title={hint}>
           <span className="block text-[11.5px] sm:text-xs font-bold uppercase tracking-wide" style={{ color: "var(--text-1)" }}>
-            {t("overview.sr.avg")}
+            {label}
           </span>
         </td>
         {figCell(load, loadTone, (c) => pctText(c.value), hint)}
@@ -935,12 +937,13 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
             </tr>
           );
         })}
+        {multi && avgRow(g.rows, `avg-${g.shift ?? "none"}`, t("overview.sr.avg"))}
       </Fragment>
     ));
     body = (
       <>
         {body}
-        {avgRow()}
+        {avgRow(rows, "avg", t(multi ? "overview.sr.avgAll" : "overview.sr.avg"))}
       </>
     );
   }

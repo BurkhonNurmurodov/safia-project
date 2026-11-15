@@ -849,3 +849,9 @@ mean RATE (the rows print counts, and rosters differ in size); «Sifat nazorati
 %» is the split cell with each half averaged separately (`splitFig`, the
 drawing shared with the rows); «Xavotirlar» is the mean open count to one
 decimal. Frontend only — the payload is unchanged.
+
+**Per shift too** (same day, the operator: «Add per-shift rows»): with both
+shifts on screen each shift's group ends in its own «O'rtacha» over that
+shift's brigadirs, and the board's last row is «Umumiy o'rtacha»
+(`overview.sr.avgAll`) over everybody. One shift on screen keeps the single
+«O'rtacha» row.
