@@ -206,3 +206,33 @@ should be white, and Safia IMS should be golden instead of white».
   colour (the legend's swatch is white too). Apps and menu tabs keep their
   blue / orange wash.
 - **The root card is gold** (`--brand` fill, `--on-brand` words) in both views.
+
+## How much each screen is used — the heat on «Ilovalar» (2026-11-15)
+
+The operator: «easily see how much each screen is being used, like a heatmap —
+each screen's circular green container gives that info through the saturation
+of that green; put a date filter so the heatmap shows the selected timeframe».
+
+- **Where it comes from**: nothing recorded which page anybody was on, so the
+  heartbeat now carries it. `hooks/useActivityPing.js` keeps a tally — the
+  seconds each SCREEN was on show and visible, and how many times it was
+  opened — and sends it with every ping as `screens: [{s, sec, n}]`. A screen
+  is its launcher path, `screenOf(pathname)` in `utils/navLayout.js` (the
+  longest `link.to` the path starts with, so `/cells/123` counts for `/cells`;
+  a page no launcher reaches counts for nothing). `POST /api/activity/ping`
+  cleans the tally (`screen_rows`: paths only, ≤ 300 s a screen and 600 s a
+  ping, merged) and upserts `screen_usage` — one row per (Tashkent day,
+  screen, person: the profile key, else `tg:<id>`), best-effort, never failing
+  the heartbeat. **Forward-only**: the heat starts on the day it shipped, and
+  the key says «Hisob … dan boshlangan» for a period reaching before it.
+- **The read**: `GET /admin/org-chart/usage?date_from&date_to` (admin, like the
+  chart) — per screen path: seconds, opens, distinct people; `since` = the
+  first recorded day.
+- **The picture**: a `DateRangePicker` on the «Ilovalar» toolbar (the last 30
+  days first). Each screen's chip turns a green CIRCLE as strong as its share of
+  the busiest screen's time in the period (a square root; `heatFill` /
+  `HEAT_STEPS` in `components/orgchart/appsNode.js`); a screen nobody opened is
+  grey. Hovering a card names its time, opens and people. The key (Kam → Ko'p)
+  sits in the canvas's top-right corner.
+- **Not built**: heat on apps and menu tabs (their screens' sum), per-role or
+  per-person usage, the usage in the details panel.

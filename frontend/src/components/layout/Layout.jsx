@@ -596,13 +596,13 @@ function ImpersonationBar() {
 // the page it would sit in `.page-enter`, whose transform makes a `fixed` box
 // the size of the content column instead of the screen.
 export default function Layout({ children, title, subtitle, bare = false, backdrop = null }) {
-  useActivityPing(); // heartbeat for the Users-Activity dashboard
   const { t } = useLang();
   const { auth } = useAuth();
   // Inside an app, the way back to the launcher sits beside the title — for
   // whoever has one (admins, top-managers: utils/apps.js LAUNCHER_ROLES).
   const showAppsButton = !bare && usesLauncher(auth?.role);
   const { pathname } = useLocation();
+  useActivityPing(pathname); // heartbeat for the Users-Activity dashboard + the screens' heat
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const phone = useIsMobile(768);

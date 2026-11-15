@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, ShieldCheck, UserRound } from "lucide-react";
 import Button from "../../components/ui/Button";
+import DateRangePicker, { localISO } from "../../components/ui/DateRangePicker";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Modal from "../../components/ui/Modal";
 import { FilterPanel, PickFilter } from "../../components/ui/ColumnFilter";
 import OrgCanvas from "../../components/orgchart/OrgCanvas";
 import AppsDetails from "../../components/orgchart/AppsDetails";
 import { NavFormModal, RemoveAppModal } from "../../components/orgchart/AppsDialogs";
-import { KIND_HUE, pageKeys, profileOpens, screenKind, useAppNodeText } from "../../components/orgchart/appsNode";
+import { HEAT_STEPS, KIND_HUE, heatFill, pageKeys, profileOpens, screenKind, useAppNodeText } from "../../components/orgchart/appsNode";
 import { useCanvasHeight } from "../../components/orgchart/useCanvasHeight";
 import { useLang } from "../../context/LangContext";
 import useIsMobile from "../../hooks/useIsMobile";
 import { useGuardedNavigate } from "../../hooks/useLeaveGuard";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
+import api from "../../utils/api";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { APP_LINKS, navName } from "../../utils/navLayout";
 import { removeTab } from "../../utils/navLayoutEdit";
@@ -40,6 +43,9 @@ import { fill } from "./orgChartText";
 
 const PANEL_W = 360;
 const PAGE_CAP = "page.view.";
+
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localISO(d); };
+const dmy = (iso) => iso.split("-").reverse().join(".");
 
 export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople, full, onFull }) {
   const { t, lang } = useLang();
@@ -128,6 +134,48 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople, fu
     }
     return m;
   }, [data, tree, capDraft, roleDraft, A]);
+
+  // ── how much each screen is used: the heat on its chip ─────────────────
+  // (models.ScreenUsage, GET /admin/org-chart/usage — the last 30 days first)
+  const [dFrom, setDFrom] = useState(() => daysAgo(29));
+  const [dTo, setDTo] = useState(() => localISO(new Date()));
+  const usage = useQuery({
+    queryKey: ["admin-org-usage", dFrom, dTo],
+    queryFn: () => api.get("/admin/org-chart/usage", { params: { date_from: dFrom, date_to: dTo } }).then((r) => r.data),
+    enabled: Boolean(dFrom && dTo),
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+  }).data;
+  const heat = useMemo(() => {
+    if (!usage) return null;
+    const time = (sec) => {
+      const m = Math.round(sec / 60);
+      return m >= 60 ? `${Math.floor(m / 60)} ${A.heatHour} ${m % 60} ${A.heatMin}` : `${m} ${A.heatMin}`;
+    };
+    const screens = [...tree.index.values()].filter((n) => n.kind === "screen");
+    const max = Math.max(0, ...screens.map((n) => usage.screens[n.link.to]?.seconds ?? 0));
+    const m = new Map();
+    for (const n of screens) {
+      const u = usage.screens[n.link.to];
+      const used = u && (u.seconds > 0 || u.opens > 0);
+      m.set(n.id, {
+        level: !used ? 0 : 0.15 + 0.85 * (max ? Math.sqrt(u.seconds / max) : 0),
+        tip: used ? fill(A.heatTip, { time: time(u.seconds), opens: u.opens, people: u.people }) : A.heatUnused,
+      });
+    }
+    return m;
+  }, [usage, tree, A]);
+  const cardFlags = useMemo(() => {
+    if (!heat) return flags;
+    const m = new Map(flags);
+    for (const [id, h] of heat) m.set(id, { ...flags.get(id), heat: h.level, heatTip: h.tip });
+    return m;
+  }, [flags, heat]);
+  const anyUse = usage ? Object.keys(usage.screens).length > 0 : false;
+  // The ledger starts the day it shipped: a period reaching before it says so.
+  const sinceNote = usage && (!usage.since ? A.heatEmpty
+    : usage.since > usage.date_from ? fill(A.heatSince, { d: dmy(usage.since) })
+      : !anyUse ? A.heatEmpty : null);
 
   // ── what is open ────────────────────────────────────────────────────────
   const [open, setOpen] = usePersistentState("orgchart.apps.open", null);
@@ -274,6 +322,10 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople, fu
     <div className={full ? "flex flex-col flex-1 min-h-0" : undefined}>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {head}
+        <DateRangePicker
+          dateFrom={dFrom} dateTo={dTo} setDateFrom={setDFrom} setDateTo={setDTo}
+          max={localISO(new Date())} compactLabel triggerClassName="px-3 py-2 text-sm min-h-[38px]"
+        />
         <FilterPanel sections={sections} chipsWrap />
         {/* The count IS the legend: each kind's colour beside how many there are. */}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
@@ -300,13 +352,37 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople, fu
           stack={APPS_STACK} sceneKey="apps" homeMin={0.65}
           tree={tree} expanded={expanded} selected={node ? selected : null}
           marks={marks} hits={hits} lensOn={lensOn} P={P} command={command}
-          text={text} flags={flags}
+          text={text} flags={cardFlags}
           insetLeft={wide && node ? PANEL_W + 24 : 0}
           onSelect={select} onToggle={toggle} onExpandAll={expandAll} onCollapseAll={collapseAll}
           height={height} full={full} onFull={onFull}
         >
           <div className="absolute right-3 top-3 max-w-[calc(100%-1.5rem)] flex flex-col items-end gap-2 pointer-events-none">
             {corner}
+            {/* The heat's key: what the green on a screen's chip means, and
+                from which day it can mean anything. */}
+            {usage && (
+              <div
+                data-org-nopan
+                className="pointer-events-auto max-w-full rounded-xl px-3 py-2 text-[11px]"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)", cursor: "default", boxShadow: "0 2px 8px rgba(0,0,0,.08)" }}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold mr-1" style={{ color: "var(--text-2)" }}>{A.heatTitle}</span>
+                  <span>{A.heatLess}</span>
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    title={A.heatUnused}
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}
+                  />
+                  {HEAT_STEPS.map((l) => (
+                    <span key={l} className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: heatFill(l) }} />
+                  ))}
+                  <span>{A.heatMore}</span>
+                </div>
+                {sinceNote && <div className="mt-1 truncate">{sinceNote}</div>}
+              </div>
+            )}
             {lensOn && (
               <div
                 data-org-nopan

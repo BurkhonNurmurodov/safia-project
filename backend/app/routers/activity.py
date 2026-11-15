@@ -23,16 +23,18 @@ from typing import Annotated, Optional
 
 import jwt
 from jwt import PyJWTError as JWTError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import identity
 from app.config import settings
 from app.database import get_db
-from app.models import Admin, Manager, RoleProfile, TelegramUser, TelegramUserRole, UserActivity
+from app.models import Admin, Manager, RoleProfile, ScreenUsage, TelegramUser, TelegramUserRole, UserActivity
 from app.permissions import require_page
 from app.translit import transliterate
 
@@ -124,10 +126,73 @@ def _fold(row: UserActivity, now: datetime,
     row.role = role or row.role
 
 
+# ── Which screen the time went to («Ilovalar» heat, models.ScreenUsage) ──────
+# The browser's tally since its last ping: [{s: path, sec: seconds visible,
+# n: times opened}]. A tally is the client's word, so it is clamped: no screen
+# is credited more than a ping interval could hold, and a ping carries a few
+# dozen screens at most.
+SCREEN_MAX_SECONDS = 2 * PING_MAX_GAP   # one screen, one ping
+SCREEN_MAX_TOTAL = 4 * PING_MAX_GAP     # all screens, one ping
+SCREEN_MAX_OPENS = 30
+SCREEN_MAX_ROWS = 30
+
+
+class ScreenTally(BaseModel):
+    s: str
+    sec: float = 0
+    n: int = 0
+
+
+class PingIn(BaseModel):
+    screens: list[ScreenTally] = []
+
+
+def screen_rows(tallies) -> dict[str, tuple[int, int]]:
+    """A ping's tally, cleaned: {path: (seconds, opens)} — paths only, each
+    clamped, duplicates merged, the total capped, nothing empty."""
+    out: dict[str, list[int]] = {}
+    total = 0
+    for t in list(tallies or [])[:SCREEN_MAX_ROWS]:
+        path = (t.s or "").strip()
+        if not path.startswith("/") or len(path) > 160:
+            continue
+        sec = int(max(0, min(SCREEN_MAX_SECONDS, t.sec or 0)))
+        sec = min(sec, SCREEN_MAX_TOTAL - total)
+        opens = max(0, min(SCREEN_MAX_OPENS, int(t.n or 0)))
+        if sec <= 0 and opens <= 0:
+            continue
+        total += sec
+        row = out.setdefault(path, [0, 0])
+        row[0] += sec
+        row[1] = min(SCREEN_MAX_OPENS, row[1] + opens)
+    return {k: (v[0], v[1]) for k, v in out.items()}
+
+
+def _record_screens(db: Session, day: date, who: str, rows: dict) -> None:
+    """Add a ping's screens to the day's rows — an upsert, so two tabs of one
+    person pinging at once both count. Best-effort: a failure here never fails
+    the heartbeat it rode on."""
+    if not rows:
+        return
+    try:
+        for path, (sec, opens) in rows.items():
+            stmt = pg_insert(ScreenUsage).values(day=day, screen=path, who=who, seconds=sec, opens=opens)
+            db.execute(stmt.on_conflict_do_update(
+                constraint="uq_screen_usage_day_screen_who",
+                set_={"seconds": ScreenUsage.seconds + stmt.excluded.seconds,
+                      "opens": ScreenUsage.opens + stmt.excluded.opens},
+            ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 @router.post("/ping")
-def ping(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db)):
+def ping(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db),
+         body: Optional[PingIn] = Body(None)):
     """Record a heartbeat for the calling user. Open to every authenticated role
-    (no page gate) — it only ever writes the caller's own row."""
+    (no page gate) — it only ever writes the caller's own row. `body.screens`
+    (optional — an older bundle sends none) is which screens the time went to."""
     payload = _decode(token)
     try:
         tid, pkey, name, role = _heartbeat_owner(db, payload)
@@ -169,6 +234,7 @@ def ping(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db))
                 db.commit()
             except Exception:
                 db.rollback()
+    _record_screens(db, day, pkey or f"tg:{tid}", screen_rows(body.screens if body else None))
     return {"ok": True}
 
 

@@ -9,7 +9,7 @@ import BrandLogo from "../ui/BrandLogo";
 import ProfileAvatar from "../ui/ProfileAvatar";
 import { NODE_H, NODE_W, layoutTree, pathTo } from "../../utils/orgTree";
 import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
-import { kindHue } from "./appsNode";
+import { heatFill, kindHue } from "./appsNode";
 
 /**
  * «Tashkiliy tuzilma» — the canvas: the tree drawn as cards and connectors on
@@ -50,6 +50,22 @@ function IconChip({ icon: Icon, hue }) {
       style={hue
         ? { "--ink": hue, background: `${hue}1f` }
         : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
+    >
+      <Icon size={17} aria-hidden="true" />
+    </span>
+  );
+}
+
+// A screen's chip while the «Ilovalar» heat is on: a circle as green as the
+// screen is used (appsNode.js `heatFill`), grey when nobody opened it. Past
+// the middle of the ramp the glyph turns white so it stays readable.
+function HeatChip({ icon: Icon, level }) {
+  return (
+    <span
+      className={`grid place-items-center w-9 h-9 rounded-full flex-shrink-0${level > 0 && level <= 0.6 ? " chat-ink" : ""}`}
+      style={level > 0
+        ? { "--ink": GREEN, background: heatFill(level), ...(level > 0.6 ? { color: "#fff" } : null) }
+        : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}
     >
       <Icon size={17} aria-hidden="true" />
     </span>
@@ -121,7 +137,9 @@ const Card = memo(function Card({
   } else if (node.kind === "tab") {
     lead = <IconChip icon={node.tab.top ? List : node.tab.icon} hue={node.tab.danger ? "#ef4444" : kind} />;
   } else if (node.kind === "screen") {
-    lead = <IconChip icon={node.link.icon} hue={node.link.danger ? "#ef4444" : kind} />;
+    lead = flag?.heat !== undefined
+      ? <HeatChip icon={node.link.icon} level={flag.heat} />
+      : <IconChip icon={node.link.icon} hue={node.link.danger ? "#ef4444" : kind} />;
   } else if (node.kind === "group") {
     lead = <IconChip icon={ROLE_ICON[node.role] ?? UserRound} hue={roleHue(node.role)} />;
   } else {
@@ -138,7 +156,7 @@ const Card = memo(function Card({
       <button
         type="button"
         data-org-node={node.id}
-        title={sub ? `${title} — ${sub}` : title}
+        title={[title, sub, flag?.heatTip].filter(Boolean).join(" — ")}
         aria-pressed={selected}
         onClick={() => onSelect(node.id)}
         className="w-full h-full flex items-center gap-2.5 pl-2.5 pr-2 rounded-xl text-left transition-[box-shadow,opacity] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"

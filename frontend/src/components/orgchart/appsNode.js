@@ -22,6 +22,15 @@ export const kindHue = (node) => (
     : node.kind === "tab" ? (node.tab.top ? null : KIND_HUE.tab)
       : node.kind === "screen" ? KIND_HUE.screen : null);
 
+// How much a screen is used, as green (2026-11-15, the operator: «easily see
+// how much each screen is being used, like a heatmap … through the saturation
+// of that green»): its chip turns a green circle as strong as its share of the
+// busiest screen's time in the picked period (OrgApps.jsx — a square root, so
+// a screen used a tenth as much is still plainly tinted). Level 0 = not opened
+// in the period: grey, never green. A value-intensity ramp, not a status.
+export const HEAT_STEPS = [0.15, 0.36, 0.57, 0.78, 1];
+export const heatFill = (level) => `rgba(34,197,94,${(0.14 + 0.86 * level).toFixed(3)})`;
+
 // A page-access key's capability — one entry per person opens or closes it.
 export const pageCap = (key) => `page.view.${key}`;
 export const profileTarget = (key) => `p:${key}`;

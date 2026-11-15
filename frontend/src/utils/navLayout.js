@@ -22,6 +22,17 @@ import { APP_ICONS, APP_HUES, DEFAULT_APP_ICON, DEFAULT_TAB_ICON } from "../conf
 export const APP_LINKS = [...ALL_LINKS.map((l) => ({ ...l, to: adminPath(l.to) })), ...ADMIN_PAGE_LINKS];
 const LINK_BY_TO = new Map(APP_LINKS.map((l) => [l.to, l]));
 
+// The SCREEN a path belongs to — its `to`, the longest one the path starts
+// with (a record's own page, /cells/123, counts for its register /cells), or
+// null for a page no launcher reaches (/profile). The heartbeat tallies time
+// per screen by this (hooks/useActivityPing.js), so the org chart's «Ilovalar»
+// heat and its cards speak of the same thing.
+const SCREEN_PATHS = [...LINK_BY_TO.keys()].sort((a, b) => b.length - a.length);
+export function screenOf(pathname) {
+  const p = adminPath(pathname || "/");
+  return SCREEN_PATHS.find((to) => p === to || p.startsWith(`${to}/`)) ?? null;
+}
+
 export const TOP = "top";
 export const LANGS = ["uz", "uz_cyrl", "ru", "en"];
 

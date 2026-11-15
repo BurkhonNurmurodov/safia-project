@@ -3136,6 +3136,34 @@ class UserActivity(Base):
     )
 
 
+
+class ScreenUsage(Base):
+    """How much each SCREEN is used — one row per (day, screen, person), the
+    heat on «Tashkiliy tuzilma»'s «Ilovalar» view (2026-11-15, the operator:
+    «easily see how much each screen is being used, like a heatmap»).
+
+    Filled by the same heartbeat as ``user_activity`` (POST /api/activity/ping):
+    the browser keeps a tally of the seconds each screen was on screen and
+    VISIBLE, and how many times it was opened, and sends it with every ping
+    (``useActivityPing``). ``screen`` is the screen's path as the launcher's
+    layout names it (``link.to`` — "/zagruzka", "/panel/orgchart"); ``who`` is
+    the profile key, else ``tg:<telegram id>`` for an identity with none. The
+    day is the Tashkent day. Forward-only: nothing recorded which page anybody
+    was on before it shipped.
+    """
+    __tablename__ = "screen_usage"
+
+    id      = Column(Integer, primary_key=True, autoincrement=True)
+    day     = Column(Date, nullable=False, index=True)
+    screen  = Column(String(160), nullable=False)
+    who     = Column(String(80), nullable=False)
+    seconds = Column(Integer, nullable=False, default=0)
+    opens   = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("day", "screen", "who", name="uq_screen_usage_day_screen_who"),
+    )
+
 # ---------------------------------------------------------------------------
 # Leader concerns ("Xavotirlar") — replicates the per-brigadir concern log
 # (Sanjar.xlsx). A leader logs concerns raised on the floor; each row is owned

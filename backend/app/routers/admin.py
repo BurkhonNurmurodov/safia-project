@@ -1304,6 +1304,46 @@ def admin_org_chart(db: Session = Depends(get_db), _: dict = Depends(verify_admi
     return org_chart.build(db)
 
 
+@router.get("/org-chart/usage")
+def admin_org_chart_usage(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """How much each screen was used in [date_from, date_to] (Tashkent days,
+    the last 30 by default) — the «Ilovalar» view's heat. Per screen path:
+    minutes on screen, times opened, distinct people. `since` is the first day
+    anything was recorded at all, so the page can say the heat starts there."""
+    from datetime import date as _date, timedelta
+    from sqlalchemy import func
+    from app.models import ScreenUsage
+    from app.routers.activity import TZ
+
+    today = datetime.now(TZ).date()
+    try:
+        d_to = _date.fromisoformat(date_to) if date_to else today
+        d_from = _date.fromisoformat(date_from) if date_from else d_to - timedelta(days=29)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Bad date")
+    if d_from > d_to:
+        d_from, d_to = d_to, d_from
+    rows = (
+        db.query(ScreenUsage.screen, func.sum(ScreenUsage.seconds), func.sum(ScreenUsage.opens),
+                 func.count(func.distinct(ScreenUsage.who)))
+        .filter(ScreenUsage.day >= d_from, ScreenUsage.day <= d_to)
+        .group_by(ScreenUsage.screen)
+        .all()
+    )
+    since = db.query(func.min(ScreenUsage.day)).scalar()
+    return {
+        "date_from": d_from.isoformat(), "date_to": d_to.isoformat(),
+        "since": since.isoformat() if since else None,
+        "screens": {s: {"seconds": int(sec or 0), "opens": int(n or 0), "people": int(p or 0)}
+                    for s, sec, n, p in rows},
+    }
+
+
 @router.get("/capabilities/audit")
 def admin_capability_audit(
     limit: int = 200,
