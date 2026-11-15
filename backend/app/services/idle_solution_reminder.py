@@ -178,12 +178,15 @@ def behind(db: Session, today: date) -> list[dict]:
     stops (`stops`, of them `overdue`), the oldest day (`since`), and whether
     anybody holds the brigadir's profile (`held` — a reminder reaches nobody
     otherwise). Read off `waiting()`, the brigadir's own list."""
-    from app.routers.idle_solutions import waiting
+    from app.routers.idle_solutions import open_day, waiting
     cutoff = (today - timedelta(days=ESCALATE_DAYS)).isoformat()
     out = []
     for m in db.query(Manager.id, Manager.name, Manager.shift).filter(Manager.archived.is_(False)).all():
         profile = identity.profile_key("supervisor", m.id)
-        w = waiting(db, {"role": "supervisor", "role_id": m.id}, today)
+        # only stops filed from the page's first day: the backlog from before it
+        # is the brigadir's to clear, never a reason to report him
+        w = waiting(db, {"role": "supervisor", "role_id": m.id}, today,
+                    since=open_day("supervisor"))
         if not w or not w["stops"]:
             continue
         plans = _plan_dates(db, profile, w)

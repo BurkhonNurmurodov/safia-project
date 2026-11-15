@@ -413,7 +413,8 @@ def _plan_stops(db: Session, plans: list, unit_ids: set, in_view: set) -> dict[i
 
 def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
             shift: Optional[int] = None, manager_id: Optional[List[int]] = None,
-            factory: Optional[int] = None, read: Optional[tuple] = None) -> Optional[dict]:
+            factory: Optional[int] = None, read: Optional[tuple] = None,
+            since: Optional[date] = None) -> Optional[dict]:
     """What waits on THIS reader — the page's «Sizni kutmoqda» list, the number
     on the menu row and the daily reminder are this one answer.
 
@@ -421,9 +422,13 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     (`EXPECTED_ROLES`); None for everybody else. Two kinds of stops, each named
     once:
 
-      * unanswered — a stop of the last REMIND_DAYS days (never before the
-        page's first day for this role, `open_day`) that the reader sees on
-        the page and wrote nothing to;
+      * unanswered — a stop of the last REMIND_DAYS days that the reader sees
+        on the page and wrote nothing to — the stops filed before the page
+        opened to them too (the operator, 2026-11-15: a brigadir opening the
+        page must first see the stops he has to answer; a list counting only
+        stops filed from the launch day was empty on the launch day). `since`
+        floors the window further: the shift-managers' digest passes
+        OPEN_FROM, so nobody is reported for the backlog from before it;
       * overdue    — a stop carrying the reader's OWN plan whose date passed, no
         more than REMIND_DAYS ago, and is still not done.
 
@@ -443,7 +448,9 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     viewer = identity.viewer_profile_key(db, payload)
     if not viewer:
         return None
-    a = max(open_day(role), today - timedelta(days=REMIND_DAYS - 1))
+    a = today - timedelta(days=REMIND_DAYS - 1)
+    if since is not None:
+        a = max(a, since)
     units = {u.id for u in _scope_units(
         db, payload, shift, _own_unit(payload, list(manager_id or [])), factory)}
     in_view = _in_view(idle_scope.viewer_categories(db, payload))

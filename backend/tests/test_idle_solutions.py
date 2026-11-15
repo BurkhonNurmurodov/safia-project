@@ -644,11 +644,16 @@ class Page(unittest.TestCase):
         self.overdue_plan(SUP1, "s1", days=ims.REMIND_DAYS + 1)
         self.assertNotIn(self.stop["s1"], self.waits(SUP1))
 
-    def test_nothing_from_before_the_first_day_waits(self):
-        with mock.patch.object(ims, "OPEN_FROM", ago(3)):
-            self.assertEqual(self.waits(SUP1), {self.stop["s3"]: "unanswered"})   # s4 is 5 days old
+    def test_the_backlog_waits_but_is_never_reported(self):
+        from app.services import idle_solution_reminder as rem
         with mock.patch.object(ims, "OPEN_FROM", TODAY):
-            self.assertEqual(self.waits(SUP1), {})                                # open, nothing filed yet
+            # opened today: the last two weeks' unanswered stops wait all the same
+            self.assertEqual(self.waits(SUP1), {self.stop["s3"]: "unanswered", self.stop["s4"]: "unanswered"})
+            # …but the shift-managers hear of none of them: filed before the first day
+            self.assertEqual(rem.behind(self.db, TODAY), [])
+            self.assertEqual(self.waits(SUP1, since=TODAY), {})
+        with mock.patch.object(ims, "OPEN_FROM", ago(5)):
+            self.assertEqual([r["manager_id"] for r in rem.behind(self.db, TODAY)], [1, 2])
 
     # ── the admins' alone until its first day ────────────────────────────────
 

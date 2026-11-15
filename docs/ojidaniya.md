@@ -1315,3 +1315,20 @@ both `routers/idle_solutions.py` and `config/idleSolutions.js`.
   `ESCALATE_DAYS` (3), so its first possible message is on 2026-11-18.
 - `EARLY_FROM` / `EARLY_ROLES` stay, now earlier-or-equal to `OPEN_FROM` and
   changing nothing.
+
+## «Sizni kutmoqda» counts the last 14 days, launch day or not (2026-11-15)
+
+The operator, looking at a brigadir's page on launch day: «Sizni kutmoqda · 0»
+beside «Hammasi · 46» — «first he has to see the downtime which he has to
+write a solution». `waiting()` floored its window at the role's first day, so
+on that day nothing could wait.
+
+- The window is now simply the last `REMIND_DAYS` (14) days: every stop of
+  them the reader sees and wrote nothing to waits — the backlog from before
+  the launch included. The page's list, the menu number and the daily
+  Telegram reminder count it alike.
+- `waiting(since=…)` floors it further for one caller: the shift-managers'
+  digest (`idle_solution_reminder.behind`) passes the first day, so a
+  brigadir is reported only for stops filed from 2026-11-15 on, never for the
+  backlog.
+- Test: `test_the_backlog_waits_but_is_never_reported`.
