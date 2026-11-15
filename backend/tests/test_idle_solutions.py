@@ -103,7 +103,13 @@ class Hours(unittest.TestCase):
 
 
 class FirstDay(unittest.TestCase):
-    """`OPEN_FROM` — None until the operator names the day."""
+    """`OPEN_FROM` — None until the operator names the day. (The early roles'
+    own day, `EARLY_FROM`, is switched off here and tested on its own.)"""
+
+    def setUp(self):
+        early = mock.patch.object(ims, "EARLY_FROM", None)
+        early.start()
+        self.addCleanup(early.stop)
 
     def test_closed_until_the_day_comes(self):
         for day, want in ((None, False), (TODAY + timedelta(days=1), False),
@@ -178,6 +184,10 @@ class Page(unittest.TestCase):
         floor = mock.patch.object(ims, "OPEN_FROM", date(2020, 1, 1))
         floor.start()
         self.addCleanup(floor.stop)
+        # the early roles' own day is off unless a test sets it
+        early = mock.patch.object(ims, "EARLY_FROM", None)
+        early.start()
+        self.addCleanup(early.stop)
 
         for i in (1, 2):
             db.add(m.Manager(id=i, name=f"Unit {i}", shift=1, zagruzka_on=True))
@@ -660,6 +670,37 @@ class Page(unittest.TestCase):
         with mock.patch.object(ims, "OPEN_FROM", TODAY):
             self.assertEqual(len(self.listed(SUP1)["stops"]), 4)
             self.assertEqual(self.write(SUP1, "s3")["author_role"], "supervisor")
+
+    def test_three_roles_have_it_from_their_own_earlier_day(self):
+        from app.routers import downtime
+        self.write(ADMIN, "s3", text="admin wrote this")
+        with mock.patch.object(ims, "OPEN_FROM", None), mock.patch.object(ims, "EARLY_FROM", ago(3)):
+            # brigadir, shift- and top-manager read and write; the cause owner does not
+            self.assertEqual(len(self.listed(SUP1)["stops"]), 4)
+            self.assertEqual(len(self.listed(self.SM)["stops"]), 5)
+            self.assertEqual(self.tahlil(self.TOP)["total"]["stops"], 5)
+            self.assertEqual(self.write(SUP1, "s4")["author_role"], "supervisor")
+            self.refused(403, self.listed, self.OWNER)
+            self.assertIsNone(ims.waiting(self.db, self.OWNER))
+            # a brigadir's list counts from their day: s3 (2 days ago) waits, s4 is
+            # answered, s5 is another unit's
+            self.assertEqual(self.waits(SUP1), {self.stop["s3"]: "unanswered"})
+            self.assertEqual(ims.waiting_count(db=self.db, payload=SUP1)["total"], 1)
+            # the stop window on /downtime shows the solutions to them too
+            out = downtime.get_downtime_cell_detail(
+                manager_id=1, date_from=ago(30), date_to=TODAY, stopped=True, kpi_only=False,
+                cats=[], factory=None, db=self.db, payload=self.SM)
+            ivs = {iv["id"]: iv for cs in out["days"].values() for c in cs for iv in c["intervals"]}
+            self.assertEqual(ivs[self.stop["s3"]]["solutions"][0]["text"], "admin wrote this")
+            # and no Telegram message goes to anybody yet
+            self.holder("supervisor:1", 501)
+            out, dm = self.remind(shifts=[1])
+            self.assertEqual((out["asked"], out["managers"]), (0, 0))
+            dm.assert_not_called()
+        # the day before their day, closed as before
+        with mock.patch.object(ims, "OPEN_FROM", None), mock.patch.object(ims, "EARLY_FROM", TODAY + timedelta(days=1)):
+            for who in (SUP1, self.SM, self.TOP):
+                self.refused(403, self.listed, who)
 
     def test_no_reminder_before_the_first_day(self):
         self.holder("supervisor:1", 501)

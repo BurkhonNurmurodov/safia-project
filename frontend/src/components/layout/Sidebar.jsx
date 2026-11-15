@@ -17,7 +17,7 @@ import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import { ALL_LINKS, NAV_GROUPS, APPS, ADMIN_PAGE_LINKS, adminPath } from "../../config/navLinks";
-import { idleSolutionsOpen } from "../../config/idleSolutions";
+import { idleSolutionsOpenFor } from "../../config/idleSolutions";
 import { linksOfApp, openApp, rememberPage } from "../../utils/apps";
 import { useLauncher } from "../../hooks/useLauncher";
 import useLeaveRef from "../../hooks/useLeaveRef";
@@ -86,7 +86,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const { data: idleWaiting } = useQuery({
     queryKey: ["idle-solutions-waiting"],
     queryFn: () => api.get("/api/idle-solutions/waiting").then(r => r.data),
-    enabled: idleSolutionsOpen() && ["supervisor", "idle-owner"].includes(auth?.role),
+    enabled: idleSolutionsOpenFor(auth?.role) && ["supervisor", "idle-owner"].includes(auth?.role),
     staleTime: 120_000,
     refetchInterval: 300_000,
   });

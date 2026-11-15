@@ -1280,3 +1280,22 @@ a solution for that problem it should appear here».
   admin gets the solutions; every other reader of /downtime gets empty lists.
 - Test: `test_the_stop_window_shows_what_was_written` in
   `backend/tests/test_idle_solutions.py`.
+
+## «Kutish yechimlari» opens to brigadirs, shift-managers and top-managers first (`EARLY_FROM`, 2026-11-15)
+
+The operator: «make it visible for brigadirs, shift managers and top managers».
+
+- **`EARLY_FROM` (2026-11-15) + `EARLY_ROLES`** in `routers/idle_solutions.py`,
+  twin `config/idleSolutions.js`. `open_day(role)` is a role's first day (the
+  earlier of `EARLY_FROM` for those three and `OPEN_FROM`), `open_to(role)` the
+  one question every door asks: the page's endpoints (`_reader_only`),
+  `waiting()`, the menu row and route (`idleSolutionsOpenFor`), and the stop
+  window's solutions on /downtime (`downtime._attach_solutions`).
+- From that day the three read and write the page; a brigadir has the
+  «Sizni kutmoqda» list and the number on the menu row, counting stops filed
+  from his first day; shift- and top-managers see the solutions in the stop
+  window. **Still closed until `OPEN_FROM`**: the cause owners (`idle-owner`)
+  and every Telegram message — the brigadirs' daily reminder and the
+  shift-managers' digest (`idle_solution_reminder.run` asks `is_open`).
+- Tests: `test_three_roles_have_it_from_their_own_earlier_day`; every other
+  gate test switches `EARLY_FROM` off and pins `OPEN_FROM` itself.

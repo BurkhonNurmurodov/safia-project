@@ -80,6 +80,16 @@ MAX_PLAN_DAYS = 90      # a plan's date is at most this far ahead
 # (`OPEN_FROM`) — set both in one commit.
 OPEN_FROM: Optional[date] = None
 
+# …and the roles opened EARLIER (the operator, 2026-11-15: «make it visible for
+# brigadirs, shift managers and top managers»). From EARLY_FROM these three read
+# and write the page, see the solutions in /downtime's stop window, and a
+# brigadir gets the «Sizni kutmoqda» list and the number on the menu row —
+# counting stops filed from that day. The cause owners and every Telegram
+# reminder still wait for OPEN_FROM. The frontend's twin is
+# `config/idleSolutions.js` (`EARLY_FROM`, `EARLY_ROLES`) — set both together.
+EARLY_FROM: Optional[date] = date(2026, 11, 15)
+EARLY_ROLES = ("supervisor", "shift-manager", "top-manager")
+
 STATUSES = ("open", "doing", "done")
 MAX_DAYS = 124
 MAX_TEXT = 2000
@@ -131,20 +141,38 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
 
 
 def is_open(today: Optional[date] = None) -> bool:
-    """Has the page's first day come (`OPEN_FROM`)? Before it — and while no
-    day is named — the page is the admins' alone."""
+    """Has the page's first day come (`OPEN_FROM`) — for everybody, and for the
+    Telegram reminders? Before it — and while no day is named — only admins and
+    the `EARLY_ROLES` (from `EARLY_FROM`) have the page."""
     return OPEN_FROM is not None and (today or datetime.now(TZ).date()) >= OPEN_FROM
+
+
+def open_day(role: Optional[str]) -> Optional[date]:
+    """The first day the page is this role's, or None while it is not named."""
+    days = [OPEN_FROM]
+    if role in EARLY_ROLES:
+        days.append(EARLY_FROM)
+    days = [d for d in days if d is not None]
+    return min(days) if days else None
+
+
+def open_to(role: Optional[str], today: Optional[date] = None) -> bool:
+    """Does this role have the page today? An admin always."""
+    if role == "admin":
+        return True
+    first = open_day(role)
+    return first is not None and (today or datetime.now(TZ).date()) >= first
 
 
 def _reader_only(payload: dict) -> None:
     """The page's five roles: admins, category owners (their own categories,
     locked by `idle_scope`), shift-managers, top-managers and supervisors (own
     unit). Each of them reads AND writes — the four beside admins only from the
-    page's first day (`is_open`)."""
+    page's first day for their role (`open_to`)."""
     role = payload.get("role")
     if role not in READER_ROLES:
         raise HTTPException(status_code=403, detail="Admin only")
-    if role != "admin" and not is_open():
+    if not open_to(role):
         raise HTTPException(status_code=403, detail="not_open_yet")
 
 
@@ -391,8 +419,9 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     (`EXPECTED_ROLES`); None for everybody else. Two kinds of stops, each named
     once:
 
-      * unanswered — a stop of the last REMIND_DAYS days (never before
-        OPEN_FROM) that the reader sees on the page and wrote nothing to;
+      * unanswered — a stop of the last REMIND_DAYS days (never before the
+        page's first day for this role, `open_day`) that the reader sees on
+        the page and wrote nothing to;
       * overdue    — a stop carrying the reader's OWN plan whose date passed, no
         more than REMIND_DAYS ago, and is still not done.
 
@@ -406,12 +435,13 @@ def waiting(db: Session, payload: dict, today: Optional[date] = None, *,
     if payload.get("role") not in EXPECTED_ROLES:
         return None
     today = today or _today()
-    if not is_open(today):
-        return None                 # not announced yet: nothing waits on anybody
+    role = payload.get("role")
+    if not open_to(role, today):
+        return None                 # not announced to this role yet: nothing waits on them
     viewer = identity.viewer_profile_key(db, payload)
     if not viewer:
         return None
-    a = max(OPEN_FROM, today - timedelta(days=REMIND_DAYS - 1))
+    a = max(open_day(role), today - timedelta(days=REMIND_DAYS - 1))
     units = {u.id for u in _scope_units(
         db, payload, shift, _own_unit(payload, list(manager_id or [])), factory)}
     in_view = _in_view(idle_scope.viewer_categories(db, payload))

@@ -583,8 +583,8 @@ def _attach_solutions(db: Session, payload: dict, detail: dict) -> None:
     page's own shape (`idle_solutions._item`).
 
     Read-only here: the writing stays on that page. Its rule is kept too —
-    before the page's first day (`idle_solutions.is_open`) only an admin sees
-    them, and every other reader gets an empty list."""
+    a reader gets them only once the page is open to their role
+    (`idle_solutions.open_to`) — an empty list before."""
     from app import identity
     from app.models import IdleCategorySolution
     from app.routers import idle_solutions as ims
@@ -595,7 +595,7 @@ def _attach_solutions(db: Session, payload: dict, detail: dict) -> None:
         iv["solutions"] = []
     is_admin = payload.get("role") == "admin"
     ids = [iv["id"] for iv in ivs if iv.get("id") is not None]
-    if not ids or not (is_admin or ims.is_open()):
+    if not ids or not ims.open_to(payload.get("role")):
         return
     rows = (db.query(IdleCategorySolution)
             .filter(_in_ids(IdleCategorySolution.event_id, ids))
