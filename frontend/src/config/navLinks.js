@@ -9,7 +9,7 @@ import {
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, Package, PackageCheck, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, UsersRound, Wrench, createLucideIcon,
+  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, TrendingUp, UsersRound, Wrench, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 import { idleSolutionsRoles } from "./idleSolutions";
@@ -80,17 +80,20 @@ export const ALL_LINKS = [
   // both. Shift 2's days come from the bot once the leader closed one there.
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck, group: "leaders" },
   { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid, group: "cells" },
-  { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality" },
+  // On the launcher «Kaizen loyihalari», «Notion vazifalari» and «Vazifalar»
+  // are the «Kaizen» app (2026-11-15, the operator); for anybody else each
+  // stays in its own group.
+  { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality", app: "kaizen" },
   // «Notion vazifalari» — the Notion "Production" task list, read-only
   // (services/notion_tracker.py); its reminders' settings are the admin tab.
-  { to: "/notion-tasks", page: "notion-tasks", key: "nav.notionTasks", icon: ListChecks, group: "quality" },
+  { to: "/notion-tasks", page: "notion-tasks", key: "nav.notionTasks", icon: ListChecks, group: "quality", app: "kaizen" },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
   { to: "/arc", page: "arc", key: "nav.arc", icon: Repair, group: "quality", app: "arc" },
   // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)
   // on one page since 2026-09-04; the level is a column, not a second page.
-  { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
+  { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders", app: "kaizen" },
   { to: "/cell-concerns", page: "cell-concerns", key: "nav.cellConcerns", icon: MessageSquarePlus, group: "leaders" },
   { to: "/kelish", page: "kelish", key: "nav.kelish", icon: UserCheck, group: "leaders" },
   // «Liderlar KPI» — the leaders' five KPIs on ONE page, as a leaderboard
@@ -192,7 +195,7 @@ export const NAV_GROUPS = [
 // top-manager's only the apps holding a page they may open
 // (hooks/useLauncher.js) — and while one is open the sidebar lists only its
 // pages. An app is a nav group by default; ARC, the overview (with the reports,
-// the activity page and the Cells group), HR (with the People group),
+// the activity page and the Cells group), HR (with the People and Verifix groups), Kaizen,
 // automation and the kitchen are apps of their own (a link's `app`, or its
 // group's entry in `GROUP_APP`).
 // `hue` picks the tile's colour pair in index.css (`[data-app-hue]`).
@@ -203,11 +206,18 @@ export const APPS = [
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: Crown,           hue: "violet" },
   // HR — the People group's pages (2026-11-15, `GROUP_APP`), then the monthly
   // KPIs, the leaders' and the brigadirs' (2026-11-03).
-  { id: "hr",        labelKey: "apps.hr",           icon: BriefcaseBusiness, hue: "fuchsia" },
+  // `sections`: its own pages flush under the app's name (`top` — headerless,
+  // no divider), then «Verifix (test)» as a folder holding that group's pages
+  // (the sidebar seats a link by its `group` where a section carries that id).
+  { id: "hr",        labelKey: "apps.hr",           icon: BriefcaseBusiness, hue: "fuchsia",
+    sections: [{ id: "top" }, { id: "verifix", labelKey: "navgrp.verifix", icon: ScanFace }] },
   { id: "quality",   labelKey: "navgrp.quality",    icon: BadgeCheck,      hue: "emerald" },
+  // «Kaizen» (2026-11-15, the operator): «Kaizen loyihalari», «Notion
+  // vazifalari» and «Vazifalar» — out of Quality and Liderlar. Blue: free
+  // since «Hisobotlar» lost its tile, and no neighbour wears it.
+  { id: "kaizen",    labelKey: "apps.kaizen",       icon: TrendingUp,      hue: "blue" },
   { id: "arc",       labelKey: "nav.arc",           icon: Repair,          hue: "rose" },
   { id: "education", labelKey: "navgrp.education",  icon: GraduationCap,   hue: "indigo" },
-  { id: "verifix",   labelKey: "navgrp.verifix",    icon: ScanFace,        hue: "cyan" },
   { id: "lab",       labelKey: "navgrp.lab",        icon: TestTubes,       hue: "pink" },
   // The plant's machines read by the platform (2026-11-12, the operator) —
   // «Pechlar» first, out of the Laboratory. Its tile shows only to somebody
@@ -241,7 +251,9 @@ export const ADMIN_PAGE_LINKS = ADMIN_NAV.map((n) => ({
 // the operator: «Cells also should be in Overview. People app's screens
 // should be in HR app») — a new page of such a group follows it by itself.
 // The sidebar's grouped register (everybody without the launcher) is untouched.
-const GROUP_APP = { cells: "overview", people: "hr" };
+// «Verifix (test)» joined HR the same day — there as a folder of its own
+// (the HR app's `sections`).
+const GROUP_APP = { cells: "overview", people: "hr", verifix: "hr" };
 
 export const appOf = (link) => link.app ?? GROUP_APP[link.group] ?? link.group;
 

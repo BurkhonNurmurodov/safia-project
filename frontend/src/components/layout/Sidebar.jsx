@@ -139,7 +139,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // `sections` (the admin app's four) is always grouped by them instead.
   const sections = app?.sections ?? null;
   const groupDefs = sections ?? NAV_GROUPS;
-  const groupOf = (l) => (sections ? l.section : l.group);
+  // Inside such an app a link sits in the section it names (`section`, the
+  // admin pages), else in the section carrying its nav group's id (HR's
+  // «Verifix (test)» folder), else in the first one.
+  const groupOf = (l) => (sections
+    ? l.section ?? (sections.some(s => s.id === l.group) ? l.group : sections[0].id)
+    : l.group);
   const fallbackGroup = sections ? sections[0].id : "system";
   const grouped = sections ? true : !app && links.length > GROUP_THRESHOLD;
   const byGroup = new Map(groupDefs.map(g => [g.id, []]));

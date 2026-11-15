@@ -87,7 +87,20 @@ untouched.
   People group («Odam soni»'s three pages, «Davomat») opens the HR app ahead
   of the two KPI pages; the «Cells» and «People» tiles are gone, a new page
   of either group follows it by itself, page access is unchanged, and the
-  grouped sidebar of everybody without the launcher is untouched; «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
+  grouped sidebar of everybody without the launcher is untouched;
+  **«Verifix (test)» is a FOLDER inside the HR app** (2026-11-15, the
+  operator: «should be in HR app as menu tab with its screens inside») — its
+  tile is gone, `GROUP_APP` sends the group to `hr`, and the HR app's
+  `sections` (`top`, headerless, then `verifix`) make the sidebar draw HR's
+  own pages flush and the eight Verifix pages under a collapsible «Verifix
+  (test)» header, open while one of them is; the sidebar seats a link by its
+  `section`, else by its nav `group` where a section carries that id, else in
+  the first section (admin-only pages, so a top-manager's HR shows no folder);
+  **«Kaizen»** (2026-11-15, the operator — `kaizen`, `TrendingUp`, hue `blue`,
+  after Quality) holds «Kaizen loyihalari» and «Notion vazifalari», out of the
+  Quality app, and «Vazifalar», out of the Liderlar app, by their
+  `app: "kaizen"` (page access unchanged; for everybody else each stays in its
+  group); «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
   hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
   moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
   for everybody else both stay in the Liderlar group); «Avtomatika»
@@ -108,7 +121,7 @@ untouched.
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button
   opens it everywhere. A new page joins its group's app by itself; give it
-  `app` only to move it elsewhere. Thirteen tiles fill 3 / 5 / 7 columns and
+  `app` only to move it elsewhere. Thirteen tiles (Verifix out, Kaizen in) fill 3 / 5 / 7 columns and
   the short last row is CENTRED (a wrapping flex row, not a grid), so any
   count sits evenly. **A tile's name is ONE short word where it can be**: a
   name wider than a phone's tile (~96px at 360px) breaks mid-word, so the
