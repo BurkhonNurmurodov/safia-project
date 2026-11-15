@@ -230,7 +230,7 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // control for its half; the header's own press sorts by «soch bilan».
 function LaneLabels({ lanes, sort, onSort }) {
   return (
-    <span className="mt-1 flex w-full justify-between gap-1">
+    <span className="mt-1 flex w-full justify-between gap-1 sm:mx-auto sm:w-[90px]">
       {lanes.map((l, i) => {
         const on = sort?.key === l.k;
         return (
@@ -252,12 +252,11 @@ function LaneLabels({ lanes, sort, onSort }) {
   );
 }
 
-// The split cell's header: its half labels run edge to edge under the title.
-// The column is a NARROW fixed width on sm+ (the operator, 2026-11-15: «make
-// the box smaller … the diagonal line [in] the long box looks awful»): at 14%
-// a ~150 × 36px cell laid the diagonal almost flat; ~88px keeps it a clear
-// slant and still holds «100%» in each corner. The other columns take the rest.
-const TH_PAIR = "align-bottom sm:w-[88px] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
+// The split cell's header: its half labels sit under the title over the box.
+// The COLUMN keeps the board's normal 14%; the coloured BOX inside it is a
+// short 90px on sm+ (`splitCell` — the operator picked option B on the design
+// canvas, 2026-11-15: a ~150px-long box laid the diagonal almost flat).
+const TH_PAIR = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
   + "[&>span>span:first-child]:flex-1 [&>span>span:first-child]:w-full max-sm:[&_.lucide-chevrons-up-down]:hidden";
 const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
@@ -651,17 +650,22 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       target: qualityTarget(r),
       children: (
         <>
-          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100"
-            preserveAspectRatio="none" aria-hidden="true">
-            <polygon points="0,0 100,0 0,100" fill={fa?.background ?? "transparent"} />
-            <polygon points="100,0 100,100 0,100" fill={fb?.background ?? "transparent"} />
-            <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="2"
-              vectorEffect="non-scaling-stroke" />
-          </svg>
-          {/* holds the row's one-line height; the figures sit in the corners */}
+          {/* The BOX: the cell's full height, the cell's full width on a
+              phone (already ~55px there), a short 90px centred on sm+ — the
+              rest of the cell stays the card's own colour around it. */}
+          <span className="pointer-events-none absolute inset-y-0 left-0 right-0 sm:left-1/2 sm:right-auto sm:w-[90px] sm:-translate-x-1/2">
+            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100"
+              preserveAspectRatio="none" aria-hidden="true">
+              <polygon points="0,0 100,0 0,100" fill={fa?.background ?? "transparent"} />
+              <polygon points="100,0 100,100 0,100" fill={fb?.background ?? "transparent"} />
+              <line x1="100" y1="0" x2="0" y2="100" stroke="var(--bg-card)" strokeWidth="2"
+                vectorEffect="non-scaling-stroke" />
+            </svg>
+            <span className={`${corner} left-[3px] top-[3px] sm:left-1.5 sm:top-[5px]`}>{fig(a, fa)}</span>
+            <span className={`${corner} right-[3px] bottom-[3px] sm:right-1.5 sm:bottom-[5px]`}>{fig(b, fb)}</span>
+          </span>
+          {/* holds the row's one-line height */}
           <span className="invisible">0</span>
-          <span className={`${corner} left-[3px] top-[3px] sm:left-2 sm:top-[5px]`}>{fig(a, fa)}</span>
-          <span className={`${corner} right-[3px] bottom-[3px] sm:right-2 sm:bottom-[5px]`}>{fig(b, fb)}</span>
         </>
       ),
     });

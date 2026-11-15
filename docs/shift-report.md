@@ -770,4 +770,11 @@ hair and without hair».
   The half names in the header are the SHORT ones at every width — «soch» /
   «sochsiz» (uz), «соч» / «сочсиз», «с вол.» / «без вол.», «hair» / «no hair»;
   the hover box keeps the full ones.
+- **The COLUMN is normal again; the BOX inside it is short** (the operator: «I
+  didn't mean height, I meant the length of the box, it's too long» — three
+  lengths drawn on a design canvas, he picked «B — 90px»). The header is back
+  to 14%; on sm+ `splitCell` draws the diagonal box 90px long, centred in the
+  cell at the cell's full height, the card's colour on either side; on a phone
+  the box is the whole (~55px) cell. The header's half names sit over the box
+  (`LaneLabels` 90px wide, centred).
 
