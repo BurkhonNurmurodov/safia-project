@@ -288,6 +288,11 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
     q_since_kept = shift_report.fold_quality(
         r for r in q_kept if (r[2] or "") >= nh_from)
     out["quality_nohair_since_from"] = nh_from
+    # The hover box's two lines per half: this month's records (filed from the
+    # 1st) and what is still unsolved from the months before.
+    q_month_all = shift_report.fold_quality(r for r in q_every if (r[2] or "") >= nh_from)
+    q_past_all = shift_report.fold_quality(r for r in q_every if (r[2] or "") < nh_from)
+    q_past_kept = shift_report.fold_quality(r for r in q_kept if (r[2] or "") < nh_from)
     # The month's starting list of open records is still TAKEN, though the box
     # no longer prints its count (2026-11-13): a list not taken on its day can
     # never be taken afterwards. Its failure costs nothing here.
@@ -388,6 +393,8 @@ def _compute(db: Session, units: list, note, now, windows, picked=None) -> dict:
                     shift_report.since_cell(q_since.get(m.id)),
                     shift_report.work_cell(quality_hair.get(m.id), q_since.get(m.id)),
                     shift_report.work_cell(quality.get(m.id), q_since_kept.get(m.id)),
+                    {"hair": shift_report.box_half(q_month_all.get(m.id), q_past_all.get(m.id)),
+                     "nohair": shift_report.box_half(q_since_kept.get(m.id), q_past_kept.get(m.id))},
                 )
                 for m in groups[s]
             ],

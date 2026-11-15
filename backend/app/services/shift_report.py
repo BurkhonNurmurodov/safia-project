@@ -120,6 +120,22 @@ def since_cell(acc: Optional[dict]) -> dict:
     return {"done": int(acc.get("done") or 0), "total": int(acc.get("actionable") or 0)}
 
 
+def box_half(month_acc: Optional[dict], past_acc: Optional[dict]) -> dict:
+    """One half of the quality cell's hover box (the operator, 2026-11-15: «the
+    part … should always be with the new month, and after that line write
+    overall how many left from the past»): of the records FILED this month,
+    how many needed action and how many are solved; of those filed BEFORE the
+    month, how many are still not solved. `fold_quality` answers in, plain
+    counts out — a unit with nothing reads 0 / 0 / 0."""
+    m = month_acc or {}
+    p = past_acc or {}
+    return {
+        "month_done": int(m.get("done") or 0),
+        "month_total": int(m.get("actionable") or 0),
+        "past_left": max(0, int(p.get("actionable") or 0) - int(p.get("done") or 0)),
+    }
+
+
 def month_start(day: date) -> str:
     """The 1st of `day`'s month, ISO — where the «sochsiz» lane's solved count
     starts (the «soch bilan» lane's is `QUALITY_SINCE`)."""
@@ -379,7 +395,8 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         att: Optional[dict] = None, quality_hair: Optional[dict] = None,
         quality_since: Optional[dict] = None,
         quality_work: Optional[dict] = None,
-        quality_work_nohair: Optional[dict] = None) -> dict:
+        quality_work_nohair: Optional[dict] = None,
+        quality_box: Optional[dict] = None) -> dict:
     return {
         "manager_id": unit.id,
         "name": unit.name,
@@ -401,5 +418,8 @@ def row(unit, load: dict, compl: dict, quality: dict, open_concerns: int,
         # second lane (the operator, 2026-11-14: «divide this column in two and
         # make it with hair and without hair»)
         "quality_work_nohair": quality_work_nohair or _blank("no_records", done=0, total=0),
+        # the hover box: {"hair": box_half, "nohair": box_half} — this month,
+        # and what is left from the months before
+        "quality_box": quality_box,
         "concerns": {"open": int(open_concerns or 0)},
     }

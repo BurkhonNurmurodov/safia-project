@@ -563,7 +563,39 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     return c && !c.reason && isNum(c.value) ? pctText(c.value) : "—";
   };
   // Its spoken form, for the link's aria-label.
+  // The hover box from 2026-11-15 (the operator: «the part … should always be
+  // with the new month, and after that line write overall how many left from
+  // the past, and same with the hair part»): per half its name and the cell's
+  // %, then «Noyabr: bartaraf etilgan / jami  4/9» — the records FILED this
+  // month, solved / needing action — then «O'tgan oylardan qolgan  18», the
+  // records filed before the month still not solved. The server counts both
+  // (`quality_box`, backend `shift_report.box_half`); the month is the one it
+  // counted (`quality_nohair_since_from`). A payload without `quality_box`
+  // falls back to the earlier box below.
+  const qMonthName = (() => {
+    const mo = Number(String(data?.quality_nohair_since_from || "").slice(5, 7));
+    return mo >= 1 && mo <= 12 ? t(`cal.m${mo - 1}`) : "";
+  })();
+  const boxHalves = (r) => {
+    const box = r.quality_box;
+    if (!box) return null;
+    return [false, true].map((noHair) => {
+      const h = box[noHair ? "nohair" : "hair"] || {};
+      return {
+        lane: t(noHair ? "overview.sr.hairWithout" : "overview.sr.hairWith"),
+        pct: qualityPct(r, noHair),
+        month: `${h.month_done ?? 0}/${h.month_total ?? 0}`,
+        past: h.past_left ?? 0,
+      };
+    });
+  };
+  const monthCaption = () => fill(t("overview.sr.qMonthLine"), { month: qMonthName });
   const qualityTitle = (r) => {
+    const halves = boxHalves(r);
+    if (halves) {
+      return halves.flatMap((h) => [`${h.lane}: ${h.pct}`, `${monthCaption()}: ${h.month}`,
+        `${t("overview.sr.qPastLeft")}: ${h.past}`]).join("\n");
+    }
     const lines = [false, true].flatMap((noHair) => {
       const open = qualityOpen(r, noHair);
       if (!open) return [];
@@ -577,6 +609,29 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       : undefined;
   };
   const qualityTip = (r) => {
+    const box = boxHalves(r);
+    if (box) {
+      const line = (label, value) => (
+        <div className="mt-1 flex items-baseline justify-between gap-6">
+          <span className="font-medium" style={{ color: "var(--text-3)" }}>{label}</span>
+          <span className="font-semibold tabular-nums">{value}</span>
+        </div>
+      );
+      return (
+        <div className="whitespace-nowrap">
+          {box.map((h, i) => (
+            <div key={h.lane} className={i ? "mt-2 border-t pt-2" : ""} style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-baseline justify-between gap-6">
+                <span className="font-semibold first-letter:uppercase">{h.lane}</span>
+                <span className="text-sm font-bold tabular-nums">{h.pct}</span>
+              </div>
+              {line(monthCaption(), h.month)}
+              {line(t("overview.sr.qPastLeft"), h.past)}
+            </div>
+          ))}
+        </div>
+      );
+    }
     const halves = [false, true].map((noHair) => [noHair, qualityOpen(r, noHair)]).filter(([, o]) => o);
     if (halves.length) {
       return (

@@ -786,3 +786,23 @@ hair and without hair».
   the name at 30%, 107px with the name unsized) — that is also why the 88px
   attempt that morning still looked long. The name column now takes the slack.
 
+## The quality hover box: this month, then what is left from the past (2026-11-15)
+
+The operator: «the part [in the hover box] should always be with the new
+month, and after that line write overall how many left from the past, and
+same with the hair part too» — and, shown the layout, «Yes, like this».
+
+- **THE STANDING hover box**, both halves alike: the half's name and the
+  cell's %; «Noyabr: bartaraf etilgan / jami  4/9» — of the records FILED from
+  the 1st of the current month, solved / needing action; «O'tgan oylardan
+  qolgan  18» — of the records filed BEFORE the month, how many are still not
+  solved. Hair counted in «soch bilan», left out of «sochsiz». The 1-October
+  fraction and the all-time rate are no longer in the box.
+- Server: `quality_box` per row, `{"hair": …, "nohair": …}`, each
+  `shift_report.box_half` → `month_done`, `month_total`, `past_left`, folded
+  from the same `unit_rows_both` read by filing date against
+  `quality_nohair_since_from` (the month's 1st), which also names the month in
+  the box. A payload without `quality_box` keeps the previous box.
+- **The cell's percentages are unchanged** (with hair: solved since 1 October ÷
+  had to solve; without hair: the same from the month's 1st).
+
