@@ -139,6 +139,15 @@ its own exit adds one `…[data-leaving]` rule; without one it fades.
   boxes would all pop at once. The sidebar's rows take the hover wash under a
   finger.
 
+**A button as wide as its card never dips** (2026-11-15, «this button is not
+working properly»): `SectionHead`'s fold button (`.sec-fold`, «Rahbariyat
+vazifalari») spans the row, and the 3% dip pulled its edges ~12px in — a press
+on the chevron, held for a moment, ended OUTSIDE the button and the browser
+dropped the click. It carries `.press-none`, answers with a background wash
+(`--hover-bg` / `--press-wash`) and draws its focus ring inside (an inset
+`--brand` line), since the card's rounded clip cut the default outline into a
+stray box. A new full-width button must do the same.
+
 ### `SegmentedToggle` — the pill slides
 
 The selected fill is ONE element (`.seg-ind`) laid under the labels and moved

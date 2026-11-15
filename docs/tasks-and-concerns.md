@@ -348,6 +348,9 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   kishi» cut is gone; «Yig'ish» at the end folds it back and brings the head
   into view. The head's fold is `SectionHead`'s own `onToggle` / `open` (see
   the template table), so the head is still THE section header.
+  It never dips when pressed and its focus ring sits inside it — a held
+  press on the chevron used to land outside the shrinking button and was lost
+  (v4.542.1; `docs/motion.md`).
 - **THE BLOCK IS ALWAYS NOW** (v4.527.0, the operator, 2026-11-15: «remove
   the date switch, always show now and show all task», finished ones «7 days
   after done»). «Smena kunligi» opens on YESTERDAY (its stepper's default —

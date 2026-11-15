@@ -38,6 +38,12 @@ const STICK_TO_MAIN = { top: "calc(var(--main-pad, 0px) * -1)" };
 // `aria-expanded={open}`, stretched to the head's full height for the tap; the
 // `right` slot stays outside it, so its own buttons are never nested in it.
 // The card decides what folding hides — the head only reports the press.
+// It never DIPS (`press-none`): every button shrinks 3% while held, and on a
+// button the width of the card that pulled its edges ~12px in, so a press on
+// the chevron ended outside it and the browser dropped the click (2026-11-15,
+// «this button is not working properly»). It answers with a wash instead, and
+// its focus ring is drawn INSIDE it — the card clips anything outside
+// (`.sec-fold` in index.css).
 export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", color, open, onToggle }) {
   const lg = size === "lg";
   const ident = `flex ${color && !subtitle ? "items-center" : "items-start"} min-w-0 ${lg ? "gap-3" : "gap-2"}`;
@@ -47,7 +53,7 @@ export function SectionHead({ icon: Icon, title, subtitle, right, size = "sm", c
         type: "button",
         onClick: onToggle,
         "aria-expanded": !!open,
-        className: `${ident} flex-1 self-stretch text-left ${lg ? "-my-3.5 sm:-my-4 py-3.5 sm:py-4" : "-my-2.5 py-2.5"}`,
+        className: `${ident} sec-fold press-none flex-1 self-stretch text-left -mx-2 px-2 ${lg ? "-my-3.5 sm:-my-4 py-3.5 sm:py-4" : "-my-2.5 py-2.5"}`,
       }
     : { className: ident };
   return (
