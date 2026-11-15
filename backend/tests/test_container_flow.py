@@ -118,8 +118,15 @@ class FlowTest(unittest.TestCase):
                       team("A2894", "B", {9: {"yellow": 6}})]
         self._p = mock.patch.object(flow, "unit_teams", side_effect=lambda db, mid, day: self.teams)
         self._p.start()
+        # every unit's «Konteynerlar» figure — a brigadir's LIMIT for an hour;
+        # generous here, so only the limit tests meet it
+        big = {k: 100 for k in flow.KEYS}
+        self.hours = {mid: {h: dict(big) for h in range(48)} for mid in (1, 2, 3)}
+        self._h = mock.patch.object(flow, "units_hours", side_effect=lambda db, day: self.hours)
+        self._h.start()
 
     def tearDown(self):
+        self._h.stop()
         self._p.stop()
         self.db.close()
 
@@ -447,11 +454,70 @@ class FlowTest(unittest.TestCase):
                              logistics_key="x", status="requested", due_at=self.at(9))
         with mock.patch.object(flow, "units_hours", return_value=per):
             rows = flow.split_hint(self.db, r)
-        # sorted by name; yellow 20 shared 12:8 by 18:12; bucket all to Bravo, scaled up to 6;
-        # grey is nobody's at 10:00 — left to the hand
+        # sorted by name; yellow 20 shared 8:12 by the limits 12:18; bucket only up to
+        # Bravo's limit of 4 (never past it — the rest stays unsplit); grey is nobody's at 10:00
         self.assertEqual([(x["unit"], x["counts"]) for x in rows],
-                         [("Alfa", {"yellow": 8}), ("Bravo", {"yellow": 12, "bucket": 6})])
+                         [("Alfa", {"yellow": 8}), ("Bravo", {"yellow": 12, "bucket": 4})])
         self.assertEqual(rows[1]["need"], {"yellow": 18, "bucket": 4})
+
+    def test_a_brigadir_never_gets_past_the_limit(self):
+        """The limit is the unit's «Konteynerlar» figure for the hour, less
+        what other splits of that hour already gave it; past it a split is
+        refused, and the hint never offers more."""
+        from app.models import ProfilePermission, RoleProfile
+        for t in ("container_request_parts", "container_requests", "profile_permissions"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        for i in (1, 2, 3):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=f"Unit {i}", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        self.hours = {1: {10: {"yellow": 18}}, 2: {10: {"yellow": 6, "bucket": 4}}}
+        r1 = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30}, "", "axo", "guest:1")
+        self.db.commit()
+        # the hint: both whole (18 + 6 = 24), 6 of the 30 asked stay unsplit
+        self.assertEqual({x["manager_id"]: x["counts"] for x in flow.split_hint(self.db, r1)},
+                         {1: {"yellow": 18}, 2: {"yellow": 6}})
+        with self.assertRaises(flow.FlowError) as e:                       # 19 > unit 1's 18
+            flow.assign_request(self.db, r1.id, [{"manager_id": 1, "counts": {"yellow": 19}}],
+                                "short", None, "n", nk, False)
+        self.assertEqual(e.exception.code, "limit")
+        self.db.rollback()
+        flow.assign_request(self.db, r1.id, [{"manager_id": 1, "counts": {"yellow": 10}}],
+                            "short", None, "n", nk, False)
+        self.db.commit()
+        # a second request for the same hour: unit 1 has 8 left, unit 2 all 6
+        r2 = flow.create_request(self.db, DAY, 10, nk, {"yellow": 20, "bucket": 2}, "", "axo", "guest:1")
+        self.db.commit()
+        lim = flow.unit_limits(self.db, DAY, 10, r2.id)
+        self.assertEqual((lim[1]["given"], lim[1]["left"]), ({"yellow": 10}, {"yellow": 8}))
+        self.assertEqual(lim[2]["left"], {"yellow": 6, "bucket": 4})
+        with self.assertRaises(flow.FlowError) as e:
+            flow.assign_request(self.db, r2.id, [{"manager_id": 1, "counts": {"yellow": 5}},
+                                                 {"manager_id": 1, "counts": {"yellow": 4}}],
+                                "short", None, "n", nk, False)        # two rows of one unit: 9 > 8
+        self.assertEqual(e.exception.code, "limit")
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as e:                       # a unit with no figure: 0
+            flow.assign_request(self.db, r2.id, [{"manager_id": 3, "counts": {"yellow": 1}}],
+                                "short", None, "n", nk, False)
+        self.assertEqual(e.exception.code, "limit")
+        self.db.rollback()
+        flow.assign_request(self.db, r2.id, [{"manager_id": 1, "counts": {"yellow": 8}},
+                                             {"manager_id": 2, "counts": {"yellow": 6, "bucket": 2}}],
+                            "short", None, "n", nk, False)
+        self.db.commit()
+        # a cancelled split gives its containers back to the limit
+        r3 = flow.create_request(self.db, DAY, 10, nk, {"yellow": 1}, "", "axo", "guest:1")
+        self.db.commit()
+        self.assertEqual(flow.unit_limits(self.db, DAY, 10, r3.id)[1]["left"], {"yellow": 0})
+        flow.cancel_request(self.db, r1.id, "xato", "axo")
+        self.db.commit()
+        self.assertEqual(flow.unit_limits(self.db, DAY, 10, r3.id)[1]["left"], {"yellow": 10})
 
     def test_notify_switch_and_message(self):
         from app.models import ContainerRequest

@@ -758,6 +758,16 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
         raise FlowError("count")
     if any(given.get(k, 0) > n for k, n in r.lines.items()):
         raise FlowError("over")
+    # no brigadir past their limit for the hour (`unit_limits`)
+    lim = unit_limits(db, r.day, r.hour, r.id)
+    per_unit: dict = {}
+    for mid, c in clean:
+        for k, n in c.items():
+            per_unit.setdefault(mid, {})[k] = per_unit.get(mid, {}).get(k, 0) + n
+    for mid, c in per_unit.items():
+        left = (lim.get(mid) or {}).get("left", {})
+        if any(n > left.get(k, 0) for k, n in c.items()):
+            raise FlowError("limit")
     if any(given.get(k, 0) < n for k, n in r.lines.items()):
         r.short_reason, r.short_comment = _why(reason, comment)
     merged: dict = {}
@@ -1370,29 +1380,56 @@ def plant_hours(db: Session, day: date) -> dict:
     return out
 
 
-def split_hint(db: Session, r: ContainerRequest) -> list:
+def unit_limits(db: Session, day: date, hour: int, exclude_request_id: Optional[int] = None) -> dict:
+    """Each brigadir's LIMIT for one production hour (2026-11-15, the operator:
+    «they have a limit for containers after the calculation, and they do not
+    have to take the extra»): their unit's own figure on «Konteynerlar» for
+    that hour, per container type (`units_hours`), less what other split
+    requests of the same hour already gave them. {manager_id: {"limit",
+    "given", "left"}} — every unit with a figure or a given count. A unit with
+    no figure for the hour has no limit to give from: 0."""
+    hour = int(hour)
+    per = units_hours(db, day)
+    out: dict = {}
+    for mid, hm in per.items():
+        fig = {k: n for k, n in (hm.get(hour) or {}).items() if n}
+        if fig:
+            out[mid] = {"limit": fig, "given": {}, "left": dict(fig)}
+    q = db.query(ContainerRequestPart.manager_id, ContainerRequestPart.ctype, ContainerRequestPart.count).join(
+        ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
+        ContainerRequest.day == day, ContainerRequest.hour == hour, ContainerRequest.status == "assigned")
+    if exclude_request_id is not None:
+        q = q.filter(ContainerRequest.id != exclude_request_id)
+    for mid, k, n in q.all():
+        u = out.setdefault(mid, {"limit": {}, "given": {}, "left": {}})
+        u["given"][k] = u["given"].get(k, 0) + n
+    for u in out.values():
+        u["left"] = {k: max(0, n - u["given"].get(k, 0)) for k, n in u["limit"].items()}
+    return out
+
+
+def split_hint(db: Session, r: ContainerRequest, limits: Optional[dict] = None) -> list:
     """Where a request's containers would go by the «Konteynerlar» figures:
-    for each requested type, the units whose hour asks for it, the requested
-    count shared out in proportion to each unit's own figure (largest
-    remainder — up or down, so it always adds up to what was asked). A type
-    no unit's hour asks for is left to the hand."""
-    per = units_hours(db, r.day)
-    hour = int(r.hour)
-    mids = [mid for mid, hm in per.items() if hm.get(hour)]
+    for each requested type, each unit up to what is LEFT of its limit for the
+    hour (`unit_limits`) — everybody whole when the request covers them, cut
+    in proportion by largest remainder when it does not (`split`). What no
+    limit can take stays unsplit, a short split with a reason."""
+    limits = unit_limits(db, r.day, r.hour, r.id) if limits is None else limits
+    mids = [m for m, u in limits.items() if any(u["left"].get(k) for k in (r.lines or {}))]
     units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
     mids.sort(key=lambda m: (getattr(units.get(m), "name", "") or "", m))
     rows: dict = {}
     for k, asked in (r.lines or {}).items():
-        have = [m for m in mids if (per[m][hour] or {}).get(k)]
-        weights = [per[m][hour][k] for m in have]
-        for m, n, w in zip(have, share_out(asked, weights), weights):
+        have = [m for m in mids if limits[m]["left"].get(k)]
+        lefts = [limits[m]["left"][k] for m in have]
+        for m, n in zip(have, split(asked, lefts)):
             if not n:
                 continue
             row = rows.setdefault(m, {"manager_id": m, "unit": getattr(units.get(m), "name", None),
                                       "shift": getattr(units.get(m), "shift", None),
                                       "counts": {}, "need": {}})
             row["counts"][k] = n
-            row["need"][k] = w
+            row["need"][k] = limits[m]["limit"].get(k, 0)
     return [rows[m] for m in mids if m in rows]
 
 

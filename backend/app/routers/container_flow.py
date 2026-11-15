@@ -458,7 +458,10 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
     r = db.get(ContainerRequest, request_id)
     if r is None:
         raise HTTPException(status_code=404, detail="gone")
-    return {"rows": flow.split_hint(db, r)}
+    limits = flow.unit_limits(db, r.day, r.hour, r.id)
+    return {"rows": flow.split_hint(db, r, limits),
+            # each brigadir's limit for the hour: the dialog caps every count at `left`
+            "limits": {str(m): u for m, u in limits.items()}}
 
 
 @router.get("/receipts")

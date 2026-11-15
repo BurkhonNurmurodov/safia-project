@@ -192,15 +192,29 @@ containers row from production and move it into the new button».
   filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
   (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
   else sees the mark.
+- **A brigadir's LIMIT** (2026-11-15, the operator: «we have to put a limit
+  for brigadirs, they don't have to get extra containers — after the
+  calculation they have a limit, and the extra they don't have to take»):
+  `unit_limits(day, hour)` — the unit's own figure for that production hour on
+  «Konteynerlar» (`units_hours`), per container type, less what OTHER split
+  requests of the same hour already gave it (a cancelled one gives its
+  containers back). `assign_request` refuses a split that puts any brigadir
+  past what is left (`limit`, summed over rows of one unit), and **a unit with
+  no figure for the hour has no limit: 0** — containers the calculation does
+  not ask for are exactly the extra. The split hint gives each unit up to its
+  left limit (`split`, never scaling up); what no limit can take stays
+  unsplit and the split is short, with a reason. The dialog shows «Limit: …»
+  (and «oldin berilgan» when an earlier split of the hour gave some) under
+  each brigadir, caps every count at it, and lists a brigadir with nothing
+  left disabled, last. `GET /requests/{id}/split-hint` answers `limits` beside
+  `rows`.
 - **What else the requests tab answers** (2026-11-14, the operator asked for
   all eight ideas at once):
   - **The split starts filled** — `GET /requests/{id}/split-hint`
     (`split_hint`): for each requested type, the units whose hour asks for it
-    on «Konteynerlar» (`units_hours`, the per-unit cache `plant_hours` now sums),
-    the asked count shared out in proportion to their figures by LARGEST
-    REMAINDER both ways (`share_out` — unlike `split`, it also scales UP), so
-    the rows add up to what was asked. A type no unit's hour asks for is left
-    to the hand. Each row says its unit's own figure; any edit keeps the rows
+    on «Konteynerlar» (`units_hours`, the per-unit cache `plant_hours` now
+    sums), each up to its LIMIT (above; until 2026-11-15 it scaled UP past the
+    figures with `share_out` so the rows always added up to the request). Each row says its unit's own figure; any edit keeps the rows
     and «Hisobga qaytarish» brings the figures back.
   - **AXO sees whether the addressee opened it** — «Ko'rildi 14:05», or
     «Ko'rilmagan», yellow after `UNSEEN_WARN_MIN` (15).

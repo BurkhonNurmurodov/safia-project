@@ -506,8 +506,11 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
 
 // Logistics: the request across brigadirs — a row per brigadir, a count per
 // requested container; what is left shows under the rows. The rows START from
-// each brigadir's own hour on «Konteynerlar» (`split-hint`: the asked counts
-// shared out in proportion to their figures), until the person changes one.
+// each brigadir's own hour on «Konteynerlar» (`split-hint`), until the person
+// changes one. **No brigadir gets past their LIMIT** (2026-11-15, the
+// operator): their figure for the hour less what other splits of the hour
+// already gave them (`unit_limits`, enforced by the server too) — every count
+// is capped at it, a brigadir with nothing left is listed but not pickable.
 let rowSeq = 1;
 const blankRow = () => ({ id: rowSeq++, unit: null, counts: {}, need: null });
 
@@ -521,18 +524,24 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   });
   const hint = useQuery({
     queryKey: ["cflow-split-hint", r.id],
-    queryFn: () => api.get(`/api/container-flow/requests/${r.id}/split-hint`).then((x) => x.data.rows),
+    queryFn: () => api.get(`/api/container-flow/requests/${r.id}/split-hint`).then((x) => x.data),
     staleTime: 60_000,
   });
+  const hintRows = hint.data?.rows;
+  const limits = hint.data?.limits ?? {};
+  const leftOf = (unit) => limits[String(unit)]?.left ?? {};
+  const givenOf = (unit) => limits[String(unit)]?.given ?? {};
+  const capOf = (unit, k) => Math.min(r.lines[k], leftOf(unit)[k] ?? 0);
+  const roomOf = (unit) => types.reduce((a, k) => a + capOf(unit, k), 0);
   const [rows, setRows] = useState(() => [blankRow()]);
   const [touched, setTouched] = useState(false);
   const [filled, setFilled] = useState(false);
   const fromHint = (h) => h.map((x) => ({ id: rowSeq++, unit: x.manager_id, counts: { ...x.counts }, need: x.need }));
   useEffect(() => {
-    if (filled || touched || !hint.data) return;
+    if (filled || touched || !hintRows) return;
     setFilled(true);
-    if (hint.data.length) setRows(fromHint(hint.data));
-  }, [hint.data, filled, touched]);
+    if (hintRows.length) setRows(fromHint(hintRows));
+  }, [hintRows, filled, touched]);
   const [reason, setReason] = useState(null);
   const [comment, setComment] = useState("");
   const given = useMemo(() => {
@@ -546,9 +555,20 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   const ready = rows.filter((row) => row.unit != null && sum(row.counts) > 0);
   const bad = rows.some((row) => (row.unit == null) !== (sum(row.counts) === 0));
   const taken = new Set(rows.map((x) => x.unit).filter((x) => x != null));
+  // over a limit: the server refuses it too; the field says which count and its cap
+  const overLimit = rows.some((row) => row.unit != null && types.some((k) => (row.counts[k] ?? 0) > capOf(row.unit, k)));
+  // a brigadir with room for the hour first; one with none stays listed, not pickable
   const opts = (mine) => (units.data ?? []).filter((u) => u.id === mine || !taken.has(u.id))
-    .map((u) => ({ value: u.id, label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}` }))
-    .sort((a, b) => a.label.localeCompare(b.label));   // by the name as shown, not the stored script
+    .map((u) => {
+      const room = roomOf(u.id);
+      return {
+        value: u.id, room,
+        label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`,
+        disabled: !hint.isLoading && room === 0 && u.id !== mine,
+        title: room === 0 ? t("cflow.lim.noneLeft") : undefined,
+      };
+    })
+    .sort((a, b) => (b.room > 0) - (a.room > 0) || a.label.localeCompare(b.label));   // by the name as shown
   const set = (id, patch) => { setTouched(true); setRows((rs) => rs.map((x) => (x.id === id ? { ...x, ...patch } : x))); };
   const m = useMutation({
     mutationFn: () => api.post(`/api/container-flow/requests/${r.id}/assign`, {
@@ -557,7 +577,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
     }),
     onSuccess: onDone, onError: onFail,
   });
-  const hinted = filled && (hint.data?.length ?? 0) > 0;
+  const hinted = filled && (hintRows?.length ?? 0) > 0;
   return (
     <Modal onClose={onClose} title={t("cflow.req.assign")}
       subtitle={`${span(r.hour)} · ${types.map((k) => `${t(`cflow.ct.${k}`)} ${r.lines[k]}`).join(" · ")}`}
@@ -566,7 +586,8 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
         <>
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
           <Button icon={<Check size={14} />} loading={m.isPending}
-            disabled={!ready.length || bad || over || (short && !reasonOk(reason, comment))} onClick={() => m.mutate()}>
+            disabled={!ready.length || bad || over || overLimit || hint.isLoading || (short && !reasonOk(reason, comment))}
+            onClick={() => m.mutate()}>
             {t("cflow.req.assignSend")}
           </Button>
         </>
@@ -582,7 +603,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
               : t("cflow.split.none")}
           </span>
           {hinted && touched && (
-            <Button size="sm" variant="ghost" onClick={() => { setRows(fromHint(hint.data)); setTouched(false); }}>
+            <Button size="sm" variant="ghost" onClick={() => { setRows(fromHint(hintRows)); setTouched(false); }}>
               {t("cflow.split.reset")}
             </Button>
           )}
@@ -592,7 +613,13 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
             <div className="flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <FormField label={`${t("containers.brigadir")} ${i + 1}`} required
-                  hint={row.need ? t("cflow.split.rowNeed").replace("{x}", countsText(t, row.need)) : undefined}>
+                  hint={row.unit == null || hint.isLoading ? undefined : (() => {
+                    const left = Object.fromEntries(types.map((k) => [k, capOf(row.unit, k)]));
+                    const before = countsText(t, Object.fromEntries(types.map((k) => [k, givenOf(row.unit)[k] ?? 0])));
+                    if (!Object.values(left).some(Boolean)) return t("cflow.lim.noneLeft");
+                    return t("cflow.lim.row").replace("{x}", countsText(t, left))
+                      + (before ? ` ${t("cflow.lim.before").replace("{x}", before)}` : "");
+                  })()}>
                   <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
                 </FormField>
@@ -603,12 +630,18 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
               )}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {types.map((k) => (
-                <FormField key={k} label={t(`cflow.ct.${k}`)}>
-                  <CountStepper min={0} max={r.lines[k]} value={row.counts[k] ?? null} placeholder="0"
-                    onChange={(n) => set(row.id, { counts: { ...row.counts, [k]: n ?? 0 } })} />
-                </FormField>
-              ))}
+              {types.map((k) => {
+                const cap = row.unit == null ? r.lines[k] : capOf(row.unit, k);
+                const past = row.unit != null && (row.counts[k] ?? 0) > cap;
+                return (
+                  <FormField key={k} label={t(`cflow.ct.${k}`)}
+                    error={past ? t("cflow.lim.over").replace("{n}", cap) : undefined}>
+                    <CountStepper min={0} max={cap} value={row.counts[k] ?? null} placeholder="0" invalid={past}
+                      disabled={row.unit != null && cap === 0 && !(row.counts[k] > 0)}
+                      onChange={(n) => set(row.id, { counts: { ...row.counts, [k]: n ?? 0 } })} />
+                  </FormField>
+                );
+              })}
             </div>
           </div>
         ))}
