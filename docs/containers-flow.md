@@ -331,7 +331,10 @@ all the containers app».
   by container type, the hour now marked, the peak hour named; the hourly
   table's own numbers. It sits right under the day's totals, above «Hozirgi
   soat» (the operator, 2026-11-15: «put it higher, after the overall for the
-  day»). Not in TV mode (that board is scaled as a whole and its
+  day»). The board's order from then: totals → graph → «Hozirgi / Keyingi
+  soat» → the «Soatlar bo'yicha» table → «Keyingi soat — brigadirlar
+  bo'yicha» → the brigadir table (the table moved above the next hour by
+  brigadir the same day: «put 5 instead of 4»). Not in TV mode (that board is scaled as a whole and its
   table already shows the hours around now).
 
 ### Not built (the plan's remaining parts — ask first)

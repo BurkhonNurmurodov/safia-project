@@ -229,12 +229,13 @@ function Board({ day, params, isLive, tv, t }) {
           {/* the whole day's hours as a picture, right under the day's totals (2026-11-15, the operator) */}
           {!tv && <HourChart hours={hourlyQ.data?.hours} loading={hourlyQ.isLoading} t={t} nowHour={nowHourOf(day)} />}
           {isLive && <HourStrip q={hourlyQ} day={day} t={t} tv={tv} />}
-          {isLive && <NextByUnit q={hourlyQ} day={day} t={t} tv={tv} />}
+          {/* the hour-by-hour table before «Keyingi soat — brigadirlar bo'yicha» (2026-11-15, the operator) */}
           <section className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 pb-4 pt-1">
             <HourlyTable day={day} params={params} t={t} refetchInterval={refetch}
               around={tv ? { before: 1, after: 6 } : null} size={tv ? "lg" : "md"} />
             <Coverage totals={data} hourly={hourlyQ.data} t={t} />
           </section>
+          {isLive && <NextByUnit q={hourlyQ} day={day} t={t} tv={tv} />}
           <UnitTable data={data} loading={!data} t={t} tv={tv} />
         </>
       )}
