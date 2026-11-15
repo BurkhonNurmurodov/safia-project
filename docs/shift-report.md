@@ -855,3 +855,11 @@ shifts on screen each shift's group ends in its own «O'rtacha» over that
 shift's brigadirs, and the board's last row is «Umumiy o'rtacha»
 (`overview.sr.avgAll`) over everybody. One shift on screen keeps the single
 «O'rtacha» row.
+
+**Its own look** (same day, the operator: «make it another design, it should
+be seen as the average»): the brigadir rows are a wall of solid tiles, so the
+average rows are not — a muted `--bg-inner` band, the label in small caps, and
+each figure a rounded BADGE in its band's colour inside a plain cell
+(`avgPill` / `avgTd`). «Sifat nazorati %» is two badges side by side, with
+hair · without hair, both named in the hover box. «Umumiy o'rtacha» has a 2px
+rule above it and the strongest label; a shift's own «O'rtacha» a 1px rule.

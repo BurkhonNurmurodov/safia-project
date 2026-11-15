@@ -809,32 +809,71 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     const vals = cells.filter((c) => c && !c.reason && isNum(c.value)).map((c) => c.value);
     return vals.length ? { value: vals.reduce((s, v) => s + v, 0) / vals.length } : { value: null };
   };
-  const avgRow = (rows, key, label) => {
-    const load = meanOf(rows.map((r) => r.load));
-    const att = meanOf(rows.map((r) => r.att));
-    const compl = meanOf(rows.map((r) => r.compl));
-    const qa = meanOf(rows.map((r) => qualityCell(r)));
-    const qb = meanOf(rows.map((r) => qualityCell(r, true)));
+  // Its LOOK (the operator, same day: «make it another design, it should be
+  // seen as the average»): every brigadir row is a wall of solid tiles, so the
+  // average rows are NOT — a muted `--bg-inner` band with each figure as a
+  // rounded badge in its band's colour, centred in a plain cell. «Sifat» is
+  // two badges, with hair · without hair. The board-wide «Umumiy o'rtacha»
+  // carries a heavier rule above it than a shift's own row.
+  const avgPill = (paint, text) => (paint && text != null ? (
+    <span
+      className="inline-flex items-center justify-center rounded-full px-1 sm:px-2 py-[3px] text-[10.5px] sm:text-xs font-bold tabular-nums leading-none whitespace-nowrap"
+      style={paint}
+    >
+      {text}
+    </span>
+  ) : <span style={{ color: "var(--text-4)" }}>—</span>);
+  const avgTd = (title, children) => (
+    <td
+      className={`${TD_FIG} ${TD_PAD}`}
+      style={RULE}
+      onMouseEnter={(e) => showTip(e, title, null)}
+      onMouseLeave={() => setTip(null)}
+    >
+      {children}
+    </td>
+  );
+  const avgRow = (rows, key, label, overall = false) => {
+    const load = meanOf(rows.map((r) => r.load)).value;
+    const att = meanOf(rows.map((r) => r.att)).value;
+    const compl = meanOf(rows.map((r) => r.compl)).value;
+    const qa = meanOf(rows.map((r) => qualityCell(r))).value;
+    const qb = meanOf(rows.map((r) => qualityCell(r, true))).value;
     const conc = Math.round((rows.reduce((s, r) => s + (r.concerns?.open ?? 0), 0) / rows.length) * 10) / 10;
     const hint = t("overview.sr.avgHint");
-    const hasAtt = isNum(att.value);
+    const pct = (v) => (isNum(v) ? pctText(v) : null);
+    const pill = (v, toneFn) => avgPill(isNum(v) ? toneFill(toneFn(v)) : null, pct(v));
+    const qTitle = [
+      `${t("overview.sr.hairWith")}: ${pct(qa) ?? "—"}`,
+      `${t("overview.sr.hairWithout")}: ${pct(qb) ?? "—"}`,
+      hint,
+    ].join("\n");
     return (
-      <tr key={key} style={{ boxShadow: "inset 0 2px 0 0 var(--border)" }}>
+      <tr
+        key={key}
+        style={{
+          background: "var(--bg-inner)",
+          boxShadow: `inset 0 ${overall ? 2 : 1}px 0 0 var(--border)`,
+        }}
+      >
         <td className="px-2 max-[359px]:px-1.5 sm:px-3 py-2 align-middle" title={hint}>
-          <span className="block text-[11.5px] sm:text-xs font-bold uppercase tracking-wide" style={{ color: "var(--text-1)" }}>
+          <span
+            className="block text-[11px] sm:text-[11.5px] font-bold uppercase tracking-wider"
+            style={{ color: overall ? "var(--text-1)" : "var(--text-2)" }}
+          >
             {label}
           </span>
         </td>
-        {figCell(load, loadTone, (c) => pctText(c.value), hint)}
-        {figTd({
-          tone: hasAtt ? attTone(att.value) : null,
-          paint: hasAtt ? segmentFill(att.value, ATT_SEGMENTS) : undefined,
-          title: hint,
-          children: hasAtt ? pctText(att.value) : <span style={{ color: "var(--text-4)" }}>—</span>,
-        })}
-        {figCell(compl, vypTone, (c) => pctText(c.value), hint)}
-        {splitFig(qa, qb, { title: hint })}
-        {figTd({ tone: concernsTone(conc), title: hint, children: conc })}
+        {avgTd(hint, pill(load, loadTone))}
+        {avgTd(hint, avgPill(isNum(att) ? segmentFill(att, ATT_SEGMENTS) : null, pct(att)))}
+        {avgTd(hint, pill(compl, vypTone))}
+        {avgTd(qTitle, (
+          <span className="inline-flex items-center justify-center gap-0.5 sm:gap-1">
+            {pill(qa, resolvedTone)}
+            {pill(qb, resolvedTone)}
+          </span>
+        ))}
+        {avgTd(hint, avgPill(toneFill(concernsTone(conc)), conc))}
       </tr>
     );
   };
@@ -943,7 +982,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     body = (
       <>
         {body}
-        {avgRow(rows, "avg", t(multi ? "overview.sr.avgAll" : "overview.sr.avg"))}
+        {avgRow(rows, "avg", t(multi ? "overview.sr.avgAll" : "overview.sr.avg"), true)}
       </>
     );
   }
