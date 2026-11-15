@@ -817,4 +817,9 @@ same with the hair part too» — and, shown the layout, «Yes, like this».
   reads «O'tgan oylardan (13.11 holatiga): …» until December, whose list is
   its 1st. If the list cannot be read the line falls back to «O'tgan oylardan
   qolgan N».
+- **No date under the column title** (the operator: «remove the date here, the
+  date in the hover box is enough»): with the split cell on, the header is
+  «Sifat nazorati %» over its half names only — «01.10 dan beri» is gone. The
+  half names stay sort buttons (lowest first, again for highest, a third press
+  back to name order).
 

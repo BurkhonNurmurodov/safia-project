@@ -972,13 +972,16 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               }],
               ["quality", t("overview.sr.hintQuality"), {
                 full: t("overview.sr.colQuality"), short: t("overview.sr.colQualityShort"),
-                cap: qWork ? fill(t("overview.sr.capQualitySince"), { date: ddmm(qFrom) })
+                // No date under the title once the split cell is on (the
+                // operator, 2026-11-15: «remove the date here, the date in the
+                // hover box is enough») — the box names its month.
+                cap: qWork ? undefined
                   : qAll ? t("overview.sr.capQualityAll")
                   : qMonth ? fill(t("overview.sr.capQualityMonth"), { month: qMonth })
                   : t("overview.sr.capQuality"),
                 // On a phone the short form is the caption; with none yet,
                 // `HeadLabel` falls back to the full one.
-                capShort: qWork ? fill(t("overview.sr.capQualitySinceShort"), { date: ddmm(qFrom) })
+                capShort: qWork ? undefined
                   : qAll ? t("overview.sr.capQualityAllShort") : qMonth || undefined,
               }, [
                 { k: "quality", full: t("overview.sr.hairWith"), short: t("overview.sr.hairWithShort"), title: t("overview.sr.hairWithHint") },
