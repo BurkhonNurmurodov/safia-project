@@ -104,7 +104,10 @@ export const ALL_LINKS = [
   // «Brigadirlar KPI» — HR's monthly brigadir KPI: turnover and the quality
   // register's corrective measures computed, mentoring / KRU / payout to come.
   { to: "/brigadirs-kpi", page: "brigadirs-kpi", key: "nav.brigadirsKpi", icon: BadgeCheck, group: "leaders", app: "hr" },
-  { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
+  // «Perenaladka» — on the launcher a page of the Production app (2026-11-15,
+  // the operator: «Setup Times should be in Production instead of Overview»),
+  // not of the Overview app its Cells group sits in.
+  { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells", app: "prod" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
   // Live shift monitor — the wall screen (idle time + plan pace, right now).
   // Laboratory, admin-only until the operator opens it to shift managers.

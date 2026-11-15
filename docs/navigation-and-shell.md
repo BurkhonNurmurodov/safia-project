@@ -82,8 +82,10 @@ untouched.
   Overview app, and for everybody else it stays in the Laboratory group);
   **a whole GROUP can sit inside another app** (`GROUP_APP` in `navLinks.js`,
   2026-11-15, the operator: «Cells also should be in Overview. People app's
-  screens should be in HR app») — the Cells group («Yacheykalar»,
-  «Perenaladka») is in the Overview app after the overview itself, and the
+  screens should be in HR app») — the Cells group («Yacheykalar») is in the Overview app after the overview
+  itself — «Perenaladka», of the same group, is a page of the Production app
+  by its own `app: "prod"` (the operator, same day: «Setup Times should be in
+  Production instead of Overview») — and the
   People group («Odam soni»'s three pages, «Davomat») opens the HR app ahead
   of the two KPI pages; the «Cells» and «People» tiles are gone, a new page
   of either group follows it by itself, page access is unchanged, and the
