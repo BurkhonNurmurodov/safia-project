@@ -823,3 +823,15 @@ same with the hair part too» — and, shown the layout, «Yes, like this».
   half names stay sort buttons (lowest first, again for highest, a third press
   back to name order).
 
+
+## «Davomat» prints the count, «80/98» (2026-11-15)
+
+The operator: «that brigadir has 98 people but came 80 — like 80/98». The
+«Davomat» cell of «Smena hisoboti» prints (came + on leave) / on the list
+instead of the percentage — the very fraction its colour is painted from, so
+the tile's colour (`ATT_SEGMENTS`) and the number never disagree. The list
+(«/98») is smaller and dimmer, so the eye reads who came first; the % leads
+the cell's tooltip, above the spelled-out «(keldi … + ta'til …) ÷ ro'yxatda …».
+Sorting, bands, legend and the link are unchanged. A payload without `came` /
+`roster` keeps printing the %. Frontend only (`attCell` in
+`components/overview/ShiftReportTable.jsx`).

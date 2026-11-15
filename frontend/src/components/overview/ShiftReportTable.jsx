@@ -758,11 +758,19 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // «Davomat» — painted on /workers' heatmap scale; its tooltip spells out the
   // fraction, who is still to come and when Verifix was read. A blank has no
   // link: nothing on another page fills a read that has not happened yet.
+  //
+  // The cell prints the COUNT, not the rate (the operator, 2026-11-15: «that
+  // brigadir has 98 people but came 80 — like 80/98»): (came + on leave) /
+  // on the list, the very fraction its colour is painted from, with the list
+  // dimmer so the eye reads who came first. The % leads the tooltip. A
+  // payload without the counts keeps printing the %.
   const attCell = (cell, r, date) => {
     const blank = !!cell?.reason;
     const has = !blank && isNum(cell?.value);
+    const hasCount = has && isNum(cell.came) && isNum(cell.roster);
     const title = blank ? t(`overview.sr.reason.${cell.reason}`)
       : has ? [
+        hasCount ? pctText(cell.value) : null,
         fill(t("overview.sr.attFrac"), { came: cell.came, leave: cell.on_leave, roster: cell.roster }),
         cell.not_yet ? fill(t("overview.sr.attNotYet"), { n: cell.not_yet }) : null,
         cell.unread ? fill(t("overview.sr.attUnread"), { n: cell.unread }) : null,
@@ -775,6 +783,12 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       title,
       target: has ? staffTarget(r, date) : null,
       children: blank ? <Blank reason={cell.reason} />
+        : hasCount ? (
+          <span className="whitespace-nowrap">
+            {cell.came + (isNum(cell.on_leave) ? cell.on_leave : 0)}
+            <span className="font-normal opacity-75 text-[10px] sm:text-[11px]">/{cell.roster}</span>
+          </span>
+        )
         : has ? pctText(cell.value)
         : <span style={{ color: "var(--text-4)" }}>—</span>,
     });
