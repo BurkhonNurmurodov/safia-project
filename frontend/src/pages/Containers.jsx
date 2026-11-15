@@ -226,9 +226,10 @@ function Board({ day, params, isLive, tv, t }) {
         <EmptyState icon={Package} title={t("containers.noData")} message={t("containers.noDataHint")} showUploadLink={false} />
       ) : (
         <>
+          {/* the whole day's hours as a picture, right under the day's totals (2026-11-15, the operator) */}
+          {!tv && <HourChart hours={hourlyQ.data?.hours} loading={hourlyQ.isLoading} t={t} nowHour={nowHourOf(day)} />}
           {isLive && <HourStrip q={hourlyQ} day={day} t={t} tv={tv} />}
           {isLive && <NextByUnit q={hourlyQ} day={day} t={t} tv={tv} />}
-          {!tv && <HourChart hours={hourlyQ.data?.hours} loading={hourlyQ.isLoading} t={t} nowHour={nowHourOf(day)} />}
           <section className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 pb-4 pt-1">
             <HourlyTable day={day} params={params} t={t} refetchInterval={refetch}
               around={tv ? { before: 1, after: 6 } : null} size={tv ? "lg" : "md"} />

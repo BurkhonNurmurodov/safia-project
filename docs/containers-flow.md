@@ -329,7 +329,9 @@ all the containers app».
 - **«Konteynerlar» board** (`/containers`): «Soatlar bo'yicha grafik»
   (`components/containers/HourChart.jsx`) — one bar per production hour stacked
   by container type, the hour now marked, the peak hour named; the hourly
-  table's own numbers. Not in TV mode (that board is scaled as a whole and its
+  table's own numbers. It sits right under the day's totals, above «Hozirgi
+  soat» (the operator, 2026-11-15: «put it higher, after the overall for the
+  day»). Not in TV mode (that board is scaled as a whole and its
   table already shows the hours around now).
 
 ### Not built (the plan's remaining parts — ask first)
