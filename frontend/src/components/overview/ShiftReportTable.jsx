@@ -230,7 +230,7 @@ function HeadLabel({ full, short, cap, capShort, left = false, active = false })
 // control for its half; the header's own press sorts by «soch bilan».
 function LaneLabels({ lanes, sort, onSort }) {
   return (
-    <span className="mt-1 flex w-full justify-between gap-1 sm:mx-auto sm:w-[90px]">
+    <span className="mt-1 flex w-full justify-between gap-1 sm:px-1.5">
       {lanes.map((l, i) => {
         const on = sort?.key === l.k;
         return (
@@ -253,10 +253,14 @@ function LaneLabels({ lanes, sort, onSort }) {
 }
 
 // The split cell's header: its half labels sit under the title over the box.
-// The COLUMN keeps the board's normal 14%; the coloured BOX inside it is a
-// short 90px on sm+ (`splitCell` — the operator picked option B on the design
-// canvas, 2026-11-15: a ~150px-long box laid the diagonal almost flat).
-const TH_PAIR = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
+// On sm+ the COLUMN is exactly the 90px box (`splitCell` — option B on the
+// design canvas, 2026-11-15: a ~150px-long box laid the diagonal almost flat),
+// with no dark margin either side of it (the operator, next: «remove the black
+// part around the box»). In this auto-layout table a px column beside
+// percentage ones is WIDENED to soak up the slack — measured: 90px became
+// 154px while the name column sat at 30% — so the name column carries no width
+// and takes the slack itself.
+const TH_PAIR = "align-bottom sm:w-[90px] sm:min-w-[90px] sm:max-w-[90px] sm:px-0 max-sm:px-1 max-[359px]:px-0.5 [&>span]:flex [&>span]:w-full "
   + "[&>span>span:first-child]:flex-1 [&>span>span:first-child]:w-full max-sm:[&_.lucide-chevrons-up-down]:hidden";
 const TH_FIG = "align-bottom sm:w-[14%] max-sm:px-1 max-[359px]:px-0.5 max-sm:[&>span]:flex-col "
   + "max-sm:[&>span]:items-center max-sm:[&>span]:gap-0.5 max-sm:[&_.lucide-chevrons-up-down]:hidden";
@@ -650,10 +654,9 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       target: qualityTarget(r),
       children: (
         <>
-          {/* The BOX: the cell's full height, the cell's full width on a
-              phone (already ~55px there), a short 90px centred on sm+ — the
-              rest of the cell stays the card's own colour around it. */}
-          <span className="pointer-events-none absolute inset-y-0 left-0 right-0 sm:left-1/2 sm:right-auto sm:w-[90px] sm:-translate-x-1/2">
+          {/* The BOX fills the cell: the column itself is 90px on sm+
+              (TH_PAIR), the whole ~55px cell on a phone. */}
+          <span className="pointer-events-none absolute inset-0">
             <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100"
               preserveAspectRatio="none" aria-hidden="true">
               <polygon points="0,0 100,0 0,100" fill={fa?.background ?? "transparent"} />
@@ -883,7 +886,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
               k="name"
               sort={sort}
               onSort={onSort}
-              cls="align-bottom sm:w-[30%] max-sm:px-2 max-[359px]:px-1.5 max-sm:[&_.lucide-chevrons-up-down]:hidden"
+              cls="align-bottom max-sm:px-2 max-[359px]:px-1.5 max-sm:[&_.lucide-chevrons-up-down]:hidden"
               label={<HeadLabel left active={sort?.key === "name"} full={t("overview.sr.colName")} />}
             />
             {[

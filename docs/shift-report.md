@@ -777,4 +777,12 @@ hair and without hair».
   cell at the cell's full height, the card's colour on either side; on a phone
   the box is the whole (~55px) cell. The header's half names sit over the box
   (`LaneLabels` 90px wide, centred).
+- **…and no dark margin around it** (the operator, on a screenshot of the
+  centred box: «it looks good, but can you remove the black part around the
+  box»). On sm+ the COLUMN is the box: `TH_PAIR` is `w/min-w/max-w 90px` with
+  no padding and the box fills the cell. **The name column lost its `sm:w-[30%]`
+  for it**: in this auto-layout table a px column beside percentage columns is
+  widened to absorb the leftover width (measured in a mock: 90px → 154px with
+  the name at 30%, 107px with the name unsized) — that is also why the 88px
+  attempt that morning still looked long. The name column now takes the slack.
 
