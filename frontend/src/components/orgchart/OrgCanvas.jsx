@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check, ChevronDown, ChevronUp, ChevronsDownUp, ChevronsUpDown,
-  Clock3, Factory, KeyRound, List, LocateFixed, Lock, Minus, PackageOpen, Plus, UserRound,
+  Clock3, Factory, KeyRound, List, LocateFixed, Lock, Maximize2, Minimize2, Minus, PackageOpen, Plus, UserRound,
   UserRoundX,
 } from "lucide-react";
 import Button from "../ui/Button";
@@ -98,6 +98,13 @@ const Card = memo(function Card({
   // The «Ilovalar» view: an app, a menu tab and a screen each wear their
   // kind's colour (appsNode.js); a card of the people chart has none.
   const kind = kindHue(node);
+  // A screen is a plain white card — its glyph alone carries the kind's colour
+  // (2026-11-15, the operator: «screens should be white»), so the apps and
+  // menu tabs above it read as the structure and the screens as its leaves.
+  const wash = node.kind === "screen" ? null : kind;
+  // The platform itself — the top of both views — is gold (the same day:
+  // «Safia IMS should be golden instead of white»), its words in `--on-brand`.
+  const gold = node.kind === "root";
 
   let lead;
   if (node.kind === "person") {
@@ -137,10 +144,10 @@ const Card = memo(function Card({
         className="w-full h-full flex items-center gap-2.5 pl-2.5 pr-2 rounded-xl text-left transition-[box-shadow,opacity] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{
           opacity: dim ? 0.36 : 1,
-          background: selected
-            ? "linear-gradient(var(--brand-bg), var(--brand-bg)), var(--bg-card)"
-            : kind ? `linear-gradient(${kind}17, ${kind}17), var(--bg-card)` : "var(--bg-card)",
-          border: `1px ${hollow ? "dashed" : "solid"} ${selected ? "var(--brand)" : kind ? `${kind}80` : "var(--border-md)"}`,
+          background: gold ? "var(--brand)"
+            : selected ? "linear-gradient(var(--brand-bg), var(--brand-bg)), var(--bg-card)"
+              : wash ? `linear-gradient(${wash}17, ${wash}17), var(--bg-card)` : "var(--bg-card)",
+          border: `1px ${hollow ? "dashed" : "solid"} ${selected || gold ? "var(--brand)" : wash ? `${wash}80` : "var(--border-md)"}`,
           boxShadow: selected ? "0 0 0 1px var(--brand), 0 4px 14px rgba(0,0,0,.10)" : "0 1px 2px rgba(0,0,0,.06)",
           outlineColor: "var(--brand)",
         }}
@@ -148,8 +155,9 @@ const Card = memo(function Card({
         {lead}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold leading-tight"
-                style={{ color: vacant ? "var(--text-3)" : "var(--text-1)" }}>{title}</span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-tight" style={{ color: "var(--text-3)" }}>
+                style={{ color: gold ? "var(--on-brand)" : vacant ? "var(--text-3)" : "var(--text-1)" }}>{title}</span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-tight"
+                style={gold ? { color: "var(--on-brand)", opacity: 0.88 } : { color: "var(--text-3)" }}>
             {node.kind === "person" && (
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: roleHue(p.role) }} />
             )}
@@ -244,7 +252,7 @@ const Scene = memo(function Scene({
 export default function OrgCanvas({
   tree, expanded, selected, marks, hits, lensOn, P, command, insetLeft = 0,
   onSelect, onToggle, onExpandAll, onCollapseAll, height, children,
-  stack, text: nodeText, flags, homeMin = K_HOME_MIN, sceneKey,
+  stack, text: nodeText, flags, homeMin = K_HOME_MIN, sceneKey, full = false, onFull,
 }) {
   const ownText = useNodeText(P);
   const text = nodeText ?? ownText;
@@ -324,6 +332,25 @@ export default function OrgCanvas({
     fitted.current = scene;
     fit(false);
   }, [scene, vp.w, vp.h, fit]);
+
+  // On or off the whole screen (FullView.jsx): the canvas changed size, so the
+  // tree is fitted to the new one once it is measured, and the toggle — its
+  // node just moved, which drops focus — gets the focus back.
+  const fullBtn = useRef(null);
+  const wasFull = useRef(full);
+  const refit = useRef(false);
+  useLayoutEffect(() => {
+    if (wasFull.current === full) return undefined;
+    wasFull.current = full;
+    refit.current = true;
+    const raf = requestAnimationFrame(() => fullBtn.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(raf);
+  }, [full]);
+  useLayoutEffect(() => {
+    if (!refit.current || !vp.w || !vp.h) return;
+    refit.current = false;
+    fit(true);
+  }, [vp.w, vp.h, fit]);
 
   // A branch opened or folded: the pressed card stays where it was on screen.
   const anchor = useRef(null);
@@ -514,6 +541,14 @@ export default function OrgCanvas({
 
       <div data-org-nopan className="absolute right-3 bottom-3 flex items-center gap-2" style={{ cursor: "default" }}>
         <Button variant="secondary" size="md" style={ON_CANVAS} icon={<LocateFixed size={14} />} onClick={() => fit(true)} title={P.fit} aria-label={P.fit} />
+        {onFull && (
+          <Button
+            ref={fullBtn} variant="secondary" size="md" style={ON_CANVAS}
+            icon={full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            onClick={() => onFull(!full)} aria-pressed={full}
+            title={full ? P.fullClose : P.fullOpen} aria-label={full ? P.fullClose : P.fullOpen}
+          />
+        )}
         <div className="flex items-center rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
           <Button variant="ghost" size="md" icon={<Minus size={14} />} onClick={() => zoomStep(1 / 1.25)} disabled={view.k <= K_MIN + 0.001} title={P.zoomOut} aria-label={P.zoomOut} />
           <span className="w-11 text-center text-xs font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>

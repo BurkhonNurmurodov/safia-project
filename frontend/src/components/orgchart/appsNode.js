@@ -14,7 +14,8 @@ import { fill } from "../../pages/admin/orgChartText";
 // orange and teal: the three that stay apart for a colour-blind reader, and
 // none is a status (red / yellow / green) or the brand gold a selected card
 // wears. The two placeholders — «in no app», an app's «no menu tab» row — are
-// neither, and stay uncoloured.
+// neither, and stay uncoloured. A screen's CARD is plain white (the same day,
+// «screens should be white»): only its glyph wears the teal (OrgCanvas.jsx).
 export const KIND_HUE = { app: CATEGORY_COLORS[2], tab: CATEGORY_COLORS[4], screen: CATEGORY_COLORS[6] };
 export const kindHue = (node) => (
   node.kind === "app" ? (node.loose ? null : KIND_HUE.app)

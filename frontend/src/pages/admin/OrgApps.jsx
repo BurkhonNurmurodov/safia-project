@@ -41,7 +41,7 @@ import { fill } from "./orgChartText";
 const PANEL_W = 360;
 const PAGE_CAP = "page.view.";
 
-export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) {
+export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople, full, onFull }) {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const wide = !useIsMobile(1024);
@@ -261,7 +261,7 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
   }), [navigate, onShowPeople]);
   const shut = () => setDialog(null);
 
-  const [boxRef, height] = useCanvasHeight();
+  const [boxRef, height] = useCanvasHeight(full);
   const nodeText = node ? text(node) : null;
   const panel = node && (
     <AppsDetails
@@ -271,7 +271,7 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
   );
 
   return (
-    <div>
+    <div className={full ? "flex flex-col flex-1 min-h-0" : undefined}>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {head}
         <FilterPanel sections={sections} chipsWrap />
@@ -285,7 +285,9 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
             <span key={kind} className="inline-flex items-center gap-1.5">
               <span
                 className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0"
-                style={{ background: `${KIND_HUE[kind]}40`, border: `1px solid ${KIND_HUE[kind]}` }}
+                style={kind === "screen"
+                  ? { background: "var(--bg-card)", border: "1px solid var(--border-md)" }
+                  : { background: `${KIND_HUE[kind]}40`, border: `1px solid ${KIND_HUE[kind]}` }}
               />
               {label}
             </span>
@@ -293,7 +295,7 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
         </span>
       </div>
 
-      <div ref={boxRef}>
+      <div ref={boxRef} className={full ? "flex-1 min-h-0" : undefined}>
         <OrgCanvas
           stack={APPS_STACK} sceneKey="apps" homeMin={0.65}
           tree={tree} expanded={expanded} selected={node ? selected : null}
@@ -301,7 +303,7 @@ export default function OrgApps({ data, ed, P, A, head, corner, onShowPeople }) 
           text={text} flags={flags}
           insetLeft={wide && node ? PANEL_W + 24 : 0}
           onSelect={select} onToggle={toggle} onExpandAll={expandAll} onCollapseAll={collapseAll}
-          height={height}
+          height={height} full={full} onFull={onFull}
         >
           <div className="absolute right-3 top-3 max-w-[calc(100%-1.5rem)] flex flex-col items-end gap-2 pointer-events-none">
             {corner}

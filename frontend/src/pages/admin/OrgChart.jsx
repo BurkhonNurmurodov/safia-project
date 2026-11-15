@@ -16,6 +16,7 @@ import OrgCanvas from "../../components/orgchart/OrgCanvas";
 import { useNodeText } from "../../components/orgchart/orgNode";
 import OrgDetails from "../../components/orgchart/OrgDetails";
 import { useCanvasHeight } from "../../components/orgchart/useCanvasHeight";
+import FullView from "../../components/orgchart/FullView";
 import { useLang } from "../../context/LangContext";
 import useIsMobile from "../../hooks/useIsMobile";
 import { useLeaveGuard } from "../../hooks/useLeaveGuard";
@@ -71,7 +72,7 @@ const opens = (access, page) => access.all || access.pages.some((r) => r.page ==
 const defaultOpen = (tree) =>
   ["root", ...tree.root.children.filter((n) => n.kind === "factory").map((n) => n.id)];
 
-function OrgPeople({ data, P, head, corner }) {
+function OrgPeople({ data, P, head, corner, full, onFull }) {
   const { t } = useLang();
   const wide = !useIsMobile(1024);
   const text = useNodeText(P);
@@ -222,7 +223,7 @@ function OrgPeople({ data, P, head, corner }) {
   ];
 
   // ── the canvas fills what is left of the screen ─────────────────────────
-  const [boxRef, height] = useCanvasHeight();
+  const [boxRef, height] = useCanvasHeight(full);
 
   const expandAll = useCallback(() => {
     if (!tree) return;
@@ -242,7 +243,7 @@ function OrgPeople({ data, P, head, corner }) {
 
   const nodeText = node ? text(node, tree.root) : null;
   return (
-    <div>
+    <div className={full ? "flex flex-col flex-1 min-h-0" : undefined}>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {head}
         <StyledSelect
@@ -258,13 +259,13 @@ function OrgPeople({ data, P, head, corner }) {
         </span>
       </div>
 
-      <div ref={boxRef}>
+      <div ref={boxRef} className={full ? "flex-1 min-h-0" : undefined}>
         <OrgCanvas
           tree={tree} expanded={expanded} selected={node ? selected : null}
           marks={marks} hits={hits} lensOn={lensOn} P={P} command={command}
           insetLeft={wide && node ? PANEL_W + 24 : 0}
           onSelect={select} onToggle={toggle} onExpandAll={expandAll} onCollapseAll={collapseAll}
-          height={height}
+          height={height} full={full} onFull={onFull}
         >
           <div className="absolute right-3 top-3 max-w-[calc(100%-1.5rem)] flex flex-col items-end gap-2 pointer-events-none">
           {corner}
@@ -352,6 +353,9 @@ export default function OrgChart() {
   const ed = useAppsEditor(data);
   useLeaveGuard(ed.dirty);
   const [asking, setAsking] = useState(false);
+  // The chart on the whole screen (FullView.jsx) — kept across the two views.
+  const [full, setFull] = useState(false);
+  const leaveFull = useCallback(() => setFull(false), []);
 
   const [sp, setSp] = useSearchParams();
   const view = sp.get("v") === "apps" ? "apps" : "people";
@@ -418,9 +422,11 @@ export default function OrgChart() {
 
   return (
     <>
-      {view === "apps"
-        ? <OrgApps key="apps" data={data} ed={ed} P={P} A={A} head={head} corner={corner} onShowPeople={showPeople} />
-        : <OrgPeople key="people" data={data} P={P} head={head} corner={corner} />}
+      <FullView full={full} onExit={leaveFull}>
+        {view === "apps"
+          ? <OrgApps key="apps" data={data} ed={ed} P={P} A={A} head={head} corner={corner} onShowPeople={showPeople} full={full} onFull={setFull} />
+          : <OrgPeople key="people" data={data} P={P} head={head} corner={corner} full={full} onFull={setFull} />}
+      </FullView>
       <ConfirmDialog
         open={asking}
         title={A.discardTitle} message={fill(A.discardMsg, { n: ed.changes })}

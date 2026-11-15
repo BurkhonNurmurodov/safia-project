@@ -185,3 +185,24 @@ and `pages/admin/OrgApps.jsx`.
 - **Not built:** dragging a card on the canvas (order and moves are in the
   panel), hiding a screen, renaming a screen, the grouped sidebar of the roles
   without the launcher, an undo beyond «Standart tuzilma».
+
+## The chart on the whole screen; white screens, a gold root (2026-11-15)
+
+The operator: «open this org structure itself in full / wide, screens of it
+should be white, and Safia IMS should be golden instead of white».
+
+- **Full screen** — a ⤢ button beside «Markazga» on the canvas (both views)
+  lifts the view, toolbar and canvas, over the whole app; the same button
+  (⤡) or Escape brings it back, and the tree is re-fitted to the new size.
+  `components/orgchart/FullView.jsx`: the view always renders into ONE host
+  node that is MOVED onto `<body>` and back — a plain `fixed` box would be
+  trapped by `.page-enter`'s transform, and a portal switched on and off would
+  remount the view (the lens, an open dialog). The host sits at z 45: above
+  the rail, below every `Modal` (50), `ConfirmDialog` (100) and portaled menu,
+  so editing works unchanged. Escape gives way to an open dialog and to a
+  popover that took the key. The state lives in the page shell, so switching
+  «Odamlar» ↔ «Ilovalar» stays on the whole screen.
+- **Screens are plain white cards**; only their glyph keeps the teal kind
+  colour (the legend's swatch is white too). Apps and menu tabs keep their
+  blue / orange wash.
+- **The root card is gold** (`--brand` fill, `--on-brand` words) in both views.
