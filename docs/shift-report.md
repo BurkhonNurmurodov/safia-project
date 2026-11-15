@@ -887,3 +887,8 @@ badge look above:
   (`overview.sr.avgAllSub`).
 - **One shift on screen**: the gold row is the only average — it IS the
   overall one, and no cards repeat it.
+
+**The overall cards are gone** (same day, the operator: «remove the overall
+average, we don't need it»). `avgCards` and the keys `overview.sr.avgAll` /
+`overview.sr.avgAllSub` were deleted; each shift's gold «O'rtacha» row is the
+only average on the board, with one shift on screen or two.

@@ -80,7 +80,6 @@ import {
 import TableCard, { Th } from "../ui/DataTable";
 import StatusBandsModal from "./StatusBandsModal";
 import Button from "../ui/Button";
-import KPICard from "../ui/KPICard";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useAuth } from "../../context/AuthContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
@@ -807,8 +806,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // «O'rtacha» — the row under the board (the operator, 2026-11-15: «add
   // average for all column here in the bottom»): each column's plain mean over
   // the brigadirs it closes, blanks left out. Each shift ends in its own
-  // «O'rtacha» (the operator, same day: «Add per-shift rows»), and «Umumiy
-  // o'rtacha» over everybody sits under the board as cards. Painted on the
+  // «O'rtacha» (the operator, same day: «Add per-shift rows»). Painted on the
   // same bands as the rows. Not a link — no one page holds an average.
   // «Davomat» prints the mean RATE, since rosters differ in size; «Xavotirlar»
   // the mean count to one decimal.
@@ -820,10 +818,10 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // after «it should be visible, and the overall average also»): each shift's
   // «O'rtacha» row is a GOLD band (brand tint, a 2px brand rule above, a Ø
   // chip, the label in brand ink) whose figures are raised, rounded tiles in
-  // their band's colour — never the flat tiles every brigadir row wears. The
-  // board-wide average leaves the table: with both shifts on screen it is a
-  // row of `KPICard`s under it (`avgCards`), each split by shift. One shift on
-  // screen: its gold row IS the overall average, and no cards repeat it.
+  // their band's colour — never the flat tiles every brigadir row wears. No
+  // board-wide average: the overall cards under the table were shipped and
+  // removed the same day (the operator: «remove the overall average, we don't
+  // need it») — each shift's own row is the only average on the board.
   // The brand fill is #C8973F on both themes, so its tint is a fixed rgba.
   const AVG_BAND = "rgba(200, 151, 63, 0.13)";
   const avgFigs = (list) => {
@@ -933,59 +931,6 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       </tr>
     );
   };
-  // The overall average as cards, each figure split by shift underneath.
-  const avgCards = () => {
-    const all = avgFigs(rows);
-    const per = groups.map((g) => ({ key: g.shift ?? "none", name: shiftName(g.shift), f: avgFigs(g.rows) }));
-    const hint = t("overview.sr.avgHint");
-    const line = (p, k, text, dot) => (
-      <div key={p.key} className="flex items-center justify-between gap-2 text-xs">
-        <span className="flex min-w-0 items-center gap-1.5" style={{ color: "var(--text-2)" }}>
-          <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: dot ?? "var(--text-4)" }} />
-          <span className="truncate">{p.name}</span>
-        </span>
-        <span className="font-bold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{text}</span>
-      </div>
-    );
-    const card = (k, label) => (
-      <KPICard key={k} label={label} tooltip={hint} value={<span className="flex">{avgTile(k, all[k], true)}</span>}>
-        <div className="flex flex-col gap-1.5">
-          {per.map((p) => line(p, k, avgText(k, p.f[k]), avgPaintOf(k, p.f[k])?.background))}
-        </div>
-      </KPICard>
-    );
-    return (
-      <div className="mt-4">
-        <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
-          <AvgMark big />
-          <span className="text-sm font-extrabold uppercase tracking-wider" style={{ color: "var(--brand-text)" }}>
-            {t("overview.sr.avgAll")}
-          </span>
-          <span className="text-xs" style={{ color: "var(--text-3)" }}>
-            {fill(t("overview.sr.avgAllSub"), { n: rows.length })}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {card("load", t("overview.sr.colLoad"))}
-          {card("att", t("overview.sr.colAtt"))}
-          {card("compl", t("overview.sr.colCompl"))}
-          <KPICard
-            key="q"
-            label={`${t("overview.sr.colQuality")} · ${t("overview.sr.hairWithShort")} / ${t("overview.sr.hairWithoutShort")}`}
-            tooltip={`${qPairTitle(all)}\n${hint}`}
-            value={<span className="flex">{avgSplit(all.qa, all.qb, true)}</span>}
-          >
-            <div className="flex flex-col gap-1.5">
-              {per.map((p) => line(p, "q",
-                `${isNum(p.f.qa) ? pctText(p.f.qa) : "—"} / ${isNum(p.f.qb) ? pctText(p.f.qb) : "—"}`))}
-            </div>
-          </KPICard>
-          {card("conc", t("overview.sr.colConcerns"))}
-        </div>
-      </div>
-    );
-  };
-
   let body;
   // A failed refetch keeps the rows already on screen; only a board with
   // nothing to show gives its space to the error.
@@ -1223,8 +1168,6 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         </thead>
         <tbody>{body}</tbody>
       </TableCard>
-
-      {multi && rows.length > 0 && !(isError && !data) && avgCards()}
 
       {isAdmin && (
         <StatusBandsModal open={bandsOpen} onClose={() => setBandsOpen(false)} bands={bands} />
