@@ -63,7 +63,7 @@ and 2 with the departments they run.
 - **Cells.** 213 live (4 archived), all tied to their Verifix division; **166
   are production** — **Uchtepa 155** (shift 1: 92, shift 2: 56 — А 32, Б 24 —
   shift 3: 7) and **Keles 11**. Of all 213, 186 have a brigade, 146 a SAP code, 42 a group letter.
-- **Workstations = (brigade, SAP code): 122 today.** 114 SAP codes sit on live
+- **Workstations by (brigade, SAP code): 122 today.** 114 SAP codes sit on live
   cells — 94 on one cell, 20 on several. 12 codes have several cells in ONE
   brigade (lettered: A2894 is 6 cells, A–G, on Ibragimova Sayyora's). 8 codes
   span brigades: 7 are the same station worked by shift 1 and shift 2 (B2942 =
@@ -109,6 +109,20 @@ Izzatilla — and some cells are the same. The rulings, asked and answered:
    «o'rnida» becomes official from that day, picked up automatically
    (`supervisor_kind` / `leader_kind`, which already say this). Their past days
    stay theirs, nothing is re-scored.
+7. **The 35 cells whose actual leader is not their Verifix seat credit nobody
+   in the KPIs** — official only, confirmed («Yes, official only»).
+8. **The cases, as they stand on the platform today, are right**: Niyozov
+   Izzatilla actually runs Цех-8's bakery cells (9411–9414) and Raximova Kamola
+   Цех-11's; Murodali Ochilov actually runs Цех-14 on the 3rd shift, and
+   **his brigade's загрузка keeps being counted** (the one exception to «the 3rd
+   shift is not counted»); **0822 stays with Aripova Manzura** on shift 1 and
+   keeps counting, though Verifix puts it in Цех-20 on shift 3. So a cell's
+   shift is its ACTUAL brigade's shift, and the actual brigade of a cell can
+   differ from its Verifix «Цех» (ruling 4 then holds it until Verifix moves
+   the cell).
+9. **A shift-manager's shift stays the platform's**, set by hand, whatever
+   Verifix seats them in. Alimov Bekzod, a «Начальник смены» in Verifix, is an
+   ADMIN profile here — not a shift-manager to create.
 
 What follows from them:
 
@@ -243,7 +257,10 @@ ALTER TABLE managers
 - **The 3rd shift's загрузка is off through the switches that exist**: its
   brigades get «Zagruzka hisoblanadi» off (`managers.zagruzka_on = false`) and
   their cells stay out of the load (`cells.in_load`). Nothing new is built for
-  it, and turning it on later is the same two switches.
+  it, and turning it on later is the same two switches. **Exception (ruling
+  8): Murodali Ochilov's brigade** — Цех-14, moved to shift 3 — keeps its
+  switch ON and keeps counting. Цех-20 is a new brigade (2531, 7231) with it
+  off; 0822 stays in Aripova's shift-1 brigade and keeps counting.
 - `vfx_division_id` ties the UNIT to its «Цех» node. Today only the brigadir
   PERSON is tied (`vfx_employee_id`), which is why a unit whose brigadir changed
   cannot be followed (the 24 Oct swaps). Two of ours may tie to one node (Цех-4,
@@ -295,8 +312,9 @@ CREATE INDEX ix_unit_link_events ON unit_link_events (field, manager_id, effecti
   the actual brigadir as one (ruling 6).
 - Shift-managers: `role_profiles.shift_id` (FK `shifts`, so a block) replaces
   `shift` + `factory_id` there, dated through the same table keyed by profile —
-  a `profile_id` column on it. Their REACH does not change: `shift_scope` gives
-  every shift-manager every unit; the shift is a record of where they work.
+  a `profile_id` column on it. **Set by hand only, never from Verifix**
+  (ruling 9). Their REACH does not change: `shift_scope` gives every
+  shift-manager every unit; the shift is a record of where they work.
 
 ### Departments — later, from the operator's report
 
@@ -333,6 +351,25 @@ ALTER TABLE pp_work_centers
 -- + a row for every (brigade, normalised SAP code) a live cell carries (106 missing)
 ```
 
+- **A workstation is one SAP code on ONE shift of one plant** (the operator,
+  16 Nov): «The workstation is the same in fact», but cells of different
+  shifts never work at it at the same time, so they need no common letters —
+  the same code on shift 1 and shift 2 is two workstations. Group letters
+  exist only to tell apart cells working at the same workstation at the same
+  time, so they are unique inside (plant, shift, code). «The same machine on
+  both shifts» is a `GROUP BY sap_code` across the workstations.
+- **Today that is exactly (brigade, code)**: every brigade sits in one shift,
+  and no two brigades of one shift share a SAP code (all 7 shared codes pair a
+  shift-1 brigade with a shift-2 one), so the per-brigade key and the letter
+  rule «per unit» already give one workstation per (shift, code).
+- **Two brigades of one shift at one code are ONE workstation** (the operator;
+  shift 2's blocks «А» and «Б» work at the same time): their cells there take
+  letters unique across both, and each brigade keeps its own share and
+  штатка. This replaces the old per-unit letter rule («two brigadirs on one
+  shift may reuse a letter») — no cell carries such a pair today, so no letter
+  changes; the register refuses a clash from then on.
+- **The 3rd shift never overlaps** the 1st or the 2nd, so its workstations are
+  its own, like the other shifts'.
 - Already keyed `(manager_id, code)` and already holding штатка / capacity —
   a parallel table would be a second answer to one question.
 - **Cells join it by key, not by a foreign key**: `(manager_id, normalised
@@ -342,9 +379,6 @@ ALTER TABLE pp_work_centers
 - **The group letter stays `cells.wc_group`**. Its rule is already «inside one
   unit and one code, one cell, or every cell lettered and no two alike» —
   which is now «unique inside one workstation».
-- **A workstation belongs to ONE brigade.** The same SAP station worked by
-  shift 1 and shift 2 (7 codes today) is two workstations sharing a SAP code;
-  «the same machine on both shifts» is a `GROUP BY sap_code` across them.
 - A cell with no SAP code belongs to no workstation and hangs directly in its
   brigade (16 production cells today — see the end).
 - Never tied to Verifix — ours, like departments.
@@ -373,8 +407,8 @@ moves the actual one (ruling 4).
    boot (a request needs the tables), additive only.
 2. **Seed and tie** — a `later` step: the five shift rows; each production
    brigade's `vfx_division_id` from the «Цех» its cells sit under (majority)
-   and `shift_id` from that node's parent; the 3rd shift's brigades with their
-   загрузка off; the 106 missing `pp_work_centers` rows (16 of the 122
+   and `shift_id` from that node's parent; Ochilov's brigade on shift 3 still
+   counted, a new Цех-20 brigade with its загрузка off; the 106 missing `pp_work_centers` rows (16 of the 122
    workstations have one; 3 rows name a code no live cell carries); one `seed`
    event per brigade for today. Every mismatch below goes to the operator in a
    report first, never guessed.
@@ -396,29 +430,29 @@ moves the actual one (ruling 4).
    his leader profile (ruling 5).
 2. **Цех-8 «RAXIMOVA KAMOLA»** (9411–9414) — Raximova is seated there — runs as
    Niyozov Izzatilla, acting; our «Raximova Kamola» runs Цех-11 «MIRMAXMUDOVA
-   MUNIRA», where nobody is seated. Under the rulings that is two actual
-   brigadirs set by hand, and Цех-11 has no official one until Verifix seats
-   one. The sheet gives Raximova «Пончик A2743» (9414) and «Мясной отдел», and
-   Niyozov «Мясной отдел» alone — so who actually runs which still needs the
-   operator's word.
-3. **Murodali Ochilov** holds Цех-14's four cells (shift 3) as our shift-2
-   brigade, and the sheet lists him on shift 2. If he is shift 3's brigadir,
-   his brigade ties to Цех-14 and his загрузка stops from that day; if not,
-   Цех-14 is a new brigade with no brigadir and his row has no cells left.
-4. **0822** (Цех-20, shift 3) is on Aripova's shift-1 brigade, so it leaves her
-   загрузка from the day it moves to Цех-20.
+   MUNIRA», where nobody is seated. Settled: as the platform has it (ruling 8).
+   Цех-11 has no official brigadir until Verifix seats one, so its cells credit
+   no brigadir in «Brigadirlar KPI».
+3. **Murodali Ochilov** holds Цех-14's four cells. Settled: his brigade ties to
+   Цех-14 on shift 3 and keeps counting (ruling 8).
+4. **0822** (Цех-20, shift 3) is on Aripova's shift-1 brigade. Settled: it stays
+   hers and counts (ruling 8).
 5. **Shift-managers**: Verifix seats Umarbek Karimov in shift 2 «А» (ours:
-   shift 1) and Ikramxoja Shaysayev in shift 3 (ours: shift 2); Adi Ro'ziyev
-   has no plant here; Alimov Bekzod is a «Начальник смены» in Verifix with no
-   profile here.
+   shift 1) and Ikramxoja Shaysayev in shift 3 (ours: shift 2). Settled: ours
+   stays (ruling 9); Alimov Bekzod is an admin here.
 6. **Keles**: Axmedova Munisa is seated in her cell 1611, not in her «Цех»
    node, so the seat rule reads her through the cell. Axadxo'jayeva Kamila's
    brigade is at Uchtepa here, while its cell (0036) is Keles's АХО — it moves
    to Keles shift 1.
 7. **Turdiqulov Mirza's «Цех -22»** (the cold rooms 1511, 3411, 3511, 8011) has
    no shift here; Verifix has it under shift 1.
-8. **A0161** is on 0822 at Uchtepa and on 1611 / 1622 at Keles — a SAP code
-   across two plants, most likely a typo.
+8. **A0161** is on 0822 at Uchtepa and on 1611 (A) / 1622 (B) at Keles.
+   Verifix carries no SAP codes at all — its divisions hold only the cell code
+   (the one exception: «0611 Обработка яиц» has «A0061» typed as its code), so
+   A0161 was typed on the platform; the «Jurnal» has no record of who, and no
+   brigade's catalog has a line at A0161, so no figure reads it today. Keles's
+   own cells run A0161–A0164; 0822's is most likely a slip. As two plants they
+   are two workstations anyway.
 9. **16 production cells have a brigade and no SAP code** (0036, 0612, 1511,
    3411, 3511, 4124, 4324, 4811, 6611, 6621, 6711, 8011, 8218, 8411, 8421,
    9424) — no workstation for them.
@@ -428,14 +462,12 @@ moves the actual one (ruling 4).
 
 ## Open — the operator's decisions
 
-1. **Is Murodali Ochilov the 3rd shift's ACTUAL brigadir (Цех-14)?** Verifix
-   has no official one there; the register already has him as its o'rnida
-   brigadir, so by ruling 4 he stays unless the operator says otherwise. (item 3)
-2. **Who ACTUALLY runs Цех-8 and Цех-11** — Raximova and Niyozov? (item 2)
+1. **0822's real SAP code** (item 8) — who supplies it.
+2. **Departments** — waiting for the report.
 
 Settled on 16 Nov: actual vs official people, which pages read which, the
 trigger that replaces a hand-set person, the acting leader's two profiles, the
-label after the test — «Actual and official people» above.
-3. **The same SAP station on two shifts = two workstations**, one per brigade?
-   The default here, since the tree puts a workstation under one brigade.
+label after the test, the 35 cells, the cases of Цех-8 / 11 / 14 and 0822,
+shift-managers — «Actual and official people» above; a workstation is one
+code on one shift — «Workstations» above.
 4. Departments — waiting for the report.
