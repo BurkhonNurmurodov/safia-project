@@ -36,7 +36,7 @@ and 2 with the departments they run.
   ├ Отдел сменного производства – 3 смена           74          Uchtepa · shift 3   — Ikramxoja Shaysayev
   │   └ Цех – 4 SUVONOV ELSHOD …                                BRIGADE (its brigadir in the name, seated in it)
   │       └ 4311 Оф.Тортов.глаз                                 CELL (the 4-digit code)
-  ├ Производственное управление (Келес)             88          Keles · shift 1     — Saidakbar Ziyayev
+  ├ Производственное управление (Келес)             88          KELES — a plant of its own, never part of Uchtepa · shift 1 — Saidakbar Ziyayev
   │   ├ Цех – AXMEDOVA MUNISA …  › 1611 …
   │   └ АХО (Келес) › 0036 …
   └ Отдел внутренней логистики, Корзинка, Алмата Фабрика …      not production
@@ -46,11 +46,11 @@ and 2 with the departments they run.
 - **Shifts.** Uchtepa has three: 1, 2 (two blocks, А and Б, each with its own
   Verifix node and its own shift-manager), 3. Keles has none, so it is shift 1.
   Ours is an integer 1 | 2 on `managers.shift` and `role_profiles.shift`.
-- **Brigades.** 30 `managers` rows, 22 of them in the structure: 19 on
-  Uchtepa's shifts, Turdiqulov Mirza's «Цех -22» (the cold rooms — under shift 1
-  in Verifix, no shift here), and two at Keles (Axmedova Munisa's «Цех»,
-  Axadxo'jayeva Kamila's АХО (Келес)). 7 are service brigades outside it (АХО,
-  supply, dispatch, B2B) and 1 is archived. **Every brigade's cells sit in ONE
+- **Brigades.** 30 `managers` rows, 22 of them in the structure — **Uchtepa
+  20**: 19 on its shifts and Turdiqulov Mirza's «Цех -22» (the cold rooms —
+  under shift 1 in Verifix, no shift here); **Keles 2**: Axmedova Munisa's
+  «Цех» and Axadxo'jayeva Kamila's АХО (Келес). 7 are service brigades outside
+  it (АХО, supply, dispatch, B2B) and 1 is archived. **Every brigade's cells sit in ONE
   shift** except Aripova Manzura's (8 on shift 1, 0822 on shift 3), so a
   brigade's shift is a single fact. Verifix's «Цех» nodes match ours one to one
   except the mismatches at the end.
@@ -61,8 +61,8 @@ and 2 with the departments they run.
   and they are his only cells), 0822 is on Aripova Manzura (shift 1), 2531 and
   7231 are on nobody.
 - **Cells.** 213 live (4 archived), all tied to their Verifix division; **166
-  are production** — Uchtepa shift 1: 92, shift 2: 56 (А 32, Б 24), shift 3: 7;
-  Keles: 11. Of all 213, 186 have a brigade, 146 a SAP code, 42 a group letter.
+  are production** — **Uchtepa 155** (shift 1: 92, shift 2: 56 — А 32, Б 24 —
+  shift 3: 7) and **Keles 11**. Of all 213, 186 have a brigade, 146 a SAP code, 42 a group letter.
 - **Workstations = (brigade, SAP code): 122 today.** 114 SAP codes sit on live
   cells — 94 on one cell, 20 on several. 12 codes have several cells in ONE
   brigade (lettered: A2894 is 6 cells, A–G, on Ibragimova Sayyora's). 8 codes
@@ -133,10 +133,14 @@ CREATE TABLE shifts (
 | 4 | Uchtepa | 3 | — | 3945 «… – 3 смена» |
 | 5 | Keles | 1 | — | 6701 «Производственное управление (Келес)» — the plant node is its one shift |
 
-- **The shift is `no`; a block is half of one.** «2-smena» on a page is rows 2
-  and 3 together. They are two rows, not one, because each block has its own
-  Verifix node and its own shift-manager — so a block is where a brigade and a
-  shift-manager hang, and the shift is what every page groups by.
+- **A shift is (plant, `no`); a block is half of one.** Uchtepa's «2-smena» is
+  rows 2 and 3 together. They are two rows, not one, because each block has its
+  own Verifix node and its own shift-manager — so a block is where a brigade and
+  a shift-manager hang, and the shift is what every page groups by.
+- **Keles is counted apart from Uchtepa, always.** Its shift is numbered 1, but
+  a page that groups by shift groups by plant AND shift: Keles's row is never
+  summed into Uchtepa's «1-smena», and a count for the whole company lists
+  Uchtepa and Keles side by side.
 - **The rows carry the plant's tie too.** Uchtepa is not one Verifix node (its
   parent «Производственное управление» also holds Keles), so the plant is read
   through the shift row a brigade's «Цех» sits under. `factories` gains nothing.
@@ -299,8 +303,9 @@ now (`cell_links.opening`).
 3. **The sync follows the new ties**, so a move in Verifix moves the brigade,
    its shift or its brigadir from its day on.
 4. **Readers move one at a time** — the shift-scoped pages first (`/shift-daily`,
-   the shift report, `/live`, the shift filter): S1 · S2 · S3, with S2's blocks
-   as a finer pick, and a past day names its brigade by that day's brigadir.
+   the shift report, `/live`, the shift filter): Uchtepa S1 · S2 · S3 (S2's
+   blocks as a finer pick) and Keles on its own — never one «S1» across both
+   plants — and a past day names its brigade by that day's brigadir.
    Each move is its own change; `managers.shift` stays until the last one.
 5. **Departments**, once the operator's report lands.
 
