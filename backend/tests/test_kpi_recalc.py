@@ -74,16 +74,35 @@ class StartTest(unittest.TestCase):
         self.assertTrue(out["started"])
         th.assert_called_once()
 
-    def test_a_second_start_joins_the_run_under_way(self):
+    def test_a_second_open_joins_the_run_under_way(self):
         with mock.patch.object(kr, "_past_compute", return_value=None), \
                 mock.patch.object(kr, "_all_fresh", return_value=False), \
                 mock.patch.object(threading, "Thread") as th:
-            first = kr.start(None, month=date(2026, 11, 1), by="a", auto=False)
-            second = kr.start(None, month=date(2026, 11, 1), by="b", auto=False)
+            first = kr.start(None, month=date(2026, 11, 1), by="a", auto=True)
+            second = kr.start(None, month=date(2026, 11, 1), by="b", auto=True)
         self.assertTrue(first["started"])
         self.assertFalse(second["started"])
         self.assertEqual(second["reason"], "running")
+        self.assertIsNone(kr._queued)
         th.assert_called_once()
+
+    def test_a_press_during_a_run_is_queued_and_runs_after_it(self):
+        self.addCleanup(setattr, kr, "_queued", None)
+        with mock.patch.object(kr, "_past_compute", return_value=None), \
+                mock.patch.object(kr, "_all_fresh", return_value=False), \
+                mock.patch.object(threading, "Thread") as th:
+            kr.start(None, month=date(2026, 10, 1), by="page", auto=True)
+            out = kr.start(None, month=date(2026, 10, 1), by="hr", auto=False)
+        self.assertEqual(out["reason"], "queued")
+        self.assertEqual(kr._queued[:2], (date(2026, 10, 1), "hr"))
+        th.assert_called_once()
+        with mock.patch.object(kr, "_quality", return_value={"ok": True}), \
+                mock.patch.object(kr, "_read", return_value={"ok": True}), \
+                mock.patch.object(kr, "_start_queued") as sq:
+            kr._work(None, None, "page", True, None)
+        sq.assert_called_once()
+        self.assertEqual(sq.call_args.args[:2], (date(2026, 10, 1), "hr"))
+        self.assertIsNone(kr._queued)
 
 
 class RaceTest(unittest.TestCase):

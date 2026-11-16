@@ -328,7 +328,11 @@ export default function LeadersKpi() {
       <SearchInput value={q} onChange={setQ} placeholder={T.search} className="flex-1 min-w-[160px] max-w-xs" />
       <Button size="lg" variant="secondary" className="ml-auto" title={T.recalcHint} aria-label={T.recalc}
         icon={<RefreshCw size={15} className={recalcing ? "animate-spin" : ""} />}
-        disabled={recalcing} onClick={() => recalcM.mutate({ auto: false })}>
+        // Disabled only under a PRESS: one made during the page's own run on
+        // open is queued by the server and runs the moment that one ends
+        // (2026-11-16 — presses under a disabled button were lost twice).
+        disabled={!!watch?.manual || (recalcM.isPending && recalcM.variables?.auto === false)}
+        onClick={() => recalcM.mutate({ auto: false })}>
         <span className="max-sm:hidden">{recalcing ? T.recalcRunning : T.recalc}</span>
       </Button>
       <Button size="lg" variant="secondary" icon={<FileSpreadsheet size={15} />}

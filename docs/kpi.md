@@ -353,8 +353,16 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   after a run would read Verifix again for nothing; a source that FAILED is
   tried again on the next open). A never-computed past month is computed on
   open; a SAVED one only on the button.
+- **A press is never lost** (2026-11-16): the button stays pressable while the
+  page's own run on open is under way, and a press that lands during ANY run
+  is queued (`kpi_recalc._queued`, `reason: "queued"`) and starts, as the
+  button, the moment that run ends. Before, the button was disabled under the
+  run on open, and two presses on October in one day did nothing. A run
+  re-closes its month AFTER the HR journals are read, since the leaver's cell
+  comes from them (`turnover.home_cell`).
 - **The old figures stay until it has finished** (`LeadersKpi.jsx`): the
-  button turns into «Hisoblanmoqda…» with a spinning icon and is disabled;
+  button turns into «Hisoblanmoqda…» with a spinning icon and is disabled
+  once pressed;
   the page polls only `GET /recalc` every 4 s and asks for the board ONCE when
   nothing runs (invalidating `leaders-kpi`, `cc-people`, `quality`). Each tab's
   muted line still names its source's read time and a failed read in amber.

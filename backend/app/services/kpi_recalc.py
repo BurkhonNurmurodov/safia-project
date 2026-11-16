@@ -62,6 +62,10 @@ QUALITY_SHEET = "quality"     # = routers/quality.SHEET_NAME (a router is not im
 _lock = threading.Lock()
 _run: Optional[dict] = None       # the run under way in THIS process
 _last: Optional[dict] = None      # the last one that finished here
+# A PRESS that came while a run was under way: run again, as the button, the
+# moment it ends (2026-11-16 — presses landed under the page's own run on open
+# and were lost twice in one day; October never re-closed).
+_queued: Optional[tuple] = None
 
 
 def _now():
@@ -167,13 +171,15 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
     """Start a run on a thread of its own and return at once. `started` is
     False when one is already under way (the caller then just watches it) or,
     on `auto`, when every source is already fresh."""
-    global _run
+    global _run, _queued
     compute = _past_compute(db, month, auto)
     refreeze = _refreeze_month(db, month, auto)
     with _lock:
         busy = _run is not None
+        if busy and not auto:
+            _queued = (month, by, on_done)
     if busy:
-        return {"started": False, "reason": "running", **status(db)}
+        return {"started": False, "reason": "queued" if not auto else "running", **status(db)}
     if auto and compute is None and refreeze is None and _all_fresh(db, _now()):
         return {"started": False, "reason": "fresh", **status(db)}
     # `status` takes `_lock` itself: it is read AFTER the block, never inside
@@ -263,7 +269,7 @@ def _read(run_fn, running_fn, *args) -> dict:
 
 
 def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool, on_done) -> None:
-    global _run, _last
+    global _run, _last, _queued
     trigger = f"{'auto' if auto else 'recalc'}:{by}"[:120]
     try:
         q = threading.Thread(target=lambda: _set("quality", _quality()), name="kpi-recalc-quality", daemon=True)
@@ -273,10 +279,13 @@ def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool
         else:
             tv_args = (trigger, None, None)
         tv = _read(turnover_sync.run_read, turnover_sync.running, *tv_args)
+        cc = _read(category_sync.run_read, category_sync.running, trigger)
+        # Re-closed AFTER the journals are read: a leaver's cell is the one the
+        # transfer lines say they worked in longest (`turnover.home_cell`).
         if refreeze is not None and tv.get("ok"):
             tv = {**tv, **_refreeze(refreeze, by)}
         _set("turnover", tv)
-        _set("compliance", _read(category_sync.run_read, category_sync.running, trigger))
+        _set("compliance", cc)
         q.join()
     except Exception:  # noqa: BLE001
         log.exception("kpi-recalc: run failed")
@@ -290,3 +299,16 @@ def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool
             if _run is not None:
                 _run["finished_at"] = _now()
             _last, _run = _run, None
+            nxt, _queued = _queued, None
+        if nxt is not None:
+            _start_queued(*nxt)
+
+
+def _start_queued(month, by, on_done) -> None:
+    db = SessionLocal()
+    try:
+        start(db, month=month, by=by, auto=False, on_done=on_done)
+    except Exception:  # noqa: BLE001
+        log.exception("kpi-recalc: the queued press failed to start")
+    finally:
+        db.close()
