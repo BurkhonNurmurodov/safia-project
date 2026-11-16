@@ -377,6 +377,17 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   Whoever may press the button may do it (the page key) — the two buttons were
   admin-only; the figures it re-freezes follow the admin's own «Sabablar».
   `/api/turnover/close | reopen` were removed on 2026-11-16.
+- **A leaver counts against the cell they worked in LONGEST in the month they
+  left** (2026-11-16, the operator, on HR's October file: Norboyev Rufat was a
+  baker in 9429 from 15 Jun, was transferred to 8611 on 19 Oct and dismissed
+  there on the 22nd — «of course it's 9429»). `turnover.home_cell` walks the
+  employment's hire and transfer lines from the Verifix HR journals
+  (`category_events`, the compliance KPI's read) over the days of that month;
+  the dismissal day is not a day worked, a tie goes to the later cell, a unit
+  that is no cell is skipped, and a leaver with no journal lines keeps the unit
+  Verifix dismissed them from. Applied in `live_leavers`, so the open month,
+  a closing one and every close freeze it; an already closed month takes it
+  when it is closed again («Qayta hisoblash»).
 - **Not changed**: «Sabablar», the rules dialogs and «Excel». The month-closing day
   (the 5th at 09:00) was questioned the same day and is still open — see
   «Month life» in the turnover section.

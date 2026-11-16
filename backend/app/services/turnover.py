@@ -74,7 +74,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AppSetting, Cell, Manager, RoleProfile, TurnoverLeaver, TurnoverMonth,
+    AppSetting, CategoryEvent, Cell, Manager, RoleProfile, TurnoverLeaver, TurnoverMonth,
     TurnoverMonthPerson, TurnoverPerson, TurnoverRead,
 )
 from app.services import verifix
@@ -433,6 +433,44 @@ def mirror_roster(db: Session, d: date) -> list[dict]:
             if employed_on(r.hired, r.dismissed, r.status, d)]
 
 
+def home_cell(moves: list[tuple[date, Optional[str], Optional[str]]], dismissed: date):
+    """The cell a leaver worked in LONGEST in the month they left — the one the
+    dismissal counts against (the operator, 2026-11-16: Norboyev was a baker in
+    9429 from June, moved to 8611 on 19 Oct and was dismissed there on the 22nd;
+    «of course it's 9429»). `moves` = (date, code, unit) of the employment's hire
+    and transfers, any order. A tie goes to the later cell. None when the
+    journals name no cell for the month — the leaver keeps the unit Verifix
+    dismissed them from.
+    shortcut: a temporary transfer's end (`date_end`) is ignored, upgrade if
+    one ever decides a leaver's cell."""
+    ms = month_start(dismissed)
+    seq = sorted((m for m in moves if m[0] <= dismissed), key=lambda m: m[0])
+    best, best_days = None, 0
+    for i, (d, code, unit) in enumerate(seq):
+        end = seq[i + 1][0] if i + 1 < len(seq) else dismissed
+        days = (end - max(d, ms)).days     # the dismissal day itself is not worked (`employed_on`)
+        if code and days > 0 and days >= best_days:
+            best, best_days = (code, unit), days
+    return best
+
+
+def _home_cells(db: Session, leavers: list[dict]) -> None:
+    """Re-point each leaver at `home_cell` from the Verifix HR journals
+    (`category_events`, read with the compliance KPI). A leaver with no journal
+    lines is left as Verifix dismissed them."""
+    staff = {p["staff_id"] for p in leavers if p.get("staff_id")}
+    if not staff:
+        return
+    moves: dict[str, list] = defaultdict(list)
+    for e in (db.query(CategoryEvent.staff_id, CategoryEvent.date, CategoryEvent.code, CategoryEvent.unit_name)
+              .filter(CategoryEvent.staff_id.in_(staff), CategoryEvent.kind.in_(("hire", "transfer")))):
+        moves[e.staff_id].append((e.date, unit_code(e.code, e.unit_name), e.unit_name))
+    for p in leavers:
+        h = home_cell(moves.get(p.get("staff_id")) or [], p["dismissed"]) if p.get("dismissed") else None
+        if h and code_key(h[0]) != code_key(p.get("code")):
+            p["code"], p["unit"] = h
+
+
 def live_leavers(db: Session, a: date, b: date) -> list[dict]:
     rows = (db.query(TurnoverLeaver)
             .filter(TurnoverLeaver.dismissed >= a, TurnoverLeaver.dismissed <= b,
@@ -443,6 +481,7 @@ def live_leavers(db: Session, a: date, b: date) -> list[dict]:
         p = _p(r, "leaver")
         p["first_seen"] = r.first_seen
         out.append(p)
+    _home_cells(db, out)
     return out
 
 
