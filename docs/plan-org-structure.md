@@ -77,6 +77,53 @@ and 2 with the departments they run.
   workstation split between two departments by its groups (A2733: «Заготовка
   Эклер ПФ» is 7313, group A; «Оформление Эклер ГП» is 7315, group B).
 
+## Actual and official people (the operator, 16 Nov)
+
+Verifix is the DOCUMENT. For some brigades and cells the person it lists is
+not the one actually working: a person runs a brigade or a cell first and is
+put on the document only after passing their test. Two of today's brigades are
+run by people Verifix lists as leaders — Erkanboyev Zafarjon and Niyozov
+Izzatilla — and some cells are the same. The rulings, asked and answered:
+
+1. **Two people per brigade and per cell: the ACTUAL one and the OFFICIAL
+   one.** Cells already have the pair — «Boshqaruvchi» (`leader_id`, who runs
+   it) and «Egasi» (`owner_id`, whom Verifix seats). A brigade gets the same
+   pair: the actual brigadir and the official (Verifix) brigadir.
+2. **Every work page shows the ACTUAL person** — the checklist, «Smena
+   kunligi», «Zagruzka», «Ojidaniya», «Brigadirlar reytingi», reports. They are
+   responsible for that brigade or cell, whatever the document says.
+3. **Every KPI goes to the OFFICIAL person** — all of «Liderlar KPI» and all of
+   «Brigadirlar KPI» (its turnover gate included: a cell is credited to the
+   brigadir Verifix lists over it, which settles HR's open «Verifix supervisor
+   vs the cells register» in favour of Verifix). «KPIs are an official topic.»
+4. **An actual person set by hand stays until Verifix lists someone NEW** for
+   that brigade or cell. The 10-minute sync never puts the document person
+   back while the document is unchanged; the day Verifix names a new person
+   (the acting one after their test, or anybody else), that person becomes the
+   actual one too, from that day.
+5. **A leader acting as brigadir holds TWO profiles**: their leader profile
+   and a brigadir (o'rnida) profile, on one account. They owe the leader's work
+   (checklist, cell) until Verifix makes them an official brigadir; from that
+   day the leader profile owes nothing.
+6. **When Verifix makes an acting person official, only the label changes** —
+   «o'rnida» becomes official from that day, picked up automatically
+   (`supervisor_kind` / `leader_kind`, which already say this). Their past days
+   stay theirs, nothing is re-scored.
+
+What follows from them:
+
+- A brigade whose official brigadir actually runs another one (Raximova Kamola:
+  Verifix seats her in Цех-8, she runs the Цех-11 cells here) shows her name on
+  Цех-11's pages and gives her Цех-8's KPIs. Each figure goes where its rule
+  sends it; neither is a mistake to fix.
+- A leader's KPIs move from «Boshqaruvchi» to «Egasi» wherever the two differ
+  (turnover and worker concerns already read «Egasi»; foreign objects,
+  category compliance and the audit move). A figure changes only for cells
+  whose two people differ.
+- Ruling 4 is one rule for cells and brigades: a hand pick is an event; a
+  Verifix change is an event; the later one wins. The sync compares the
+  document with its LAST read, never with the actual person.
+
 ## The constraint that shapes the design
 
 `managers.id` IS the brigade key: `manager_id` appears on 3,746 lines in 175
@@ -190,7 +237,7 @@ by `apply_due`.
 CREATE TABLE unit_link_events (
   id             serial PRIMARY KEY,
   manager_id     int NOT NULL REFERENCES managers(id) ON DELETE CASCADE,
-  field          varchar(16) NOT NULL,     -- shift_id | brigadir
+  field          varchar(16) NOT NULL,     -- shift_id | brigadir (actual) | brigadir_doc (Verifix)
   value          int,                      -- shift_id
   prev           int,
   person_vfx     varchar(32),              -- brigadir: the Verifix employee id (NULL for an acting one)
@@ -206,16 +253,21 @@ CREATE TABLE unit_link_events (
 CREATE INDEX ix_unit_link_events ON unit_link_events (field, manager_id, effective_from, id);
 ```
 
-- **The brigadir is the person the «Цех» node names, and Verifix seats there
-  with a brigadir's job.** The seat is what the sync follows (an id, not a
-  spelling); the name in the node is the check, and a node whose name and seat
-  disagree goes to the operator, never guessed. A brigadir the platform has
-  that Verifix does not (an acting one — Erkanboyev, Niyozov) is set by hand,
-  `src` manual.
-- It is the dated brigadir per unit the 13 Nov ruling asks for («a past day
-  names the unit by THAT day's brigadir»). Who may LOG IN as the brigade stays
-  on the `managers` row, as today; splitting the supervisor person from the unit
-  is a separate piece of work.
+- **Two brigadir fields, the cells' «Boshqaruvchi» / «Egasi» pair for a
+  brigade** (rulings 1–4 above). `brigadir_doc` is the person the «Цех» node
+  names and Verifix seats there with a brigadir's job — the seat is what the
+  sync follows (an id, not a spelling), the name in the node the check, and a
+  node whose name and seat disagree goes to the operator. `brigadir` is the
+  actual one: set by hand (`src` manual — Erkanboyev, Niyozov), and set to the
+  new `brigadir_doc` person on the day that one CHANGES (`src` verifix).
+  KPIs read `brigadir_doc`; every other page reads `brigadir`.
+- `brigadir` is the dated brigadir per unit the 13 Nov ruling asks for («a past
+  day names the unit by THAT day's brigadir»). Who may LOG IN as the brigade
+  stays on the `managers` row, as today; splitting the supervisor person from
+  the unit is a separate piece of work.
+- The acting label is not stored here: «o'rnida» is `supervisor_kind`
+  (already set from Verifix), and it turns official on the day Verifix lists
+  the actual brigadir as one (ruling 6).
 - Shift-managers: `role_profiles.shift_id` (FK `shifts`, so a block) replaces
   `shift` + `factory_id` there, dated through the same table keyed by profile —
   a `profile_id` column on it. Their REACH does not change: `shift_scope` gives
@@ -282,12 +334,13 @@ ALTER TABLE pp_work_centers
 | Department | not in Verifix | ours, from the operator's report |
 | Workstation | not in Verifix | ours: `pp_work_centers` |
 | Cell | the coded subdivision | `cells.vfx_division_id` (exists) |
-| Shift-manager · brigadir · leader | the employee seated in the node | `vfx_employee_id` (exists) |
+| Shift-manager · brigadir · leader | the employee seated in the node = the OFFICIAL one | `vfx_employee_id` (exists); the ACTUAL one is ours (ruling 1) |
 
 The sync's pass gains one step: a cell's parent «Цех» names its brigade, the
-«Цех»'s parent names the brigade's shift, the seat in the «Цех» its brigadir. A
-change there lands as a dated event, exactly as a cell's brigadir change does
-now (`cell_links.opening`).
+«Цех»'s parent names the brigade's shift, the seat in the «Цех» its official
+brigadir. A change there lands as a dated event, exactly as a cell's brigadir
+change does now (`cell_links.opening`); a change of the official person also
+moves the actual one (ruling 4).
 
 ## Order of work
 
@@ -313,12 +366,16 @@ now (`cell_links.opening`).
 
 1. **Цех-4 is two brigades here**: Suvonov Elshod (43xx, 45xx — оформление) and
    Erkanboyev Zafarjon, acting, a leader in Verifix (39xx, 41xx, 42xx —
-   заготовка, сливки, кремы). The brigadirs' sheet lists him as a brigadir too,
-   so both tie to the one node until Verifix has a second «Цех».
+   заготовка, сливки, кремы). Both tie to the one node; Erkanboyev's brigade
+   has Suvonov as its official brigadir and him as the actual one, and he keeps
+   his leader profile (ruling 5).
 2. **Цех-8 «RAXIMOVA KAMOLA»** (9411–9414) — Raximova is seated there — runs as
    Niyozov Izzatilla, acting; our «Raximova Kamola» runs Цех-11 «MIRMAXMUDOVA
-   MUNIRA», where nobody is seated. The sheet gives Raximova «Пончик A2743»
-   (9414) and «Мясной отдел», and Niyozov «Мясной отдел» alone.
+   MUNIRA», where nobody is seated. Under the rulings that is two actual
+   brigadirs set by hand, and Цех-11 has no official one until Verifix seats
+   one. The sheet gives Raximova «Пончик A2743» (9414) and «Мясной отдел», and
+   Niyozov «Мясной отдел» alone — so who actually runs which still needs the
+   operator's word.
 3. **Murodali Ochilov** holds Цех-14's four cells (shift 3) as our shift-2
    brigade, and the sheet lists him on shift 2. If he is shift 3's brigadir,
    his brigade ties to Цех-14 and his загрузка stops from that day; if not,
@@ -346,8 +403,13 @@ now (`cell_links.opening`).
 
 ## Open — the operator's decisions
 
-1. **Is Murodali Ochilov the 3rd shift's brigadir (Цех-14)?** (item 3)
-2. **Who runs Цех-8 and Цех-11** — Raximova and Niyozov? (item 2)
+1. **Is Murodali Ochilov the 3rd shift's ACTUAL brigadir (Цех-14)?** Verifix
+   has no official one there. (item 3)
+2. **Who ACTUALLY runs Цех-8 and Цех-11** — Raximova and Niyozov? (item 2)
+
+Settled on 16 Nov: actual vs official people, which pages read which, the
+trigger that replaces a hand-set person, the acting leader's two profiles, the
+label after the test — «Actual and official people» above.
 3. **The same SAP station on two shifts = two workstations**, one per brigade?
    The default here, since the tree puts a workstation under one brigade.
 4. Departments — waiting for the report.
