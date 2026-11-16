@@ -429,8 +429,17 @@ structure changed the same day — see the redesign bullets below).
   and earns nothing in the next month either (it belongs to the month it was
   filed in). Its row keeps `status: "done"`, so the register adds «oy tugagach
   hal qilingan» beside the chip (`ConcernStatus`, `cLateDone`). The 5th of the
-  next month was offered as a grace day and declined. NOT cut the same way:
-  «Ko'tarilgan» still reads the concern's level as it stands today.
+  next month was offered as a grace day and declined.
+- **…and counts it «Ko'tarilgan» only if it was escalated BY that day**
+  (2026-11-16, the operator: «if it was escalated after the month ends they
+  should be responsible for it»). Until then the level was read as it stands
+  today, so a concern escalated in November left October's % altogether.
+  `_bucket(end)` now reads the level the concern held when the period ended:
+  the `from_level` of its first `concern_escalations` move after the end (on
+  the plant clock), else its level now — the rule the weekly Concerns deck
+  already used. Escalated after the end = still the leader's: open at the end,
+  so «Jarayonda» / «Yangi», or «done» if closed by the end. A running period
+  is unchanged.
 - **An uplifted concern is out of the leader's rating** (the operator,
   2026-10-04 — it was counted until then, a brigadir's resolution crediting the
   leader). Every % — leader, unit, headline, the change line (`_previous`), the

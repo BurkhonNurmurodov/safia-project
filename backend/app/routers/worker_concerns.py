@@ -61,7 +61,7 @@ the way /concerns narrows these same rows:
 from __future__ import annotations
 
 import json
-from datetime import date as date_cls, datetime, timedelta
+from datetime import date as date_cls, datetime, time, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -72,7 +72,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.identity import viewer_leader_profile_ids
-from app.models import AppSetting, Cell, LeaderConcern, Manager, RoleProfile
+from app.models import AppSetting, Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
 from app.routers.concerns import _no, _shift_unit_ids
@@ -131,14 +131,27 @@ def _bucket(end: date_cls):
     the register can say so. The day is the server's `done_at` on the plant
     clock — `completion_date` can be typed — then the typed day, then the
     filing day for a row with no stamp at all. A period still running is the
-    plain rule."""
+    plain rule.
+
+    «Uplifted» is likewise read AS OF that day (the operator, 2026-11-16: «if
+    it was escalated after the month ends they should be responsible for
+    it»): the level a concern held when the period ended is the `from_level`
+    of its first escalation-trail move after it (`concern_escalations`), else
+    the level it holds now — the rule the weekly deck already reads."""
     if end >= _today():
         return BUCKET
     closed_on = func.coalesce(
         cast(func.timezone(PLANT_TZ, LeaderConcern.done_at), Date),
         LeaderConcern.completion_date, LeaderConcern.entry_date)
+    after = datetime.combine(end + timedelta(days=1), time.min, tzinfo=ZoneInfo(PLANT_TZ))
+    moved_from = (select(ConcernEscalation.from_level)
+                  .where(ConcernEscalation.concern_id == LeaderConcern.id,
+                         ConcernEscalation.created_at >= after)
+                  .order_by(ConcernEscalation.created_at, ConcernEscalation.id)
+                  .limit(1).correlate(LeaderConcern).scalar_subquery())
+    level_then = func.coalesce(moved_from, LeaderConcern.level, "supervisor")
     return case(
-        (_LEVEL != "leader", UPLIFTED),
+        (level_then != "leader", UPLIFTED),
         (and_(LeaderConcern.status == "done", closed_on <= end), "done"),
         (LeaderConcern.status.in_(("done", "doing")), "doing"),
         else_="todo",
