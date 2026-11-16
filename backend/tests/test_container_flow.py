@@ -425,6 +425,28 @@ class FlowTest(unittest.TestCase):
             self.assertFalse(sent[-1][3])
         self.assertEqual(flow.receive_from_bot(self.db, r3.id, 1, 5001)[0], "cancelled")
 
+    def test_yusuf_becomes_the_second_logistics_person(self):
+        """16 Nov: Yusuf aka gets the logistics page like Nuriddin aka, so AXO
+        picks between two; once, and only on exactly one matching profile."""
+        from app import startup
+        from app.models import ProfilePermission, RoleProfile
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        n = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        y = RoleProfile(role="idle-owner", name="Yusuf aka", name_ru="Юсуф ака")
+        other = RoleProfile(role="leader", name="Yusuf Karimov")       # not a «Kutish mas'uli»
+        self.db.add_all([n, y, other])
+        self.db.flush()
+        self.db.add(ProfilePermission(profile_key=f"idle-owner:{n.id}", capability=flow.LOGISTICS_CAP,
+                                      mode="grant", scope="all"))
+        self.db.commit()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.yusuf_container_logistics()
+            startup.yusuf_container_logistics()                     # the flag: once
+        self.db.expire_all()
+        self.assertEqual([p["name"] for p in flow.logistics_people(self.db)], ["Nuriddin aka", "Yusuf aka"])
+        self.assertEqual(dm.call_count, 1)
+
     def test_receive_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access

@@ -51,9 +51,12 @@ containers row from production and move it into the new button».
     `logistics`, `_roles`); the tabs follow it. Guards: `PAGE` (AXO), `LOGI`
     (Logistics), `ANY` (either) in `routers/container_flow.py`.
   - Holders: **Fozilova Dilafruz** (guest, AXO —
-    `startup.dilafruz_container_flow`) and **Nuriddin aka** («Kutish mas'uli»
-    profile, Logistics — `startup.nuriddin_container_logistics`);
-    docs/data-fixes.md.
+    `startup.dilafruz_container_flow`), **Nuriddin aka** and, from 2026-11-16,
+    **Yusuf aka** (both «Kutish mas'uli» profiles, Logistics —
+    `startup.nuriddin_container_logistics`, `startup.yusuf_container_logistics`);
+    docs/data-fixes.md. With two, AXO picks the addressee on «Yangi so'rov»;
+    the form starts on whoever that device sent to last (`cflow_last_logistics`),
+    and each logistics person sees only the requests addressed to them.
   - **`container-receive` is a brigadir's «Qabul»** (2026-11-14): confirming
     what reached their line from a split request — their OWN unit only (a
     supervisor's `role_id` is the unit), admins any. **Open to the brigadir

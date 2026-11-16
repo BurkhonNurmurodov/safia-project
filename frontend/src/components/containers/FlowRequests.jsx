@@ -31,6 +31,7 @@ import { SplitBar, SplitLegend } from "../ui/Meter";
 import { tashkentNow } from "../production/HourlyContainers";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
@@ -509,8 +510,12 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
     queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
   });
   const list = people.data ?? [];
+  // two logistics people since 2026-11-16 (Nuriddin aka, Yusuf aka): the form
+  // starts on whoever this device sent to last, while that person is still listed
+  const [last, setLast] = usePersistentState("cflow_last_logistics", null);
   const [who, setWho] = useState(null);
-  const to = who ?? (list.length === 1 ? list[0].key : null);
+  const remembered = list.some((p) => p.key === last) ? last : null;
+  const to = who ?? remembered ?? (list.length === 1 ? list[0].key : null);
   const [hour, setHour] = useState(() => initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
   const [counts, setCounts] = useState({});
   // The hour's figure from the «Konteynerlar» page fills the counts whenever
@@ -537,7 +542,8 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
       day, hour, logistics_key: to, note,
       counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
     }),
-    onSuccess: onDone, onError: onFail,
+    onSuccess: (...a) => { setLast(to); onDone(...a); },
+    onError: onFail,
   });
   return (
     <Modal onClose={onClose} title={t("cflow.req.new")} subtitle={t("cflow.req.newSub")} maxWidth="max-w-xl"

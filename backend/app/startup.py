@@ -10544,6 +10544,59 @@ def dilafruz_container_flow() -> None:
 # mas'uli» profile gets `page.view.container-logistics` — which also makes him
 # an addressee AXO can pick. What he already holds is untouched.
 NURIDDIN_LOGISTICS_FLAG = "oneshot:idle_owner_nuriddin_container_logistics_nov14"
+# 2026-11-16, the operator: «add the container app like for Nuriddin — Yusuf aka
+# is the same person as Nuriddin, and Fozilova Dilafruz can choose two people».
+# The same grant on the ONE «Kutish mas'uli» profile whose name holds «Yusuf»;
+# it makes him the second addressee AXO picks from.
+YUSUF_LOGISTICS_FLAG = "oneshot:idle_owner_yusuf_container_logistics_nov16"
+
+
+def _idle_owner_profiles(db, token: str) -> list:
+    """«Kutish mas'uli» profiles whose name (any language) holds `token` as a word."""
+    from app.services.people import fold_name
+    return [p for p in db.query(RoleProfile).filter(RoleProfile.role == "idle-owner").all()
+            if any(token in fold_name(n).split()
+                   for n in (p.name, p.name_uz_cyrl, p.name_ru, p.name_en) if n)]
+
+
+def yusuf_container_logistics() -> None:
+    import html
+
+    from app import capabilities
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=YUSUF_LOGISTICS_FLAG).first():
+            return
+        found = _idle_owner_profiles(db, "yusuf")
+        if len(found) != 1:
+            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Yusuf logistics: {len(found)} idle-owner profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Yusuf aka — «Konteyner berish» (logistika) berilmadi</b>\n"
+                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            return
+        prof = found[0]
+        key = f"idle-owner:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key], grants={"page.view.container-logistics": "all"},
+            actor_name="system (one-shot 2026-11-16)")
+        db.add(AppSetting(key=YUSUF_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] Yusuf logistics: {key} → page.view.container-logistics")
+        _dm_admins_plain(
+            "✅ <b>Yusuf aka — «Konteyner berish» (logistika)</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            "Endi AXO so'rovni Nuriddin aka yoki Yusuf akaga yuborishi mumkin.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Yusuf logistics failed: {exc}")
+        _dm_admins_plain("🛑 <b>Yusuf aka — «Konteyner berish» (logistika) berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
 
 
 def _nuriddin_profiles(db) -> list:

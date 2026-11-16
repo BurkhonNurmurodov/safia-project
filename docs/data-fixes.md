@@ -438,6 +438,18 @@ the STORED access of `container-receive` (the default moves with it) and sets
 `container_flow.notify_brigadirs` = 1, then DMs the admins. Once: an untick
 or an «off» later sticks. docs/containers-flow.md.
 
+## Yusuf aka → «Konteyner berish» as Logistics too (`startup.yusuf_container_logistics`, 2026-11-16)
+
+The operator: «add the container app like for Nuriddin — Yusuf aka is the same
+person as Nuriddin, and Fozilova Dilafruz can choose two people». The same
+one-shot as Nuriddin aka's (flag
+`oneshot:idle_owner_yusuf_container_logistics_nov16`, `later`) on the ONE
+«Kutish mas'uli» profile whose name holds «Yusuf» (`_idle_owner_profiles`):
+grants `page.view.container-logistics`, which opens «Konteyner berish» to him
+and makes him the second addressee on AXO's «Yangi so'rov». Not exactly one
+match → nothing changes and the admins get a DM saying so. Nothing he held is
+revoked.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three
