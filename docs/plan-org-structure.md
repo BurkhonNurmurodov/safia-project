@@ -102,7 +102,7 @@ Izzatilla — and some cells are the same. The rulings, asked and answered:
    (the acting one after their test, or anybody else), that person becomes the
    actual one too, from that day.
 5. **A leader acting as brigadir holds TWO profiles**: their leader profile
-   and a brigadir (o'rnida) profile, on one account. They owe the leader's work
+   and a brigadir (o'rnida) profile. They owe the leader's work
    (checklist, cell) until Verifix makes them an official brigadir; from that
    day the leader profile owes nothing.
 6. **When Verifix makes an acting person official, only the label changes** —
@@ -123,6 +123,20 @@ Izzatilla — and some cells are the same. The rulings, asked and answered:
 9. **A shift-manager's shift stays the platform's**, set by hand, whatever
    Verifix seats them in. Alimov Bekzod, a «Начальник смены» in Verifix, is an
    ADMIN profile here — not a shift-manager to create.
+10. **Two brigades on one «Цех»: a new official replaces only the brigade the
+    old official ran.** Verifix naming a new brigadir for Цех-4 replaces
+    Suvonov Elshod; Erkanboyev Zafarjon keeps his brigade until Verifix lists
+    someone for it. As a rule: where ONE brigade ties to a «Цех», ruling 4
+    holds as is (Niyozov's Цех-8 goes to whoever Verifix names next); where
+    several do, the new official replaces only the brigade whose actual
+    brigadir was the old official.
+11. **When ruling 4 goes live, the waiting suggestions apply too**: every
+    «seat_changed» item already on «Verifix sinxron» (a Verifix seat that
+    arrived under a hand-picked «Boshqaruvchi») makes the seat the actual
+    leader from that day, like every change after it. That moves people, so
+    the build lists them for the operator before the day it lands.
+12. **Цех-22 is shift 1, all four cells** — the «2 смена» in two cold rooms'
+    names is a name; the brigade's place in Verifix decides.
 
 What follows from them:
 
@@ -136,7 +150,7 @@ What follows from them:
 
 What production does today against them (read 16 Nov, approved by Burkhon):
 
-- **Already so — two profiles on one account**: Erkanboyev Zafarjon (leader
+- **Already so — two profiles**: Erkanboyev Zafarjon (leader
   profile running 4112 + brigade «Erkanboyev Zafarjon», o'rnida) and Niyozov
   Izzatilla (leader running 9412 + brigade «Niyozov Izzatilla», o'rnida). A
   THIRD case: Murodali Ochilov — leader running 4123 in O'rozov Asqar's brigade
@@ -445,7 +459,7 @@ moves the actual one (ruling 4).
    brigade is at Uchtepa here, while its cell (0036) is Keles's АХО — it moves
    to Keles shift 1.
 7. **Turdiqulov Mirza's «Цех -22»** (the cold rooms 1511, 3411, 3511, 8011) has
-   no shift here; Verifix has it under shift 1.
+   no shift here; Verifix has it under shift 1. Settled: shift 1 (ruling 12).
 8. **A0161** is on 0822 at Uchtepa and on 1611 (A) / 1622 (B) at Keles.
    Verifix carries no SAP codes at all — its divisions hold only the cell code
    (the one exception: «0611 Обработка яиц» has «A0061» typed as its code), so
@@ -467,7 +481,8 @@ moves the actual one (ruling 4).
 
 Settled on 16 Nov: actual vs official people, which pages read which, the
 trigger that replaces a hand-set person, the acting leader's two profiles, the
-label after the test, the 35 cells, the cases of Цех-8 / 11 / 14 and 0822,
-shift-managers — «Actual and official people» above; a workstation is one
+label after the test, the 35 cells, the cases of Цех-8 / 11 / 14 / 22 and
+0822, shift-managers, two brigades on one «Цех», the waiting suggestions —
+«Actual and official people» above; a workstation is one
 code on one shift — «Workstations» above.
 4. Departments — waiting for the report.
