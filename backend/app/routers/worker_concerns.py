@@ -66,8 +66,8 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import (Date, Integer, String, and_, case, cast, column, false, func, null, or_,
-                        select, values)
+from sqlalchemy import (Date, DateTime, Integer, String, and_, case, cast, column, false, func,
+                        literal, null, or_, select, values)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -123,7 +123,7 @@ BUCKET = case(
 )
 
 
-def _bucket(end: date_cls):
+def _bucket(end: date_cls, db: Optional[Session] = None):
     """BUCKET as a period ending on `end` counts it: «done» only if the concern
     was closed BY that day (the operator, 2026-11-11 — a past month's % used to
     keep rising as late closures came in). Closed later = it was still open at
@@ -137,25 +137,72 @@ def _bucket(end: date_cls):
     it was escalated after the month ends they should be responsible for
     it»): the level a concern held when the period ended is the `from_level`
     of its first escalation-trail move after it (`concern_escalations`), else
-    the level it holds now — the rule the weekly deck already reads."""
+    the level it holds now — the rule the weekly deck already reads.
+
+    **A night shift's 1st** (the operator, 2026-11-16): for a cell whose shift
+    runs past midnight, a month's end is the END of the shift that began on its
+    last day — a concern closed or escalated on the 1st before that clock still
+    counts for the month (`_night_cutoff`; `db` names the cells). Only the
+    server's stamps carry a clock: a typed `completion_date` keeps the day rule."""
     if end >= _today():
         return BUCKET
     closed_on = func.coalesce(
         cast(func.timezone(PLANT_TZ, LeaderConcern.done_at), Date),
         LeaderConcern.completion_date, LeaderConcern.entry_date)
     after = datetime.combine(end + timedelta(days=1), time.min, tzinfo=ZoneInfo(PLANT_TZ))
+    night = _night_cutoff(db, end) if db is not None else None
+    cut = func.coalesce(night, literal(after, DateTime(timezone=True))) if night is not None else after
     moved_from = (select(ConcernEscalation.from_level)
                   .where(ConcernEscalation.concern_id == LeaderConcern.id,
-                         ConcernEscalation.created_at >= after)
+                         ConcernEscalation.created_at >= cut)
                   .order_by(ConcernEscalation.created_at, ConcernEscalation.id)
                   .limit(1).correlate(LeaderConcern).scalar_subquery())
     level_then = func.coalesce(moved_from, LeaderConcern.level, "supervisor")
+    closed_by_end = closed_on <= end
+    if night is not None:
+        closed_by_end = or_(closed_by_end, and_(LeaderConcern.done_at.isnot(None),
+                                                LeaderConcern.done_at < night))
     return case(
         (level_then != "leader", UPLIFTED),
-        (and_(LeaderConcern.status == "done", closed_on <= end), "done"),
+        (and_(LeaderConcern.status == "done", closed_by_end), "done"),
         (LeaderConcern.status.in_(("done", "doing")), "doing"),
         else_="todo",
     )
+
+
+_NIGHT_KEY = "worker_concerns.night"
+
+
+def _night_cutoff(db: Session, end: date_cls):
+    """For a month's LAST day: the moment each night cell's month really ends —
+    the 1st at its shift's END clock, for every cell whose shift crosses
+    midnight (its own hours, else its brigadir's shift default:
+    `cell_hours.resolve`). One SQL expression keyed by the concern's cell
+    (a VALUES table, like `_owner`); None on any other day or with no night
+    cell, so the day rule stands untouched."""
+    key = (_NIGHT_KEY, end)
+    if key in db.info:
+        return db.info[key]
+    expr = None
+    if (end + timedelta(days=1)).day == 1:
+        from app.services import cell_hours
+
+        own = {cid: (a, b) for cid, a, b in db.query(Cell.id, Cell.shift_start, Cell.shift_end).all()}
+        defs = cell_hours.defaults(db)
+        nxt = datetime.combine(end + timedelta(days=1), time.min, tzinfo=ZoneInfo(PLANT_TZ))
+        rows = []
+        for code, c in _cells_on(db, end).items():
+            a, b, _src = cell_hours.resolve(*own.get(c.get("id"), (None, None)), c.get("shift"), defs)
+            if cell_hours.crosses_midnight(a, b):
+                hh, mm = (int(x) for x in b.split(":"))
+                rows.append((code, nxt + timedelta(hours=hh, minutes=mm)))
+        if rows:
+            cuts = values(column("code", String), column("cut", DateTime(timezone=True)),
+                          name="wc_night").data(rows)
+            expr = (select(cuts.c.cut).where(cuts.c.code == LeaderConcern.cell_code)
+                    .limit(1).correlate(LeaderConcern).scalar_subquery())
+    db.info[key] = expr
+    return expr
 # ── who a concern counts for: its cell's owner on the period's last day ──────
 _CELLS_KEY = "worker_concerns.cells"
 _OWNER_KEY = "worker_concerns.owner"
@@ -320,7 +367,7 @@ def _apply_scope_and_filters(
     wanted = [s for s in (UPLIFTED if s == "deferred" else s for s in status)
               if s in STATUSES]
     if status:
-        query = query.filter(_bucket(end).in_(wanted) if wanted else false())
+        query = query.filter(_bucket(end, db).in_(wanted) if wanted else false())
     if date_from:
         query = query.filter(LeaderConcern.entry_date >= date_from)
     if date_to:
@@ -394,7 +441,7 @@ def _agg_cols(db: Session, end: date_cls) -> tuple:
     """The columns one aggregation pass reads — the leader is the cell's OWNER
     on the period's last day (`_owner`); whom it was filed to rides along only
     for the name snapshot of an owner whose profile is gone."""
-    return (LeaderConcern.entry_date, _bucket(end), LeaderConcern.worker_name,
+    return (LeaderConcern.entry_date, _bucket(end, db), LeaderConcern.worker_name,
             LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
             LeaderConcern.cell_code, _owner(db, end), LeaderConcern.leader_profile_id,
             LeaderConcern.leader_name)
@@ -611,7 +658,7 @@ def get_list(
     if open_only:
         query = query.filter(func.coalesce(LeaderConcern.status, "") != "done")
     total = query.count()
-    items = (query.with_entities(LeaderConcern, _bucket(end), _owner(db, end))
+    items = (query.with_entities(LeaderConcern, _bucket(end, db), _owner(db, end))
              .order_by(*(_ORDER.get(sort) or _ORDER["date_desc"]))
              .offset((page - 1) * page_size).limit(page_size).all())
     return {"total": total, "page": page, "page_size": page_size,

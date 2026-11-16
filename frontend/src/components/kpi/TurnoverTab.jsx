@@ -72,9 +72,10 @@ export default function TurnoverTab({ T: TT, TK, tl, tx, data, ym, mLabel, needl
   }
 
   const rule = tv.rule;
-  const counted = (p) => ({ owner: TT.countedOwner, no_owner: TT.countedNoOwner, no_cell: TT.countedNoCell, reason: TT.countedReason })[p.counted] || p.counted;
-  // A leaver whose reason an admin took out of the count: listed, muted, adds to nobody's «left».
-  const isOff = (p) => p.counted === "reason";
+  const counted = (p) => ({ owner: TT.countedOwner, no_owner: TT.countedNoOwner, no_cell: TT.countedNoCell, reason: TT.countedReason, kpi_off: TT.countedKpiOff })[p.counted] || p.counted;
+  // A leaver whose reason an admin took out of the count, or whose cell is out of
+  // the KPI («KPI hisoblanadi» off): listed, muted, adds to nobody's «left».
+  const isOff = (p) => p.counted === "reason" || p.counted === "kpi_off";
   const nOff = leavers.filter(isOff).length;
   const nExcluded = (rule?.exclude_reasons || []).length;
 

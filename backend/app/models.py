@@ -634,6 +634,11 @@ class Cell(Base):
     # cells are all one-process is not asked for 3 DIFFERENT processes.
     # services/one_process.py is the rule.
     one_process  = Column(Boolean, nullable=False, server_default="false", default=False)
+    # 2026-11-16: «KPI hisoblanadi» — FALSE takes the cell out of every leaders'
+    # KPI (no board row, no ranking, its people out of the turnover counts and
+    # «Brigadirlar KPI»). HR's list of service / logistics cells; admin-only.
+    # Read LIVE by every month, the frozen ones too (`turnover.with_kpi`).
+    kpi          = Column(Boolean, nullable=False, server_default="true", default=True)
 
 
 class CellOjidaniya(Base):

@@ -65,6 +65,10 @@ import CellManagerPicker, { PendingChip } from "./CellManagerPicker";
  * specialised for ONE process; a leader whose cells are all such is not asked
  * for 3 different processes on checklist task 3. «Ko'p jarayon» is the default.
  *
+ * «KPI hisoblanadi» (`kpi`, 2026-11-16): «Yo'q» takes the cell out of every
+ * leaders' KPI (HR's service / logistics cells). Admins only — shown and sent
+ * for an admin alone, refused by the server for anyone else.
+ *
  * The NAME (2026-10-19): a cell tied to Verifix carries Verifix's name while
  * the live sync is on (`item.name_from_verifix`) — the Russian tab is shown
  * read-only and never sent; the other three languages stay translations a
@@ -100,11 +104,13 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           name_workshop_en: item.name_workshop_en || "",
           in_load: !!item.in_load,
           one_process: !!item.one_process,
+          kpi: item.kpi !== false,
         }
       : {
           verifix_code: "", sap_code: "", wc_group: "", manager_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
           name_workshop_ru: "", name_workshop_en: "", in_load: false, one_process: false,
+          kpi: true,
         });
   // The «Boshqaruvchi» pick: undefined = untouched, "" = back to the Verifix
   // seat, else a Verifix employee id from the pool (CellManagerPicker).
@@ -250,6 +256,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       in_load: inLoad,
       one_process: !!form.one_process,
     };
+    if (isAdmin) body.kpi = !!form.kpi;
     if (!ruLocked) body.name_workshop_ru = form.name_workshop_ru || "";
     // `owner_id` is never sent («Egasi» is Verifix's). A new cell takes its
     // brigadir at once and starts with no «Boshqaruvchi»; an existing one sends
@@ -462,6 +469,21 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           ]}
         />
       </FormField>
+      {isAdmin && (
+        <FormField label={t("cellPage.kpi")} hint={t("cellPage.kpiHint")}>
+          <SegmentedToggle
+            fill
+            className="mt-1"
+            ariaLabel={t("cellPage.kpi")}
+            value={form.kpi ? "on" : "off"}
+            onChange={(v) => setForm((f) => ({ ...f, kpi: v === "on" }))}
+            options={[
+              { value: "on", label: t("cellPage.kpiOn") },
+              { value: "off", label: t("cellPage.kpiOff") },
+            ]}
+          />
+        </FormField>
+      )}
       {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
     </Modal>
   );
