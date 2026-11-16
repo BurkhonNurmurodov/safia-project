@@ -8711,6 +8711,48 @@ def patch_task11_description_nov09() -> None:
         db.close()
 
 
+TASK10_SCROLL_FLAG = "leader_task10_scrollbar_nov16"
+TASK10_SCROLL_OLD = ("- It is CLEARLY visible that the list continues below (the last row is cut "
+                     "in half, or the scrollbar has not reached the end), but the continuation "
+                     "is not in another screenshot.")
+TASK10_SCROLL_NEW = ("- It is CLEARLY visible that the list continues below — the last visible "
+                     "order row is cut in half — and the continuation is not in another screenshot.\n"
+                     "- A SCROLLBAR IS NOT EVIDENCE either way: SAP draws a vertical scrollbar beside "
+                     "the list even when every row fits, and its thumb need not reach the bottom. "
+                     "If the last order row is shown whole and empty space (blank rows or the empty "
+                     "table area) follows it, the list is complete — do not fail it because of the "
+                     "scrollbar.")
+
+
+def patch_task10_scrollbar_nov16() -> None:
+    """2026-11-16 (the operator): task #10's SAP screenshot was failed for its
+    scrollbar although the list ended on screen with empty space below — SAP
+    shows a scrollbar even when every row fits. The 19 Sep FAILS line named the
+    scrollbar as evidence; it is rewritten in place on every level that still
+    carries it (an admin's own wording is left alone)."""
+    from app.models import LeaderTaskDef, LeaderTaskLeaderSetting, LeaderTaskSetting
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=TASK10_SCROLL_FLAG).first():
+            return
+        n = 0
+        for model, col in ((LeaderTaskDef, LeaderTaskDef.id),
+                           (LeaderTaskSetting, LeaderTaskSetting.task_id),
+                           (LeaderTaskLeaderSetting, LeaderTaskLeaderSetting.task_id)):
+            for r in db.query(model).filter(col == 10,
+                                            model.criteria.contains(TASK10_SCROLL_OLD)).all():
+                r.criteria = r.criteria.replace(TASK10_SCROLL_OLD, TASK10_SCROLL_NEW)
+                n += 1
+        db.add(AppSetting(key=TASK10_SCROLL_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] task 10 scrollbar rule patched on {n} level(s)")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] task 10 scrollbar patch failed: {exc}")
+    finally:
+        db.close()
+
+
 def rekey_sheet_eras_boot() -> None:
     """2026-11-12: re-file the stored sheet rows (Минут, Одам сони, the shift
     report, the leaders sheet) a brigadir change took from their unit

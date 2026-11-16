@@ -141,6 +141,7 @@ try:
         move_sanjarbek_checklist_shift,
         land_waiting_leader_links,
         patch_task11_description_nov09,
+        patch_task10_scrollbar_nov16,
         heal_switched_profile_keys,
         rekey_sheet_eras_boot,
         end_dismissed_leaders,
@@ -692,6 +693,7 @@ try:
     land_waiting_leader_links()
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     patch_task11_description_nov09()
+    patch_task10_scrollbar_nov16()
     heal_switched_profile_keys()
     rekey_sheet_eras_boot()
     # Leaders the sync dismissed before `ended_on` existed (2026-11-13). Idempotent.

@@ -909,3 +909,19 @@ shift, both shifts** — and leaders are told every obxod must be 100% done.
 - Not changed: the task's NAME («… (3x/day 9:00-11:00-15:00)», shift-1 hours in
   every language), its photo count (1), its example photo (already the operator's
   Tasker screenshot, 19 Sep).
+
+## Task 10: a scrollbar is not evidence (16 November 2026, `patch_task10_scrollbar_nov16`)
+
+The operator, 16.11.2026: a leader's SAP «Массовая обработка» screenshot was
+failed because the list carried a vertical scrollbar, although its last row was
+whole and empty table area followed it — SAP draws that scrollbar even when
+every row fits. The 19 Sep FAILS line named «the scrollbar has not reached the
+end» as proof the list continues; it now names only a last row cut in half, and
+a new line tells the reviewer a scrollbar proves nothing either way.
+
+- A flag-guarded one-shot in `startup.py` (`leader_task10_scrollbar_nov16`)
+  replaces that exact sentence on every level still carrying it (global + the
+  21 units on the 9 Nov copy); a level an admin reworded is left alone. Delete
+  the function and its call in BOTH entrypoints once it has landed.
+- Like every criteria edit, it reaches proofs reviewed AFTER it. A proof
+  already failed for the scrollbar is put right by «Qayta tekshirish».
