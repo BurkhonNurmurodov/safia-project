@@ -387,6 +387,53 @@ and /zagruzka; measured on a copy of the 11 Sep production data):
   minute re-copy, a SAP upload) therefore reaches /zagruzka within one refetch,
   not at once.
 
+## A page opens on what the device holds, and asks only for its period (2026-11-16)
+
+The operator: «the pages that load from the API are still slow». Measured
+that morning: the server answers a typical request in 11 ms (median of 179
+endpoints on the 9 Nov copy) and the origin in ~20 ms, but every request
+through Cloudflare's Warsaw route takes 160–220 ms on a warm connection and
+320–410 ms on a new one. So the cure on our side is fewer and smaller round
+trips; the route itself is the Cloudflare switch named in
+`docs/server-operations.md` «A slow app».
+
+- **The app opens on the last sign-in answer** (`AuthContext`). A token that
+  was answered before opens straight away on the payload the device keeps
+  (`loadBootPayload`, which used to serve only the offline open), and the
+  sign-in is still asked on every open behind it: its answer replaces the
+  payload, its 401 / 403 reloads into the login screen, and a re-issued token
+  re-reads every query (they were asked with the stale claims). Telegram keeps
+  the payload too now (keyed by the token's claims), and opens early only
+  while the last token has more than a minute left and was minted for the
+  Telegram account launching the app; a different profile in the answer drops
+  the kept payload and reloads. Never an impersonated tab. Nothing is trusted
+  meanwhile — the server checks every request against the token itself; only
+  the menu can show the last permissions for one round trip.
+- **Device rows survive releases** (`offlineCache.js`): keyed by MAJOR, not
+  MAJOR.MINOR — with ~12 minor releases a day nearly every fresh open found
+  the device empty. In return, every restored answer older than a minute is
+  confirmed by the server at once whatever its `staleTime`, and a page that
+  crashes while an unconfirmed device answer is in play gets ONE retry without
+  those rows (`dropUnconfirmed`, `ErrorBoundary`'s `onHeal`) before the crash
+  card shows and is reported.
+- **/concerns asks from its period** — `GET /api/concerns?from=` sends only
+  rows filed on or after it or reached their holder on or after it (the day
+  before, in UTC, so the Tashkent day never loses a row); the page applies the
+  upper bound itself. `from` is the padded trend window's start, it only WIDENS
+  within a visit (the /leaders rule), and «Barcha vaqt» or an open start asks
+  for everything. `facets` carries every brigadir and cell of the whole scope,
+  so the pickers list what they listed before. On the 9 Nov copy the default
+  week was 1,065 of 11,652 rows (1.3 MB instead of 14 MB), with no row the
+  page shows missing or changed. Omitted, the answer is unchanged.
+- **/staff's minute poll of the FILE register asks `?pending=1`** — only drafts
+  and deletion batches still waiting, the one thing that poll shows. The whole
+  register was ~2.7 MB a minute on every live day.
+
+Measured and left: /quality (2.9 MB, but its default period is the whole
+year), /tasks/board (1.2 MB), and a handful of 100–500 ms answers that would
+take a kept answer each (`/downtime/seasonality`, `/tasks/leaders`,
+`/leaders/late`, `/brigadirs`, `/summary`, `/live-overview`).
+
 ## The app works OFFLINE on what it loaded last (`offlineCache`, `connectivity`)
 
 From **2026-10-16** (the operator: «save caches like Instagram does — it should
@@ -414,11 +461,10 @@ changes is queued — a write made offline fails and says so.
   doors in `AuthContext.logout`). An impersonated «open as» tab has no scope
   and caches nothing. **Nothing is stored or restored during an exam**: the
   sandbox is reached under the SAME query keys.
-- **A row is trusted for 7 days and for the MINOR it was written under** —
-  the version is in the KEY (`q|4.285|<scope>|<queryHash>`), because a
-  payload's shape moves with a release and a page handed last week's shape can
-  crash on a field it expects. Other versions' rows are purged by key, values
-  never loaded. Only JSON is stored (a Blob — photos, workbooks — is not);
+- **A row is trusted for 7 days and for the MAJOR it was written under** —
+  the version is in the KEY (`q|4|<scope>|<queryHash>`); other majors' rows
+  are purged by key, values never loaded. It was the MINOR until 2026-11-16
+  (see «A page opens on what the device holds» below). Only JSON is stored (a Blob — photos, workbooks — is not);
   `meta: { persist: false }` opts a query out; `DENY` lists the keys that must
   never come from yesterday (`build-info`, `exam-me`, `assistant`).
   `cacheable(query)` is that test on its own — the band counts the sections
