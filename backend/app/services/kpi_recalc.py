@@ -123,14 +123,29 @@ def _past_compute(db, m: Optional[date], auto: bool) -> Optional[date]:
     return None
 
 
+def _list_moved(db, row) -> bool:
+    """The excluded reasons a closed month was frozen with differ from the
+    live list."""
+    norm = lambda xs: {turnover.norm_reason(x) for x in turnover.clean_reasons(xs)}
+    return norm(((row.rule if row else None) or {}).get("exclude_reasons")) != \
+        norm(turnover.rule(db).get("exclude_reasons"))
+
+
 def _refreeze_month(db, m: Optional[date], auto: bool) -> Optional[date]:
-    """A CLOSED month the button brings up to date — read again and closed
-    again with the reasons list in force now (`turnover.refreeze`). Never on
-    `auto`: a closed month moves only when somebody presses the button."""
-    if m is None or auto or m >= turnover.month_start(turnover.local(turnover.now_aware()).date()):
+    """A CLOSED month brought up to date — read again and closed again with the
+    reasons list in force now (`turnover.refreeze`). The button always does
+    it; the page's own run (`auto`) does it only for a KPI month (from
+    START_MONTH) whose frozen list is not the live one — 2026-11-16: two
+    presses on October missed (the button sat disabled under the page's own
+    run) and October kept counting «Учёба» days after it was switched off."""
+    if m is None or m >= turnover.month_start(turnover.local(turnover.now_aware()).date()):
         return None      # only an ended month can be closed
-    state, _row = turnover.month_state(db, m)
-    return m if state == "closed" else None
+    state, row = turnover.month_state(db, m)
+    if state != "closed":
+        return None
+    if auto and (m < turnover.START_MONTH or not _list_moved(db, row)):
+        return None
+    return m
 
 
 def _refreeze(m: date, by: str) -> dict:
@@ -159,7 +174,7 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
         busy = _run is not None
     if busy:
         return {"started": False, "reason": "running", **status(db)}
-    if auto and compute is None and _all_fresh(db, _now()):
+    if auto and compute is None and refreeze is None and _all_fresh(db, _now()):
         return {"started": False, "reason": "fresh", **status(db)}
     # `status` takes `_lock` itself: it is read AFTER the block, never inside
     # it — two pages opening at once race here, and a non-reentrant lock

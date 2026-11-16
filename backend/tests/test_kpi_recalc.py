@@ -45,6 +45,9 @@ class StartTest(unittest.TestCase):
         self.status = mock.patch.object(kr, "status", return_value={"running": False})
         self.status.start()
         self.addCleanup(self.status.stop)
+        self.rf = mock.patch.object(kr, "_refreeze_month", return_value=None)
+        self.rf.start()
+        self.addCleanup(self.rf.stop)
 
     def test_auto_skips_when_every_source_is_fresh(self):
         with mock.patch.object(kr, "_past_compute", return_value=None), \
@@ -126,6 +129,45 @@ class WorkTest(unittest.TestCase):
                                              "compliance": {"ok": False, "error": "x"}})
         self.assertIsNotNone(kr._last["finished_at"])
         self.assertEqual(forgot, [1])
+
+
+class RefreezeMonthTest(unittest.TestCase):
+    """Which month a run closes again (2026-11-16)."""
+    OCT, SEP = date(2026, 10, 1), date(2026, 9, 1)
+
+    def _pick(self, m, auto, frozen, live, state="closed"):
+        row = mock.Mock(rule={"exclude_reasons": frozen})
+        with mock.patch.object(kr.turnover, "month_state", return_value=(state, row)), \
+                mock.patch.object(kr.turnover, "rule", return_value={"exclude_reasons": live}), \
+                mock.patch.object(kr.turnover, "now_aware", return_value=kr.turnover.now_aware().replace(2026, 11, 16)):
+            return kr._refreeze_month(None, m, auto)
+
+    def test_the_button_always_recloses(self):
+        self.assertEqual(self._pick(self.OCT, False, ["A"], ["A"]), self.OCT)
+
+    def test_opening_recloses_when_the_list_moved(self):
+        self.assertEqual(self._pick(self.OCT, True, ["A"], ["A", "Учёба"]), self.OCT)
+
+    def test_opening_leaves_an_unchanged_month(self):
+        self.assertIsNone(self._pick(self.OCT, True, ["A", "Учёба"], [" учёба", "a"]))
+
+    def test_opening_never_moves_a_month_before_the_kpi(self):
+        self.assertIsNone(self._pick(self.SEP, True, [], ["Учёба"]))
+
+    def test_an_open_month_is_never_reclosed(self):
+        self.assertIsNone(self._pick(self.OCT, True, ["A"], ["B"], state="closing"))
+
+    def test_a_moved_month_runs_even_when_fresh(self):
+        kr._run = None
+        self.addCleanup(setattr, kr, "_run", None)
+        with mock.patch.object(kr, "status", return_value={}), \
+                mock.patch.object(kr, "_past_compute", return_value=None), \
+                mock.patch.object(kr, "_refreeze_month", return_value=self.OCT), \
+                mock.patch.object(kr, "_all_fresh", return_value=True), \
+                mock.patch.object(threading, "Thread") as th:
+            out = kr.start(None, month=self.OCT, by="hr", auto=True)
+        self.assertTrue(out["started"])
+        self.assertEqual(th.call_args.kwargs["args"][1], self.OCT)
 
 
 if __name__ == "__main__":

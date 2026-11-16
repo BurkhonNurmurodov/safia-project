@@ -366,8 +366,12 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   «Qayta hisoblash» on a closed month runs the Verifix read and then
   `turnover.refreeze` — reopen + close in one transaction, so its leavers are
   read again and its rule (the excluded reasons with it) is the one in force
-  now. Only the button, never the automatic run on open (`_refreeze_month`),
-  and only after a good read; a failed one leaves the month as it was frozen.
+  now. The button always does it; the automatic run on open does it only for
+  a KPI month (October 2026 on, `START_MONTH`) whose frozen excluded reasons
+  are not the live list (`_refreeze_month`, 2026-11-16: two presses on October
+  missed while the button sat disabled under the page's own run, and October
+  kept counting «Учёба» five days after it was switched off). Either way only
+  after a good read; a failed one leaves the month as it was frozen.
   Whoever may press the button may do it (the page key) — the two buttons were
   admin-only; the figures it re-freezes follow the admin's own «Sabablar».
   `/api/turnover/close | reopen` stay for a tab on an older bundle.
