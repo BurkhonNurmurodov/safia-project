@@ -440,6 +440,19 @@ structure changed the same day — see the redesign bullets below).
   already used. Escalated after the end = still the leader's: open at the end,
   so «Jarayonda» / «Yangi», or «done» if closed by the end. A running period
   is unchanged.
+- **A night cell's month of concerns ends with its shift** (the operator,
+  2026-11-16: «only for the 2nd shift, the first day of the new month is an
+  exception … only for the concerns»; then «any shift past midnight», «until
+  the shift ends», closing and escalating, October too). For a cell whose
+  hours cross midnight (`cell_hours.resolve`: its own, else its brigadir's
+  shift default — every shift-2 cell on 20:00–08:00 qualifies), a concern
+  closed (`done_at`) or escalated on the 1st before that shift's END clock
+  counts as done / escalated by the month's end. `_night_cutoff(db, end)`
+  builds a VALUES table code → cutoff, the way `_owner` does, and only for a
+  month's LAST day — a custom period ending on the 10th keeps the plain rule.
+  A typed `completion_date` has no clock and keeps the day rule; filing keeps
+  its own date. `_bucket(end, db)` reads it — every caller passes `db`.
+  Measured: none; it reaches every ended month, October included.
 - **An uplifted concern is out of the leader's rating** (the operator,
   2026-10-04 — it was counted until then, a brigadir's resolution crediting the
   leader). Every % — leader, unit, headline, the change line (`_previous`), the
@@ -754,6 +767,47 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   5 — the score is near binary because 116 of 136 leader cells have < 15 people
   (one leaver > 85%). Most «not on /cells» units of that copy were created by the
   4 Oct cell sync; the dispatch zones and freezers were not.
+
+## Cells out of the leaders' KPI and HR's six reasons (2026-11-16)
+
+HR's file «Лидер кпи» (22 Oct) has two sheets: «KPI не рассчитывается» —
+40 leaders, i.e. their cells, HR does not score — and «Причины не учитываемые
+в текучке» — six dismissal reasons. Eight rulings, asked one by one:
+
+- **The CELL is excluded, not the person** — a listed leader who later owns a
+  production cell is scored there. **Exactly HR's list**, kept as an admin
+  switch per cell, «KPI hisoblanadi» (`cells.kpi`, the cell form, admin-only;
+  docs/cells-and-org.md). Switched off once (`startup.kpi_off_cells_nov16`):
+  0020–0035, 0037, 0110–0112, 0910–0912, 0921, 1411, 1412, 1721, 1811, 1821,
+  4712–4714, 4721, 4725, 4727, 9432 — 36 cells. «Кухня» is 0037, «Дворники»
+  0035; Maksudov's «Снабжение 2-смена» is a department, not a cell. Similar
+  cells NOT on the list (0036, 0113, 1711, 4722–4724, 4726) stay scored.
+- **Hidden from the board**: `turnover.ranked` is False for such a cell, so
+  the board and all five tabs' rankings drop it (`cell_map` carries `kpi`).
+- **Out of every turnover count**: `aggregate` counts none of its people in
+  `working`, its leavers in no «left» and not in «not on /cells»; they are
+  listed, muted, `counted: "kpi_off"` («KPI hisoblanmaydi», before the reason
+  label), `totals.kpi_off_left`. It is not in `cells`, so «Brigadirlar KPI»
+  and the plant rate drop it too. Secondary lists (the concerns register,
+  complaints, audits) still show its records.
+- **From October, every month alike**: the switch is read LIVE by every month
+  from `START_MONTH` on, frozen ones too — `turnover.with_kpi` lays it over the
+  frozen map in `_inputs`, and `cell_map(db, day)` carries it for a day from
+  October on (the other four KPIs read that map). No re-close was needed and
+  no late leaver was pulled into October. The cost: the switch is undated, so
+  flipping it rewrites every month of that cell from October (a `shortcut:` in
+  the code — date it through `cell_links` if HR ever needs part of a period).
+  Saved past months (Jan 2025 → Sep 2026) keep every cell: nobody ruled on
+  them; only the reasons reach them.
+- **The six reasons** are Verifix's own words: «Стажёр (работал менее 3
+  дней)», «Дисциплинарные нарушения», «Черное списка», «Увольнение со
+  смертью», «Учёба» (HR writes «Р.Учёба»), «Семейные обстоятельства -
+  декрет». The reason is trusted as typed — no hire-to-dismissal day check.
+  The one-shot ADDS them to the live list and to the frozen rule of every
+  closed or saved month (Jan 2025 → October): `aggregate` reads the reasons
+  from the frozen rule, so «recalculate the past months» is a rule write — no
+  Verifix read, and `save_past` (which rebuilds a month from today's directory
+  and would drop re-hired leavers without a journal) is never called.
 
 ## «Yot jismlar» — the leaders' foreign-objects KPI (`/foreign-objects` — MERGED into `/leaders-kpi`, 2026-10-19)
 

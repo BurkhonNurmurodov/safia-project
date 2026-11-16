@@ -595,6 +595,15 @@ do one process cannot give — for them that requirement is dropped.
   startup function and both calls once the DM flag reads «done» — before
   `leader_rules_sep26`, whose texts it compares against.
 
+## A cell's «KPI hisoblanadi» (`cells.kpi`, 2026-11-16)
+
+FALSE takes the cell out of every leaders' KPI — no row on «Liderlar KPI», on
+no tab's ranking, its people in no turnover count and not in «Brigadirlar KPI».
+Admin-only (the cell form shows it to an admin alone; the server refuses a
+change from anyone else, `cells.manage` grant or not). Default TRUE; HR's 36
+service / logistics cells were switched off once. The record is docs/kpi.md,
+«Cells out of the leaders' KPI and HR's six reasons».
+
 ## A code is LATIN (`services/latin_code.py`)
 
 From **2026-09-11** (the operator's call) every code a PERSON types is stored in
@@ -726,6 +735,11 @@ columns, edited on the admin «Smena vaqtlari» destination
   per-shift constants. Wiring a consumer is a separate decision — **ask before
   making these hours move a number**, because the moment one does, every cell
   whose clock nobody has confirmed starts scoring against a placeholder.
+- **One consumer since 2026-11-16, by the operator's ruling**: the concerns
+  KPI's month end. A cell whose hours cross midnight (its own, else its
+  brigadir's shift default — so every shift-2 cell on 20:00–08:00) ends its
+  month when the shift that began on the last day ends — docs/kpi.md, «A night
+  cell's month of concerns ends with its shift».
   (The tab's card 1b, each shift's DAY-CLOSE clock, is a separate setting and
   IS enforced — «A brigadir closes a day only from the shift's clock».)
 - **`services/cell_hours.py` is THE definition** — `defaults`, `resolve`,

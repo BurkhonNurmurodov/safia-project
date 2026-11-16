@@ -367,8 +367,31 @@ def cell_map(db: Session, day: Optional[date] = None) -> dict[str, dict]:
             # «Egasi» — whom the cell's turnover is credited to.
             "owner_id": o.id if o else None, "owner": o.name if o else None,
             "owner_kind": o.leader_kind if o else None,
+            # «KPI hisoblanadi» (cells.kpi) — live, undated, from the KPI's
+            # first month (October 2026) on; see `with_kpi`.
+            "kpi": c.kpi is not False or (day is not None and day < START_MONTH),
         }
     return out
+
+
+def kpi_off_keys(db: Session) -> set[str]:
+    """Code keys of the cells an admin took out of the leaders' KPI."""
+    return {k for (code,) in db.query(Cell.verifix_code).filter(Cell.kpi.is_(False)).all()
+            if (k := code_key(code))}
+
+
+def with_kpi(db: Session, cmap: Optional[dict], m: date) -> Optional[dict]:
+    """A month map with each cell's «KPI hisoblanadi» as the cells register
+    says it NOW — frozen maps carry no switch, and HR's list (2026-11-16, the
+    operator: «re-close October too») reaches every month from START_MONTH
+    alike. A saved past month keeps every cell: nobody ruled on those.
+    shortcut: the switch is undated, so flipping it rewrites every month of that
+    cell, closed ones too; date it through `cell_links` if HR ever needs a cell
+    scored for only part of a period."""
+    if not cmap or m < START_MONTH:
+        return cmap
+    off = kpi_off_keys(db)
+    return {k: {**v, "kpi": k not in off} for k, v in cmap.items()}
 
 
 def owned(c: dict) -> bool:
@@ -382,8 +405,10 @@ def owned(c: dict) -> bool:
 def ranked(c: dict) -> bool:
     """A cell the leaders' KPI rankings list: standing on the day, owner or
     not — the operator, 2026-11-12 («all 80»: HR's file lists the cells with no
-    owner too). Its figure still counts toward nobody while it has no owner."""
-    return not c.get("archived")
+    owner too). Its figure still counts toward nobody while it has no owner.
+    A cell switched out of the KPI (`kpi` False, 2026-11-16) is on no ranking
+    and no board row."""
+    return not c.get("archived") and c.get("kpi") is not False
 
 
 OWNER_FIELDS = ("owner_id", "owner", "owner_kind")
@@ -758,7 +783,8 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
         if not k:
             continue
         if k in cmap:
-            cell(k)["working"] += 1
+            if cmap[k].get("kpi") is not False:     # a cell out of the KPI counts nobody
+                cell(k)["working"] += 1
         else:
             miss(k, p)["working"] += 1
 
@@ -775,7 +801,13 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             continue
         off = bool(off_reasons) and norm_reason(p.get("reason")) in off_reasons
         c = cmap.get(k)
-        if c is None:
+        if c is not None and c.get("kpi") is False:
+            # A cell out of the KPI: listed, muted, counted nowhere — before
+            # the reason, which would say no more.
+            counted = "kpi_off"
+            if any_scope and not _scope_ok(c, scope):
+                continue
+        elif c is None:
             if not off:
                 miss(k, p)["left"] += 1
             counted = "reason" if off else "no_cell"
@@ -808,7 +840,7 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
     # runs (an empty one says a code does not match — the reader must see it
     # as 0, not miss it).
     for k, c in cmap.items():
-        if c.get("owner_id") or c.get("leader_id"):
+        if (c.get("owner_id") or c.get("leader_id")) and c.get("kpi") is not False:
             cell(k)
     out_cells = []
     for k, c in cells.items():
@@ -897,6 +929,7 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             "unregistered_left": sum(u["left"] for u in unregistered),
             "unregistered_working": sum(u["working"] for u in unregistered),
             "other_left": 0 if any_scope else other_left,
+            "kpi_off_left": sum(1 for x in out_leavers if x["counted"] == "kpi_off"),
         },
         "ranking": ranking, "leaders": out_leaders, "cells": out_cells, "leavers": out_leavers,
         "unregistered": unregistered,
@@ -904,7 +937,14 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
 
 
 def _inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now: datetime) -> dict:
-    """The people of month `m` and the map that attributes them."""
+    """The people of month `m` and the map that attributes them, every cell
+    carrying the register's «KPI hisoblanadi» as it stands now (`with_kpi`)."""
+    inp = _read_inputs(db, m, state, row, now)
+    inp["cmap"] = with_kpi(db, inp["cmap"], m)
+    return inp
+
+
+def _read_inputs(db: Session, m: date, state: str, row: Optional[TurnoverMonth], now: datetime) -> dict:
     ok = last_read(db, ok_only=True)
     if state == "open":
         # The month as the last complete read saw it — never past that read,

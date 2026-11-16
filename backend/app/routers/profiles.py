@@ -57,7 +57,7 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.services import (
-    action_log, cell_hours, cell_links, cell_register, hr_contact, leader_kind,
+    action_log, cell_hours, cell_links, cell_register, hr_contact, kept_answer, leader_kind,
     leader_shift, profile_photo, supervisor_kind, wc_group,
 )
 from app.services.cell_lookup import norm_code
@@ -869,6 +869,9 @@ class CellPayload(BaseModel):
     # «Jarayonlar» (cells.one_process): True = specialised for ONE process.
     # None = untouched; a create that names none starts «Ko'p jarayon».
     one_process:           Optional[bool] = None
+    # «KPI hisoblanadi» (cells.kpi, 2026-11-16): False takes the cell out of
+    # every leaders' KPI. None = untouched; only an ADMIN may change it.
+    kpi:                   Optional[bool] = None
     # Cells of the same unit and work centre that change brigadir WITH this one
     # («Birga ko'chirish», 2026-10-26): a team leaving together takes the
     # positions it shares along (`services/catalog_refusal.py`). Read only with
@@ -1073,6 +1076,8 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
         # Read by task 3's AI text alone (services/one_process): nothing to
         # forget, no figure moves — the next proof reviewed reads it.
         row.one_process = bool(payload.one_process)
+    if payload.kpi is not None:
+        row.kpi = bool(payload.kpi)
     return pend
 
 
@@ -1268,6 +1273,7 @@ def admin_list_cells(db: Session = Depends(get_db),
             "owner_unit": mgr_names.get(prof_units.get(c.owner_id)),
             "in_load": bool(c.in_load),
             "one_process": bool(c.one_process),
+            "kpi": c.kpi is not False,
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
             # The Verifix live sync (2026-10-12): tied to a Verifix subdivision,
@@ -1609,6 +1615,8 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail="Verifix code is required")
     if db.query(Cell).filter_by(verifix_code=code).first():
         raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
+    if payload.kpi is False and caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin may take a cell out of the KPI")
     row = Cell(verifix_code=code)
     _apply_cell_fields(db, row, payload,
                        by=profile_display_name(db, viewer_profile_key(db, caller)))
@@ -1623,6 +1631,8 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     cell_details = [("cell", code), ("unit", unit), ("in_load", bool(row.in_load))]
     if row.one_process:
         cell_details.append(("one_process", True))
+    if row.kpi is False:
+        cell_details.append(("kpi", False))
     if row.wc_group:
         cell_details.append(("wc_group", wc_group.label(row.sap_code, row.wc_group)))
     db.commit()
@@ -1631,8 +1641,11 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
                     details=cell_details)
     action_log.enrich(target_kind="cell", target_id=row.id, target_name=code,
                       unit_id=mid, unit_name=unit, details=cell_details)
+    if row.kpi is False:
+        kept_answer.forget_all()
     return {"ok": True, "id": row.id, "sap_code": row.sap_code, "wc_group": row.wc_group,
-            "in_load": bool(row.in_load), "one_process": bool(row.one_process)}
+            "in_load": bool(row.in_load), "one_process": bool(row.one_process),
+            "kpi": row.kpi is not False}
 
 
 @router.put("/admin/cells/{cid}")
@@ -1641,9 +1654,12 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
+    if (payload.kpi is not None and bool(payload.kpi) != (row.kpi is not False)
+            and caller.get("role") != "admin"):
+        raise HTTPException(status_code=403, detail="Only an admin may change whether a cell counts in the KPI")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
-           "one_process": bool(row.one_process),
+           "one_process": bool(row.one_process), "kpi": row.kpi is not False,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
@@ -1663,13 +1679,13 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     waiting = cell_links.pending(db, [row.id]).get(row.id, {})
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
-           "one_process": bool(row.one_process),
+           "one_process": bool(row.one_process), "kpi": row.kpi is not False,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
            "owner_id": row.owner_id,
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     db.commit()
     diff = [(k, old[k], new[k])
-            for k in ("verifix_code", "sap_code", "wc_group", "in_load", "one_process",
+            for k in ("verifix_code", "sap_code", "wc_group", "in_load", "one_process", "kpi",
                       *_CELL_NAME_DIFF)
             if old[k] != new[k]]
     if "manager_id" in pend:
@@ -1699,8 +1715,11 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         details=[("cell", old["verifix_code"])], changes=diff,
     )
     cell_register.after_commit()
+    if old["kpi"] != new["kpi"]:
+        # Every leaders' KPI reads the switch live: drop the kept boards.
+        kept_answer.forget_all()
     return {"ok": True, "id": cid, "sap_code": new["sap_code"], "wc_group": new["wc_group"],
-            "in_load": new["in_load"], "one_process": new["one_process"],
+            "in_load": new["in_load"], "one_process": new["one_process"], "kpi": new["kpi"],
             "pending": {k: {"value": v.get("value"), "from": v.get("from")}
                         for k, v in waiting.items()}}
 
@@ -1964,6 +1983,7 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
             "owner_id": c.owner_id,
             "in_load": bool(c.in_load),
             "one_process": bool(c.one_process),
+            "kpi": c.kpi is not False,
             "att_included": c.att_included,  # None = derived from supervisor
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,

@@ -11024,3 +11024,91 @@ def backdate_dispatch_cells_october() -> None:
         print(f"[startup] October dispatch cells failed: {exc}")
     finally:
         db.close()
+
+
+def add_cell_kpi_column() -> None:
+    """2026-11-16: ``cells.kpi`` — «KPI hisoblanadi». TRUE for every existing
+    cell; HR's list is switched off once by `kpi_off_cells_nov16`. Pure DDL,
+    idempotent."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS kpi BOOLEAN NOT NULL DEFAULT TRUE"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell kpi column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+KPI_OFF_FLAG = "oneshot:kpi_off_cells_nov16"
+# HR's «KPI не рассчитывается» list (2026-10-22 file, ruled 2026-11-16): the
+# service and logistics cells whose leaders HR does not score. «Кухня» is 0037,
+# «Дворники» 0035; «Снабжение 2-смена» is a department, not a cell.
+KPI_OFF_CODES = ("0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028",
+                 "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0037",
+                 "0110", "0111", "0112", "0910", "0911", "0912", "0921", "1411", "1412",
+                 "1721", "1811", "1821", "4712", "4713", "4714", "4721", "4725", "4727", "9432")
+# HR's «Причины не учитываемые в текучке», in Verifix's own words («Р.Учёба»
+# in HR's file is Verifix's «Учёба»).
+KPI_OFF_REASONS = ("Стажёр (работал менее 3 дней)", "Дисциплинарные нарушения", "Черное списка",
+                   "Увольнение со смертью", "Учёба", "Семейные обстоятельства - декрет")
+
+
+def kpi_off_cells_nov16() -> None:
+    """2026-11-16 (the operator, HR's file): switch HR's cells out of the
+    leaders' KPI and make sure the six dismissal reasons are excluded — in the
+    live rule AND in every frozen month (October and the saved past months:
+    `aggregate` reads the reasons from the frozen rule, so nothing is re-read
+    from Verifix and no saved leaver is touched). Only ever ADDS: a reason or
+    cell an admin set otherwise later stays as they set it. Flag claimed in the
+    same transaction as the writes."""
+    import json
+
+    from app.models import Cell, TurnoverMonth
+    from app.services import action_log, kept_answer, turnover
+    from app.services.verifix import _code_key
+
+    want = {_code_key(c) for c in KPI_OFF_CODES}
+    db = SessionLocal()
+    try:
+        claimed = db.execute(text(
+            "INSERT INTO app_settings (key, value) VALUES (:k, '1') "
+            "ON CONFLICT (key) DO NOTHING RETURNING key"), {"k": KPI_OFF_FLAG}).first()
+        if not claimed:
+            db.rollback()
+            return
+        hits = [c for c in db.query(Cell).all() if c.verifix_code and _code_key(c.verifix_code) in want]
+        for c in hits:
+            c.kpi = False
+        found = {_code_key(c.verifix_code) for c in hits}
+        missing = sorted(code for code in KPI_OFF_CODES if _code_key(code) not in found)
+        turnover.save_exclusions(db, [*turnover.rule(db)["exclude_reasons"], *KPI_OFF_REASONS])
+        months = []
+        for row in db.query(TurnoverMonth).filter(TurnoverMonth.rule.isnot(None)).all():
+            if not isinstance(row.rule, dict):      # a reopened month's JSON null
+                continue
+            r = dict(row.rule)
+            r["exclude_reasons"] = turnover.clean_reasons([*(r.get("exclude_reasons") or []),
+                                                           *KPI_OFF_REASONS])
+            row.rule = r
+            months.append(turnover.ym(row.month))
+        db.execute(text("UPDATE app_settings SET value = :v WHERE key = :k"),
+                   {"k": KPI_OFF_FLAG, "v": json.dumps({"cells": len(hits), "missing": missing,
+                                                        "months": months}, ensure_ascii=False)})
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] KPI-off cells not applied: {exc}")
+        return
+    finally:
+        db.close()
+    kept_answer.forget_all()
+    codes = sorted(c.verifix_code for c in hits)
+    print(f"[startup] KPI off: {len(codes)} cells (missing {missing or 'none'}); "
+          f"reasons in {len(months)} frozen months")
+    action_log.record_system(
+        "config", "config.kpi_off_cells",
+        details=[("cells", len(codes)), ("codes", ", ".join(codes) or None)],
+        reason="HR's list: these cells are not scored on the leaders' KPI; six dismissal reasons excluded",
+    )

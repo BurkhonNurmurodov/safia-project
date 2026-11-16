@@ -251,6 +251,9 @@ try:
     add_dm_reachability_columns()
     add_profiles_columns()
     migrate_cells_table()
+    # cells.kpi is on the ORM model: add it before any step reads Cell.
+    from app.startup import add_cell_kpi_column
+    add_cell_kpi_column()
     migrate_cells_leaders_columns()
     # Every feature that calls an AI gets the key + model it ran on before the
     # per-feature «AI kalitlari» tab (once; services/ai_features.seed).
@@ -292,6 +295,9 @@ try:
     # The 12 cells the sync hid in October count for October (once).
     from app.startup import backdate_dispatch_cells_october
     backdate_dispatch_cells_october()
+    # HR's cells out of the leaders' KPI + six turnover reasons (16 Nov, once).
+    from app.startup import kpi_off_cells_nov16
+    kpi_off_cells_nov16()
     # The operator's list of cells NOT counted in the загрузка (once).
     untick_cells_in_load()
     add_attendance_upload_source()

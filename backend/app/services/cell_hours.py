@@ -30,11 +30,13 @@ makes shift 2 (20:00 → 08:00) ordinary arithmetic instead of a branch. A start
 EQUAL to its end is not a 24-hour day, it is an unset window, and
 :func:`duration_min` answers ``None`` for it.
 
-**Nothing consumes these hours yet** (user's decision, 2026-08-21). They are a
-REGISTER: the «Smena vaqtlari» admin tab writes them and the cell details page
-shows them, and that is the whole set of readers. They feed no KPI, no scoring,
-no загрузка, no idle-cell union, no attendance rule and no validation. Wiring
-them into any of those is a separate decision — ask before doing it.
+**One consumer** (user's decision, 2026-08-21: a register only; widened
+2026-11-16). The «Smena vaqtlari» admin tab writes them and the cell details
+page shows them. The ONE rule that reads them is the concerns KPI's month end
+(`routers/worker_concerns._night_cutoff`): a cell whose shift crosses midnight
+ends its month when the shift that began on the last day ends. They feed no
+other KPI, no загрузка, no idle-cell union, no attendance rule and no
+validation. Wiring them into any of those is a separate decision — ask first.
 """
 from typing import Optional
 
