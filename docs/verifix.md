@@ -163,7 +163,7 @@ as text + a workbook; the record (no bytes) is app setting
   Not found → nothing written. Delete it with its startup pair and both calls
   once the DM has landed — BEFORE `leader_verifix_check`.
 
-## The Verifix connection (`/panel/verifix`)
+## The Verifix connection (`/panel/verifixsync?t=connection`)
 
 From **2026-10-01** the admin panel carries the login the platform will read
 attendance from Verifix with — step one of replacing the daily «Davomat» Excel
@@ -272,8 +272,10 @@ once, and followed through the tie from then on; history is never affected.
   `services/cell_links.py` is the dated reader; `services/cell_archive.py`
   carries archive SPANS; `services/leader_owes.py` says from when a profile
   owes a checklist. `routers/verifix_sync.py` is the admin API; the page is
-  «Verifix sinxron» (`/panel/verifixsync`, tools group, admin-only,
-  NOT grantable — it moves people and access).
+  «Verifix sinxron» (`/panel/verifixsync`, admin-only, NOT grantable — it
+  moves people and access). Since 2026-11-16 it is the «Sinxron» tab of the
+  one «Verifix» admin page, the connection card its «Ulanish» tab
+  (`/panel/verifix` lands there).
 - **A unit Verifix re-made is the OPEN record** (2026-11-12, after HR's
   October KPI file listed cells /cells lacked). Verifix holds 1711, 1811,
   4712–4714 and 4721–4727 twice: the old division, CLOSED and empty, still

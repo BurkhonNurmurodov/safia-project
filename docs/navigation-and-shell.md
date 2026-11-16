@@ -382,10 +382,20 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   Attendance page's delete refuses (`_require_open_day`), and it is the only
   door for a non-admin holding `CAP_CLEANUP`; «Yo'qolgan xodimlar»
   (`lostworkers`) — a Davomat save still wipes a unit's day wholesale, the
-  very cause it audits, and it carries the repair. Still only planned: one
-  «Hisobga olinmaydi» page for the two exclusion pages, one «Verifix» page for
-  the connection and the sync. On a phone the ☰
-  drawer is the same list. A capability grantee has no launcher, so the
+  very cause it audits, and it carries the repair.
+- **Two pages that were one job are one page with tabs (2026-11-16, 29 →
+  27).** «Hisobga olinmaydi» (`ltexclude`: «Kunlar» = the day exclusions,
+  «Liderlar» = the leader cut-offs; `/panel/ltcutoff` lands on
+  `?t=leaders`) and «Verifix» (`verifixsync`: «Sinxron» and «Ulanish»;
+  `/panel/verifix` lands on `?t=connection` — the id stays `verifixsync`
+  because the sidebar count, the bot and the notifications link it).
+  `pages/admin/AdminTabs.jsx` is THE frame for such a page: view tabs over
+  the old pages unchanged, `?t=` the open tab (else the device's last), each
+  tab's old one-line description under the toggle, and **a tab stays mounted
+  once opened** — a tab switch is no link the leave guard can ask about, so
+  unmounting would silently drop a draft (the Verifix login). A third merge
+  is one more `TABS` file like `LeaderNotCounting.jsx`.
+- **On a phone** the ☰ drawer is the same list. A capability grantee has no launcher, so the
   admin pages their grants open are rows of their own sidebar, under an
   «Admin» section (`NAV_GROUPS.admin`) when the list is long enough to group;
   an admin with no app open sees them there too.

@@ -177,7 +177,7 @@ leaves two honest submissions and only a person can say which is the record.
   rehearsal day, an unmerged shift-1 day). The cell says «Hisobga olinmaydi»
   rather than naming a Form row that does not exist.
 
-## Days that count NEITHER way (`/panel/ltexclude`)
+## Days that count NEITHER way (`/panel/ltexclude`, tab «Kunlar»)
 
 From **2026-08-27** a leader-day can be taken OUT of the results entirely —
 `LeaderDayExclusion`, the «Hisobdan chiqarilgan kunlar» admin destination
@@ -352,11 +352,12 @@ problems later. Watch for verifix always.»
   case), not only when it moved into another seat (`docs/verifix.md`). The
   released leader then falls under the rule above.
 
-## A LEADER who stops counting (`/panel/ltcutoff`)
+## A LEADER who stops counting (`/panel/ltexclude?t=leaders`)
 
 From **2026-08-30** a leader can be taken out of the results **from one day on,
 open-ended** — `LeaderCutoff`, the «Liderni hisobdan chiqarish» destination
-(`pages/admin/LeaderCutoffs.jsx`), sitting directly after the day exclusions
+(`pages/admin/LeaderCutoffs.jsx`), the second tab of «Hisobga olinmaydi» beside
+the day exclusions (one page since 2026-11-16; `/panel/ltcutoff` lands there)
 because the two are read together and are constantly mistaken for one another.
 
 The tab next door answers a question about a **named DAY**: the platform got

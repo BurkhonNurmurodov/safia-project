@@ -150,7 +150,7 @@ export default function Kitchen() {
     body = (
       <EmptyState
         icon={PlugZap} height="h-72" showUploadLink={false} title={T.offTitle} message={T.offText}
-        action={isAdmin && <Button variant="secondary" onClick={() => navigate("/panel/verifix")}>{T.offOpen}</Button>}
+        action={isAdmin && <Button variant="secondary" onClick={() => navigate("/panel/verifixsync?t=connection")}>{T.offOpen}</Button>}
       />
     );
   } else {

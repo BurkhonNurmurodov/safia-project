@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, RefreshCcwDot, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
+  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -41,6 +41,8 @@ export const RETIRED_ADMIN = {
   access: "/panel/orgchart?v=apps",   // «Sahifalar (rol bo'yicha)» → the org chart's «Ilovalar» role ticks
   actions: "/panel/logs?via=grant",   // «Harakatlar tarixi» → «Jurnal», only what was done through a grant
   idlesource: "/panel/idleowners",    // «Kutish manbasi» — every unit reads its cells from 27 Aug 2026
+  ltcutoff: "/panel/ltexclude?t=leaders",       // «Liderni hisobdan chiqarish» → a tab of «Hisobga olinmaydi»
+  verifix: "/panel/verifixsync?t=connection",   // the Verifix connection → a tab of «Verifix»
 };
 
 export const ADMIN_NAV = [
@@ -73,18 +75,13 @@ export const ADMIN_NAV = [
   // «Lider nazorati — admin» (`leaders.admin`, whose tab list names all four
   // leader destinations — the tab id IS the key, so no `capKey`).
   { id: "ltdaily",      group: "adm-leaders", Icon: ClipboardList,  labelKey: "admin.tabLtDaily",      descKey: "admin.desc.ltdaily" },
-  // Leader-days taken OUT of the results — the one control that makes a day
-  // count NEITHER way, for the leader and their brigadir at once. Sits with the
-  // other two leader surfaces: one configures the checklist, one reads what came
-  // back, this one says which of it counts. Admitted only by «Lider nazorati —
-  // admin», like "ltdaily" — it moves a leader's score and a brigadir's.
-  { id: "ltexclude",    group: "adm-leaders", Icon: CircleSlash,    labelKey: "admin.tabLtExclude",    descKey: "admin.desc.ltexclude" },
-  // The same "does not count" about a PERSON instead of a night: a leader whose
-  // results stop from a date on, open-ended. Sits immediately after the day
-  // exclusions because the two are read together and are constantly mistaken
-  // for one another. Admitted only by «Lider nazorati — admin», like its
-  // neighbour.
-  { id: "ltcutoff",     group: "adm-leaders", Icon: UserMinus,      labelKey: "admin.tabLtCutoff",     descKey: "admin.desc.ltcutoff" },
+  // «Hisobga olinmaydi» — what does not count, as two tabs: leader-DAYS taken
+  // out of the results (neither way, for the leader and their brigadir at
+  // once) and LEADERS whose results stop from a date on. One page since
+  // 2026-11-16: the two are read together and constantly mistaken for one
+  // another. Admitted only by «Lider nazorati — admin», like "ltdaily" — it
+  // moves a leader's score and a brigadir's.
+  { id: "ltexclude",    group: "adm-leaders", Icon: CircleSlash,    labelKey: "admin.tabNotCounting",  descKey: "admin.desc.notcounting" },
   // «Imtihon» — the dashboard exam: assign it, read the results, edit the
   // bank. Grantable through `admin.exam.manage` (tab id = capability tab).
   { id: "exam",         group: "adm-leaders", Icon: GraduationCap,  labelKey: "admin.tabExam",         descKey: "admin.desc.exam" },
@@ -102,17 +99,14 @@ export const ADMIN_NAV = [
   { id: "idleowners",   group: "adm-plant",   Icon: ShieldQuestion, labelKey: "admin.tabIdleOwners",   descKey: "admin.desc.idleowners" },
 
   // Integrations — every outside system the platform talks to.
-  // «Verifix sinxron» — cells, leaders and brigadirs FOLLOW Verifix through a
-  // stored Verifix id (docs/plan-verifix-live-sync.md): the sync's mode and
-  // caps, the queue of what it will not write by itself, the hand ties and the
-  // pass log. No capKey: it moves people, cells and access — admin-only and
-  // never grantable (the `permissions` / `logs` model).
-  { id: "verifixsync",  group: "adm-links",   Icon: RefreshCcwDot,  labelKey: "admin.tabVerifixSync",  descKey: "admin.desc.verifixsync" },
-  // The Verifix API connection: a dedicated read-only login (password sealed
-  // server-side, never shown back) and a connection test that counts what
-  // each form returns. No capKey: this login reads every employee's
-  // attendance, so it is admin-only and never grantable.
-  { id: "verifix",      group: "adm-links",   Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifix" },
+  // «Verifix» — two tabs since 2026-11-16: the SYNC (cells, leaders and
+  // brigadirs FOLLOW Verifix through a stored Verifix id: mode and caps, the
+  // queue of what it will not write by itself, hand ties, the pass log) and
+  // the API CONNECTION (a dedicated read-only login, password sealed and never
+  // shown back, and a connection test). No capKey: one moves people, cells and
+  // access, the other reads every employee's attendance — admin-only, never
+  // grantable. The id stays `verifixsync` (the sidebar count, the bot's links).
+  { id: "verifixsync",  group: "adm-links",   Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifixall" },
   { id: "data",         group: "adm-links",   Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   // «AI kalitlari» — EVERY AI API key, and which key + model each feature
   // runs on (the proof checker, the assistant's chat and voice, both weekly
