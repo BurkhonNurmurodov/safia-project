@@ -95,7 +95,7 @@ CATS: list[tuple[str, str, str]] = [
     ("raw_material", "Keles (xomashyo)", "D946EF"),
     ("security",     "Qo'riqlash",       "0EA5E9"),
     ("kitchen",      "Oshxona",          "B45309"),
-    ("other",        "Boshqa bo'lim",    "94A3B8"),
+    ("other",        "Bo'limlararo",     "94A3B8"),
 ]
 _CAT = {k: (label, RGBColor.from_string(hx)) for k, label, hx in CATS}
 _CAT_ORDER = {k: i for i, (k, _l, _h) in enumerate(CATS)}
