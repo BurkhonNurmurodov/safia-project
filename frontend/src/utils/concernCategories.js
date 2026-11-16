@@ -27,7 +27,7 @@ export const CATEGORY_COLOR = {
   procurement: "#f97316", logistics: "#a855f7", it: "#14b8a6", washing: "#ec4899",
   plan: "#6366f1", hr: "#84cc16", technologist: "#06b6d4", raw_material: "#d946ef",
   security: "#0ea5e9", kitchen: "#b45309",
-  // «Другой отдел» is a catch-all, not a department with an identity — slate,
+  // «Между отделами» is a catch-all, not a department with an identity — slate,
   // the same de-emphasis every «Остальные» fold gets, so it never competes.
   other: "#94a3b8",
 };
