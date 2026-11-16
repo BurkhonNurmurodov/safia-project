@@ -57,6 +57,7 @@ const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
 const WorkersAttendance = lazyWithReload(() => import("./pages/workers/WorkersAttendance"));
 const WorkersMovements = lazyWithReload(() => import("./pages/workers/WorkersMovements"));
 const WorkersComposition = lazyWithReload(() => import("./pages/workers/WorkersComposition"));
+const DocAudit = lazyWithReload(() => import("./pages/DocAudit"));
 const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 // «Hisobotlar» — the platform's period report (Laboratory, admin-only).
@@ -633,6 +634,7 @@ function AppWithLang() {
             <Route path="/workers/attendance" element={<AuthGate><RequirePage page="workers"><WorkersAttendance /></RequirePage></AuthGate>} />
             <Route path="/workers/movements" element={<AuthGate><RequirePage page="workers"><WorkersMovements /></RequirePage></AuthGate>} />
             <Route path="/workers/composition" element={<AuthGate><RequireAdmin><WorkersComposition /></RequireAdmin></AuthGate>} />
+            <Route path="/doc-audit" element={<AuthGate><RequireAdmin><DocAudit /></RequireAdmin></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
             {/* «Trello tahlili» — ADMINS ONLY, not grantable (no page key). */}

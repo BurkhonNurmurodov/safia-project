@@ -23,7 +23,6 @@ export const ADMIN_PAGES = {
   shifttimes:    lazyWithReload(() => import("./ShiftTimes")),
   idleowners:    lazyWithReload(() => import("./IdleOwners")),
   lostworkers:   lazyWithReload(() => import("./LostWorkers")),
-  docaudit:      lazyWithReload(() => import("./DocAudit")),
   verifixsync:   lazyWithReload(() => import("./VerifixPage")),
   tasker:        lazyWithReload(() => import("./TaskerSettings")),
   aikeys:        lazyWithReload(() => import("./AiKeys")),

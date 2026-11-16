@@ -395,6 +395,11 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   once opened** — a tab switch is no link the leave guard can ask about, so
   unmounting would silently drop a draft (the Verifix login). A third merge
   is one more `TABS` file like `LeaderNotCounting.jsx`.
+- **«Hujjatlar tarixi» left the admin app for HR (2026-11-16, 27 → 26).**
+  It reads HR documents, so it is a page of the HR app now — `/doc-audit`,
+  a `people` link (`adminOnly`, no page key, like «Tarkib»), its endpoint
+  still `/api/admin/doc-audit` behind `verify_admin`. `/panel/docaudit`
+  lands on it (`RETIRED_ADMIN`).
 - **On a phone** the ☰ drawer is the same list. A capability grantee has no launcher, so the
   admin pages their grants open are rows of their own sidebar, under an
   «Admin» section (`NAV_GROUPS.admin`) when the list is long enough to group;

@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
+  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -43,6 +43,7 @@ export const RETIRED_ADMIN = {
   idlesource: "/panel/idleowners",    // «Kutish manbasi» — every unit reads its cells from 27 Aug 2026
   ltcutoff: "/panel/ltexclude?t=leaders",       // «Liderni hisobdan chiqarish» → a tab of «Hisobga olinmaydi»
   verifix: "/panel/verifixsync?t=connection",   // the Verifix connection → a tab of «Verifix»
+  docaudit: "/doc-audit",             // «Hujjatlar tarixi» → a page of the HR app
 };
 
 export const ADMIN_NAV = [
@@ -135,9 +136,6 @@ export const ADMIN_NAV = [
   // twice: read-only and append-only. Sits with the other accountability
   // surfaces, and carries no `capKey`, so like "permissions" it is admin-only.
   { id: "logs",         group: "adm-system",  Icon: ScrollText,     labelKey: "admin.tabLogs",         descKey: "admin.desc.logs" },
-  // Cross-document HR history: rejected-then-approved, posted long after the
-  // document's own date, or repeatedly approved/cancelled. Read-only.
-  { id: "docaudit",     group: "adm-system",  Icon: FileClock,      labelKey: "admin.tabDocAudit",     descKey: "admin.desc.docaudit" },
   // READ-ONLY audit of workers an approved → supervisor exchange left on no
   // roster (an upload wiped the receiving unit's day and nothing put them back).
   // A report, not a repair: restoring a row moves that day's historical numbers.

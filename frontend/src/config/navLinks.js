@@ -4,7 +4,7 @@
 // that search inside its phone drawer without an import loop). The comments on
 // each section and link stay beside the sidebar code that reads them.
 import {
-  Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
+  FileClock, Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, BriefcaseBusiness, CalendarCheck, ChefHat, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
@@ -45,6 +45,9 @@ export const ALL_LINKS = [
   { to: "/workers/attendance",  page: "workers", key: "nav.workersAttendance",  icon: Users,          group: "people" },
   { to: "/workers/movements",   page: "workers", key: "nav.workersMovements",   icon: ArrowLeftRight, group: "people" },
   { to: "/workers/composition", adminOnly: true, key: "nav.workersComposition", icon: Contact,        group: "people" },
+  // «Hujjatlar tarixi» — the HR documents' odd histories (revived, stale,
+  // flapped). In the admin app until 2026-11-16; admin-only, read-only.
+  { to: "/doc-audit",           adminOnly: true, key: "admin.tabDocAudit",    icon: FileClock,      group: "people" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   // Which waiting cause hurts most, who answers for it, and what they wrote they will do.
   // admins, plus each role from its own first day (config/idleSolutions.js)

@@ -4201,7 +4201,6 @@ const t = {
     "reconcile.fixDone": "{n} ta qator qaytarildi · {s} ta o'tkazib yuborildi",
     "reconcile.fixFailed": "Qaytarib bo'lmadi",
     "admin.tabDocAudit": "Hujjatlar tarixi",
-    "admin.desc.docaudit": "Kim qaysi hujjatni qachon o'zgartirgan — rad etilgandan keyin tasdiqlangan, kech tasdiqlangan yoki qayta-qayta o'zgartirilganlari",
     // ── Action log (/admin/upload?tab=logs) ────────────────────────
     "admin.tabLogs": "Jurnal",
     "admin.desc.logs": "Platformadagi har bir o'zgarish, turkumlar bo'yicha — kim qildi, qachon va nima o'zgardi",
@@ -13290,7 +13289,6 @@ const t = {
     "reconcile.fixDone": "{n} та қатор қайтарилди · {s} та ўтказиб юборилди",
     "reconcile.fixFailed": "Қайтариб бўлмади",
     "admin.tabDocAudit": "Ҳужжатлар тарихи",
-    "admin.desc.docaudit": "Ким қайси ҳужжатни қачон ўзгартирган — рад этилгандан кейин тасдиқланган, кеч тасдиқланган ёки қайта-қайта ўзгартирилганлари",
     // ── Action log (/admin/upload?tab=logs) ────────────────────────
     "admin.tabLogs": "Журнал",
     "admin.desc.logs": "Платформадаги ҳар бир ўзгариш, туркумлар бўйича — ким қилди, қачон ва нима ўзгарди",
@@ -22379,7 +22377,6 @@ const t = {
     "reconcile.fixDone": "Возвращено строк: {n} · пропущено: {s}",
     "reconcile.fixFailed": "Не удалось вернуть",
     "admin.tabDocAudit": "История документов",
-    "admin.desc.docaudit": "Кто и когда менял документы — одобренные после отклонения, одобренные с опозданием или менявшиеся много раз",
     // ── Action log (/admin/upload?tab=logs) ────────────────────────
     "admin.tabLogs": "Журнал",
     "admin.desc.logs": "Каждое изменение на платформе, по категориям — кто сделал, когда и что изменилось",
@@ -31468,7 +31465,6 @@ const t = {
     "reconcile.fixDone": "Restored {n} rows · skipped {s}",
     "reconcile.fixFailed": "Could not restore",
     "admin.tabDocAudit": "Document history",
-    "admin.desc.docaudit": "Who changed which document and when — approved after rejection, posted late, or repeatedly changed",
     // ── Action log (/admin/upload?tab=logs) ────────────────────────
     "admin.tabLogs": "Logs",
     "admin.desc.logs": "Every change on the platform, by category — who did it, when, and what changed",
