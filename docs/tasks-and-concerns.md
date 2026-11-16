@@ -466,19 +466,13 @@ comments the uploading the picture or file». Asked: the assignee keeps «to do�
   `task_reminder`'s answer row now asks for a reply with a photo or file
   instead of «set its status».
 
-## Every new concern to Umarbek Karimov (`concerns.tell_watchers`, 2026-11-11)
+## Every new concern to Umarbek Karimov — RETIRED 2026-11-16
 
-The operator (2026-11-11): Umarbek Karimov, shift manager, gets EVERY concern
-in Telegram the moment it is filed — through /concerns and the shop floor's
-/cell-concerns, whatever its department — as the usual «Yangi xavotir
-qo'shildi» (`concern_created`) bell row + DM. Nothing about it after that
-(status, escalation, close) unless he is a party to it anyway. **From the
-deploy on only** — nothing filed before is sent.
-
-- `ALL_CONCERNS_WATCHERS` names the watchers by the WORDS of their profile
-  name, matched among shift- and top-manager profiles in any order, Latin or
-  Cyrillic, patronymic allowed (`_name_words`); no production id is
-  hard-coded. Adding a person = one more word set.
-- A watcher already addressed about that concern (its holder, its brigadir,
-  its leader) is not told twice; one account is never DMed twice.
-- His «Xavotirlar» Telegram switch in the bell's settings still mutes the DM.
+From 2026-11-11 Umarbek Karimov (shift manager) got EVERY new concern in
+Telegram as a «Yangi xavotir qo'shildi» bell row + DM, whatever its
+department (`concerns.tell_watchers`, `ALL_CONCERNS_WATCHERS`). The operator
+(2026-11-16): he is told about a concern **only when he is a party to it** —
+it is assigned to him, escalated or returned to him, he holds it, or a
+message in its chat reaches him as one of its trackers. The broadcast, its
+name matcher and its test are deleted; nothing replaces them. Bringing a
+watcher back is a new ruling, not a constant to refill.

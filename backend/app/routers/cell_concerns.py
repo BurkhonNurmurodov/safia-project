@@ -71,7 +71,7 @@ from app.services import action_log, cell_archive
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
     _comment_counts, _due, _no, _notify_recipients, _owner_names, _scope_query,
-    _serialize, _shift_unit_ids, _sm_names, _snippet, _viewer_ctx, tell_watchers,
+    _serialize, _shift_unit_ids, _sm_names, _snippet, _viewer_ctx,
 )
 
 router = APIRouter(prefix="/api/cell-concerns", tags=["cell-concerns"])
@@ -299,11 +299,6 @@ def file_cell_concern(
             },
             int(payload["sub"]), dmed, subject=("concern", c.id)
         )
-    # …and the all-concerns watchers (concerns.tell_watchers, 2026-11-11).
-    sent |= tell_watchers(
-        db, c, {"concern_no": _no(c), "leader_name": leader_name or "", "owner": worker,
-                "date": today, "concern": _snippet(text), "concern_level": "leader"},
-        int(payload["sub"]), dmed, already=(rec[1],) if rec else ())
     if sent:
         db.commit()
 
