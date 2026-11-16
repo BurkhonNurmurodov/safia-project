@@ -343,8 +343,10 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   (the page itself; in `action_log._SKIP` — it fires on every open), `GET
   /recalc` (`running` = this run OR either Verifix read, `run`, `last` with
   each step's `{ok, error | joined}`). The old doors (`/api/turnover/read |
-  compute`, `/api/category-compliance/read`, `/api/foreign-objects/refresh`)
-  stay for a tab on an older bundle.
+  close | reopen | compute`, `/api/category-compliance/read`,
+  `/api/foreign-objects/refresh`) were REMOVED on 2026-11-16 (the operator:
+  the buttons went, their backend must go too) — nothing but «Qayta
+  hisoblash» and the nightly jobs reads, closes or computes a month now.
 - **Every open starts a run** (and every month change): `/recalc/auto` skips
   only a run already under way (joined) and the case where every source
   finished a GOOD read in the last 5 min (`AUTO_FRESH` — a re-mount a minute
@@ -374,7 +376,7 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   after a good read; a failed one leaves the month as it was frozen.
   Whoever may press the button may do it (the page key) — the two buttons were
   admin-only; the figures it re-freezes follow the admin's own «Sabablar».
-  `/api/turnover/close | reopen` stay for a tab on an older bundle.
+  `/api/turnover/close | reopen` were removed on 2026-11-16.
 - **Not changed**: «Sabablar», the rules dialogs and «Excel». The month-closing day
   (the 5th at 09:00) was questioned the same day and is still open — see
   «Month life» in the turnover section.

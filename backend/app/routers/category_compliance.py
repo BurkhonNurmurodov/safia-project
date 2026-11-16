@@ -6,9 +6,9 @@ Page key ``leaders-kpi`` — the «Muvofiqlik» tab of «Liderlar KPI»
 (`/leaders-kpi`), ADMIN-ONLY until the operator opens it on the Access tab
 (`permissions.DEFAULT_PAGE_ACCESS`). The month's figures ride the board
 (`/api/leaders-kpi`, services/leaders_kpi); what stays here is the explain
-dialog's people list, the read states, the Verifix read and the rule —
-re-reading Verifix and editing the rule are admin-only in the endpoint,
-whatever a UI draws. `services/category_compliance.py` is THE rule; this
+dialog's people list, and the rule — editing it is admin-only
+in the endpoint. Reading Verifix belongs to «Qayta hisoblash»
+(`services/kpi_recalc.py`); the old `/read` door was removed on 2026-11-16. `services/category_compliance.py` is THE rule; this
 module only parses, scopes and delivers.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, category_compliance as cc, category_sync, turnover
+from app.services import action_log, category_compliance as cc, turnover
 
 router = APIRouter(prefix="/api/category-compliance", tags=["category-compliance"])
 
@@ -85,26 +85,6 @@ def people(
     dialog's list, asked only when it opens."""
     want = [k.strip() for k in keys.split(",") if k.strip()][:40]
     return cc.people_of(db, _month(month), want)
-
-
-@router.get("/read")
-def read_status(db: Session = Depends(get_db), _: dict = Depends(require_page(PAGE))):
-    """The state of the journals read (this KPI's) and of the directory read
-    (the turnover KPI's, which places people)."""
-    return {"read": cc.read_info(db), "directory": turnover.read_info(db), "configured": cc._configured(db)}
-
-
-@router.post("/read")
-def read_now(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    """Start a read of the three HR journals in the background; the page
-    polls `/read`."""
-    if not category_sync.configured(db):
-        raise HTTPException(status_code=409, detail={"code": "not_configured",
-                                                     "message": "Verifix is not connected"})
-    if category_sync.running(db):
-        return {"started": False, "reason": "busy", **cc.read_info(db)}
-    started = category_sync.start_read(f"admin:{_who(admin)}")
-    return {"started": started, "reason": None if started else "busy", **cc.read_info(db)}
 
 
 @router.get("/rule")

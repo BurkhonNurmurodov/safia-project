@@ -6,8 +6,9 @@ behind a redirect).
 Page key ``leaders-kpi`` — ADMIN-ONLY until the operator opens it on the Access
 tab (`permissions.DEFAULT_PAGE_ACCESS`). The month's figures ride the board
 (`/api/leaders-kpi`, services/leaders_kpi); what stays here is the month read
-for a tab on an older bundle and the Quality refresh, admin-only in the
-endpoint, whatever the UI draws. The workbook is the merged page's
+for a tab on an older bundle. The Quality refresh belongs to «Qayta
+hisoblash» (`services/kpi_recalc.py`); the old `/refresh` door was removed
+on 2026-11-16. The workbook is the merged page's
 (`/api/leaders-kpi/export.xlsx`). `services/foreign_objects.py` is THE rule;
 this module only parses, scopes and delivers.
 """
@@ -20,9 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.routers.admin import verify_admin
-from app.routers.quality import refresh_quality
-from app.services import action_log, foreign_objects, turnover
+from app.services import foreign_objects, turnover
 
 router = APIRouter(prefix="/api/foreign-objects", tags=["foreign-objects"])
 
@@ -64,12 +63,3 @@ def month(
 ):
     """Everything the page shows for one month, within the scope."""
     return foreign_objects.month_payload(db, _month(month), _scope(factory, shift, managers))
-
-
-@router.post("/refresh")
-def refresh(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    """Re-pull the Quality register from its Google Sheet — the Quality page's
-    own refresh, offered here to an admin so the month can be brought up to
-    date without leaving the page."""
-    out = refresh_quality(db=db, payload=admin)
-    return {**out, "sync": foreign_objects.sync_info(db)}

@@ -5,9 +5,10 @@ by month from October 2026 — the «Qo'nimsizlik» tab of «Liderlar KPI»
 Page key ``leaders-kpi`` — ADMIN-ONLY until the operator opens it on the Access
 tab (`permissions.DEFAULT_PAGE_ACCESS`). The month's figures ride the board
 (`/api/leaders-kpi`, services/leaders_kpi); what stays here is the explain
-dialog's people list and the month's actions — refreshing from Verifix,
-closing, reopening and computing a past month are admin-only in the endpoint,
-whatever the UI draws. The workbook is the merged page's
+dialog's people list and the «Sabablar» dialog. Reading Verifix, closing and
+computing a month belong to «Qayta hisoblash» (`services/kpi_recalc.py`); the
+old `/read`, `/close`, `/reopen` and `/compute` doors were removed on
+2026-11-16, their buttons long gone. The workbook is the merged page's
 (`/api/leaders-kpi/export.xlsx`). `services/turnover.py` is THE rule; this
 module only parses, scopes and delivers.
 """
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.permissions import require_page
 from app.routers.admin import verify_admin
-from app.services import action_log, kept_answer, turnover, turnover_sync
+from app.services import action_log, kept_answer, turnover
 
 router = APIRouter(prefix="/api/turnover", tags=["turnover"])
 
@@ -81,72 +82,6 @@ def people(
     dialog's list, asked only when it opens."""
     want = [k.strip() for k in keys.split(",") if k.strip()][:40]
     return turnover.people_of(db, _month(month), want)
-
-
-@router.get("/read")
-def read_status(db: Session = Depends(get_db), _: dict = Depends(require_page(PAGE))):
-    return turnover.read_info(db)
-
-
-@router.post("/read")
-def read_now(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    """Start a read of Verifix in the background; the page polls `/read`."""
-    if not turnover_sync.configured(db):
-        raise HTTPException(status_code=409, detail={"code": "not_configured",
-                                                     "message": "Verifix is not connected"})
-    if turnover_sync.running(db):
-        return {"started": False, "reason": "busy", **turnover.read_info(db)}
-    started = turnover_sync.start_read(f"admin:{_who(admin)}")
-    return {"started": started, "reason": None if started else "busy", **turnover.read_info(db)}
-
-
-class MonthIn(BaseModel):
-    month: str
-
-
-@router.post("/close")
-def close_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    m = _month(body.month)
-    try:
-        out = turnover.close(db, m, _who(admin))
-        db.commit()
-    except turnover.Refused as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail={"code": exc.code, "message": exc.message})
-    action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m),
-                      details=[("leavers", out["leavers"])])
-    return out
-
-
-@router.post("/reopen")
-def reopen_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    m = _month(body.month)
-    try:
-        out = turnover.reopen(db, m, _who(admin))
-        db.commit()
-    except turnover.Refused as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail={"code": exc.code, "message": exc.message})
-    action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m))
-    return out
-
-
-@router.post("/compute")
-def compute_month(body: MonthIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    """A PAST month (before the automatic start): read Verifix now, compute
-    the month and save it — «Hisoblash» the first time, «Yangilash» after."""
-    m = _month(body.month)
-    if not (turnover.PAST_FROM <= m < turnover.START_MONTH):
-        raise HTTPException(status_code=409, detail={"code": "not_past",
-                                                     "message": "only months before the automatic start"})
-    if not turnover_sync.configured(db):
-        raise HTTPException(status_code=409, detail={"code": "not_configured",
-                                                     "message": "Verifix is not connected"})
-    if turnover_sync.running(db):
-        return {"started": False, "reason": "busy", **turnover.read_info(db)}
-    started = turnover_sync.start_read(f"compute:{turnover.ym(m)}", month=m, by=_who(admin))
-    action_log.enrich(target_kind="month", target_id=turnover.ym(m), target_name=turnover.ym(m))
-    return {"started": started, "reason": None if started else "busy", **turnover.read_info(db)}
 
 
 # ── the dismissal reasons that do not count (admin) ───────────────────────────

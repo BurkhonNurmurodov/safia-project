@@ -4,9 +4,8 @@ KPIs on one page, as a leaderboard, month by month.
 Page key ``leaders-kpi`` — ADMIN-ONLY until the operator opens it on the Access
 tab (`permissions.DEFAULT_PAGE_ACCESS`). ONE read serves every tab (the board,
 each KPI's own month payload, the rules); the register of concerns is paged
-from `/api/worker-concerns/list`, the turnover month's actions stay on
-`/api/turnover/*` and the Quality refresh on `/api/foreign-objects/refresh` —
-all three re-gated on this page key. `services/leaders_kpi.py` is THE rule;
+from `/api/worker-concerns/list` and the turnover reasons stay on
+`/api/turnover/exclusions` — both re-gated on this page key. `services/leaders_kpi.py` is THE rule;
 this module only parses, scopes, keeps and delivers.
 
 The board is KEPT between requests (2026-10-24, `services/kept_answer.py`, the
@@ -22,9 +21,9 @@ page's one button) and `POST /recalc/auto` (the page itself, every time it
 opens) bring every source up to date — the Quality register, the Verifix
 directory, the Verifix HR journals — and `GET /recalc` is what the page polls
 meanwhile. Gated on this page key: whoever can see the figures can bring them
-up to date. The four admin buttons it replaced kept their doors
-(`/api/turnover/read|compute`, `/api/category-compliance/read`,
-`/api/foreign-objects/refresh`) for a tab still open on an older bundle.
+up to date. The doors of the buttons it replaced
+(`/api/turnover/read|close|reopen|compute`, `/api/category-compliance/read`,
+`/api/foreign-objects/refresh`) were removed on 2026-11-16.
 """
 from __future__ import annotations
 
