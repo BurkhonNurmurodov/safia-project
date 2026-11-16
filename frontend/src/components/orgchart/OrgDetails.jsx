@@ -308,7 +308,7 @@ function StructureBody({ node, data, P }) {
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap gap-1.5">
-          <Button variant="secondary" size="md" icon={<ShieldCheck size={14} />} onClick={() => navigate(adminPage("access"))}>
+          <Button variant="secondary" size="md" icon={<ShieldCheck size={14} />} onClick={() => navigate(`${adminPage("orgchart")}?v=apps`)}>
             {P.openAccess}
           </Button>
           <Button variant="secondary" size="md" icon={<KeyRound size={14} />} onClick={() => navigate(adminPage("permissions"))}>
@@ -333,7 +333,7 @@ function StructureBody({ node, data, P }) {
             {P.openFactories}
           </Button>
           {node.kind === "root" && (
-            <Button variant="secondary" size="md" icon={<ShieldCheck size={14} />} onClick={() => navigate(adminPage("access"))}>
+            <Button variant="secondary" size="md" icon={<ShieldCheck size={14} />} onClick={() => navigate(`${adminPage("orgchart")}?v=apps`)}>
               {P.openAccess}
             </Button>
           )}

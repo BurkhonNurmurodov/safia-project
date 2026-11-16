@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import {
-  ArrowUp, Ban, Building2, CheckCircle2, FileSpreadsheet, Layers, Radio, ScrollText,
+  ArrowUp, Ban, Building2, CheckCircle2, FileSpreadsheet, KeyRound, Layers, Radio, ScrollText,
   TriangleAlert, Undo2, UserRound,
 } from "lucide-react";
 import api from "../../utils/api";
@@ -143,6 +144,18 @@ export default function Logs() {
   const [unitId, setUnitId] = usePersistentState("logs_unit", "");
   const [action, setAction] = usePersistentState("logs_action", "");
   const [level, setLevel] = usePersistentState("logs_level", "");
+  const [via, setVia] = usePersistentState("logs_via", "");
+  // `?via=grant` — where the retired «Harakatlar tarixi» address lands: the
+  // filter is switched on once, then the parameter leaves the URL so clearing
+  // the chip is not undone by a reload.
+  const [sp, setSp] = useSearchParams();
+  useEffect(() => {
+    if (sp.get("via") !== "grant") return;
+    setVia("grant");
+    const next = new URLSearchParams(sp);
+    next.delete("via");
+    setSp(next, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The search box types locally and queries on a pause. Every keystroke here
   // is a server-side count over a table that grows forever; the box has to feel
@@ -179,7 +192,8 @@ export default function Logs() {
     unit_id: unitId || undefined,
     q: qq.trim() || undefined,
     enriched: level || undefined,
-  }), [dateFrom, dateTo, cats, action, outcome, source, actor, unitId, qq, level]);
+    via: via || undefined,
+  }), [dateFrom, dateTo, cats, action, outcome, source, actor, unitId, qq, level, via]);
 
   const sig = JSON.stringify(params);
   const page = pageState.sig === sig ? pageState.page : 1;
@@ -455,11 +469,28 @@ export default function Logs() {
         />
       ),
     },
+    {
+      key: "via",
+      icon: KeyRound,
+      label: t("logs.filter.via"),
+      active: !!via,
+      display: t("logs.via.grant"),
+      onClear: () => setVia(""),
+      render: ({ close }) => (
+        <PickFilter
+          close={close}
+          value={via}
+          onChange={setVia}
+          note={t("logs.viaNote")}
+          opts={[{ value: "", label: t("logs.level.all") }, { value: "grant", label: t("logs.via.grant") }]}
+        />
+      ),
+    },
   ];
 
-  const anyFilter = !!(cats.length || source.length || outcome.length || actor || unitId || action || level || q.trim());
+  const anyFilter = !!(cats.length || source.length || outcome.length || actor || unitId || action || level || via || q.trim());
   const clearAll = () => {
-    setCats([]); setSource([]); setOutcome([]); setActor(""); setUnitId(""); setAction(""); setLevel("");
+    setCats([]); setSource([]); setOutcome([]); setActor(""); setUnitId(""); setAction(""); setLevel(""); setVia("");
   };
 
   // The «refused» figure is also the quickest filter: one press narrows the

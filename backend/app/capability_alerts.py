@@ -630,6 +630,8 @@ def alert_grant_use(db: Session, caller: dict, capability: str, action: str,
             "changes": list(changes or []),
             "when": datetime.now(_TASHKENT).strftime("%d.%m.%Y %H:%M"),
         }
+        from app.services import action_log
+        action_log.mark_via(capability)   # this request's «Jurnal» row
         _record_use(db, ctx)   # the Action-history row — before the DMs
         threading.Thread(target=_fan_out, args=(ctx,), daemon=True,
                          name="cap-alert").start()

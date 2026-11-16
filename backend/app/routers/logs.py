@@ -95,7 +95,7 @@ class _F:
     out the dimension it is itself counting."""
 
     def __init__(self, date_from, date_to, category, action, outcome, source,
-                 actor, unit_id, q, enriched):
+                 actor, unit_id, q, enriched, via=None):
         self.start, self.end = _window(date_from, date_to)
         # Several categories at once (the «Bo'lim» filter is a multi-select
         # since 2026-11-03); a single value is the same list of one, so an
@@ -108,6 +108,9 @@ class _F:
         self.unit_id = unit_id
         self.q = (q or "").strip()
         self.enriched = enriched
+        # `grant`: only what was done THROUGH a granted capability — the view
+        # the retired «Harakatlar tarixi» page was (2026-11-16).
+        self.via = via
 
     def apply(self, query, except_: str = ""):
         query = query.filter(ActionLog.created_at >= self.start,
@@ -152,6 +155,8 @@ class _F:
             query = query.filter(ActionLog.enriched.is_(False))
         elif self.enriched == "rich" and except_ != "enriched":
             query = query.filter(ActionLog.enriched.is_(True))
+        if self.via == "grant" and except_ != "via":
+            query = query.filter(ActionLog.via_capability.isnot(None))
         if self.q and except_ != "q":
             like = f"%{self.q.lower()}%"
             query = query.filter(or_(
@@ -177,9 +182,10 @@ def _filters(
     unit_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     enriched: Optional[str] = Query(None, description="auto | rich"),
+    via: Optional[str] = Query(None, description="grant"),
 ) -> _F:
     return _F(date_from, date_to, category, action, outcome, source, actor,
-              unit_id, q, enriched)
+              unit_id, q, enriched, via)
 
 
 # ── rendering ─────────────────────────────────────────────────────────────────

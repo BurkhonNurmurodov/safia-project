@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GitBranch, GraduationCap, History, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, RefreshCcwDot, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
+  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, FileClock, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, RefreshCcwDot, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserMinus, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -34,6 +34,15 @@ export const ADMIN_GROUPS = [
   { id: "adm-system",  labelKey: "admin.group.system",       icon: Wrench },
 ];
 
+// Pages retired into another one (2026-11-16): the old address — a bookmark,
+// a link in a Telegram message, a tab left open — lands on the page that does
+// the job now. AdminPage.jsx reads this before ADMIN_NAV.
+export const RETIRED_ADMIN = {
+  access: "/panel/orgchart?v=apps",   // «Sahifalar (rol bo'yicha)» → the org chart's «Ilovalar» role ticks
+  actions: "/panel/logs?via=grant",   // «Harakatlar tarixi» → «Jurnal», only what was done through a grant
+  idlesource: "/panel/idleowners",    // «Kutish manbasi» — every unit reads its cells from 27 Aug 2026
+};
+
 export const ADMIN_NAV = [
   // Daily — what an admin opens every day, in the order the day runs.
   { id: "attendance",   group: "adm-daily",   Icon: ClipboardCheck, labelKey: "admin.tabAttendance",   descKey: "admin.desc.attendance" },
@@ -51,7 +60,6 @@ export const ADMIN_NAV = [
   { id: "users",        group: "adm-people",  Icon: Users,          labelKey: "admin.tabUsers",        descKey: "admin.desc.users" },
   { id: "profiles",     group: "adm-people",  Icon: IdCard,         labelKey: "admin.tabProfiles",     descKey: "admin.desc.profiles" },
   { id: "permissions",  group: "adm-people",  Icon: KeyRound,       labelKey: "admin.tabPermissions",  descKey: "admin.desc.permissions" },
-  { id: "access",       group: "adm-people",  Icon: ShieldCheck,    labelKey: "admin.tabAccess",       descKey: "admin.desc.access" },
 
   // Leader control — the checklist: configure it, read what came back, say
   // what does not count, and the exam.
@@ -92,10 +100,6 @@ export const ADMIN_NAV = [
   // it out is handing out the ability to widen somebody's scope (the
   // `permissions` / `logs` model — admin-only and never grantable).
   { id: "idleowners",   group: "adm-plant",   Icon: ShieldQuestion, labelKey: "admin.tabIdleOwners",   descKey: "admin.desc.idleowners" },
-  // Per-supervisor switch for WHERE a unit's ojidaniya minutes come from — the
-  // «Смена отчёт» sheet row (everybody's default) or the headcount-weighted
-  // per-cell interval model from a given date. The only place the rule shows.
-  { id: "idlesource",   group: "adm-plant",   Icon: GitBranch,      labelKey: "admin.tabIdleSource",   descKey: "admin.desc.idlesource" },
 
   // Integrations — every outside system the platform talks to.
   // «Verifix sinxron» — cells, leaders and brigadirs FOLLOW Verifix through a
@@ -137,7 +141,6 @@ export const ADMIN_NAV = [
   // twice: read-only and append-only. Sits with the other accountability
   // surfaces, and carries no `capKey`, so like "permissions" it is admin-only.
   { id: "logs",         group: "adm-system",  Icon: ScrollText,     labelKey: "admin.tabLogs",         descKey: "admin.desc.logs" },
-  { id: "actions",      group: "adm-system",  Icon: History,        labelKey: "admin.tabActions",      descKey: "admin.desc.actions" },
   // Cross-document HR history: rejected-then-approved, posted long after the
   // document's own date, or repeatedly approved/cancelled. Read-only.
   { id: "docaudit",     group: "adm-system",  Icon: FileClock,      labelKey: "admin.tabDocAudit",     descKey: "admin.desc.docaudit" },

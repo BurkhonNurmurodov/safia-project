@@ -151,6 +151,21 @@ the only write on the tab.
   means STATUS only: the outcomes own the traffic light and the categories are
   separated by ICON, so a category chip can never be mistaken for a verdict.
 
+### «Berilgan vakolat orqali» — what a grant did (2026-11-16)
+
+The «Harakatlar tarixi» page (`/panel/actions`, `capability_uses` read back) is
+retired into «Jurnal»: its address opens the register with the «Kim orqali»
+filter on (`?via=grant` → `via=grant`, rows whose `via_capability` is set).
+**Until that day nothing set the column** — it existed, the panel and the
+table drew a key icon for it, and no writer filled it. `capability_alerts`
+now calls `action_log.mark_via(capability)` inside the request, exactly where
+it writes the `capability_uses` row, so every action a non-admin takes through
+a non-native grant is marked on its own row. `mark_via` is not enrichment and
+leaves `enriched` alone. Consequence: the filter finds rows from 2026-11-16 on.
+Grant uses from 23 Aug to then are in the register unmarked; those before
+23 Aug exist only in `capability_uses`, which still records every use (the DMs
+read it) and is no longer shown anywhere.
+
 ## Who uses the app (`/activity`)
 
 From **2026-09-15** (the operator's call) «Foydalanuvchilar faolligi» is TWO

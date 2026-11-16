@@ -8,7 +8,7 @@ import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCapabilities } from "../../hooks/useCapabilities";
 import { useLauncher } from "../../hooks/useLauncher";
-import { ADMIN_NAV, ADMIN_HOME, adminPage, adminAllows, firstAdminPage } from "../../config/adminNav";
+import { ADMIN_NAV, ADMIN_HOME, adminPage, adminAllows, firstAdminPage, RETIRED_ADMIN } from "../../config/adminNav";
 import { appEntry } from "../../utils/apps";
 import { ADMIN_PAGES } from "./adminPages";
 
@@ -42,6 +42,7 @@ export default function AdminPage({ id }) {
   const n = ADMIN_NAV.find((x) => x.id === id);
   const Page = n ? ADMIN_PAGES[n.id] : null;
 
+  if (RETIRED_ADMIN[id]) return <Navigate to={RETIRED_ADMIN[id]} replace />;
   if (!n || !Page) return <Navigate to={ADMIN_HOME} replace />;
   if (!isAdmin && isLoading) return <PageLoader where="caps" />;
   if (!adminAllows(n, isAdmin, capTabs)) {

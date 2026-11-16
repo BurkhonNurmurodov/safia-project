@@ -137,7 +137,7 @@ tozaladi»), and the old shift sheet asked it beside Cat H («Нечта ода�
   crew («tozalanmoqda · 2 kishi»), no pulse, no red alarm; `stopped_now` and its
   alerts are the other causes only.
 
-## Ojidaniya comes from the CELLS (`/panel/idlesource`)
+## Ojidaniya comes from the CELLS (`idle_source`)
 
 From **2026-08-27** — `idle_source.CELLS_FROM`, the user's directive — **every**
 supervisor's ojidaniya minutes come from the per-cell interval model
@@ -157,7 +157,14 @@ from that date on**, and nothing turns it back on.
   (insert-only, flag-guarded) — and a `sheet` row keeps that unit's earlier
   days on the sheet. Neither can reach a day the floor covers. History is never
   rewritten and one day is never answered by two sources.
-- **The tab must not present a setting the platform stopped honouring**, so
+- **The «Kutish manbasi» admin page is RETIRED (2026-11-16)** — its address
+  lands on «Kutish mas'ullari» (`RETIRED_ADMIN`). The register and its rows
+  stay and are still read for the days before the floor; nothing edits them
+  now (the endpoint below stays for a tab left open). Changing a unit's
+  pre-floor source means rewriting brigadir KPIs from August, which is a
+  ruling, not a setting. `CAP_IDLE_SOURCE_MANAGE` still exists as a grant and
+  opens no page.
+- **The tab did not present a setting the platform stopped honouring**, so
   `GET /api/admin/idle-source` carries `cells_from` (the floor) and each row's
   `effective_from` — `idle_source.start_day`, the ONE definition of "which day
   does this unit actually start reading its cells", never re-derived on the

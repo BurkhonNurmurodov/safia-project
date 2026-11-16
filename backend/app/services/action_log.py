@@ -873,6 +873,17 @@ def enrich(**kw) -> None:
         logger.debug("action_log.enrich failed", exc_info=True)
 
 
+def mark_via(capability: Optional[str]) -> None:
+    """Mark THIS request's row as done through a granted capability — what the
+    «Jurnal» filter «Berilgan vakolat orqali» reads (2026-11-16; until then
+    nothing set the column). Not enrichment: `enriched` is left as it is, so a
+    thin row is not shown as a rich one. Never raises; a no-op outside a
+    recorded request."""
+    row = _pending.get()
+    if row is not None and capability:
+        row["via_capability"] = capability
+
+
 def recording() -> bool:
     """True while inside a request whose row will be written."""
     return _pending.get() is not None

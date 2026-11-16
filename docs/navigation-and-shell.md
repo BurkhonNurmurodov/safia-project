@@ -364,10 +364,27 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   `RETIRED_TABS` in `utils/navLayout.js` drops them when it is read, so their
   pages fall into the new folders instead of the saved layout pinning the old
   sidebar. Folder names or icons the operator typed onto those four are
-  dropped with them. The plan the regroup was phase 1 of (retire
-  «Pages (by role)», «Action history», «Idle-time source», «Lost workers»,
-  «Delete attendance» behind redirects; merge the two exclusion pages and the
-  two Verifix pages) is NOT built yet. On a phone the ☰
+  dropped with them.
+- **Retired admin pages land somewhere (2026-11-16, 32 → 29 pages).**
+  `RETIRED_ADMIN` in `config/adminNav.js` maps a retired id to the page that
+  does its job; `AdminPage.jsx` reads it before `ADMIN_NAV`, so a bookmark, a
+  Telegram link or an open tab never hits a dead end. A page retired later is
+  one more line there. `access` («Sahifalar (rol bo'yicha)») →
+  `/panel/orgchart?v=apps` — the org chart's «Ilovalar» ticks the same role
+  matrix (`PUT /admin/page-access`) and reaches every key of
+  `config/pages.js`, checked when it was retired; `actions` («Harakatlar
+  tarixi») → `/panel/logs?via=grant` — «Jurnal» filtered to what was done
+  through a grant (see `docs/admin-registers.md`); `idlesource` («Kutish
+  manbasi») → `/panel/idleowners` (see `docs/ojidaniya.md`). The backend
+  endpoints of all three stay, so a tab still open on an old page keeps
+  working. **Considered and KEPT**: «Davomatni o'chirish» (`cleanup`) wipes a
+  CLOSED day too — its confirmation and the live day's close — which the
+  Attendance page's delete refuses (`_require_open_day`), and it is the only
+  door for a non-admin holding `CAP_CLEANUP`; «Yo'qolgan xodimlar»
+  (`lostworkers`) — a Davomat save still wipes a unit's day wholesale, the
+  very cause it audits, and it carries the repair. Still only planned: one
+  «Hisobga olinmaydi» page for the two exclusion pages, one «Verifix» page for
+  the connection and the sync. On a phone the ☰
   drawer is the same list. A capability grantee has no launcher, so the
   admin pages their grants open are rows of their own sidebar, under an
   «Admin» section (`NAV_GROUPS.admin`) when the list is long enough to group;
