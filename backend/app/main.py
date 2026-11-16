@@ -580,6 +580,11 @@ async def lifespan(app: FastAPI):
     # worker serves them at once (mirrored in passenger_wsgi.py).
     from app.routers.reports import register_jobs as register_reports_jobs
     run(register_reports_jobs)
+    # «Brigadirlar reytingi»: the current week, month and year and the period
+    # before each, kept built by night — the first open of a NEW period
+    # was the one request that still waited (mirrored in passenger_wsgi.py).
+    from app.routers.leaderboard import register_jobs as register_leaderboard_jobs
+    run(register_leaderboard_jobs)
     # «Trello»: read every board every 15 minutes, catch up after boot
     # (mirrored in passenger_wsgi.py).
     from app.services.trello import register_jobs as register_trello_jobs

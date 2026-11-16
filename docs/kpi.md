@@ -1222,14 +1222,41 @@ date-to-date»). Page key `leaderboard`, still admin-only by default.
     says when the figures on screen were built; its spinner turns while a
     newer board is on its way and keeps its place when idle, so nothing on
     the line appears or leaves.
-  - Not built: REUSING FINISHED PERIODS — stepping ‹ back builds all eight
-    though seven are unchanged; keeping each finished period would take a
-    never-built month from 10 s to about 2 (an estimate from the two timings:
-    a build is ~1.2 s plus ~45 ms per day of history). Keeping the current
-    periods built by the clock (`KeptAnswers.ensure`, as «Hisobotlar» does) —
-    without it the first open of a NEW week or month builds in the request,
-    once. A faster build: the загрузка figures are most of one
-    (/api/brigadirs alone over the same 8 weeks, 3.3 s).
+  - **Kept by the clock (2026-11-16, the speed audit of this page).** A
+    served board was already at its ceiling; the one request that still
+    waited was one for a period NOBODY HAD BUILT — the first open of a new
+    week (Monday), month (the 1st) or year, and a ‹ step to the period before
+    the current one. `routers/leaderboard.keep_fresh` (`register_jobs`, in
+    `main.py` AND `passenger_wsgi.py`) builds the period holding today and the
+    one before it, of each grain (`wanted_periods`: up to six boards; the one
+    before is skipped when it ended before `data_floor`, and when nothing ever
+    closed), through `KeptAnswers.ensure` — the keys are the page's own, so
+    the page asks for exactly what was kept. **Once a night at 03:25**
+    (`KEEP_HOUR` / `KEEP_MINUTE`; a board built in the last 6 h is left) —
+    «a ranking of closed days moves once a day», so the night's build is the
+    freshness the page was ever promised, and an older board is still served
+    at once and rebuilt behind the reader. **And once 150 s after a start**,
+    which builds only what the store lacks or holds older than 36 h (a night
+    that was missed): the 5–24 deploys a day cost six store reads. Cost, an
+    estimate from the 13 Nov timings: up to six builds in a row under
+    `_ONE_BUILD` — ~1 min of GIL, at night, once. One period failing costs
+    that period. `tests/test_leaderboard_keep` holds it (the periods wanted,
+    built once, the page asking for the same keys, a failure isolated).
+  - Not built: REUSING FINISHED PERIODS — stepping ‹ back to a period older
+    than the one before the current one builds all eight though seven are
+    unchanged; keeping each finished period would take a never-built month
+    from 10 s to about 2 (an estimate from the two timings: a build is ~1.2 s
+    plus ~45 ms per day of history). What a (unit, day) figure depends on —
+    its attendance rows, the day's close, typed people, ojidaniya intervals
+    and weights, exchanges (`/workers` reads the original brigadir), cell
+    moves — is the cost of stamping it exactly, as `labor_kept` stamps the
+    trudoyomkost; concerns and quality are read «as the register stands», so
+    only Samaradorlik, Plan bajarish and Davomat could be kept per finished
+    period. A faster build: the загрузка figures are most of one
+    (/api/brigadirs alone over the same 8 weeks, 3.3 s); `headcount(
+    daily_only=True)` still reads three `COUNT(DISTINCT)`s per unit-day the
+    board never uses (`z_roster` / `z_came` / `z_on_leave`) and the by-title
+    count that enumerates the units — unmeasured.
 - The Excel is the board as drawn (the browser sends its rows;
   `build_workbook` lays them out, the page's 80 / 65 bands as cell tints),
   logged as `export.leaderboard`.

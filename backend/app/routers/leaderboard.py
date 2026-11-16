@@ -11,8 +11,10 @@ opens the page on the Access tab (`DEFAULT_PAGE_ACCESS`).
 from __future__ import annotations
 
 import json
+import logging
 import threading
-from datetime import date, datetime, timedelta
+import time
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any, Optional
 
@@ -31,6 +33,8 @@ from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.kept_answer import KeptAnswers
 from app.services.ojidaniya_matrix import TZ, today_local
 from app.xlsx_delivery import deliver_xlsx
+
+log = logging.getLogger("app.leaderboard")
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
@@ -305,6 +309,89 @@ def _answer(body: str, scoped: Optional[list], shift: Optional[int], refreshing:
             pay["refreshing"] = True
         out = _dumps(pay)
     return Response(content=out, media_type="application/json")
+
+
+# ── Kept by the clock ───────────────────────────────────────────────────────
+# (2026-11-16 — the audit of this page: a served board is at its ceiling, and
+# the only request that still waits is one for a period NOBODY HAS BUILT — the
+# first open of a new week on a Monday, of a new month on the 1st, a ‹ step to
+# the period before the current one.) `KeptAnswers.ensure`, «Hisobotlar»'s own
+# job, builds them before anybody asks: the current period and the one before
+# it, of each grain, once a night after the day has closed. A ranking of
+# closed days moves once a day (the 10 minutes above), so one night's build
+# is the freshness the page was ever promised; a request that finds an older
+# board still gets it AT ONCE and rebuilt behind it.
+#
+# Cost: up to six builds in a row at 03:25, each in its turn under
+# `_ONE_BUILD` (≈ 3.7 s a week, ≈ 10 s a month or a year on the 13 Nov
+# timings — an estimate: about a minute of GIL, at night, once). A start
+# builds only what the store lacks or is older than 36 h (a night that was
+# missed), so the 5–24 deploys a day cost six store reads and nothing else.
+KEEP_HOUR, KEEP_MINUTE = 3, 25
+BOOT_DELAY_S = 150                  # after a start, behind `labor_kept.warm`
+NIGHT_MAX_AGE_S = 6 * 3600          # built in the last 6 h: nothing to do
+MISSED_MAX_AGE_S = 36 * 3600        # at a start: only a night that was missed
+
+
+def wanted_periods(today: date, floor: Optional[date]) -> list[tuple[str, date]]:
+    """(grain, first day) of every board worth having ready: the period holding
+    `today` and the one before it. The one before is skipped when it ended
+    before the platform's first closed day (`floor`) — a board of nothing — and
+    when nothing ever closed. The keys are the page's own (`get_leaderboard`)."""
+    out: list[tuple[str, date]] = []
+    for grain in bb.GRAINS:
+        start, _end = bb.period_of(grain, today)
+        out.append((grain, start))
+        prev_start, prev_end = bb.period_of(grain, start - timedelta(days=1))
+        if floor is not None and prev_end >= floor:
+            out.append((grain, prev_start))
+    return out
+
+
+def keep_fresh(why: str = "clock") -> dict:
+    """Keep the boards of `wanted_periods` built — {"week 2026-11-09": «kept» |
+    «built» | «refreshing» | «failed»}. Run by the clock (`register_jobs`), on
+    the copy that runs the jobs; every other copy reads what it stored. One
+    period failing costs that period, never the others."""
+    from app.database import SessionLocal
+
+    t0 = time.monotonic()
+    max_age = NIGHT_MAX_AGE_S if why == "clock" else MISSED_MAX_AGE_S
+    with SessionLocal() as db:
+        today = today_local()
+        floor = bb.data_floor(db)
+        db.rollback()
+    out: dict[str, str] = {}
+    for grain, start in wanted_periods(today, floor):
+        label = f"{grain} {start.isoformat()}"
+        try:
+            out[label] = _KEPT.ensure(
+                (FORMAT, grain, start.isoformat()),
+                lambda own, g=grain, st=start: _calculate(own, g, st), max_age)
+        except Exception:  # noqa: BLE001
+            log.exception("leaderboard: keeping %s built failed", label)
+            out[label] = "failed"
+    print(f"[leaderboard] kept fresh ({why}) in {time.monotonic() - t0:.1f} s — "
+          + ", ".join(f"{k} {v}" for k, v in out.items()), flush=True)
+    return out
+
+
+def register_jobs() -> None:
+    """`keep_fresh` every night at KEEP_HOUR:KEEP_MINUTE, and once after a
+    start. Mirrored in passenger_wsgi.py."""
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        from app.scheduler import SCHEDULER_TZ, get_scheduler, schedule_at
+        get_scheduler().add_job(
+            keep_fresh,
+            trigger=CronTrigger(hour=KEEP_HOUR, minute=KEEP_MINUTE, timezone=SCHEDULER_TZ),
+            id="leaderboard-keep-fresh", replace_existing=True)
+        schedule_at("leaderboard-keep-fresh-boot",
+                    datetime.now(timezone.utc) + timedelta(seconds=BOOT_DELAY_S),
+                    keep_fresh, args=("boot",))
+        log.info("leaderboard: jobs registered (nightly at %02d:%02d)", KEEP_HOUR, KEEP_MINUTE)
+    except Exception:  # noqa: BLE001
+        log.exception("leaderboard: could not register the jobs")
 
 
 # ── Excel ───────────────────────────────────────────────────────────────────

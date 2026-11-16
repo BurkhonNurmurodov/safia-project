@@ -759,6 +759,9 @@ try:
     # «Hisobotlar»: the default report's months kept built and stored (mirrors main.py).
     from app.routers.reports import register_jobs as register_reports_jobs
     register_reports_jobs()
+    # «Brigadirlar reytingi»: current and previous periods kept built by night (mirrors main.py).
+    from app.routers.leaderboard import register_jobs as register_leaderboard_jobs
+    register_leaderboard_jobs()
     # «Trello»: every board every 15 minutes (mirrors main.py).
     from app.services.trello import register_jobs as register_trello_jobs
     register_trello_jobs()

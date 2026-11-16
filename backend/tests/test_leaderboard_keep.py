@@ -264,6 +264,43 @@ class Keeping(unittest.TestCase):
             self.ask()
         self.assertEqual(len(self.builds), 2)
 
+    def test_the_clock_wants_the_current_period_and_the_one_before(self):
+        want = lb.wanted_periods(TODAY, date(2026, 8, 17))
+        self.assertEqual(want, [
+            ("week", date(2026, 11, 9)), ("week", date(2026, 11, 2)),
+            ("month", date(2026, 11, 1)), ("month", date(2026, 10, 1)),
+            ("year", date(2026, 1, 1)),        # 2025 ended before the first closed day
+        ])
+        # Nothing ever closed: the current period alone, never an empty one before it.
+        self.assertEqual([g for g, _ in lb.wanted_periods(TODAY, None)], ["week", "month", "year"])
+
+    def test_the_clock_builds_the_boards_the_page_asks_for_and_only_once(self):
+        with mock.patch.object(lb.bb, "data_floor", return_value=date(2026, 8, 17)):
+            first = lb.keep_fresh()
+            self.assertEqual(set(first.values()), {"built"})
+            self.assertEqual(len(self.builds), 5)
+            self.assertEqual(set(lb.keep_fresh("boot").values()), {"kept"})   # a start: all young enough
+            self.assertEqual(len(self.builds), 5)
+        self.ask()                                  # the page's week and month: the kept keys
+        self.ask(grain="month")
+        self.ask(grain="week", anchor=date(2026, 11, 2))
+        self.assertEqual(len(self.builds), 5)
+
+    def test_a_period_that_fails_costs_only_itself(self):
+        real = lb._calculate
+
+        def calc(db, grain, start):
+            if grain == "month":
+                raise RuntimeError("boom")
+            return real(db, grain, start)
+
+        with mock.patch.object(lb.bb, "data_floor", return_value=None), \
+                mock.patch.object(lb, "_calculate", side_effect=calc), \
+                self.assertLogs("app.leaderboard", level="ERROR"):
+            out = lb.keep_fresh()
+        self.assertEqual(out, {"week 2026-11-09": "built", "month 2026-11-01": "failed",
+                               "year 2026-01-01": "built"})
+
 
 class AcrossADeploy(unittest.TestCase):
     """A board the worker before a deploy built is served at once by the next."""
