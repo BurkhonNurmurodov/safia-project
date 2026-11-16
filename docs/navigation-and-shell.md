@@ -349,11 +349,25 @@ plan, and the alternative not taken, is `docs/plan-admin-app.md`.
   `preloadOpenedRoute` preloads the frame and the page for a `/panel/<id>`
   address.
 - **Navigation is the app's sidebar.** Inside the admin app the sidebar
-  groups its pages by `APPS.admin.sections` (= `ADMIN_GROUPS`, four folders
+  groups its pages by `APPS.admin.sections` (= `ADMIN_GROUPS`, six folders
   with their own icons, the accordion the register uses), in order of how
-  often they are used and how much they can destroy: **Kunlik ish** →
-  **Odamlar va ruxsat** → **Vositalar** → **Xavfli** (red folder, red icons;
-  never put a data-destroying tool next to a daily one). On a phone the ☰
+  often they are used: **Kunlik ish** (attendance, production, broadcast) →
+  **Odamlar va ruxsat** → **Lider nazorati** (the checklist pages and the
+  exam) → **Zavod sozlamalari** (factories, shift times, ojidaniya rules) →
+  **Ulanishlar** (every outside system: Verifix, Google Sheets, AI keys,
+  Tasker, Trello, Notion, ovens) → **Tizim** (registers, audits,
+  translations, and LAST the two data-destroying tools, still red icons;
+  never put one next to a daily page). Until 2026-11-16 there were four
+  folders — «Vositalar» held 19 of the 32 pages and «Xavfli» held two. **The
+  six folder ids are new (`adm-*`) on purpose**: a layout saved on the org
+  chart names the old four (`daily`, `people`, `tools`, `danger`), and
+  `RETIRED_TABS` in `utils/navLayout.js` drops them when it is read, so their
+  pages fall into the new folders instead of the saved layout pinning the old
+  sidebar. Folder names or icons the operator typed onto those four are
+  dropped with them. The plan the regroup was phase 1 of (retire
+  «Pages (by role)», «Action history», «Idle-time source», «Lost workers»,
+  «Delete attendance» behind redirects; merge the two exclusion pages and the
+  two Verifix pages) is NOT built yet. On a phone the ☰
   drawer is the same list. A capability grantee has no launcher, so the
   admin pages their grants open are rows of their own sidebar, under an
   «Admin» section (`NAV_GROUPS.admin`) when the list is long enough to group;

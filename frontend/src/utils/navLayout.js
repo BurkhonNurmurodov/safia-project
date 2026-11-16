@@ -37,7 +37,7 @@ export const TOP = "top";
 export const LANGS = ["uz", "uz_cyrl", "ru", "en"];
 
 const BUILTIN_APP = new Map(APPS.map((a) => [a.id, a]));
-// A menu tab the code ships (HR's «Verifix (test)», the admin app's four) is
+// A menu tab the code ships (HR's «Verifix (test)», the admin app's six) is
 // known by its id wherever the operator moves it.
 const BUILTIN_TAB = new Map();
 APPS.forEach((a) => (a.sections || []).forEach((s) => { if (s.labelKey) BUILTIN_TAB.set(s.id, s); }));
@@ -45,6 +45,12 @@ APPS.forEach((a) => (a.sections || []).forEach((s) => { if (s.labelKey) BUILTIN_
 /** The app / menu tab the code ships under this id — undefined for one the operator made. */
 export const builtinApp = (id) => BUILTIN_APP.get(id);
 export const builtinTab = (id) => BUILTIN_TAB.get(id);
+
+// Menu tabs the code used to ship — the admin app's four folders until
+// 2026-11-16. A saved layout still names them; they are dropped when it is
+// read, so their screens fall back to where the code seats them now (the six
+// folders). Without this a saved layout would pin the old sidebar for good.
+const RETIRED_TABS = new Set(["daily", "people", "tools", "danger"]);
 
 // What the code ships, in the stored shape — the sidebar's own seating rule:
 // a link sits in the section it names, else in the one carrying its nav
@@ -117,7 +123,7 @@ function build(src) {
     const app = makeApp(a.id, a);
     app.tabs[0].links = take(a.pages);
     for (const t of Array.isArray(a.tabs) ? a.tabs : []) {
-      if (!t || typeof t.id !== "string" || !t.id || tabIds.has(t.id)) continue;
+      if (!t || typeof t.id !== "string" || !t.id || tabIds.has(t.id) || RETIRED_TABS.has(t.id)) continue;
       tabIds.add(t.id);
       const tab = makeTab(t.id, t);
       tab.links = take(t.pages);

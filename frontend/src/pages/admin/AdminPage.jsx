@@ -18,7 +18,7 @@ import { ADMIN_PAGES } from "./adminPages";
  * The admin panel was ONE page whose destinations swapped by ?tab= behind a
  * sidebar and a bottom sheet of its own. Every destination is a page now: its
  * own URL, its own chunk, its own header title and browser-tab title, and the
- * app's sidebar (Layout) lists them in their four sections. This frame owns
+ * app's sidebar (Layout) lists them in their six sections. This frame owns
  * the three things every page shares:
  *
  *   - ACCESS, per page: an admin opens every page; anybody else only the pages

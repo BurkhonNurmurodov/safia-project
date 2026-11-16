@@ -190,7 +190,7 @@ export const NAV_GROUPS = [
   { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
   // The admin app's pages in the WHOLE register — what a capability grantee
   // sees of it (only the pages their grants open), and an admin with no app
-  // open. Inside the admin app its own four sections take over (APPS.sections).
+  // open. Inside the admin app its own six sections take over (APPS.sections).
   { id: "admin",   labelKey: "nav.admin",         icon: Settings },
   { id: "system" },                                // Активность + catch-all — headerless
 ];
@@ -246,7 +246,7 @@ export const APPS = [
   // (gold, amber) sit rows away from it.
   { id: "containers", labelKey: "apps.containers",  icon: Package,         hue: "yellow" },
   // Its pages come from config/adminNav.js; inside it the sidebar groups them
-  // by `sections` (the four admin groups) instead of listing one flat column.
+  // by `sections` (the six admin groups) instead of listing one flat column.
   { id: "admin",     labelKey: "nav.admin",         icon: Settings,        hue: "slate", sections: ADMIN_GROUPS },
 ];
 
