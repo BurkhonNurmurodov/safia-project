@@ -116,13 +116,38 @@ What follows from them:
   Verifix seats her in Цех-8, she runs the Цех-11 cells here) shows her name on
   Цех-11's pages and gives her Цех-8's KPIs. Each figure goes where its rule
   sends it; neither is a mistake to fix.
-- A leader's KPIs move from «Boshqaruvchi» to «Egasi» wherever the two differ
-  (turnover and worker concerns already read «Egasi»; foreign objects,
-  category compliance and the audit move). A figure changes only for cells
-  whose two people differ.
 - Ruling 4 is one rule for cells and brigades: a hand pick is an event; a
   Verifix change is an event; the later one wins. The sync compares the
   document with its LAST read, never with the actual person.
+
+What production does today against them (read 16 Nov, approved by Burkhon):
+
+- **Already so — two profiles on one account**: Erkanboyev Zafarjon (leader
+  profile running 4112 + brigade «Erkanboyev Zafarjon», o'rnida) and Niyozov
+  Izzatilla (leader running 9412 + brigade «Niyozov Izzatilla», o'rnida). A
+  THIRD case: Murodali Ochilov — leader running 4123 in O'rozov Asqar's brigade
+  + brigade «Murodali Ochilov», o'rnida, which holds Цех-14 (shift 3); his two
+  profiles sit on different accounts. All three leader profiles are live, so
+  they owe the leader's work (ruling 5).
+- **Already so — the label**: those three brigades are «o'rnida»
+  (`supervisor_kind`), and 13 leader profiles are (`leader_kind`).
+- **Already so — leader KPIs**: every one of them (turnover, worker concerns,
+  foreign objects, category compliance, the audit) credits the cell's «Egasi»,
+  the official person. Nothing moves there.
+- **The cells' two people**, on the 166 production cells: the same person on
+  94; different on 3 (3911, 9123, 9425); an actual leader but no official one
+  on 35 (Verifix seats nobody there, so their KPIs credit nobody — as ruled);
+  an official one but nobody running it on 2 (0037, 2531); neither on 32.
+- **Not so — «Brigadirlar KPI»**: it has a row for every brigade, the three
+  o'rnida ones included, and credits each cell's turnover to OUR register's
+  brigade. Ruling 3 needs it to credit the official brigadir — which needs
+  `brigadir_doc` first.
+- **Not so — a Verifix change under a hand pick**: when a cell's seat changes
+  while its «Boshqaruvchi» was chosen by a person, the sync only SUGGESTS the
+  new seat («seat_changed» on «Verifix sinxron») and waits. Ruling 4 makes it
+  automatic.
+- **Not so — a brigade's official and dated brigadir**: not stored anywhere
+  yet (`unit_link_events` above).
 
 ## The constraint that shapes the design
 
@@ -404,7 +429,8 @@ moves the actual one (ruling 4).
 ## Open — the operator's decisions
 
 1. **Is Murodali Ochilov the 3rd shift's ACTUAL brigadir (Цех-14)?** Verifix
-   has no official one there. (item 3)
+   has no official one there; the register already has him as its o'rnida
+   brigadir, so by ruling 4 he stays unless the operator says otherwise. (item 3)
 2. **Who ACTUALLY runs Цех-8 and Цех-11** — Raximova and Niyozov? (item 2)
 
 Settled on 16 Nov: actual vs official people, which pages read which, the
