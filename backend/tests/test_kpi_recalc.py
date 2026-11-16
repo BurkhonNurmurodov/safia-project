@@ -154,9 +154,10 @@ class RefreezeMonthTest(unittest.TestCase):
     """Which month a run closes again (2026-11-16)."""
     OCT, SEP = date(2026, 10, 1), date(2026, 9, 1)
 
-    def _pick(self, m, auto, frozen, live, state="closed"):
+    def _pick(self, m, auto, frozen, live, state="closed", moved=False):
         row = mock.Mock(rule={"exclude_reasons": frozen})
         with mock.patch.object(kr.turnover, "month_state", return_value=(state, row)), \
+                mock.patch.object(kr, "_cells_moved", return_value=moved), \
                 mock.patch.object(kr.turnover, "rule", return_value={"exclude_reasons": live}), \
                 mock.patch.object(kr.turnover, "now_aware", return_value=kr.turnover.now_aware().replace(2026, 11, 16)):
             return kr._refreeze_month(None, m, auto)
@@ -169,6 +170,18 @@ class RefreezeMonthTest(unittest.TestCase):
 
     def test_opening_leaves_an_unchanged_month(self):
         self.assertIsNone(self._pick(self.OCT, True, ["A", "Учёба"], [" учёба", "a"]))
+
+    def test_opening_recloses_when_a_leaver_changed_cell(self):
+        self.assertEqual(self._pick(self.OCT, True, ["A"], ["A"], moved=True), self.OCT)
+
+    def test_cells_moved_compares_frozen_and_live_cells(self):
+        p = {"staff_id": "55976", "employee_id": "e1", "dismissed": date(2026, 10, 22)}
+        with mock.patch.object(kr.turnover, "_frozen", return_value=[{**p, "code": "8611"}]), \
+                mock.patch.object(kr.turnover, "live_leavers", return_value=[{**p, "code": "9429"}]):
+            self.assertTrue(kr._cells_moved(None, self.OCT))
+        with mock.patch.object(kr.turnover, "_frozen", return_value=[{**p, "code": "9429"}]), \
+                mock.patch.object(kr.turnover, "live_leavers", return_value=[{**p, "code": "9429"}]):
+            self.assertFalse(kr._cells_moved(None, self.OCT))
 
     def test_opening_never_moves_a_month_before_the_kpi(self):
         self.assertIsNone(self._pick(self.SEP, True, [], ["Учёба"]))

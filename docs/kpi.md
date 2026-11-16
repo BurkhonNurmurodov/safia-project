@@ -395,7 +395,10 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   that is no cell is skipped, and a leaver with no journal lines keeps the unit
   Verifix dismissed them from. Applied in `live_leavers`, so the open month,
   a closing one and every close freeze it; an already closed month takes it
-  when it is closed again («Qayta hisoblash»).
+  when it is closed again — the button, or simply OPENING the page: the run on
+  open re-closes a KPI month whose frozen leavers the live rule now places in
+  other cells (`kpi_recalc._cells_moved`), as it does when the excluded
+  reasons moved.
 - **Not changed**: «Sabablar», the rules dialogs and «Excel». The month-closing day
   (the 5th at 09:00) was questioned the same day and is still open — see
   «Month life» in the turnover section.

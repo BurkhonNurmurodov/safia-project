@@ -135,6 +135,15 @@ def _list_moved(db, row) -> bool:
         norm(turnover.rule(db).get("exclude_reasons"))
 
 
+def _cells_moved(db, m: date) -> bool:
+    """A leaver frozen in one cell that the live rule now puts in another
+    (`turnover.home_cell`, 2026-11-16 — Norboyev 8611 → 9429)."""
+    key = lambda p: turnover.event_key(p.get("staff_id"), p["employee_id"], p.get("dismissed"))
+    frozen = {key(p): turnover.code_key(p.get("code")) for p in turnover._frozen(db, m, "leaver")}
+    return any(key(p) in frozen and frozen[key(p)] != turnover.code_key(p.get("code"))
+               for p in turnover.live_leavers(db, m, turnover.last_day(m)))
+
+
 def _refreeze_month(db, m: Optional[date], auto: bool) -> Optional[date]:
     """A CLOSED month brought up to date — read again and closed again with the
     reasons list in force now (`turnover.refreeze`). The button always does
@@ -147,7 +156,8 @@ def _refreeze_month(db, m: Optional[date], auto: bool) -> Optional[date]:
     state, row = turnover.month_state(db, m)
     if state != "closed":
         return None
-    if auto and (m < turnover.START_MONTH or not _list_moved(db, row)):
+    # …or whose leavers the live rule now places in other cells.
+    if auto and (m < turnover.START_MONTH or not (_list_moved(db, row) or _cells_moved(db, m))):
         return None
     return m
 
