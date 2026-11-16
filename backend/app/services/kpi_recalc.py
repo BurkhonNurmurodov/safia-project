@@ -136,8 +136,10 @@ def _list_moved(db, row) -> bool:
 
 
 def _cells_moved(db, m: date) -> bool:
-    """A leaver frozen in one cell that the live rule now puts in another
-    (`turnover.home_cell`, 2026-11-16 — Norboyev 8611 → 9429)."""
+    """A leaver frozen in one cell that the live read now puts in another — the
+    cell they were DISMISSED from (2026-11-16: a longest-cell rule froze six
+    October leavers elsewhere for an afternoon; opening the page puts them
+    back)."""
     key = lambda p: turnover.event_key(p.get("staff_id"), p["employee_id"], p.get("dismissed"))
     frozen = {key(p): turnover.code_key(p.get("code")) for p in turnover._frozen(db, m, "leaver")}
     return any(key(p) in frozen and frozen[key(p)] != turnover.code_key(p.get("code"))
@@ -289,13 +291,10 @@ def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool
         else:
             tv_args = (trigger, None, None)
         tv = _read(turnover_sync.run_read, turnover_sync.running, *tv_args)
-        cc = _read(category_sync.run_read, category_sync.running, trigger)
-        # Re-closed AFTER the journals are read: a leaver's cell is the one the
-        # transfer lines say they worked in longest (`turnover.home_cell`).
         if refreeze is not None and tv.get("ok"):
             tv = {**tv, **_refreeze(refreeze, by)}
         _set("turnover", tv)
-        _set("compliance", cc)
+        _set("compliance", _read(category_sync.run_read, category_sync.running, trigger))
         q.join()
     except Exception:  # noqa: BLE001
         log.exception("kpi-recalc: run failed")

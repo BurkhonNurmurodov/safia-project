@@ -357,9 +357,7 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   page's own run on open is under way, and a press that lands during ANY run
   is queued (`kpi_recalc._queued`, `reason: "queued"`) and starts, as the
   button, the moment that run ends. Before, the button was disabled under the
-  run on open, and two presses on October in one day did nothing. A run
-  re-closes its month AFTER the HR journals are read, since the leaver's cell
-  comes from them (`turnover.home_cell`).
+  run on open, and two presses on October in one day did nothing.
 - **The old figures stay until it has finished** (`LeadersKpi.jsx`): the
   button turns into «Hisoblanmoqda…» with a spinning icon and is disabled
   once pressed;
@@ -385,20 +383,15 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   Whoever may press the button may do it (the page key) — the two buttons were
   admin-only; the figures it re-freezes follow the admin's own «Sabablar».
   `/api/turnover/close | reopen` were removed on 2026-11-16.
-- **A leaver counts against the cell they worked in LONGEST in the month they
-  left** (2026-11-16, the operator, on HR's October file: Norboyev Rufat was a
-  baker in 9429 from 15 Jun, was transferred to 8611 on 19 Oct and dismissed
-  there on the 22nd — «of course it's 9429»). `turnover.home_cell` walks the
-  employment's hire and transfer lines from the Verifix HR journals
-  (`category_events`, the compliance KPI's read) over the days of that month;
-  the dismissal day is not a day worked, a tie goes to the later cell, a unit
-  that is no cell is skipped, and a leaver with no journal lines keeps the unit
-  Verifix dismissed them from. Applied in `live_leavers`, so the open month,
-  a closing one and every close freeze it; an already closed month takes it
-  when it is closed again — the button, or simply OPENING the page: the run on
-  open re-closes a KPI month whose frozen leavers the live rule now places in
-  other cells (`kpi_recalc._cells_moved`), as it does when the excluded
-  reasons moved.
+- **A leaver counts against the cell they were DISMISSED from** — the unit
+  Verifix names on the dismissal, HR's method (the operator, 2026-11-16). For
+  one afternoon (v4.568.0–v4.569.1) a leaver counted in the cell they had
+  worked in longest that month (Norboyev Rufat: 9429 from June, moved to 8611
+  on 19 Oct, dismissed on the 22nd); it moved six October leavers away from
+  HR's cells, and the operator ruled «it SHOULD be the cell they left» —
+  8611. The run on open re-closes a closed KPI month whose frozen leavers sit
+  in other cells than the live read gives them (`kpi_recalc._cells_moved`),
+  as it does when the excluded reasons moved.
 - **Not changed**: «Sabablar», the rules dialogs and «Excel». The month-closing day
   (the 5th at 09:00) was questioned the same day and is still open — see
   «Month life» in the turnover section.
