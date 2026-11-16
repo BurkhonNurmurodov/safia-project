@@ -10,7 +10,9 @@ Verifix; only workstations are not.»
 A DESIGN, not built. Read from production the same day through the report door
 (four SELECTs, approved by Burkhon): the Verifix org read (`live_verifix_reads`
 key `org`), the cells register, the brigades, the shift-managers and
-`pp_work_centers`.
+`pp_work_centers`. The same day the operator sent «Бригадиры.xlsx» — every
+production brigadir of both shifts with the departments («Отдел») they run;
+what it says is in «What the brigadirs' sheet adds» below.
 
 ## What production holds today
 
@@ -60,6 +62,35 @@ key `org`), the cells register, the brigades, the shift-managers and
   shift 1, 4321 its shift-2 twin. Every workstation's cells share a family
   except B08213 (8225 + 8321) and B0829 (8222 + 8610).
 
+## What the brigadirs' sheet adds («Бригадиры.xlsx», 16 Nov)
+
+One row per brigadir (11 on shift 1, 10 on shift 2), one column per department
+they run — 1 to 7 each. Matched against the register, it names 106 of the 157
+live cells on the production brigades.
+
+- **A department is a product area with its own code**: «Оформление тортов
+  1.23», «Заготовка торт 1.21», «Пирог отдел 2.26», or a SAP work centre («Кекс
+  отдел А2751»), or a single cell («8321 юпка отдел»). The dotted code follows
+  the SAP code: 1.23 is every A143…, 1.21 every A141…, 1.24 every A144…, 1.03
+  every A123….
+- **One department is run by several brigades** — on both shifts (1.23:
+  Suvonov s1 + Akbarov s2; 1.21 and 1.22: Erkanboyev s1 + O'rozov s2; 1.24:
+  Aripova s1 + Ergashov s2; 2.26: Abdukarimov s1 + Ibragimova s2 + Yog'mirov s2)
+  and even on ONE shift (Безе 2.25: Akbarov + Ochilov; Макаронс 2734: Artikova +
+  Sultanova). So a department is a catalog of the plant, and «brigade →
+  department» is the part of it one brigade runs — the pair.
+- **A department can take ONE GROUP of a workstation**: A2733 is «Заготовка
+  Эклер ПФ» in group A (7313) and «Оформление Эклер ГП» in group B (7315);
+  B08213 is «загатовка сомса» (8225) and «юпка отдел» (8321). So a workstation
+  does not always sit inside one department — the department belongs to the
+  CELL, and a split workstation shows under each of its departments with its
+  own groups.
+- **Erkanboyev Zafarjon is a brigadir** on the sheet: Verifix's «Цех-4» is two
+  brigades (his: заготовка торт, кремы, сливки; Suvonov's: оформление,
+  предзаготовка), as the register already has it.
+- Size varies from one cell (Kamolova Nargiza's five) to eight (Пирог 2.26 on
+  Abdukarimov's).
+
 ## The constraint that shapes the design
 
 `managers.id` IS the brigade key: `manager_id` appears on 3,746 lines in 175
@@ -82,6 +113,12 @@ factories            exists   + vfx_division_id
              └ cells exists   manager_id · sap_code · wc_group (the group letter)    people: leader (dated, exists)
                               + department_id (dated)
 ```
+
+Every arrow above the cell is a column ON the cell or on its brigade, never a
+table of its own: a cell names its brigade, its department and (through its
+SAP code) its workstation, and the tree is read from the cells. That is what
+lets one department span brigades and shifts, and one workstation span two
+departments, without a single row that has to be kept in step.
 
 ### `shifts` (new)
 
@@ -182,17 +219,26 @@ CREATE TABLE departments (
 ALTER TABLE cells ADD COLUMN department_id int REFERENCES departments(id);   -- dated: cell_link_events field 'department_id'
 ```
 
-- **A catalog per plant, not a child of one brigade**: «Оформление тортов» is
-  one department worked by Цех-4 on shift 1 and Цех-12 on shift 2. The tree's
-  «brigade → department» level is the PAIR, derived from the cells beneath it —
-  never stored, because a pair table would be one more thing to keep in step
-  with every dated cell move.
-- **It lives on the CELL**, because Verifix gives a department per seat. A
-  workstation's department is its cells' one, and the register refuses a
-  workstation whose cells name two (the way `wc_group.check_cell` refuses a
-  letter clash).
-- **Where it comes from is the open question** (below). Until it is settled,
-  the table exists and nothing reads it.
+- **A catalog per plant, not a child of one brigade**: «Оформление тортов 1.23»
+  is one department run by Suvonov on shift 1 and Akbarov on shift 2; «Безе
+  2.25» by two brigades of shift 2. The tree's «brigade → department» level is
+  the PAIR, derived from the cells beneath it — never stored, because a pair
+  table would be one more thing to keep in step with every dated cell move.
+- **It lives on the CELL**, because a department can take one group of a
+  workstation (A2733: ПФ in group A, ГП in group B). No rule ties a
+  workstation's cells to one department.
+- `code` holds the plant's own code («1.23», «2.26»; a SAP or cell code where
+  the department is named by one).
+- **Its source is the plant's list, not Verifix** — Verifix has no such level
+  (above). Seeded once from «Бригадиры.xlsx», then kept on the platform: a
+  department picker on the cell form and a «Bo'limlar» register for admins.
+  `vfx_division_id` stays, empty, for the day HR adds the level to Verifix.
+- Seeding rule: a department named by a dotted code takes the brigade's cells
+  whose SAP code starts with its prefix (1.23 → A143…); one named by a SAP or
+  cell code takes those cells; one named by words only («Мясной отдел»,
+  «слойка отдел») is matched by hand. The seed is a report to the operator
+  first — every cell it leaves out or puts in two departments named — and is
+  written only once they accept it.
 
 ### Workstations — `pp_work_centers` becomes THE register
 
@@ -212,6 +258,8 @@ ALTER TABLE pp_work_centers
 - **The group letter stays `cells.wc_group`**. Its rule is already «inside one
   unit and one code, one cell, or every cell lettered and no two alike» —
   which is now «unique inside one workstation».
+- **A workstation may be split between departments by its groups** (A2733,
+  B08213) — each group is a cell, and the department is the cell's.
 - **A workstation belongs to ONE brigade.** The same SAP station worked by
   shift 1 and shift 2 (7 codes today) is two workstations sharing a SAP code;
   «the same machine on both shifts» is a `GROUP BY sap_code` across them.
@@ -226,7 +274,7 @@ ALTER TABLE pp_work_centers
 | Factory | «Производственное управление» / «… (Келес)» | `factories.vfx_division_id` (new) |
 | Shift | «Отдел сменного производства – N смена» | `shifts.vfx_division_id` (new) |
 | Brigade | «Цех – N …» | `managers.vfx_division_id` (new) |
-| Department | — missing for production | `departments.vfx_division_id` (new) |
+| Department | — missing for production | ours, from the brigadirs' sheet; `departments.vfx_division_id` kept for later |
 | Workstation | — never | ours: `pp_work_centers` |
 | Cell | the coded subdivision | `cells.vfx_division_id` (exists) |
 | Shift-manager · brigadir · leader | the seated employee | `vfx_employee_id` (exists) |
@@ -251,14 +299,16 @@ brigadir change does now (`cell_links.opening`).
    the shift report, `/live`, the shift filter): S1 · S2A · S2B · S3 instead of
    S1 · S2, and a past day names its brigade by that day's brigadir. Each move
    is its own change; `managers.shift` stays until the last one.
-5. **Departments**, once their source is decided.
+5. **Departments** — the seed report from the sheet, the operator's answers on
+   it, then the write; the cell form and the «Bo'limlar» register keep them.
 
 ## What production showed that the tie will hit
 
 1. **Цех-4 is two brigades here**: Suvonov Elshod (43xx, 45xx — оформление) and
    Erkanboyev Zafarjon, acting, a leader in Verifix (39xx, 41xx, 42xx —
-   заготовка, сливки, кремы). Either Erkanboyev's half is a DEPARTMENT of Цех-4
-   under the new structure, or Verifix should list it as a brigade.
+   заготовка, сливки, кремы). The brigadirs' sheet lists him as a brigadir, so
+   it is Verifix that should list a second «Цех»; until then both brigades tie
+   to the one node.
 2. **Цех-8 «RAXIMOVA KAMOLA»** (9411–9414) runs as Niyozov Izzatilla, acting,
    while our «Raximova Kamola» runs Цех-11 «MIRMAXMUDOVA MUNIRA» (no brigadir
    seated). One of the two registers is stale.
@@ -276,15 +326,35 @@ brigadir change does now (`cell_links.opening`).
 7. **27 cells have no brigade** (the отправка zones, the raw-material
    warehouses, «Мойка 3 смена», two of Цех-20), so they belong to no plant.
 
+And where the brigadirs' sheet and the register disagree:
+
+8. **Raximova Kamola** lists «Пончик Отдел A2743» — that cell, 9414, is on
+   Niyozov Izzatilla here — and «Мясной отдел». **Niyozov** («IZZAT AKA» on
+   shift 1, by full name on shift 2) lists only «Мясной отдел», while the
+   register gives him Пекарня 9411–9414 and Raximova the ПФ / самса / кухня
+   cells of Цех-11.
+9. A department listed by a brigade that holds none of its cells: Sultanova's
+   «Макаронс 2734» (7314 is Artikova's), Ergashov's «марьям цех А1464» (4614 is
+   Talipova's), Ochilov's «Безе отдел 2.25» (7331 is Akbarov's), Ibragimova's
+   «мелкоштучка отдел 1.03».
+10. Artikova lists «Мелкоштучка отдел 1.03» AND its parts (Эклер, Тарталетка,
+    Макаронс, Сет Фасовка) — an umbrella over departments, or a duplicate.
+11. **51 cells of the listed brigades are in no department** — among them the
+    whole ПФ / кухня of Raximova's (11), Пекарня (4), Talipova's 4611–4613,
+    Kamolova's 8221, 8322, 8622, 8623, Olishev's 9422, 9424, 9429, the
+    фасовка cells of Ibragimova and Yog'mirov, the просеивания cells.
+12. Axmedova Munisa (Keles) is under shift 2 on the sheet, shift 1 here.
+
 ## Open — the operator's decisions
 
-1. **Where do departments come from?** Verifix has none between «Цех» and the
-   cell today. (a) HR adds them in Verifix — a department node under each
-   «Цех», or the real department in each employee's «Отдел» field — and the
-   sync reads them like cells (recommended: the platform follows Verifix
-   everywhere else); or (b) the platform keeps its own list, e.g. by the code's
-   product family (41, 43, 74 …), named once per plant on an admin page.
-2. **The same SAP station on two shifts = two workstations**, one per brigade?
+1. **Departments are the platform's own, seeded from the brigadirs' sheet** —
+   the default here, since Verifix has none between «Цех» and the cell. If HR
+   will add them to Verifix instead, the sync reads them like cells and the
+   sheet is only the check.
+2. **One level of departments or two?** «Мелкоштучка 1.03» beside its own
+   parts on Artikova's row is the only sign of an umbrella; the default here is
+   one level (the parts), with 1.03 as the code they share.
+3. **The same SAP station on two shifts = two workstations**, one per brigade?
    The default here, since the tree puts a workstation under one brigade.
-3. **A brigade with no shift** (the service brigades that span shifts) —
+4. **A brigade with no shift** (the service brigades that span shifts) —
    allowed as `shift_id` NULL? The default here.
