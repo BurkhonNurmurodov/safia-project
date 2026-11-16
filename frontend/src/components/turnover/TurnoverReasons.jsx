@@ -62,7 +62,7 @@ export default function TurnoverReasons({ open, onClose, T, tx = (v) => v, ym, m
   });
 
   const save = useMutation({
-    mutationFn: () => api.put("/api/turnover/exclusions", { reasons: off }).then((r) => r.data),
+    mutationFn: () => api.put("/api/turnover/exclusions", { reasons: off, month: ym }).then((r) => r.data),
     onSuccess: () => { toast.success(T.tReasonsSaved); onSaved?.(); onClose(); },
     onError: async (e) => setErr(fill(T.tReasonsFailed, { e: await errText(e) })),
   });

@@ -864,6 +864,13 @@ def list_concerns(
     # factory of the UNIT it was logged against (brigadir_manager_id) — not of
     # whoever currently holds it, which changes with every escalation step.
     factory: Optional[int] = Query(default=None),
+    # The page's period start (2026-11-16). Only rows that can be in a period
+    # starting then are sent: filed on or after it, or reached their holder on
+    # or after it (the page's `inPeriod`, whose upper bound it applies itself —
+    # the received day is taken a day early, so the Tashkent day never loses a
+    # row). The whole register was ~14 MB on every open for a 7-day view.
+    # Omitted = every row, byte for byte as before.
+    from_: Optional[date] = Query(default=None, alias="from"),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
@@ -885,6 +892,18 @@ def list_concerns(
 
     if status in VALID_STATUSES:
         query = query.filter(LeaderConcern.status == status)
+
+    # With a window, the page's pickers still list every brigadir and cell of
+    # the WHOLE scope (they did when every row was sent): one small DISTINCT.
+    facets = None
+    if from_ is not None:
+        facet_rows = query.with_entities(
+            LeaderConcern.brigadir_manager_id, LeaderConcern.brigadir_name,
+            LeaderConcern.cell_code, LeaderConcern.leader_name,
+        ).distinct().all()
+        since = datetime.combine(from_ - timedelta(days=1), time.min, tzinfo=timezone.utc)
+        query = query.filter(or_(LeaderConcern.entry_date >= from_,
+                                 LeaderConcern.level_since >= since))
 
     rows = query.order_by(
         LeaderConcern.entry_date.desc(), LeaderConcern.id.desc()
@@ -919,11 +938,23 @@ def list_concerns(
     owner_names = _owner_names(db, rows)
     cell_leaders = _cell_leaders(db)
     comment_counts = _comment_counts(db, ids)
+    if from_ is not None:
+        # The same names a row would carry (`_serialize`): the brigadir as
+        # filed, the cell's leader resolved live, else the filing snapshot.
+        facets = []
+        for mid, bname, code, lname in facet_rows:
+            code_s = (code or "").strip()
+            live = (cell_leaders or {}).get(code_s, (None, None, None))[1]
+            facets.append({
+                "brigadir_manager_id": mid, "brigadir_name": bname, "cell_code": code,
+                "cell_leader_name": (live or (lname or None)) if (code or lname) else None,
+            })
     return _RegisterJSON({
         "role": role,
         "picker": picker,
         "read_only": role == "top-manager",
         "can_pick_leader": picker is not None,
+        **({"facets": facets, "from": from_.isoformat()} if from_ is not None else {}),
         "data": [
             _serialize(r, ctx, esc_counts, sm_names, owner_names, cell_leaders,
                        comment_counts)

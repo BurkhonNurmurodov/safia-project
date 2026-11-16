@@ -762,13 +762,26 @@ export default function Concerns() {
   // …and, on top of that scope, only the plant the factory tab is on. Sent as a
   // query param rather than filtered here: a concern's factory comes from the
   // UNIT it was logged against, which the row does not carry.
+  // …and only the rows the period can show (2026-11-16): `from` is the start
+  // of the padded trend window, the deepest anything below reads (inPeriod
+  // applies the upper bound here). «Barcha vaqt» and an open start ask for
+  // everything. The window only WIDENS within a visit, so narrowing the period
+  // re-reads nothing. The whole register was ~14 MB on every open.
+  const needFrom = !startDate || startDate <= ALL_TIME_FROM ? null : padChartFrom(startDate, endDate);
+  const [regFrom, setRegFrom] = useState(needFrom);
+  if (needFrom !== regFrom && (needFrom == null || (regFrom != null && needFrom < regFrom))) {
+    setRegFrom(needFrom);
+  }
   const { data: listResp, isLoading } = useQuery({
-    queryKey: ["concerns", role, factory],
+    queryKey: ["concerns", role, factory, regFrom],
     queryFn: () => api.get("/api/concerns", {
-      params: factory == null ? {} : { factory },
+      params: { ...(factory == null ? {} : { factory }), ...(regFrom ? { from: regFrom } : {}) },
     }).then((r) => r.data),
   });
   const rows = listResp?.data || [];
+  // What the filter pickers list: every brigadir and cell of the WHOLE scope
+  // (the server's `facets` when it sent a window), as when every row came.
+  const optRows = listResp?.facets || rows;
 
   // Two different people can claim one short label: the same human is on the
   // books twice as two separate units ("Suvonov Elshod" and "Suvonov Elshod
@@ -828,7 +841,7 @@ export default function Concerns() {
   // viewer's scope; the active shift narrows the list further.
   const supOpts = useMemo(() => {
     const seen = new Map();
-    for (const r of rows) {
+    for (const r of optRows) {
       if (r.brigadir_manager_id == null || !r.brigadir_name) continue;
       if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) continue;
       if (!seen.has(r.brigadir_manager_id)) seen.set(r.brigadir_manager_id, r.brigadir_name);
@@ -847,7 +860,7 @@ export default function Concerns() {
     return [...seen.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, shiftF, shiftOf, tl, fSups, allManagers, factory]);
+  }, [optRows, shiftF, shiftOf, tl, fSups, allManagers, factory]);
   const supLabel = useMemo(() => new Map(supOpts.map((o) => [o.value, o.label])), [supOpts]);
   // The EFFECTIVE picks: one the list no longer offers (another shift, another
   // plant) narrows nothing — the effect below drops it, and until that lands it
@@ -863,7 +876,7 @@ export default function Concerns() {
   // from the cell.
   const cellOpts = useMemo(() => {
     const leaderOf = new Map();
-    for (const r of rows) {
+    for (const r of optRows) {
       const code = (r.cell_code || "").trim();
       if (!code) continue;
       if (shiftF && shiftOf.get(r.brigadir_manager_id) !== shiftF) continue;
@@ -873,13 +886,13 @@ export default function Concerns() {
     return [...leaderOf.entries()]
       .map(([value, leader]) => ({ value, leader }))
       .sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
-  }, [rows, shiftF, shiftOf, supSet]);
+  }, [optRows, shiftF, shiftOf, supSet]);
   const cellLeader = useMemo(() => new Map(cellOpts.map((o) => [o.value, o.leader])), [cellOpts]);
   // Multi-unit viewers always get the cell filter; anyone else (a leader) only
   // once their rows span more than one cell — a single option is not a choice.
   const cellCount = useMemo(
-    () => new Set(rows.map((r) => (r.cell_code || "").trim()).filter(Boolean)).size,
-    [rows]);
+    () => new Set(optRows.map((r) => (r.cell_code || "").trim()).filter(Boolean)).size,
+    [optRows]);
   const canFilterCell = canFilterSup || isSupervisor || cellCount > 1;
   const cellSel = useMemo(
     () => (canFilterCell ? asList(fCells).filter((v) => cellLeader.has(v)) : []),

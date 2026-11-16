@@ -5036,9 +5036,15 @@ def delete_exchange_task(body: TaskDeleteBody, caller=Depends(_require_staff), d
 # ── List / Get ─────────────────────────────────────────────────────────────────
 
 @router.get("/documents")
-def list_documents(caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    rows = _scope_documents(_real_docs(db), caller, db) \
-        .order_by(HrDocument.created_at.desc()).all()
+def list_documents(pending: bool = False, caller=Depends(_require_staff), db: Session = Depends(get_db)):
+    # `pending`: only what still waits — a draft document, a deletion batch with
+    # a pending request. A live /staff day polls this register every minute
+    # just to name what the FILE register still has waiting (2026-11-16); the
+    # whole list was ~2.7 MB a poll.
+    q = _scope_documents(_real_docs(db), caller, db)
+    if pending:
+        q = q.filter(HrDocument.status == "draft")
+    rows = q.order_by(HrDocument.created_at.desc()).all()
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     docs = [_serialize_doc(d, mgr_names.get(d.manager_id)) for d in rows]
 
@@ -5061,6 +5067,8 @@ def list_documents(caller=Depends(_require_staff), db: Session = Depends(get_db)
         # at least one row was applied; fully-rejected batches show 'rejected'.
         any_applied  = any(r.status in ("approved", "undone") for r in reqs)
         batch_status = "pending" if has_pending else ("approved" if any_applied else "rejected")
+        if pending and not has_pending:
+            continue
         processed_by = next((r.processed_by_name for r in reqs if r.processed_by_name), None)
 
         # Use earliest created_at as the sort key for the batch

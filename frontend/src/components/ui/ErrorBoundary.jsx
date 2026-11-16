@@ -1,11 +1,13 @@
 import React from "react";
 import { useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { anyPack, lookup, packFor } from "../../i18n/packs";
 import ErrorScreen from "./ErrorScreen";
 import api from "../../utils/api";
 import { APP_VERSION } from "../../utils/version";
 import { useAuth } from "../../context/AuthContext";
+import { dropUnconfirmed, hasUnconfirmed } from "../../utils/offlineCache";
 
 /**
  * Error boundary.
@@ -45,11 +47,14 @@ function tStatic(key) {
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, detail: "", reported: false, key: props.resetKey };
+    this.state = { hasError: false, detail: "", reported: false, key: props.resetKey,
+                   healing: false, healed: false };
   }
 
   static getDerivedStateFromError() {
-    return { hasError: true };
+    // `healing`: nothing is drawn until componentDidCatch has decided whether
+    // this crash gets its one retry without the device's answers (below).
+    return { hasError: true, healing: hasUnconfirmed() };
   }
 
   /**
@@ -60,12 +65,26 @@ export default class ErrorBoundary extends React.Component {
    */
   static getDerivedStateFromProps(props, state) {
     if (props.resetKey === state.key) return null;
-    return { key: props.resetKey, hasError: false, detail: "", reported: false };
+    return { key: props.resetKey, hasError: false, detail: "", reported: false,
+             healing: false, healed: false };
   }
 
   componentDidCatch(error, info) {
     // Surface in console for remote debugging via Telegram Desktop devtools.
     console.error("[ErrorBoundary]", error, info?.componentStack);
+    // The page was showing answers kept on the DEVICE that the server had not
+    // confirmed yet (utils/offlineCache.js) — a row written by an older release
+    // can carry a shape this page cannot read. Once per page: forget those
+    // rows and draw again on the server's answers. A crash that survives the
+    // retry is a real one and is shown and reported as always.
+    if (this.state.healing) {
+      if (!this.state.healed && this.props.onHeal) {
+        this.props.onHeal(dropUnconfirmed());
+        this.setState({ hasError: false, healing: false, healed: true });
+        return;
+      }
+      this.setState({ healing: false });
+    }
     const detail = [String(error?.stack || error), info?.componentStack]
       .filter(Boolean)
       .join("\n");
@@ -105,6 +124,7 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.hasError) return this.props.children;
+    if (this.state.healing) return null;
 
     const { inline = false, showDetail = false } = this.props;
     const atRoot = window.location.pathname === "/";
@@ -155,8 +175,12 @@ export default class ErrorBoundary extends React.Component {
 export function ScopedErrorBoundary({ inline = false, children }) {
   const { pathname } = useLocation();
   const { auth } = useAuth() || {};
+  const qc = useQueryClient();
+  const heal = (queries) => queries.forEach((q) => {
+    try { qc.resetQueries({ queryKey: q.queryKey, exact: true }); } catch { /* the query may be gone */ }
+  });
   return (
-    <ErrorBoundary resetKey={pathname} inline={inline} showDetail={auth?.role === "admin"}>
+    <ErrorBoundary resetKey={pathname} inline={inline} showDetail={auth?.role === "admin"} onHeal={heal}>
       {children}
     </ErrorBoundary>
   );

@@ -5104,9 +5104,10 @@ export default function Staff() {
   // …and on a live day, what the FILE register still has waiting — the
   // requests of the days before the switch — is named under the tab with a way
   // there, so nothing pending is out of sight.
+  // Only the waiting ones are asked for — the whole register was ~2.7 MB a poll.
   const { data: fileDocs = [] } = useQuery({
-    queryKey: ["staff-documents", null],
-    queryFn: () => api.get("/api/staff/documents").then(r => r.data),
+    queryKey: ["staff-documents", null, "pending"],
+    queryFn: () => api.get("/api/staff/documents", { params: { pending: 1 } }).then(r => r.data),
     enabled: S.live,
     refetchInterval: 60_000,
   });

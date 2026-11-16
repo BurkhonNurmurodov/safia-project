@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import api from "../utils/api";
 import {
   clearToken, getToken, inAndroidApp, inTelegram, isRemembered, isTabSession, isWebSession,
-  keepAppSessionStored, setToken,
+  keepAppSessionStored, setToken, tokenClaims,
 } from "../utils/session";
 import {
   findProfile, keepAppProfilesStored, listProfiles, removeProfile, saveProfile,
@@ -13,6 +13,7 @@ import { clearPush, registerPush } from "../utils/androidPush";
 import { hedged } from "../utils/hedge";
 import {
   adoptCacheScope, clearCacheScope, dropBootPayload, getCacheScope, loadBootPayload, saveBootPayload,
+  scopeOf, setCacheScope,
 } from "../utils/offlineCache";
 import { isDown, markDown, subscribeConnectivity } from "../utils/connectivity";
 
@@ -148,6 +149,24 @@ export function AuthProvider({ children }) {
 
     const initData = tg?.initData || "";
 
+    // ── Open at once on the last answer (2026-11-16) ─────────────────────────
+    // The whole app used to wait for the sign-in's round trip before showing
+    // anything. A token that was answered before opens straight away on that
+    // answer — the device keeps it (utils/offlineCache.js) — and the sign-in
+    // below, still asked on every open, replaces it when it lands; its NO
+    // closes the app exactly as before. Nothing is trusted meanwhile: the
+    // server checks every request against the token itself.
+    let answered = false;
+    let openedOn = null;
+    const openOnKept = (token) => loadBootPayload(token).then((kept) => {
+      if (!kept || answered) return;
+      openedOn = kept;
+      adoptCacheScope(kept);
+      seedBoot(qc, kept);
+      setAuth(kept);
+      setLoading(false);
+    }).catch(() => {});
+
     // ── Opened AS somebody else (admin impersonation) ────────────────────────
     // First, and whatever else this tab holds: the code is an explicit
     // instruction to be this profile here, and it outranks the session the tab
@@ -208,10 +227,19 @@ export function AuthProvider({ children }) {
             registerPush(data);
           });
         };
-        // Asked again if it hangs (utils/hedge.js): the whole app waits on it.
+        // Never an impersonated tab: it keeps no payload.
+        if (!isTabSession()) openOnKept(getToken());
+        // Asked again if it hangs (utils/hedge.js): a first open waits on it.
         hedged((signal) => api.get("/api/auth/web/session", { signal }))
-          .then((r) => acceptSession(r.data))
+          .then((r) => {
+            answered = true;
+            acceptSession(r.data);
+            // A re-issued token means the claims had gone stale, and what the
+            // pages asked since the early open was answered for the old ones.
+            if (openedOn && r.data?.token) qc.invalidateQueries();
+          })
           .catch(async (e) => {
+            answered = true;
             // Only the server's NO ends a session: 401 (expired, revoked,
             // disabled) or 403 (the profile is gone). No connection, a timeout
             // or a 5xx says nothing about the token — dropping it there signed a
@@ -223,6 +251,10 @@ export function AuthProvider({ children }) {
             const status = e?.response?.status;
             if (status === 401 || status === 403) {
               clearToken();
+              // Opened early on the kept identity: a reload lands on the login
+              // screen with nothing that identity loaded left in memory for
+              // whoever signs in next.
+              if (openedOn) { window.location.reload(); return; }
               setWebSession(false);
               setAuth({ status: "web_login" });
               return;
@@ -278,19 +310,52 @@ export function AuthProvider({ children }) {
       return;
     }
 
+    // The last launch's token opens the app early only while it is still
+    // accepted (they live 24 h) and only for the Telegram account it was
+    // minted for — one Telegram app can hold several accounts over one storage.
+    const prev = isWebSession() ? "" : getToken();
+    const prevClaims = prev ? tokenClaims(prev) : null;
+    const tgUser = tg?.initDataUnsafe?.user?.id;
+    if (prevClaims?.exp && prevClaims.exp * 1000 - Date.now() > 60_000
+        && tgUser != null && String(prevClaims.sub) === String(tgUser)) {
+      openOnKept(prev);
+    }
+
     // Safe to repeat (it only turns initData into a token), so it is asked
     // again when it hangs — see utils/hedge.js.
     hedged((signal) => api.post("/api/auth/webapp", { init_data: initData || "__dev__" }, { signal }))
       .then((authRes) => {
+        answered = true;
         const data = authRes.data;
         if (data.token) setToken(data.token, { remember: true, web: false });
-        // The pages' offline cache is kept per profile (utils/offlineCache.js).
-        // No boot payload here: a mini app cannot load its shell offline.
+        if (openedOn && scopeOf(openedOn) !== scopeOf(data)) {
+          // Not the profile the app opened on (switched on another device, or
+          // no longer approved): its kept answer goes, so the next open waits.
+          setCacheScope("");
+          const dropped = dropBootPayload(prev);
+          if (data.status === "approved") {
+            // Another profile's pages are in memory — start clean under it,
+            // once the kept answer is gone (so this can never repeat).
+            dropped.then(() => window.location.reload());
+            return;
+          }
+        }
+        // The pages' offline cache is kept per profile (utils/offlineCache.js),
+        // and this answer is what the next launch opens on.
         adoptCacheScope(data);
+        saveBootPayload(getToken(), data);
         seedBoot(qc, data);
         setAuth(data);
       })
-      .catch(() => setAuth({ status: "error" }))
+      .catch((e) => {
+        answered = true;
+        // Opened on the kept identity: only the server's NO closes it. With no
+        // answer the app stays open on what the device holds (the band under
+        // the header says so) and the old token serves until it expires.
+        const status = e?.response?.status;
+        if (openedOn && status !== 401 && status !== 403) return;
+        setAuth({ status: "error" });
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -394,6 +459,7 @@ export function AuthProvider({ children }) {
       return;
     }
     await clearCacheScope(getCacheScope());
+    await dropBootPayload(getToken());
     try {
       await api.delete("/api/auth/me");
     } catch (_) {}

@@ -628,7 +628,15 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
     month press «Qayta hisoblash» on it (from 2026-11-12; before, an admin
     reopened and closed it — «Учёба» was switched off on 11 Nov after October
     had closed, so October still counted it). An open or
-    closing month reads the live list. `brigadirs_kpi` and «Hisobotlar» read
+    closing month reads the live list.
+  - **Saving «Sabablar» on a CLOSED month closes THAT month again with the new
+    list** (2026-11-16). The 11 Nov switch-off reached only the live list:
+    the one «Qayta hisoblash» press on October came before the button could
+    re-close (12 Nov), nobody pressed it again, and October counted «Учёба»
+    for five more days while the dialog showed it off. The PUT now carries the
+    dialog's `month`; a closed one is `refreeze`d in the same transaction (the
+    Jurnal row's `refrozen`). Other closed months and saved past months still
+    keep their own list. `brigadirs_kpi` and «Hisobotlar» read
     the same month payload, so they follow it.
   - **The rule's two halves are independent now** (`rule()`): a malformed
     scoring override falls back to HR's bands, the exclusions are kept either

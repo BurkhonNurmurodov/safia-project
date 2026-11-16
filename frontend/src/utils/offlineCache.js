@@ -32,12 +32,16 @@
  *     rewrites every URL onto the sandbox under the SAME query keys, so a
  *     restore would show real rows in the exam and a save would put fixture
  *     rows under real keys.
- *   • A row is trusted for `MAX_AGE_MS` and for the MINOR version it was
- *     written under — the version is in the KEY, because a payload's shape
- *     changes with a release (the Versioning section: a MINOR is where a
- *     visible change is recorded) and a page given last week's shape can
- *     crash on a field that did not exist then. Old rows are purged by key
- *     without loading their values.
+ *   • A row is trusted for `MAX_AGE_MS` and for the MAJOR it was written
+ *     under (the version is in the KEY; other majors' rows are purged by key
+ *     without loading their values). It was MAJOR.MINOR until 2026-11-16 —
+ *     with a dozen minor releases a day nearly every fresh open found the
+ *     device empty and drew skeletons. A row from an older release can carry
+ *     a shape today's page cannot read, so two things stand in for the MINOR:
+ *     every restored answer older than a minute is CONFIRMED by the server at
+ *     once, whatever the query's own staleTime, and a page that crashes while
+ *     an unconfirmed answer is in play gets ONE retry without those rows
+ *     (`dropUnconfirmed`, called by components/ui/ErrorBoundary.jsx).
  *   • Only JSON is stored: a Blob (photos, workbooks) or a function is not,
  *     and a query may opt out with `meta: { persist: false }`; `DENY` lists
  *     the keys that must never be served from yesterday (the build marker —
@@ -71,8 +75,8 @@ const MAX_TEXT = 30_000_000;
 const PURGE_EVERY_MS = 6 * 3_600_000;
 const PURGE_MARK = "safia_cache_purged_at";
 
-// MAJOR.MINOR — a row from another minor is never read (see the header).
-const BUST = APP_VERSION.split(".").slice(0, 2).join(".");
+// MAJOR — a row from another major is never read (see the header).
+const BUST = APP_VERSION.split(".")[0];
 // The session payload's shape moves only with a MAJOR.
 const BOOT_BUST = APP_VERSION.split(".")[0];
 const Q_PREFIX = `q|${BUST}|`;
@@ -297,6 +301,27 @@ function scheduleSave(query, data) {
   pendingWrites.set(k, timer);
 }
 
+// Answers handed out from the device whose confirmation by the server has not
+// landed yet (row key → query), and the row keys a page crashed on — those are
+// never restored again in this session.
+const CONFIRM_AFTER_MS = 60_000;
+const unconfirmed = new Map();
+const burned = new Set();
+
+export function hasUnconfirmed() { return unconfirmed.size > 0; }
+
+/** A page crashed while device answers were in play: forget them, on the
+ *  device too, and hand back their queries for the caller to reset. */
+export function dropUnconfirmed() {
+  const queries = [...unconfirmed.values()];
+  for (const k of unconfirmed.keys()) {
+    burned.add(k);
+    del(k);
+  }
+  unconfirmed.clear();
+  return queries;
+}
+
 /**
  * The query client's default `persister` — react-query calls it in place of
  * the query function (`query.options.persister(queryFn, context, query)`).
@@ -309,20 +334,27 @@ function scheduleSave(query, data) {
  */
 export async function queryPersister(queryFn, ctx, query) {
   const use = eligible(query);
-  if (use && query.state.data === undefined) {
-    const stored = await restore(rowKey(query));
+  const k = use ? rowKey(query) : "";
+  if (use && query.state.data === undefined && !burned.has(k)) {
+    const stored = await restore(k);
     if (stored) {
+      unconfirmed.set(k, query);
       setTimeout(() => {
         try {
           query.setState({ dataUpdatedAt: stored.at });
-          if (query.isStale()) query.fetch();
+          // Past a minute old the server confirms it even under a long
+          // staleTime: the row may come from an older release (the header).
+          if (query.isStale() || Date.now() - stored.at > CONFIRM_AFTER_MS) query.fetch();
         } catch { /* the query may be gone */ }
       }, 0);
       return stored.data;
     }
   }
   const result = await queryFn(ctx);
-  if (use) scheduleSave(query, result);
+  if (use) {
+    unconfirmed.delete(k);
+    scheduleSave(query, result);
+  }
   return result;
 }
 
