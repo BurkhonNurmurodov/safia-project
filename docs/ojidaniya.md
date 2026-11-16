@@ -1344,3 +1344,13 @@ on that day nothing could wait.
   `waiting()` then read its own copy of a stop the period's list also holds,
   and that copy never got `solutions`. The payload now serves the very rows
   the solutions were attached to (`test_every_waiting_stop_carries_its_solutions`).
+
+## Tahlil is the managers' (2026-11-16)
+
+The operator: «analysis has to be shown only for top managers, admins and shift
+managers, remove from other». `ANALYTICS_ROLES` (`admin`, `top-manager`,
+`shift-manager`) in `routers/idle_solutions.py` guards `GET /analytics`; the
+page's twin (`canAnalyse` in `pages/IdleSolutions.jsx`) shows the
+«Muammolar / Tahlil» toggle to them alone. Brigadirs (refused since the tab
+was built) and now the cause owners (`idle-owner`) have «Muammolar» only.
+Test: `test_tahlil_is_the_managers`.

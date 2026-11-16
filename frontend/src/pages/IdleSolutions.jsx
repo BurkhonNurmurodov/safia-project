@@ -50,7 +50,9 @@ export default function IdleSolutions() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
-  const isSupervisor = auth?.role === "supervisor"; // own unit's stops only: no Tahlil, no shift or brigadir filter
+  const isSupervisor = auth?.role === "supervisor"; // own unit's stops only: no shift or brigadir filter
+  // Tahlil is the managers' (2026-11-16) — the server's ANALYTICS_ROLES
+  const canAnalyse = ["admin", "top-manager", "shift-manager"].includes(auth?.role);
   const qc = useQueryClient();
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, shift, setShift, brigadirIds, setBrigadirIds } = useFilters();
   const fparams = useFactoryParams(params);
@@ -59,7 +61,7 @@ export default function IdleSolutions() {
   const [cells, setCells] = useState([]);     // cells picked, by code
   const [startAll, setStartAll] = useState(false);   // Tahlil sent the reader here to see a problem whole
   const [savedView, setView] = usePersistentState("idle_solutions_view", "problems"); // problems | analytics
-  const view = isSupervisor ? "problems" : savedView;
+  const view = canAnalyse ? savedView : "problems";
   // Brigadir picker: several at once, limited to the plant on screen (a pick
   // the plant no longer offers is dropped, never left over an empty page).
   const { data: allSupervisors = [] } = useQuery({
@@ -168,7 +170,7 @@ export default function IdleSolutions() {
 
   return (
     <Layout title={T.title} subtitle={null}>
-      {!isSupervisor && (
+      {canAnalyse && (
         <div className="mb-3">
           <SegmentedToggle asTabs value={view === "analytics" ? "analytics" : "problems"} onChange={pickView}
             options={[["problems", T.tabProblems], ["analytics", T.tabAnalytics]]} />

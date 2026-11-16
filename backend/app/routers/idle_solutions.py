@@ -110,6 +110,8 @@ READER_ROLES = ("admin", idle_scope.OWNER_ROLE, "shift-manager", "top-manager", 
 # happened in and the owner of its cause. The manager tiers and admins may
 # write too; nothing counts their silence.
 EXPECTED_ROLES = ("supervisor", idle_scope.OWNER_ROLE)
+# Who has the Tahlil tab (2026-11-16) — the frontend's twin is IdleSolutions.jsx.
+ANALYTICS_ROLES = ("admin", "top-manager", "shift-manager")
 
 
 def _state(rows) -> str:
@@ -846,8 +848,11 @@ def analytics(
     own lengths, and the payload names them `stop_minutes`.
     """
     _reader_only(payload)
-    if payload.get("role") == "supervisor":
-        raise HTTPException(status_code=403, detail="Analytics are not open to supervisors")
+    # Tahlil is the managers' (the operator, 2026-11-16: «analysis has to be
+    # shown only for top managers, admins and shift managers») — brigadirs and
+    # cause owners keep «Muammolar».
+    if payload.get("role") not in ANALYTICS_ROLES:
+        raise HTTPException(status_code=403, detail="Analytics are open to admins and managers only")
 
     d_from, d_to = _period(date_from, date_to)
     n_days = (d_to - d_from).days + 1

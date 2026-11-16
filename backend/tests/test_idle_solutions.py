@@ -528,15 +528,11 @@ class Page(unittest.TestCase):
         self.assertEqual(len(got["daily"]), ims.MIN_CHART_DAYS)
         self.assertEqual([d["in_period"] for d in got["daily"]], [False] * 5 + [True] * 2)
 
-    def test_an_owner_reads_tahlil_through_their_causes(self):
-        self.answered_world()
-        got = self.tahlil(self.OWNER)
-        self.assertEqual([c["category"] for c in got["by_cause"]], ["Cat B"])
-        self.assertEqual(got["funnel"]["stops"], 4)
-        self.assertEqual(got["cat_locked"], ["Cat B"])
-
-    def test_tahlil_is_not_a_brigadirs(self):
-        self.refused(403, self.tahlil, SUP1)
+    def test_tahlil_is_the_managers(self):
+        for who in (ADMIN, self.SM, self.TOP):
+            self.assertEqual(self.tahlil(who)["total"]["stops"], 5, who["role"])
+        for who in (SUP1, self.OWNER):
+            self.refused(403, self.tahlil, who)
 
     # ── a plan's date ────────────────────────────────────────────────────────
 
