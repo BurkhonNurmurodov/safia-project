@@ -21,11 +21,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquarePlus, ListChecks, ChartNoAxesColumn, Check, AlertTriangle,
   Trash2, ArrowUp, Loader2, Inbox, UserRound, CircleDot, Clock, CheckCheck,
-  Users, LayoutGrid, TrendingUp, Info,
+  Users, LayoutGrid, TrendingUp, Info, Layers, Tag,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import DateRangePicker, { localISO } from "../components/ui/DateRangePicker";
+import DateRangePicker, { localISO, ALL_TIME_FROM } from "../components/ui/DateRangePicker";
+import { useFactorySection } from "../components/ui/FactorySelect";
+import { useFactory } from "../context/FactoryContext";
+import { useTranslit } from "../utils/transliterate";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
@@ -109,14 +112,31 @@ export default function CellConcerns() {
   // position="bottom" — this page is a dense editing surface, and a toast at
   // the top would sit behind the entry form the worker is looking at.
   const { show, node: toastNode } = useToast({ position: "bottom" });
+  const { tl } = useTranslit();
+  const { factory } = useFactory();
+  const factorySection = useFactorySection();
 
   const [tab, setTab] = usePersistentState("cellConcerns.tab", "write");
-  const [dateFrom, setDateFrom] = usePersistentState("cellConcerns.from", "");
-  const [dateTo, setDateTo] = usePersistentState("cellConcerns.to", "");
+  // The period is remembered for the DAY it was picked, never longer: kept
+  // forever, a range picked once hid every concern filed after it (the page
+  // opened on October in mid-November and said nothing). A new day starts on
+  // «Barcha vaqt», so no open concern is ever out of sight.
+  const today = localISO(new Date());
+  const [period, setPeriod] = usePersistentState("cellConcerns.period", null);
+  const kept = period?.on === today;
+  const dateFrom = kept ? period.from : ALL_TIME_FROM;
+  const dateTo = kept ? period.to : today;
+  const setRange = (patch) => setPeriod((p) => ({
+    ...(p?.on === today ? p : { from: ALL_TIME_FROM, to: today }), ...patch, on: today,
+  }));
+  const [fShift, setFShift] = usePersistentState("cellConcerns.shift", null);
+  const [fSup, setFSup] = usePersistentState("cellConcerns.sup", "");
   const [fCell, setFCell] = usePersistentState("cellConcerns.cell", "");
   const [fCat, setFCat] = usePersistentState("cellConcerns.cat", "");
-  const [fSt, setFSt] = usePersistentState("cellConcerns.st", "");
-  const [q, setQ] = useState("");
+  // «What still needs someone?» is the register's question, so it opens on the
+  // open concerns. Register-only: «Tahlil» splits by status itself.
+  const [view, setView] = usePersistentState("cellConcerns.view", "open");
+  const [q, setQ] = usePersistentState("cellConcerns.q", "");
 
   const {
     data: meta, isLoading: metaLoading, isError: metaError,
@@ -125,37 +145,105 @@ export default function CellConcerns() {
     queryKey: ["cell-concerns", "meta"],
     queryFn: () => api.get("/api/cell-concerns/meta").then((r) => r.data),
   });
-  const cells = meta?.cells || [];
+  const cells = useMemo(() => meta?.cells || [], [meta]);
+
+  // The org chain plant → shift → brigadir → cell, each level listing only what
+  // the levels above leave. Shift and brigadir are for viewers whose scope spans
+  // units; a brigadir or a leader only ever sees their own. A control the viewer
+  // is not shown never filters (the picks live in localStorage, shared by every
+  // profile in this browser).
+  const chain = ["admin", "top-manager", "shift-manager"].includes(meta?.role);
+  const { data: managers = [], isLoading: managersLoading } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+    enabled: chain,
+  });
+  const ready = !metaLoading && !(chain && managersLoading);
+  const shiftF = chain ? fShift : null;
+  const chainCells = useMemo(() => {
+    if (!chain) return cells;
+    const unit = new Map(managers.map((m) => [m.manager_id, m]));
+    return cells.filter((c) => {
+      const u = unit.get(c.manager_id);
+      return (factory == null || u?.factory_id === factory) && (!shiftF || u?.shift === shiftF);
+    });
+  }, [cells, chain, managers, factory, shiftF]);
+  const supOpts = useMemo(() => {
+    const seen = new Map();
+    for (const c of chainCells) {
+      if (c.manager_id != null && c.brigadir_name) seen.set(String(c.manager_id), tl(c.brigadir_name));
+    }
+    return [...seen].map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [chainCells, tl]);
+  const supF = chain && supOpts.some((o) => o.value === fSup) ? fSup : "";
+  const cellOpts = useMemo(() => chainCells
+    .filter((c) => !supF || String(c.manager_id) === supF)
+    .map((c) => ({ value: c.code, label: cellLabel(c.code, tl(c.leader_name || "")) })),
+  [chainCells, supF, tl]);
+  const canCell = cells.length > 1;
+  const cellF = canCell && cellOpts.some((o) => o.value === fCell) ? fCell : "";
+  // A level above changed and a pick fell off its list: drop it — a control
+  // naming a value the page cannot show is worse than a reset. Never while the
+  // list is EMPTY (still loading), and never for a viewer who cannot see it.
+  useEffect(() => {
+    if (ready && chain && fSup && !supF && supOpts.length) setFSup("");
+  }, [ready, chain, fSup, supF, supOpts.length, setFSup]);
+  useEffect(() => {
+    if (ready && canCell && fCell && !cellF && cellOpts.length) setFCell("");
+  }, [ready, canCell, fCell, cellF, cellOpts.length, setFCell]);
 
   const params = useMemo(() => {
     const p = {};
-    if (dateFrom) p.date_from = dateFrom;
-    if (dateTo) p.date_to = dateTo;
-    if (fCell) p.cell = fCell;
+    // «Barcha vaqt» and an open end send no bound: the trend then starts at the
+    // first filing, not 2015, and a page left open past midnight still lists
+    // the new day's concerns.
+    if (dateFrom && dateFrom > ALL_TIME_FROM) p.date_from = dateFrom;
+    if (dateTo && dateTo < today) p.date_to = dateTo;
+    if (factory != null) p.factory = factory;
+    if (shiftF) p.shift = shiftF;
+    if (supF) p.manager_id = supF;
+    if (cellF) p.cell = cellF;
     if (fCat) p.category = fCat;
-    if (fSt) p.status = fSt;
     return p;
-  }, [dateFrom, dateTo, fCell, fCat, fSt]);
+  }, [dateFrom, dateTo, today, factory, shiftF, supF, cellF, fCat]);
+
+  // The search reaches «Tahlil» too, a beat after the last keystroke.
+  const [qStats, setQStats] = useState(() => q.trim());
+  useEffect(() => {
+    const id = setTimeout(() => setQStats(q.trim()), 300);
+    return () => clearTimeout(id);
+  }, [q]);
 
   const listKey = ["cell-concerns", "list", params];
-  const { data: list, isLoading } = useQuery({
+  const { data: list, isPending } = useQuery({
     queryKey: listKey,
     queryFn: () => api.get("/api/cell-concerns", { params }).then((r) => r.data),
+    enabled: ready,
   });
   const { data: stats } = useQuery({
-    queryKey: ["cell-concerns", "stats", params],
-    queryFn: () => api.get("/api/cell-concerns/stats", { params }).then((r) => r.data),
-    enabled: tab === "analysis",
+    queryKey: ["cell-concerns", "stats", params, qStats],
+    queryFn: () => api.get("/api/cell-concerns/stats", {
+      params: qStats ? { ...params, q: qStats } : params,
+    }).then((r) => r.data),
+    enabled: ready && tab === "analysis",
   });
 
-  const rows = useMemo(() => {
+  // Search first, then the status view — counted in between, so each pill
+  // says how many rows it would show. An unknown status reads as open (todo).
+  const found = useMemo(() => {
     const all = list?.rows || [];
     const needle = q.trim().toLowerCase();
     if (!needle) return all;
     return all.filter((r) =>
-      `${r.seq} ${r.worker_name || ""} ${r.concern_text || ""}`.toLowerCase().includes(needle)
+      `${r.seq} ${r.worker_name || ""} ${r.cell_code || ""} ${r.concern_text || ""}`
+        .toLowerCase().includes(needle)
     );
   }, [list, q]);
+  const nOpen = useMemo(() => found.filter((r) => r.status !== "done").length, [found]);
+  const rows = useMemo(() => (view === "all" ? found
+    : found.filter((r) => (r.status === "done") === (view === "done"))), [found, view]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["cell-concerns"] });
 
@@ -169,21 +257,49 @@ export default function CellConcerns() {
   ];
 
   // Scope controls live INSIDE the FilterPanel, never as loose selects above
-  // the table. The period control stays inline beside it.
+  // the table. The period control stays inline beside it. Each narrowed level
+  // names the NEAREST level above that narrowed it, so a short list never
+  // reads as missing data.
+  const shiftLabel = shiftF ? `S${shiftF}` : null;
+  const plantLabel = chain && factory != null ? factorySection?.display : null;
+  const supLabel = supOpts.find((o) => o.value === supF)?.label;
+  const narrowed = (x, n) => (x ? tp(t, "concerns.narrowedBy", { x, n }) : null);
   const sections = [
-    cells.length > 1 && {
-      key: "cell", label: t("cellConcerns.f.cell"), active: !!fCell,
-      display: fCell, onClear: () => setFCell(""),
+    factorySection,
+    chain && {
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: shiftF != null, display: shiftLabel || "", onClear: () => setFShift(null),
+      render: () => (
+        <SegmentedToggle fill value={shiftF} onChange={setFShift}
+          options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]} />
+      ),
+    },
+    chain && {
+      key: "sup", icon: UserRound, label: t("tasks.colSupervisor"),
+      active: !!supF, display: supLabel || "", onClear: () => setFSup(""),
       render: ({ close }) => (
         <PickFilter
-          value={fCell} close={close} onChange={setFCell}
-          opts={[{ value: "", label: t("cellConcerns.all") },
-                 ...cells.map((c) => ({ value: c.code, label: c.code }))]}
+          value={supF} close={close} onChange={setFSup}
+          searchable={supOpts.length > MANY_CELLS}
+          note={narrowed(shiftLabel || plantLabel, supOpts.length)}
+          opts={[{ value: "", label: t("cellConcerns.all") }, ...supOpts]}
+        />
+      ),
+    },
+    canCell && {
+      key: "cell", icon: LayoutGrid, label: t("cellConcerns.f.cell"), active: !!cellF,
+      display: cellF, onClear: () => setFCell(""),
+      render: ({ close }) => (
+        <PickFilter
+          value={cellF} close={close} onChange={setFCell}
+          searchable={cellOpts.length > MANY_CELLS}
+          note={narrowed(supLabel || shiftLabel || plantLabel, cellOpts.length)}
+          opts={[{ value: "", label: t("cellConcerns.all") }, ...cellOpts]}
         />
       ),
     },
     {
-      key: "cat", label: t("cellConcerns.f.category"), active: !!fCat,
+      key: "cat", icon: Tag, label: t("cellConcerns.f.category"), active: !!fCat,
       display: fCat ? t(`concerns.category.${fCat}`) : "", onClear: () => setFCat(""),
       render: ({ close }) => (
         <PickFilter
@@ -193,31 +309,38 @@ export default function CellConcerns() {
         />
       ),
     },
-    {
-      key: "st", label: t("cellConcerns.f.status"), active: !!fSt,
-      display: fSt ? t(`cellConcerns.st.${fSt}`) : "", onClear: () => setFSt(""),
-      render: ({ close }) => (
-        <PickFilter
-          value={fSt} close={close} onChange={setFSt}
-          opts={[{ value: "", label: t("cellConcerns.all") },
-                 ...STATUSES.map((s) => ({ value: s, label: t(`cellConcerns.st.${s}`) }))]}
-        />
-      ),
-    },
   ].filter(Boolean);
 
-  const toolbar = (
+  const count = (label, n) => (
+    <span className="inline-flex items-center gap-1.5">
+      {label}
+      {list && <span className="tabular-nums" style={{ opacity: 0.75 }}>{n}</span>}
+    </span>
+  );
+  const viewOpts = [
+    ["open", count(t("cellConcerns.view.open"), nOpen)],
+    ["done", count(t("cellConcerns.st.done"), found.length - nOpen)],
+    ["all", count(t("cellConcerns.all"), found.length)],
+  ];
+
+  // The status view is the register's own; «Tahlil» gets the rest.
+  const toolbar = (register) => (
     <>
       <DateRangePicker
         dateFrom={dateFrom} dateTo={dateTo}
-        setDateFrom={setDateFrom} setDateTo={setDateTo}
+        setDateFrom={(v) => setRange({ from: v })} setDateTo={(v) => setRange({ to: v })}
         compactLabel triggerClassName="px-3 py-2 text-sm"
       />
       <FilterPanel sections={sections} />
+      {register && (
+        <SegmentedToggle value={view} onChange={setView} options={viewOpts}
+          ariaLabel={t("cellConcerns.f.status")} />
+      )}
       <div className="flex-1 min-w-0" />
       <SearchInput value={q} onChange={setQ} placeholder={t("cellConcerns.searchPh")} />
     </>
   );
+  const anyFilter = !!(shiftF || supF || cellF || fCat || q.trim());
 
   return (
     <Layout>
@@ -248,15 +371,18 @@ export default function CellConcerns() {
 
         {tab === "register" && (
           <RegisterTab
-            t={t} rows={rows} loading={isLoading} toolbar={toolbar}
+            t={t} rows={rows} loading={isPending} toolbar={toolbar(true)}
             onOpen={setDetail} onComments={setComments}
-            anyFilter={!!(fCell || fCat || fSt || q)}
-            onClearFilters={() => { setFCell(""); setFCat(""); setFSt(""); setQ(""); }}
+            anyFilter={anyFilter}
+            noneOpen={view === "open" && !rows.length && found.length > 0}
+            onClearFilters={() => {
+              setFShift(null); setFSup(""); setFCell(""); setFCat(""); setQ("");
+            }}
           />
         )}
 
         {tab === "analysis" && (
-          <AnalysisTab t={t} stats={stats} toolbar={toolbar} />
+          <AnalysisTab t={t} stats={stats} toolbar={toolbar(false)} />
         )}
       </div>
 
@@ -568,7 +694,7 @@ function StatusChip({ row, t }) {
   const col = over ? "#ef4444" : ST[row.status]?.color || "#94a3b8";
   const Icon = over ? AlertTriangle : ST[row.status]?.icon || CircleDot;
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium"
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
           style={{ background: rgba(col, 0.13), color: col, border: `1px solid ${rgba(col, 0.28)}` }}>
       <Icon size={12} />
       {over ? t("cellConcerns.st.overdue") : t(`cellConcerns.st.${row.status}`)}
@@ -580,14 +706,14 @@ function CatChip({ k, t }) {
   const col = CATEGORY_COLOR[k] || "#94a3b8";
   const Icon = CATEGORY_ICON[k];
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px]"
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] whitespace-nowrap"
           style={{ background: rgba(col, 0.12), color: col, border: `1px solid ${rgba(col, 0.25)}` }}>
       {Icon && <Icon size={12} />} {t(`concerns.category.${k}`)}
     </span>
   );
 }
 
-function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter, onClearFilters }) {
+function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter, noneOpen, onClearFilters }) {
   if (loading) return <SkeletonBlock className="h-80" />;
 
   return (
@@ -616,8 +742,10 @@ function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter,
             <td colSpan={8} className="py-10">
               <EmptyState
                 icon={Inbox}
-                title={t(anyFilter ? "cellConcerns.empty.filtered" : "cellConcerns.empty.title")}
-                message={t(anyFilter ? "cellConcerns.empty.filteredBody" : "cellConcerns.empty.body")}
+                title={t(noneOpen ? "cellConcerns.empty.noneOpen"
+                  : anyFilter ? "cellConcerns.empty.filtered" : "cellConcerns.empty.title")}
+                message={t(noneOpen ? "cellConcerns.empty.noneOpenBody"
+                  : anyFilter ? "cellConcerns.empty.filteredBody" : "cellConcerns.empty.body")}
                 showUploadLink={false}
                 action={anyFilter ? (
                   <Button variant="secondary" onClick={onClearFilters}>
@@ -645,8 +773,10 @@ function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter,
               <CellLink id={r.cell_id}>{r.cell_code}</CellLink>
             </td>
             <td className="px-3 py-2"><CatChip k={r.category} t={t} /></td>
-            <td className="px-3 py-2" style={{ maxWidth: 340, color: "var(--text-2)" }}>
-              <span className="line-clamp-2">{r.concern_text}</span>
+            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
+              <span className="block truncate" style={{ maxWidth: 340 }} title={r.concern_text}>
+                {r.concern_text}
+              </span>
             </td>
             <td className="px-3 py-2"><StatusChip row={r} t={t} /></td>
             <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>

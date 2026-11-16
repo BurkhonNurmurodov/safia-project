@@ -68,6 +68,7 @@ from app.identity import viewer_leader_profile_id
 from app.models import Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
 from app.services import action_log, cell_archive
+from app.services.factory_scope import factory_manager_ids, resolve_factory
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
     _comment_counts, _due, _no, _notify_recipients, _owner_names, _scope_query,
@@ -141,11 +142,23 @@ def _leader_cells(db: Session, payload: dict):
     return [tuple(r) for r in q.order_by(Cell.verifix_code).all()]
 
 
-def _page_rows(db: Session, payload: dict, date_from, date_to, cell, category, status):
+def _page_rows(db: Session, payload: dict, date_from, date_to, cell, category, status,
+               factory=None, shift=None, manager_id=None):
     """The page's rows under its filters — ONE clause for the register and the
     analysis, so the two halves of the page can never be narrowed two ways (the
     status filter used to reach the register and silently skip the analysis)."""
     q = _scope_query(_worker_rows(db.query(LeaderConcern)), payload, db)
+    # The org chain (plant → shift → brigadir) narrows by the UNIT a concern was
+    # filed under — /concerns' own rule for the plant. An empty list is a real
+    # answer (nothing in scope), never «no filter».
+    units = factory_manager_ids(db, resolve_factory(db, payload, factory))
+    if shift in (1, 2):
+        in_shift = {i for (i,) in db.query(Manager.id).filter(Manager.shift == shift)}
+        units = list(in_shift) if units is None else [u for u in units if u in in_shift]
+    if manager_id:
+        units = [manager_id] if units is None else [u for u in units if u == manager_id]
+    if units is not None:
+        q = q.filter(LeaderConcern.brigadir_manager_id.in_(units))
     if date_from:
         q = q.filter(LeaderConcern.entry_date >= date_from)
     if date_to:
@@ -322,13 +335,17 @@ def list_cell_concerns(
     cell: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    factory: Optional[int] = Query(None),
+    shift: Optional[int] = Query(None),
+    manager_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
     """The register — worker filings still sitting at the leader step, newest
     first, scoped by concerns._scope_query so this page can never widen what a
     viewer may read on /concerns."""
-    q = _page_rows(db, payload, date_from, date_to, cell, category, status)
+    q = _page_rows(db, payload, date_from, date_to, cell, category, status,
+                   factory, shift, manager_id)
 
     rows = q.order_by(LeaderConcern.entry_date.desc(),
                       LeaderConcern.seq.desc().nullslast(),
@@ -382,8 +399,9 @@ def _age_bucket(days: int) -> int:
 
 def _search_text(r) -> str:
     """The register's own search string — the page filters its table on
-    «№ · name · text» client-side, and the analysis must match exactly that."""
-    return f"{_no(r)} {r.worker_name or ''} {r.concern_text or ''}".lower()
+    «№ · name · cell · text» client-side, and the analysis must match exactly
+    that."""
+    return f"{_no(r)} {r.worker_name or ''} {r.cell_code or ''} {r.concern_text or ''}".lower()
 
 
 def _trend(rows, date_from, date_to, today):
@@ -425,6 +443,9 @@ def cell_concern_stats(
     cell: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    factory: Optional[int] = Query(None),
+    shift: Optional[int] = Query(None),
+    manager_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
@@ -439,7 +460,8 @@ def cell_concern_stats(
     do» rows comes to print «to do: 0» above a table of twelve of them. Every
     breakdown (department, cell) carries the same flag beside its status split.
     """
-    rows = _page_rows(db, payload, date_from, date_to, cell, category, status).all()
+    rows = _page_rows(db, payload, date_from, date_to, cell, category, status,
+                   factory, shift, manager_id).all()
     needle = (q or "").strip().lower()
     if needle:
         rows = [r for r in rows if needle in _search_text(r)]

@@ -476,3 +476,25 @@ it is assigned to him, escalated or returned to him, he holds it, or a
 message in its chat reaches him as one of its trackers. The broadcast, its
 name matcher and its test are deleted; nothing replaces them. Bringing a
 watcher back is a new ruling, not a constant to refill.
+
+## «Ячейка ҳавотирлари» register filters (`/cell-concerns`, 2026-11-16)
+
+The register answers ONE question — what still waits on somebody — so it opens
+on the status view «Ochiq · Hal qilindi · Hammasi» (a `SegmentedToggle` with a
+count on each pill, «Ochiq» first). The view is the register's own and is
+applied in the browser; «Tahlil» splits by status itself and never takes it.
+
+- **The period is remembered for the day it was picked, never longer**
+  (`cellConcerns.period` stores `{from, to, on}`). Kept forever, a range picked
+  once hid every concern filed after it — the page opened on October in
+  mid-November and said nothing. A new day starts on «Barcha vaqt», which sends
+  no date bound at all (the trend starts at the first filing, not 2015).
+- **The scope chain is plant → shift → brigadir → cell**, inside the
+  `FilterPanel` like /concerns; shift and brigadir only for admins, top- and
+  shift-managers. Each level lists what the levels above leave and says so
+  (`concerns.narrowedBy`); the cell picker is searchable and names the leader
+  beside the code. Server side the chain narrows by the UNIT a concern was filed
+  under (`brigadir_manager_id`, `_page_rows` — the plant through
+  `factory_scope`), so the register and «Tahlil» stay one answer.
+- The search reaches «Tahlil» too (`q`, 300 ms after the last keystroke) and
+  matches № · name · cell · text on both (`_search_text` is the twin).
