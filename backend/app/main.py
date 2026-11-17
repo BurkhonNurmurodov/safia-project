@@ -132,6 +132,7 @@ async def lifespan(app: FastAPI):
         report_cell_input_gaps_xlsx,
         notify_operator_education_lesson,
         report_shared_sap_cells_raw_xlsx,
+        report_equipment_sheet,
         report_checklist_setup,
         export_ai_proofs,
         report_proof_archive,
@@ -715,6 +716,10 @@ async def lifespan(app: FastAPI):
     # after this deploy, never again. Remove this line and
     # `shared_wc_report.send_cells_raw_xlsx` once it has landed.
     later(report_shared_sap_cells_raw_xlsx)
+    # ⚠ TEMPORARY one-shot (2026-11-17) — «Uskunalar ro'yxati SAFIA» read with
+    # production's service account, DMed to Burkhon. Flag-guarded; remove with
+    # `services/equipment_sheet_report.py` once it has landed.
+    later(report_equipment_sheet)
     # ⚠ TEMPORARY one-shot (2026-09-17) — the leader checklist as production
     # runs it (every level of the task chain, filing times, a proof sample), as
     # ZIP files in the operator's chat, before the new rules go to every unit.

@@ -7286,6 +7286,22 @@ def report_shared_sap_cells_raw_xlsx() -> None:
                       shared_wc_report.send_cells_raw_xlsx, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: «Uskunalar ro'yxati SAFIA» read with production's credentials ──
+# The operator (2026-11-17) shared that Google Sheet with the platform's service
+# account and asked for a reporter, because only production holds the key. DMed
+# to Burkhon (the one who asked). Flag-guarded: first boot after this deploy,
+# never again; a failure is retried twice and its reason lands in the deploy log.
+# Remove this block, its `later(...)` line in main.py and
+# `services/equipment_sheet_report.py` once the file has landed.
+EQUIPMENT_SHEET_FLAG = "equipment_sheet_report_2026_11_17_v1"
+
+
+def report_equipment_sheet() -> None:
+    from app.services import equipment_sheet_report
+    _send_report_once(EQUIPMENT_SHEET_FLAG, "equipment sheet",
+                      equipment_sheet_report.send, REPORT_CHAT_BURKHON)
+
+
 # ── one-shot reports: the shared «still owed?» test ─────────────────────────
 def _report_pending(flag: str) -> bool:
     """`_send_report_once`'s own test, asked BEFORE any work is queued for it:
