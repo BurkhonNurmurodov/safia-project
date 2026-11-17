@@ -512,6 +512,38 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Заявка на контейнеры отменена: {hour}", "{counts}\n{note}"),
         "en": ("Container request cancelled: {hour}", "{counts}\n{note}"),
     },
+    # …several new requests in one message (a prepared day sent in one go),
+    # and the alerts to AXO / the shift managers (`container_flow.alert_*`).
+    "container_requests_new": {
+        "uz": ("Yangi konteyner so'rovlari: {n} ta", "{hours} | Yubordi: {by}"),
+        "uz_cyrl": ("Янги контейнер сўровлари: {n} та", "{hours} | Юборди: {by}"),
+        "ru": ("Новые заявки на контейнеры: {n}", "{hours} | Отправил(а): {by}"),
+        "en": ("New container requests: {n}", "{hours} | Sent by: {by}"),
+    },
+    "container_short_split": {
+        "uz": ("Kam taqsimlandi: {hour}", "Taqsimlangan: {counts} | Logistika: {by}"),
+        "uz_cyrl": ("Кам тақсимланди: {hour}", "Тақсимланган: {counts} | Логистика: {by}"),
+        "ru": ("Распределено меньше заявленного: {hour}", "Распределено: {counts} | Логистика: {by}"),
+        "en": ("Split short of the request: {hour}", "Split: {counts} | Logistics: {by}"),
+    },
+    "container_short_receipt": {
+        "uz": ("Brigadirga kam keldi: {hour}", "{name} | Keldi: {counts}"),
+        "uz_cyrl": ("Бригадирга кам келди: {hour}", "{name} | Келди: {counts}"),
+        "ru": ("Бригадиру пришло меньше: {hour}", "{name} | Пришло: {counts}"),
+        "en": ("A brigadir received fewer: {hour}", "{name} | Arrived: {counts}"),
+    },
+    "container_request_overdue": {
+        "uz": ("So'rov muddati o'tdi: {hour}", "{counts} | Logistika: {by}"),
+        "uz_cyrl": ("Сўров муддати ўтди: {hour}", "{counts} | Логистика: {by}"),
+        "ru": ("Срок заявки прошёл: {hour}", "{counts} | Логистика: {by}"),
+        "en": ("Request past its deadline: {hour}", "{counts} | Logistics: {by}"),
+    },
+    "container_unconfirmed": {
+        "uz": ("Brigadir konteynerlarni tasdiqlamadi: {hour}", "{name} | {counts}"),
+        "uz_cyrl": ("Бригадир контейнерларни тасдиқламади: {hour}", "{name} | {counts}"),
+        "ru": ("Бригадир не подтвердил контейнеры: {hour}", "{name} | {counts}"),
+        "en": ("A brigadir has not confirmed containers: {hour}", "{name} | {counts}"),
+    },
     "container_request_cancelled": {
         "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
         "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),

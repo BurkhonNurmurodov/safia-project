@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check, ClipboardList, Clock, History, PackageCheck, PackagePlus, PencilLine, Settings2, Truck,
+  Check, ClipboardList, Clock, History, ListChecks, PackageCheck, PackagePlus, PencilLine, Settings2, Truck,
   Undo2, UsersRound, XCircle, Lock, Scale,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -23,7 +23,7 @@ import {
 } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
-import { RequestsTab, NewRequestModal, isFresh } from "../components/containers/FlowRequests";
+import { RequestsTab, NewRequestModal, PreparedModal, isFresh } from "../components/containers/FlowRequests";
 import FlowReceive from "../components/containers/FlowReceive";
 import FlowAnalytics from "../components/containers/FlowAnalytics";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -119,6 +119,16 @@ export default function ContainerFlow() {
     ...LIVE_LIST,
   });
   const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
+  // AXO: the hours still ahead that need containers and have no request yet
+  const prep = useQuery({
+    queryKey: ["cflow-prepared", day],
+    queryFn: () => api.get("/api/container-flow/requests/prepared", { params: { day } }).then((r) => r.data.hours),
+    refetchInterval: REFRESH_MS,
+    enabled: roles.axo,
+    ...LIVE_LIST,
+  });
+  const prepHours = prep.data ?? [];
+  const [prepOpen, setPrepOpen] = useState(false);
   const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
   const refresh = () => qc.invalidateQueries({ queryKey: ["cflow-board"] });
   const done = (msg) => { toast.success(msg); refresh(); };
@@ -152,9 +162,17 @@ export default function ContainerFlow() {
           }))} />}
         {!["report", "analytics"].includes(tab) && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
         {roles.axo && tab === "requests" && (
-          <Button size="lg" icon={<PackagePlus size={15} />} className="ml-auto" onClick={() => openNew()}>
-            {t("cflow.req.new")}
-          </Button>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {/* always drawn, with its count, so the bar never shifts */}
+            <Button size="lg" variant="secondary" icon={<ListChecks size={15} />}
+              title={t("cflow.prep.sub")} onClick={() => setPrepOpen(true)}>
+              {t("cflow.prep.btn")}
+              <span className="ml-1.5 tabular-nums font-semibold">{prep.isLoading ? "…" : prepHours.length}</span>
+            </Button>
+            <Button size="lg" icon={<PackagePlus size={15} />} onClick={() => openNew()}>
+              {t("cflow.req.new")}
+            </Button>
+          </span>
         )}
       </div>
 
@@ -193,6 +211,13 @@ export default function ContainerFlow() {
             setNewOpen(null); setTab("requests"); toast.success(t("cflow.req.sent"));
             refreshFlow(qc);
           }} onFail={fail} />
+      )}
+      {prepOpen && (
+        <PreparedModal t={t} day={day} hours={prepHours} onClose={() => setPrepOpen(false)}
+          onDone={(n) => {
+            setPrepOpen(false); setTab("requests");
+            toast.success(t("cflow.prep.sent").replace("{n}", n)); refreshFlow(qc);
+          }} onFail={(e) => { fail(e); refreshFlow(qc); }} />
       )}
       {toast.node}
     </Layout>

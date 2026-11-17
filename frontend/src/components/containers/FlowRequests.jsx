@@ -773,3 +773,94 @@ function CancelModal({ t, r, onClose, onDone, onFail }) {
     </Modal>
   );
 }
+
+// «Tayyor so'rovlar» (2026-11-17): AXO made every hour's request by hand, and
+// a forgotten hour only turned red on the strip. The server lists the day's
+// hours still ahead with what each needs on «Konteynerlar» less what was
+// already asked (`flow.prepared`); she ticks the ones to send — all by
+// default — picks the logistics person once and sends them in one go. The
+// addressee gets ONE message for the lot. An hour whose counts need changing
+// is unticked here and made with «Yangi so'rov».
+export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
+  const { tl } = useTranslit();
+  const people = useQuery({
+    queryKey: ["cflow-logistics"],
+    queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
+  });
+  const list = people.data ?? [];
+  const [last, setLast] = usePersistentState("cflow_last_logistics", null);
+  const [who, setWho] = useState(null);
+  const remembered = list.some((p) => p.key === last) ? last : null;
+  const to = who ?? remembered ?? (list.length === 1 ? list[0].key : null);
+  const [off, setOff] = useState(() => new Set());      // the hours left out
+  const picked = hours.filter((h) => !off.has(h.hour));
+  const total = picked.reduce((s, h) => s + sum(h.counts), 0);
+  const toggle = (hour) => setOff((cur) => {
+    const next = new Set(cur);
+    if (next.has(hour)) next.delete(hour); else next.add(hour);
+    return next;
+  });
+  const m = useMutation({
+    mutationFn: () => api.post("/api/container-flow/requests/bulk", {
+      day, logistics_key: to, items: picked.map((h) => ({ hour: h.hour, counts: h.counts })),
+    }),
+    onSuccess: () => { setLast(to); onDone(picked.length); },
+    onError: onFail,
+  });
+  return (
+    <Modal onClose={onClose} title={t("cflow.prep.title")} subtitle={t("cflow.prep.sub")} maxWidth="max-w-2xl"
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button loading={m.isPending} disabled={!to || !picked.length} onClick={() => m.mutate()}>
+            {t("cflow.prep.send").replace("{n}", picked.length)}
+          </Button>
+        </>
+      )}>
+      <div className="flex flex-col gap-3">
+        <FormField label={t("cflow.req.to")} required
+          hint={!people.isLoading && !list.length ? t("cflow.req.noLogistics") : undefined}>
+          <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
+            options={list.map((p) => ({ value: p.key, label: tl(p.name) }))} />
+        </FormField>
+        {!hours.length ? (
+          <p className="text-sm py-6 text-center" style={{ color: "var(--text-3)" }}>{t("cflow.prep.none")}</p>
+        ) : (
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-3 px-3 py-2 text-xs" style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+              <span className="flex-1">{t("cflow.prep.picked").replace("{n}", picked.length).replace("{of}", hours.length)}</span>
+              <span className="tabular-nums">{t("cflow.prep.total").replace("{n}", fmt(total))}</span>
+              <Button size="sm" variant="ghost"
+                onClick={() => setOff(off.size ? new Set() : new Set(hours.map((h) => h.hour)))}>
+                {t(off.size ? "cflow.prep.all" : "cflow.prep.noneBtn")}
+              </Button>
+            </div>
+            <ul className="max-h-[46vh] overflow-y-auto">
+              {hours.map((h) => {
+                const on = !off.has(h.hour);
+                return (
+                  <li key={h.hour} style={{ borderTop: "1px solid var(--border)" }}>
+                    <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer text-sm"
+                      style={{ opacity: on ? 1 : 0.55 }}>
+                      <input type="checkbox" checked={on} onChange={() => toggle(h.hour)} data-no-draft
+                        className="w-4 h-4 shrink-0" style={{ accentColor: "var(--brand)" }} />
+                      <span className="w-[104px] shrink-0 tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{span(h.hour)}</span>
+                      <span className="flex-1 min-w-0 truncate" style={{ color: "var(--text-2)" }} title={countsText(t, h.counts)}>
+                        {countsText(t, h.counts)}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums whitespace-nowrap"
+                        style={{ color: h.late ? "var(--status-bad)" : "var(--text-3)" }}
+                        title={h.late ? t("cflow.prep.lateHint") : undefined}>
+                        {t("cflow.dueAt").replace("{at}", hhmm(h.due_at))}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}

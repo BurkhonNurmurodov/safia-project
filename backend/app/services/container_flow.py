@@ -53,6 +53,13 @@ _NOTIFY_KEY = "container_flow.notify_logistics"
 # …and to each brigadir a request was split to (2026-11-15) — «Hammasi keldi»
 # confirms from Telegram, «Boshqa son» opens the card. Its own switch.
 _NOTIFY_BRIG_KEY = "container_flow.notify_brigadirs"
+# Alerts (2026-11-17): to the request's AXO author — a short split, a short
+# receipt, a request past its deadline — ON unless switched off (they are
+# answers to her own requests); and to the shift managers — a request past its
+# deadline, a brigadir still unconfirmed after the reminder — OFF until an
+# admin switches it on (nobody has told them yet).
+_NOTIFY_AXO_KEY = "container_flow.notify_axo"
+_NOTIFY_SM_KEY = "container_flow.notify_managers"
 _LOCK_KEY = 8_140_573_112_014_001   # distinct from every other advisory key
 
 
@@ -81,7 +88,8 @@ def team_key(work_center, group, rest) -> str:
 
 def settings(db: Session) -> dict:
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
-        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY, _NOTIFY_BRIG_KEY])).all()}
+        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY, _NOTIFY_BRIG_KEY,
+                            _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY])).all()}
     try:
         units = [int(x) for x in json.loads(rows.get(_UNITS_KEY) or "[]")]
     except (ValueError, TypeError):
@@ -91,11 +99,14 @@ def settings(db: Session) -> dict:
     except (ValueError, TypeError):
         topup = TOPUP_MIN_DEFAULT
     return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1",
-            "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1"}
+            "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1",
+            "notify_axo": rows.get(_NOTIFY_AXO_KEY, "1") == "1",
+            "notify_managers": rows.get(_NOTIFY_SM_KEY) == "1"}
 
 
 def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None,
-                  notify_brigadirs: Optional[bool] = None) -> dict:
+                  notify_brigadirs: Optional[bool] = None, notify_axo: Optional[bool] = None,
+                  notify_managers: Optional[bool] = None) -> dict:
     """A switch given as None stays as it is (a tab on an older bundle saves
     without it)."""
     vals = {_UNITS_KEY: json.dumps(sorted({int(x) for x in units})),
@@ -104,6 +115,10 @@ def save_settings(db: Session, units: list, topup_min: int, notify: Optional[boo
         vals[_NOTIFY_KEY] = "1" if notify else "0"
     if notify_brigadirs is not None:
         vals[_NOTIFY_BRIG_KEY] = "1" if notify_brigadirs else "0"
+    if notify_axo is not None:
+        vals[_NOTIFY_AXO_KEY] = "1" if notify_axo else "0"
+    if notify_managers is not None:
+        vals[_NOTIFY_SM_KEY] = "1" if notify_managers else "0"
     for k, v in vals.items():
         row = db.get(AppSetting, k)
         if row is None:
@@ -247,23 +262,21 @@ def draft_due(db: Session, at: Optional[datetime] = None) -> int:
 
 
 def tick() -> None:
-    """The clock's pass (every TICK_MIN minutes). Never raises."""
+    """The clock's pass (every TICK_MIN minutes): drafts, the brigadirs'
+    reminder, the overdue alert and the escalation — each on its own, so one
+    failing never stops the rest. Never raises."""
     from app.database import SessionLocal
     db = SessionLocal()
     try:
-        n = draft_due(db)
-        if n:
-            logger.info("container flow: drafted %s batch(es)", n)
-    except Exception:
-        db.rollback()
-        logger.warning("container flow tick failed", exc_info=True)
-    try:
-        n = remind_unconfirmed(db)
-        if n:
-            logger.info("container flow: reminded %s brigadir(s)", n)
-    except Exception:
-        db.rollback()
-        logger.warning("container flow reminder failed", exc_info=True)
+        for name, fn in (("draft", draft_due), ("reminder", remind_unconfirmed),
+                         ("overdue alert", alert_overdue), ("escalation", escalate_unconfirmed)):
+            try:
+                n = fn(db)
+                if n:
+                    logger.info("container flow: %s — %s", name, n)
+            except Exception:
+                db.rollback()
+                logger.warning("container flow %s failed", name, exc_info=True)
     finally:
         db.close()
 
@@ -1475,6 +1488,321 @@ def notify_split_cancelled_later(request_id: int) -> None:
     threading.Thread(target=notify_split_cancelled, args=(request_id,), daemon=True).start()
 
 
+# ── prepared requests (2026-11-17) ───────────────────────────────────────────
+# AXO made every hour's request by hand, and a forgotten hour only turned red
+# on the strip. `prepared` is the day's hours still ahead with what each needs
+# on «Konteynerlar» less what was already asked for it; `create_requests` makes
+# the picked ones in one go — all or nothing — and the addressee hears ONE
+# message for the lot (`notify_requests`).
+
+def prepared(db: Session, day: date, at: Optional[datetime] = None) -> list:
+    at = at or now()
+    need = plant_hours(db, day)
+    asked: dict = {}
+    for r in db.query(ContainerRequest).filter(ContainerRequest.day == day,
+                                               ContainerRequest.status != "cancelled").all():
+        e = asked.setdefault(int(r.hour), {})
+        for k, n in (r.lines or {}).items():
+            e[k] = e.get(k, 0) + n
+    out = []
+    for h in sorted(need):
+        hs = hour_start(day, h)
+        if hs + timedelta(hours=1) <= at:
+            continue                                    # the hour is over
+        counts = {k: need[h][k] - asked.get(h, {}).get(k, 0) for k in KEYS
+                  if need[h].get(k, 0) - asked.get(h, {}).get(k, 0) > 0}
+        if not counts:
+            continue
+        out.append({"hour": h, "need": {k: need[h][k] for k in KEYS if need[h].get(k)},
+                    "asked": asked.get(h, {}), "counts": counts,
+                    "due_at": _iso(_due(hs, at)), "late": at > hs - timedelta(minutes=LEAD_MIN)})
+    return out
+
+
+def create_requests(db: Session, day: date, logistics_key: str, items: list, note, actor,
+                    actor_key) -> list:
+    """Several hours' requests to one logistics person — each as `create_request`
+    makes it; one refused item refuses them all (the caller rolls back)."""
+    if not items:
+        raise FlowError("count")
+    hours = [int(it.get("hour")) for it in items]
+    if len(set(hours)) != len(hours):
+        raise FlowError("hour")
+    return [create_request(db, day, it["hour"], logistics_key, it.get("counts") or {}, note, actor, actor_key)
+            for it in items]
+
+
+_TG_MANY = {
+    "uz": ("Yangi konteyner so'rovlari: {n} ta", "Muddat"),
+    "uz_cyrl": ("Янги контейнер сўровлари: {n} та", "Муддат"),
+    "ru": ("Новые заявки на контейнеры: {n}", "Срок"),
+    "en": ("New container requests: {n}", "Due"),
+}
+
+
+def notify_requests(request_ids: list) -> bool:
+    """One message to the addressee for several new requests (a prepared day
+    sent in one go) — never one per hour. One id is `notify_request`."""
+    ids = [int(i) for i in request_ids or []]
+    if len(ids) == 1:
+        return notify_request(ids[0], "new")
+    if not ids:
+        return False
+    from html import escape as _esc
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        if not settings(db)["notify"]:
+            return False
+        rows = db.query(ContainerRequest).filter(ContainerRequest.id.in_(ids),
+                                                 ContainerRequest.status == "requested").order_by(
+            ContainerRequest.hour).all()
+        if not rows:
+            return False
+
+        def body(lang):
+            title, due = _TG_MANY.get(lang) or _TG_MANY["uz"]
+            lines = [f"📦 <b>{_esc(title.format(n=len(rows)), quote=False)}</b>", ""]
+            lines += [f"<b>{hour_span(r.hour)}</b> · {_esc(counts_text(r.lines or {}, lang), quote=False)}"
+                      f" · {due} {r.due_at.astimezone(TZ):%H:%M}" for r in rows]
+            return "\n".join(lines)
+
+        from app.routers.staff import notify_profile
+        notify_profile(
+            db, rows[0].logistics_key, "container_requests_new",
+            {"n": len(rows), "hours": ", ".join(hour_span(r.hour) for r in rows), "by": rows[0].created_by or "—"},
+            type="info", html_fn=body, markup_fn=_tg_markup, subject=("page", NOTIFY_PAGE))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: bulk request notice failed", exc_info=True)
+        return False
+    finally:
+        db.close()
+
+
+def notify_requests_later(request_ids: list) -> None:
+    import threading
+    threading.Thread(target=notify_requests, args=(list(request_ids),), daemon=True).start()
+
+
+# ── alerts: AXO and the shift managers (2026-11-17) ──────────────────────────
+# Nobody was told when things went wrong: AXO never heard that logistics split
+# fewer than she asked or that a brigadir got fewer than sent; nobody heard
+# that a request passed its deadline unsplit, or that a brigadir stayed silent
+# after the reminder. Each alert is ONE message with the page's button; the
+# two clock-driven ones are claimed (a timestamp, committed) before sending,
+# and only inside ALERT_WINDOW_MIN of their moment — never a burst about the
+# past. Switches: `notify_axo` (ON unless switched off), `notify_managers`
+# (OFF until an admin turns it on).
+ALERT_WINDOW_MIN = 120
+ESCALATE_AFTER_MIN = 30        # after the brigadir's reminder
+_ALERT_L = {
+    "uz": {"short_split": "Kam taqsimlandi", "short_receipt": "Brigadirga kam keldi",
+           "overdue": "So'rov muddati o'tdi — hali taqsimlanmagan", "unconfirmed": "Brigadir konteynerlarni tasdiqlamadi",
+           "hour": "Soat", "asked": "So'ralgan", "given": "Taqsimlangan", "sent": "Yuborilgan", "got": "Keldi",
+           "why": "Sabab", "to": "Logistika", "due": "Muddat", "unit": "Brigadir",
+           "reason": {"short": "Yetishmadi", "damaged": "Shikastlangan", "wrong_type": "Boshqa turdagi", "other": "Boshqa"}},
+    "uz_cyrl": {"short_split": "Кам тақсимланди", "short_receipt": "Бригадирга кам келди",
+                "overdue": "Сўров муддати ўтди — ҳали тақсимланмаган", "unconfirmed": "Бригадир контейнерларни тасдиқламади",
+                "hour": "Соат", "asked": "Сўралган", "given": "Тақсимланган", "sent": "Юборилган", "got": "Келди",
+                "why": "Сабаб", "to": "Логистика", "due": "Муддат", "unit": "Бригадир",
+                "reason": {"short": "Етишмади", "damaged": "Шикастланган", "wrong_type": "Бошқа турдаги", "other": "Бошқа"}},
+    "ru": {"short_split": "Распределено меньше заявленного", "short_receipt": "Бригадиру пришло меньше",
+           "overdue": "Срок заявки прошёл — ещё не распределена", "unconfirmed": "Бригадир не подтвердил контейнеры",
+           "hour": "Час", "asked": "Заявлено", "given": "Распределено", "sent": "Отправлено", "got": "Пришло",
+           "why": "Причина", "to": "Логистика", "due": "Срок", "unit": "Бригадир",
+           "reason": {"short": "Не хватило", "damaged": "Повреждены", "wrong_type": "Другой вид", "other": "Другое"}},
+    "en": {"short_split": "Split short of the request", "short_receipt": "A brigadir received fewer",
+           "overdue": "Request past its deadline — still not split", "unconfirmed": "A brigadir has not confirmed containers",
+           "hour": "Hour", "asked": "Asked", "given": "Split", "sent": "Sent", "got": "Arrived",
+           "why": "Reason", "to": "Logistics", "due": "Due", "unit": "Brigadir",
+           "reason": {"short": "Short", "damaged": "Damaged", "wrong_type": "Wrong type", "other": "Other"}},
+}
+
+
+def _alert_body(kind: str, lang: str, rows: list) -> str:
+    """`rows` are (label key, value) pairs; a name is transliterated by the caller."""
+    from html import escape as _esc
+    t = _ALERT_L.get(lang) or _ALERT_L["uz"]
+    out = [f"⚠️ <b>{_esc(t[kind], quote=False)}</b>", ""]
+    out += [f"{t[k]}: <b>{_esc(str(v), quote=False)}</b>" for k, v in rows if v not in (None, "")]
+    return "\n".join(out)
+
+
+def _why_text(lang: str, reason, comment) -> str:
+    t = _ALERT_L.get(lang) or _ALERT_L["uz"]
+    return " — ".join(x for x in (t["reason"].get(reason, reason or ""), (comment or "").strip()) if x)
+
+
+def _sm_keys(db: Session) -> list:
+    """Every shift-manager profile — who a unit's notices fan out to
+    (`shift_scope.role_ids_for_unit`)."""
+    return [f"shift-manager:{pid}" for (pid,) in db.query(RoleProfile.id).filter(
+        RoleProfile.role == "shift-manager").order_by(RoleProfile.id).all()]
+
+
+def _send_alert(db: Session, keys: list, nkey: str, params: dict, html_fn) -> int:
+    from app.routers.staff import notify_profile
+    for key in keys:
+        notify_profile(db, key, nkey, params, type="warning", html_fn=html_fn,
+                       markup_fn=_tg_markup, subject=("page", NOTIFY_PAGE))
+    return len(keys)
+
+
+def alert_short_split(request_id: int) -> int:
+    """Logistics split fewer than AXO asked: its author hears how many and why."""
+    from app.database import SessionLocal
+    from app.translit import transliterate
+    db = SessionLocal()
+    try:
+        r = db.get(ContainerRequest, request_id)
+        if r is None or r.status != "assigned" or not r.short_reason or not r.created_key \
+                or not settings(db)["notify_axo"]:
+            return 0
+        given: dict = {}
+        for u in _units_of(db, r.id).values():
+            for k, n in u.items():
+                given[k] = given.get(k, 0) + n
+
+        def body(lang):
+            return _alert_body("short_split", lang, [
+                ("hour", hour_span(r.hour)), ("asked", counts_text(r.lines or {}, lang)),
+                ("given", counts_text(given, lang) or "0"),
+                ("to", transliterate(r.logistics_name or "", lang)),
+                ("why", _why_text(lang, r.short_reason, r.short_comment))])
+        n = _send_alert(db, [r.created_key], "container_short_split",
+                        {"hour": hour_span(r.hour), "counts": counts_text(given) or "0",
+                         "by": r.logistics_name or "—"}, body)
+        db.commit()
+        return n
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: short-split alert failed", exc_info=True)
+        return 0
+    finally:
+        db.close()
+
+
+def alert_short_receipt(request_id: int, manager_id: int) -> int:
+    """A brigadir confirmed fewer than were sent: the request's author hears it."""
+    from app.database import SessionLocal
+    from app.translit import transliterate
+    db = SessionLocal()
+    try:
+        r = db.get(ContainerRequest, request_id)
+        if r is None or not r.created_key or not settings(db)["notify_axo"]:
+            return 0
+        parts = db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == r.id,
+                                                      ContainerRequestPart.manager_id == int(manager_id)).all()
+        if not parts or any(p.received is None for p in parts) \
+                or not any(p.received < p.count for p in parts):
+            return 0
+        sent = {p.ctype: p.count for p in parts}
+        got = {p.ctype: p.received for p in parts}
+        unit = profile_name(db, f"supervisor:{int(manager_id)}") or "—"
+        why = (parts[0].received_reason, parts[0].received_comment)
+
+        def body(lang):
+            return _alert_body("short_receipt", lang, [
+                ("hour", hour_span(r.hour)), ("unit", transliterate(unit, lang)),
+                ("sent", counts_text(sent, lang)), ("got", counts_text(got, lang) or "0"),
+                ("why", _why_text(lang, *why))])
+        n = _send_alert(db, [r.created_key], "container_short_receipt",
+                        {"hour": hour_span(r.hour), "counts": counts_text(got) or "0", "name": unit}, body)
+        db.commit()
+        return n
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: short-receipt alert failed", exc_info=True)
+        return 0
+    finally:
+        db.close()
+
+
+def alert_later(kind: str, *args) -> None:
+    """An event's alert on a thread — a save never waits on Telegram."""
+    import threading
+    fn = {"short_split": alert_short_split, "short_receipt": alert_short_receipt}[kind]
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
+def alert_overdue(db: Session, at: Optional[datetime] = None) -> int:
+    """A request still not split at its deadline: its AXO author and the shift
+    managers are told once (each behind their switch)."""
+    from sqlalchemy import update as _update
+    from app.translit import transliterate
+    at = at or now()
+    cfg = settings(db)
+    if not (cfg["notify_axo"] or cfg["notify_managers"]):
+        return 0
+    sent = 0
+    rows = db.query(ContainerRequest).filter(
+        ContainerRequest.status == "requested", ContainerRequest.overdue_alerted_at.is_(None),
+        ContainerRequest.due_at < at,
+        ContainerRequest.due_at >= at - timedelta(minutes=ALERT_WINDOW_MIN)).all()
+    for r in rows:
+        claimed = db.execute(_update(ContainerRequest).where(
+            ContainerRequest.id == r.id, ContainerRequest.overdue_alerted_at.is_(None),
+        ).values(overdue_alerted_at=at)).rowcount
+        db.commit()
+        if not claimed:
+            continue
+        keys = ([r.created_key] if cfg["notify_axo"] and r.created_key else []) \
+            + (_sm_keys(db) if cfg["notify_managers"] else [])
+        keys = list(dict.fromkeys(keys))
+
+        def body(lang, rr=r):
+            return _alert_body("overdue", lang, [
+                ("hour", hour_span(rr.hour)), ("asked", counts_text(rr.lines or {}, lang)),
+                ("to", transliterate(rr.logistics_name or "", lang)),
+                ("due", f"{rr.due_at.astimezone(TZ):%H:%M}")])
+        sent += _send_alert(db, keys, "container_request_overdue",
+                            {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
+                             "by": r.logistics_name or "—"}, body)
+        db.commit()
+    return sent
+
+
+def escalate_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
+    """A brigadir still silent ESCALATE_AFTER_MIN after the reminder: the shift
+    managers are told once per unit of a request (their switch on)."""
+    from sqlalchemy import update as _update
+    from app.translit import transliterate
+    at = at or now()
+    if not settings(db)["notify_managers"]:
+        return 0
+    lo, hi = at - timedelta(minutes=ESCALATE_AFTER_MIN + ALERT_WINDOW_MIN), at - timedelta(minutes=ESCALATE_AFTER_MIN)
+    pending: dict = {}
+    for p in db.query(ContainerRequestPart).filter(
+            ContainerRequestPart.received.is_(None), ContainerRequestPart.escalated_at.is_(None),
+            ContainerRequestPart.reminded_at.isnot(None), ContainerRequestPart.reminded_at <= hi,
+            ContainerRequestPart.reminded_at >= lo).all():
+        pending.setdefault((p.request_id, p.manager_id), {})[p.ctype] = p.count
+    sent = 0
+    for (rid, mid), counts in pending.items():
+        r = db.get(ContainerRequest, rid)
+        if r is None or r.status != "assigned":
+            continue
+        claimed = db.execute(_update(ContainerRequestPart).where(
+            ContainerRequestPart.request_id == rid, ContainerRequestPart.manager_id == mid,
+            ContainerRequestPart.received.is_(None), ContainerRequestPart.escalated_at.is_(None),
+        ).values(escalated_at=at)).rowcount
+        db.commit()
+        if not claimed:
+            continue
+        unit = profile_name(db, f"supervisor:{mid}") or "—"
+
+        def body(lang, rr=r, c=counts, u=unit):
+            return _alert_body("unconfirmed", lang, [
+                ("unit", transliterate(u, lang)), ("hour", hour_span(rr.hour)), ("sent", counts_text(c, lang))])
+        sent += _send_alert(db, _sm_keys(db), "container_unconfirmed",
+                            {"hour": hour_span(r.hour), "counts": counts_text(counts), "name": unit}, body)
+        db.commit()
+    return sent
+
+
 # ── the reminder (2026-11-15, the operator: «add a reminder for brigadirs who
 # don't confirm») ─────────────────────────────────────────────────────────────
 # ONE reminder per unit of a split request, while its containers are still not
@@ -1579,30 +1907,57 @@ def plant_hours(db: Session, day: date) -> dict:
 
 
 def unit_limits(db: Session, day: date, hour: int, exclude_request_id: Optional[int] = None) -> dict:
-    """Each brigadir's LIMIT for one production hour (2026-11-15, the operator:
+    """Each brigadir's LIMIT at one production hour (2026-11-15, the operator:
     «they have a limit for containers after the calculation, and they do not
-    have to take the extra»): their unit's own figure on «Konteynerlar» for
-    that hour, per container type (`units_hours`), less what other split
-    requests of the same hour already gave them. {manager_id: {"limit",
-    "given", "left"}} — every unit with a figure or a given count. A unit with
-    no figure for the hour has no limit to give from: 0."""
+    have to take the extra») — **carried over** (2026-11-17): everything the
+    unit's «Konteynerlar» figures need FROM THE DAY'S START THROUGH this hour,
+    less everything split to it for hours up to this one. An hour that got
+    nothing is no longer lost: what it needed can still be sent with a later
+    hour's request.
+
+    The day's total is never passed either way: a request for hour H may take
+    only what leaves every hour from H on within ITS cumulative need — a later
+    hour's split that already used the carry-over is counted against it.
+
+    {manager_id: {"limit", "given", "left"}} per container type — `limit` the
+    need through the hour, `given` what was split through it, `left` what may
+    still go. A unit with no figure by this hour has no limit: 0."""
     hour = int(hour)
     per = units_hours(db, day)
-    out: dict = {}
-    for mid, hm in per.items():
-        fig = {k: n for k, n in (hm.get(hour) or {}).items() if n}
-        if fig:
-            out[mid] = {"limit": fig, "given": {}, "left": dict(fig)}
-    q = db.query(ContainerRequestPart.manager_id, ContainerRequestPart.ctype, ContainerRequestPart.count).join(
+    q = db.query(ContainerRequestPart.manager_id, ContainerRequestPart.ctype, ContainerRequestPart.count,
+                 ContainerRequest.hour).join(
         ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
-        ContainerRequest.day == day, ContainerRequest.hour == hour, ContainerRequest.status == "assigned")
+        ContainerRequest.day == day, ContainerRequest.status == "assigned")
     if exclude_request_id is not None:
         q = q.filter(ContainerRequest.id != exclude_request_id)
-    for mid, k, n in q.all():
-        u = out.setdefault(mid, {"limit": {}, "given": {}, "left": {}})
-        u["given"][k] = u["given"].get(k, 0) + n
-    for u in out.values():
-        u["left"] = {k: max(0, n - u["given"].get(k, 0)) for k, n in u["limit"].items()}
+    given: dict = {}
+    for mid, k, n, h in q.all():
+        e = given.setdefault(mid, {}).setdefault(int(h), {})
+        e[k] = e.get(k, 0) + n
+    out: dict = {}
+    for mid in set(per) | set(given):
+        hm, gm = per.get(mid) or {}, given.get(mid) or {}
+        types = {k for e in hm.values() for k, n in e.items() if n} | {k for e in gm.values() for k in e}
+        hours = sorted(set(hm) | set(gm) | {hour})
+        limit, giv, left = {}, {}, {}
+        for k in types:
+            need_sum = given_sum = 0
+            slack = None
+            for h in hours:
+                need_sum += (hm.get(h) or {}).get(k, 0)
+                given_sum += (gm.get(h) or {}).get(k, 0)
+                if h == hour:
+                    if need_sum:
+                        limit[k] = need_sum
+                    if given_sum:
+                        giv[k] = given_sum
+                if h >= hour:
+                    room = need_sum - given_sum
+                    slack = room if slack is None else min(slack, room)
+            if k in limit:
+                left[k] = max(0, slack or 0)
+        if limit or giv:
+            out[mid] = {"limit": limit, "given": giv, "left": left}
     return out
 
 

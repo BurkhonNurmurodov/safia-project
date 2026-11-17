@@ -6126,6 +6126,9 @@ class ContainerRequest(Base):
     # When the addressee first opened it (2026-11-14, the operator: a request
     # Nuriddin aka has not opened yet must look NEW). NULL = not opened.
     seen_at        = Column(DateTime(timezone=True), nullable=True)
+    # When «still not split at its deadline» was told to AXO / the shift
+    # managers (2026-11-17, `container_flow.alert_overdue`). NULL = not told.
+    overdue_alerted_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ContainerRequestPart(Base):
@@ -6147,3 +6150,6 @@ class ContainerRequestPart(Base):
     # The one reminder a brigadir gets while this unit's part is unconfirmed
     # (2026-11-15, `container_flow.remind_unconfirmed`). NULL = not reminded.
     reminded_at      = Column(DateTime(timezone=True), nullable=True)
+    # …and when the shift managers were told it is STILL unconfirmed after it
+    # (`container_flow.escalate_unconfirmed`). NULL = not escalated.
+    escalated_at     = Column(DateTime(timezone=True), nullable=True)

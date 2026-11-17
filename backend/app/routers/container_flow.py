@@ -250,17 +250,22 @@ class SettingsBody(BaseModel):
     topup_min: int = Field(ge=1, le=1000)
     notify: Optional[bool] = None   # absent = unchanged (an older tab)
     notify_brigadirs: Optional[bool] = None
+    notify_axo: Optional[bool] = None
+    notify_managers: Optional[bool] = None
 
 
 @router.put("/settings")
 def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(verify_admin)):
     was = flow.settings(db)
-    out = flow.save_settings(db, body.units, body.topup_min, body.notify, body.notify_brigadirs)
+    out = flow.save_settings(db, body.units, body.topup_min, body.notify, body.notify_brigadirs,
+                             body.notify_axo, body.notify_managers)
     action_log.enrich(changes=[("units", len(was["units"]), len(out["units"])),
                                ("topup_min", was["topup_min"], out["topup_min"]),
                                ("notify", was["notify"], out["notify"]),
-                               ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"])])
+                               ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"]),
+                               ("notify_axo", was["notify_axo"], out["notify_axo"]),
+                               ("notify_managers", was["notify_managers"], out["notify_managers"])])
     global _drafted_at
     _drafted_at = 0.0   # the next board read drafts for a unit just enrolled
     return {**out, "all_units": _units(db)}
@@ -420,6 +425,45 @@ def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict
     return _req_out(db, r, body.day)
 
 
+@router.get("/requests/prepared")
+def get_prepared(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """The day's hours still ahead with what each needs on «Konteynerlar» less
+    what was already asked — AXO sends the picked ones in one go."""
+    return {"day": day.isoformat(), "hours": flow.prepared(db, day)}
+
+
+class BulkItem(BaseModel):
+    hour: int
+    counts: Dict[str, int]
+
+
+class BulkBody(BaseModel):
+    day: date
+    logistics_key: str
+    items: List[BulkItem]
+    note: str = ""
+
+
+@router.post("/requests/bulk")
+def post_requests_bulk(body: BulkBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Several hours' requests to one logistics person — all or nothing; the
+    addressee gets ONE message for the lot."""
+    try:
+        rs = flow.create_requests(db, body.day, body.logistics_key, [i.model_dump() for i in body.items],
+                                  body.note, _actor(payload), _me(db, payload))
+        ids = [r.id for r in rs]
+        name = rs[0].logistics_name if rs else None
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    flow.notify_requests_later(ids)
+    action_log.enrich(target_kind="container_request", day=body.day, target_name=name,
+                      details=[("requests", len(ids)),
+                               ("hours", ", ".join(f"{i.hour % 24:02d}:00" for i in body.items))])
+    return {"ok": True, "ids": ids}
+
+
 class PartBody(BaseModel):
     manager_id: int
     counts: Dict[str, int]
@@ -443,6 +487,7 @@ def post_assign(request_id: int, body: AssignBody, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
     flow.notify_split_later(r.id)
+    flow.alert_later("short_split", r.id)        # tells AXO only when the split fell short
     return _req_out(db, r, r.day)
 
 
@@ -522,4 +567,5 @@ def post_receive(request_id: int, body: ReceiveBody, db: Session = Depends(get_d
         raise HTTPException(status_code=409, detail=e.code)
     out = _req_out(db, r, r.day)
     action_log.enrich(unit_id=body.manager_id)
+    flow.alert_later("short_receipt", r.id, body.manager_id)   # tells AXO only when fewer arrived
     return out

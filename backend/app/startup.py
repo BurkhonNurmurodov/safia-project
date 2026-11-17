@@ -2135,7 +2135,8 @@ def add_container_request_seen() -> None:
     """2026-11-14: `container_requests.seen_at` — when the addressed logistics
     person first opened the request; NULL = still new to them. Pure DDL,
     idempotent, no flag; every ORM read of a request selects it."""
-    _ensure_columns((("container_requests", (("seen_at", "TIMESTAMPTZ"),), None),),
+    _ensure_columns((("container_requests", (("seen_at", "TIMESTAMPTZ"),
+                                             ("overdue_alerted_at", "TIMESTAMPTZ")), None),),
                     "container request seen_at column")
 
 
@@ -2146,7 +2147,7 @@ def add_container_receipt_columns() -> None:
     _ensure_columns((("container_request_parts", (
         ("received", "INTEGER"), ("received_at", "TIMESTAMPTZ"), ("received_by", "VARCHAR"),
         ("received_reason", "VARCHAR(20)"), ("received_comment", "TEXT"),
-        ("reminded_at", "TIMESTAMPTZ")), None),),
+        ("reminded_at", "TIMESTAMPTZ"), ("escalated_at", "TIMESTAMPTZ")), None),),
         "container receipt columns")
 
 

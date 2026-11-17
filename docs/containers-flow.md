@@ -195,6 +195,40 @@ containers row from production and move it into the new button».
   filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
   (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
   else sees the mark.
+- **Three fixes after a review of the app** (2026-11-17; the operator asked
+  what was wrong and what to add, and answered «Yes, build those 3»):
+  - **The limit carries over** (`unit_limits`). It was counted hour by hour,
+    so an hour that got nothing was LOST — its need could never be sent
+    again and «received» could only fall behind «needed». Now a brigadir's
+    limit at hour H is everything their «Konteynerlar» figures need from the
+    day's start THROUGH H, less everything split to them for hours up to H.
+    The day's total is still never passed: a request for H may take only what
+    leaves every hour from H on within its own cumulative need (a later
+    hour's split that used the carry-over is counted against an earlier
+    hour's request). The dialog words it «Qolgan limit (kun boshidan)».
+  - **«Tayyor so'rovlar»** (`prepared`, `GET /requests/prepared`;
+    `create_requests`, `POST /requests/bulk`, AXO's door). AXO made every
+    hour's request by hand. The button on «So'rovlar» (always drawn, with its
+    count) opens the day's hours still ahead with what each needs less what
+    was already asked for it; she ticks the ones to send — all by default —
+    picks the logistics person once and sends them in one go, all or nothing.
+    The addressee gets ONE message for the lot (`notify_requests`, key
+    `container_requests_new`), never one per hour. An hour whose counts need
+    changing is unticked there and made with «Yangi so'rov».
+  - **Alerts** (`alert_*`; one message each, the page's button). To the
+    request's AXO AUTHOR (`created_key`), switch `notify_axo` — ON unless
+    switched off, since they answer her own requests: logistics split fewer
+    than asked (`container_short_split`, how many and why), a brigadir
+    confirmed fewer than sent (`container_short_receipt`), a request still
+    unsplit at its deadline (`container_request_overdue`). To EVERY
+    shift-manager profile (`shift_scope`'s fan-out), switch `notify_managers`
+    — **OFF until an admin turns it on, nobody has told them**: the same
+    overdue request, and a brigadir still unconfirmed `ESCALATE_AFTER_MIN`
+    (30) after the reminder (`container_unconfirmed`). The two clock-driven
+    ones run on the flow's tick, are claimed before sending
+    (`container_requests.overdue_alerted_at`,
+    `container_request_parts.escalated_at`) and fire only inside
+    `ALERT_WINDOW_MIN` (120) of their moment.
 - **An admin deletes a request outright** (2026-11-15, the operator: «put
   access for admins to delete the requests, I tested it and cannot delete
   it»): ⋮ → «O'chirish» on any request, in ANY state — a confirmed split
@@ -393,8 +427,8 @@ all the containers app».
 
 - A leader's own card; the brigadir's view of the AUTOMATIC batches (their
   «Qabul» covers requests only).
-- Every other notification (AXO, leaders, a second reminder) and the
-  escalation chain.
+- Every other notification (leaders, a second reminder, an automatic top-up
+  after a short receipt).
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.
 - The operator's rulings on: the deadline of a late-drafted batch (a default

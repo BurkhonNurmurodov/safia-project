@@ -588,6 +588,109 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(flow.unit_limits(self.db, DAY, 10, r3.id)[1]["left"], {"yellow": 10})
 
+    def _logistics(self):
+        from app.models import ProfilePermission, RoleProfile
+        for t in ("container_request_parts", "container_requests", "profile_permissions"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        for i in (1, 2, 3):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=f"Unit {i}", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        return nk
+
+    def test_the_limit_carries_over_and_never_passes_the_day(self):
+        """An hour that got nothing is not lost: its need can go with a later
+        hour's request — and a later split that used it is counted, so an
+        earlier hour's request cannot take it twice."""
+        nk = self._logistics()
+        self.hours = {1: {9: {"yellow": 10}, 10: {"yellow": 10}, 11: {"yellow": 10}}}
+        lim = flow.unit_limits(self.db, DAY, 10)[1]
+        self.assertEqual((lim["limit"], lim["left"]), ({"yellow": 20}, {"yellow": 20}))   # 09:00 carried
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 20}, "", "axo", "guest:1")
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 20}}], None, None, "n", nk, False)
+        self.db.commit()
+        self.assertEqual(flow.unit_limits(self.db, DAY, 9)[1]["left"], {"yellow": 0})     # not twice
+        self.assertEqual(flow.unit_limits(self.db, DAY, 11)[1]["left"], {"yellow": 10})   # 11:00's own
+        late = flow.create_request(self.db, DAY, 9, nk, {"yellow": 5}, "", "axo", "guest:1")
+        with self.assertRaises(flow.FlowError) as e:
+            flow.assign_request(self.db, late.id, [{"manager_id": 1, "counts": {"yellow": 1}}],
+                                "short", None, "n", nk, False)
+        self.assertEqual(e.exception.code, "limit")
+        self.db.rollback()
+
+    def test_prepared_hours_and_sending_them_in_one_go(self):
+        nk = self._logistics()
+        self.hours = {1: {9: {"yellow": 10}, 10: {"yellow": 12, "bucket": 3}, 11: {"yellow": 8}},
+                      2: {10: {"yellow": 6}}}
+        flow._hours_cache.clear()
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 10}, "", "axo", "guest:1")
+        self.db.commit()
+        got = flow.prepared(self.db, DAY, self.at(10, 5))        # 09:00 is over; 10:00 was partly asked
+        self.assertEqual([(x["hour"], x["counts"]) for x in got],
+                         [(10, {"yellow": 8, "bucket": 3}), (11, {"yellow": 8})])
+        self.assertTrue(got[0]["late"])
+        with self.assertRaises(flow.FlowError):                  # one hour twice: all refused
+            flow.create_requests(self.db, DAY, nk, [{"hour": 11, "counts": {"yellow": 8}},
+                                                     {"hour": 11, "counts": {"yellow": 1}}], "", "axo", "guest:1")
+        self.db.rollback()
+        rs = flow.create_requests(self.db, DAY, nk, [{"hour": x["hour"], "counts": x["counts"]} for x in got],
+                                  "", "axo", "guest:1")
+        self.db.commit()
+        self.assertEqual([x.hour for x in rs], [10, 11])
+        self.assertEqual(flow.prepared(self.db, DAY, self.at(10, 6)), [])       # nothing left to ask
+        self.assertEqual(r.status, "requested")
+
+    def test_alerts_to_axo_and_the_shift_managers(self):
+        from app.models import RoleProfile
+        from app.routers import staff
+        nk = self._logistics()
+        self.db.add(RoleProfile(role="shift-manager", name="SM One"))
+        self.db.commit()
+        cfg = flow.settings(self.db)
+        self.assertEqual((cfg["notify_axo"], cfg["notify_managers"]), (True, False))   # AXO on, managers off
+        sent = []
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=lambda db, key, nkey, params, **kw:
+                               sent.append((key, nkey, kw["html_fn"]("uz")))):
+            with mock.patch.object(flow, "now", return_value=self.at(8)):
+                r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30}, "", "axo", "guest:7")
+            self.db.commit()                                        # due 09:00
+            self.assertEqual(flow.alert_overdue(self.db, self.at(8, 59)), 0)
+            self.assertEqual(flow.alert_overdue(self.db, self.at(9, 5)), 1)       # AXO only: managers are off
+            self.assertEqual(sent[-1][:2], ("guest:7", "container_request_overdue"))
+            self.assertEqual(flow.alert_overdue(self.db, self.at(9, 10)), 0)      # once
+            # a short split and a short receipt go to the author
+            with mock.patch.object(flow, "now", return_value=self.at(9, 20)):
+                flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 24}}],
+                                    "damaged", None, "n", nk, False)
+            self.db.commit()
+            self.assertEqual(flow.alert_short_split(r.id), 1)
+            self.assertIn("Shikastlangan", sent[-1][2])
+            self.assertEqual(flow.alert_short_receipt(r.id, 1), 0)             # nothing confirmed yet
+            # the escalation: reminded at 10:00, still silent 30 min later — managers only when on
+            flow.save_settings(self.db, [1], 2, None, True)
+            self.db.add(__import__("app.models", fromlist=["ProfilePermission"]).ProfilePermission(
+                profile_key="supervisor:1", capability=flow.RECEIVE_CAP, mode="grant", scope="all"))
+            self.db.commit()
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 1)), 1)
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 40)), 0)   # switch off
+            flow.save_settings(self.db, [1], 2, None, None, None, True)
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 20)), 0)   # too early
+            n = flow.escalate_unconfirmed(self.db, self.at(10, 40))
+            self.assertGreaterEqual(n, 1)
+            self.assertEqual(sent[-1][1], "container_unconfirmed")
+            self.assertTrue(sent[-1][0].startswith("shift-manager:"))
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 45)), 0)   # once
+            flow.receive(self.db, r.id, 1, {"yellow": 20}, "short", None, "b")
+            self.db.commit()
+            self.assertEqual(flow.alert_short_receipt(r.id, 1), 1)
+            self.assertEqual(sent[-1][:2], ("guest:7", "container_short_receipt"))
+
     def test_notify_switch_and_message(self):
         from app.models import ContainerRequest
         self.assertFalse(flow.settings(self.db)["notify"])            # off by default
@@ -770,7 +873,8 @@ class PageKeyTest(unittest.TestCase):
         p = "/api/container-flow"
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
-                  ("GET", f"{p}/logistics")]:
+                  ("GET", f"{p}/logistics"), ("GET", f"{p}/requests/prepared"),
+                  ("POST", f"{p}/requests/bulk")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),

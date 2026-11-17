@@ -536,6 +536,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("POST",),   "/api/container-flow/batches/{}/answer",     "shopfloor", "containers.answered"),
     (("POST",),   "/api/container-flow/batches/{}/settle",     "shopfloor", "containers.settled"),
     (("POST",),   "/api/container-flow/batches/{}/close",      "shopfloor", "containers.force_closed"),
+    (("POST",),   "/api/container-flow/requests/bulk",         "shopfloor", "containers.requests_made"),
     (("POST",),   "/api/container-flow/requests",              "shopfloor", "containers.request_made"),
     (("POST",),   "/api/container-flow/requests/{}/assign",    "shopfloor", "containers.request_assigned"),
     (("POST",),   "/api/container-flow/requests/{}/cancel",    "shopfloor", "containers.request_cancelled"),
