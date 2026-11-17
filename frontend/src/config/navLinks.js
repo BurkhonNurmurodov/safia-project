@@ -9,7 +9,7 @@ import {
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, Package, PackageCheck, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, CalendarDays, TrendingUp, UsersRound, Wrench, createLucideIcon,
+  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, CalendarDays, TrendingUp, UsersRound, Wrench, Hammer, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 import { idleSolutionsRoles } from "./idleSolutions";
@@ -146,6 +146,9 @@ export const ALL_LINKS = [
   // tab. On the launcher it is the first page of the «Avtomatika» app
   // (2026-11-12, the operator), not a Laboratory page; its page access is
   // unchanged, and for anybody else it stays in the Laboratory group.
+  // «Uskunalar» — the equipment register, edited by hand (routers/equipment.py).
+  // ADMINS ONLY, not grantable: no page key. A page of the «Avtomatizatsiya» app.
+  { to: "/equipment", adminOnly: true, key: "nav.equipment", icon: Hammer, group: "lab", app: "automation" },
   { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab", app: "automation" },
   // «Ishdagilar soni» — how many people are at work in the factory right now,
   // read from Verifix (services/kitchen.py): counts only, for the kitchen that

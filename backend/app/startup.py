@@ -4912,6 +4912,38 @@ def seed_setup_times() -> None:
         db.close()
 
 
+def seed_equipment() -> None:
+    """Seed the «Uskunalar» register from the bundled workbook extract
+    (data/equipment_seed.json). Flag-guarded so it runs exactly once — after
+    that the register is edited on the page and must never be overwritten."""
+    import json
+    import os
+    from app.models import Equipment
+
+    FLAG = "equipment_seeded"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=FLAG).first():
+            return
+        path = os.path.join(os.path.dirname(__file__), "data", "equipment_seed.json")
+        if not os.path.isfile(path):
+            print(f"[startup] equipment seed file missing: {path}")
+            return
+        with open(path, encoding="utf-8") as fh:
+            rows = json.load(fh)["rows"]
+        if db.query(Equipment).count() == 0:
+            for r in rows:
+                db.add(Equipment(**r))
+        db.add(AppSetting(key=FLAG, value="1"))
+        db.commit()
+        print(f"[startup] seeded equipment with {len(rows)} rows")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] equipment seed skipped: {exc}")
+    finally:
+        db.close()
+
+
 # ── profile identity ──────────────────────────────────────────────────────────
 # A PROFILE is a person; a telegram_user_roles row is only a login that may act
 # as that person. Anything keyed to a registration splits one person into as

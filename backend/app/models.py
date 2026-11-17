@@ -6185,3 +6185,25 @@ class ContainerStockMove(Base):
     note    = Column(Text, nullable=True)
     by_name = Column(String, nullable=True)
     by_key  = Column(String, nullable=True)
+
+
+class Equipment(Base):
+    """«Uskunalar» — the plant's equipment register (/equipment, admin-only).
+    Seeded once from «Uskunalar ro'yxati SAFIA.xlsx» (data/equipment_seed.json,
+    startup.seed_equipment) and kept by hand on the page after that. Every
+    column is plain text as the sheet had it: a serial may be «2025/05», a cell
+    code is the Verifix code. `status` is the sheet's grade letter a · b · c."""
+    __tablename__ = "equipment"
+
+    id         = Column(Integer, primary_key=True)
+    name_real  = Column(String(200), nullable=False, default="")   # Uskuna nomi (Real)
+    name_doc   = Column(String(200), nullable=False, default="")   # Uskuna nomi (Doc)
+    serial     = Column(String(100), nullable=False, default="")   # Seriya raqami
+    status     = Column(String(1), nullable=False, default="")     # Hozirgi holati: a · b · c
+    inv_code   = Column(String(50), nullable=False, default="", index=True)  # INV-kodi
+    department = Column(String(120), nullable=False, default="")   # Otdel
+    brigadir   = Column(String(120), nullable=False, default="")   # Mas'ul brigadir
+    leader     = Column(String(120), nullable=False, default="")   # Mas'ul lider
+    cell_code  = Column(String(40), nullable=False, default="")    # Mas'ul yacheyka (Verifix code)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

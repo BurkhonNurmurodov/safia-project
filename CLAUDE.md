@@ -50,6 +50,7 @@ loaded by themselves:
 - `docs/laboratory.md` — candidate assessment, «Xodim kartasi», Trello, the audit table, Notion tasks, the live monitor, the goal board.
 - `docs/ovens.md` — the Revent ovens (read-only, ever) and the board that collects them.
 - `docs/reports-and-ontime.md` — «Hisobotlar» and the logistics on-time report.
+- `docs/equipment.md` — «Uskunalar» `/equipment`: the equipment register (admin-only page of «Avtomatizatsiya», editable, seeded once from the workbook, a/b/c «Holati»).
 - `docs/arc.md` — ARC as one page, and both ARC mirrors.
 - `docs/notifications-and-telegram.md` — the notification centre, phone notifications, coloured and disabled Telegram buttons, the `task_from_top` and `task_reminder` cards.
 - `docs/org-chart.md` — «Tashkiliy tuzilma» `/panel/orgchart`: everybody on the platform as one chart (plant → shift → brigadir → leader, the roles on no unit beside them), each one's pages and personal grants, the way to their «Xodim kartasi»; read-only, admin-only; **its access answer repeats the guards' rule** (`services/org_chart.resolve_access` — change `capabilities.py`, change it too). Its second view «Ilovalar» (`?v=apps`) is the launcher's apps → menu tabs → screens, and IS edited: order, new / removed apps and menu tabs, moves, and who opens each screen (role ticks, personal entries) — a draft until «Saqlash» (`pages/admin/useAppsEditor.js`).
