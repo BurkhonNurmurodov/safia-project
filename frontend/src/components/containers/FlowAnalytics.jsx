@@ -5,13 +5,16 @@
 // confirm), how fast each step goes, and why containers fell short.
 // Every figure is the server's (`flow.analytics`); the cards share their
 // numbers with «Hisobot». docs/containers-flow.md.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  ArrowRight, BarChart3, BellRing, ClipboardList, Clock, Eye, Gauge, PackageCheck, Split, Timer, UsersRound,
+  ArrowRight, BarChart3, BellRing, CalendarCheck, ClipboardList, Clock, Eye, Gauge, PackageCheck, Split, Timer, UsersRound,
 } from "lucide-react";
 import DateRangePicker from "../ui/DateRangePicker";
+import StyledSelect from "../ui/StyledSelect";
+import SegmentedToggle from "../ui/SegmentedToggle";
+import Pagination from "../ui/Pagination";
 import KPICard from "../ui/KPICard";
 import EmptyState from "../ui/EmptyState";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
@@ -22,10 +25,10 @@ import { useChartTheme } from "../../hooks/useChartTheme";
 import useElementWidth from "../../hooks/useElementWidth";
 import { ticksForWidth, axisLabelPx } from "../../utils/chartRange";
 import { CATEGORY_COLORS } from "../../utils/chartPalette";
-import { TONE_HEX, GREEN, AMBER, RED } from "../../utils/statusBands";
+import { TONE_HEX, GREEN, AMBER, RED, vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone } from "./flowUtil";
+import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone } from "./flowUtil";
 
 const CHART_H = 260;
 const WEEK_AFTER = 45;      // a longer period draws weeks, not days
@@ -118,6 +121,8 @@ export default function FlowAnalytics({ t }) {
               {(w) => <OnTimeBars t={t} rows={trend} width={w} />}
             </ChartCard>
           </div>
+
+          <NeedGotTable t={t} tl={tl} rows={a?.need_vs_got} loading={loading} period={`${from}|${to}`} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <ChartCard className="lg:col-span-2" icon={Clock} title={t("cflow.an.hours")} subtitle={t("cflow.an.hoursSub")} loading={loading}>
@@ -397,5 +402,140 @@ function ReasonsCard({ t, a, loading }) {
         })}
       </div>
     </section>
+  );
+}
+
+// «Kerak va olingan» (2026-11-17, the operator: «a table — for a day, how many
+// they have to get and how many they actually got»): one row per brigadir per
+// day — the day's need on «Konteynerlar», what logistics split to them, what
+// they confirmed on «Qabul», the difference and the share received. What was
+// split and is not confirmed yet stands in its own column, so a row still
+// waiting never reads as a shortfall. Per type in the row's hover.
+const NG_PAGE = 30;
+const ngTone = (pct) => (pct == null ? null : vypTone(pct / 100));
+
+function NeedGotTable({ t, tl, rows, loading, period }) {
+  const [unit, setUnit] = useState(null);
+  const [only, setOnly] = useState("all");
+  const [page, setPage] = useState(1);
+  // back to page 1 on a filter or period change — keyed on the VALUES, never on the rows
+  useEffect(() => { setPage(1); }, [unit, only, period]);
+  const failed = !loading && rows === null;
+  const all = rows ?? [];
+  const unitOpts = useMemo(() => {
+    const seen = new Map();
+    for (const r of all) if (!seen.has(r.manager_id)) seen.set(r.manager_id, r);
+    return [...seen.values()].map((r) => ({ value: r.manager_id, label: `${tl(r.unit) || "—"}${r.shift ? ` · S${r.shift}` : ""}` }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [all, tl]);
+  const shown = all.filter((r) => (unit == null || r.manager_id === unit)
+    && (only === "all" || (r.need > 0 && r.received + r.unconfirmed < r.need)));
+  const tot = shown.reduce((s, r) => ({
+    need: s.need + r.need, given: s.given + r.given, received: s.received + r.received,
+    unconfirmed: s.unconfirmed + r.unconfirmed,
+  }), { need: 0, given: 0, received: 0, unconfirmed: 0 });
+  const totPct = tot.need ? Math.round((100 * tot.received) / tot.need) : null;
+  const pageRows = shown.slice((page - 1) * NG_PAGE, page * NG_PAGE);
+  const typeTitle = (r) => KEYS.filter((k) => r.types?.[k])
+    .map((k) => `${t(`cflow.ct.${k}`)}: ${fmt(r.types[k].need)} → ${fmt(r.types[k].given)} → ${fmt(r.types[k].received)}`)
+    .join("\n");
+  const COLS = 8;
+  return (
+    <div className="flex flex-col gap-2">
+      <TableCard icon={CalendarCheck} title={t("cflow.ng.title")} subtitle={t("cflow.ng.sub")} headSize="lg" maxHeight="560px"
+        right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{loading ? "" : shown.length}</span>}
+        toolbar={(
+          <div className="flex flex-wrap items-center gap-2">
+            <StyledSelect searchable value={unit} onChange={setUnit} className="w-64 max-w-full"
+              placeholder={t("cflow.ng.allUnits")}
+              options={[{ value: null, label: t("cflow.ng.allUnits") }, ...unitOpts]} />
+            <SegmentedToggle value={only} onChange={setOnly}
+              options={[["all", t("cflow.ng.all")], ["short", t("cflow.ng.short")]]} />
+          </div>
+        )}
+        >
+        <thead>
+          <tr>
+            <Th label={t("cflow.rep.day")} />
+            <Th label={t("containers.brigadir")} />
+            <Th label={t("cflow.ng.col.need")} align="right" hint={t("cflow.ng.hint.need")} />
+            <Th label={t("cflow.ng.col.given")} align="right" hint={t("cflow.ng.hint.given")} />
+            <Th label={t("cflow.ng.col.received")} align="right" hint={t("cflow.ng.hint.received")} />
+            <Th label={t("cflow.ng.col.diff")} align="right" hint={t("cflow.ng.hint.diff")} />
+            <Th label={t("cflow.ng.col.pct")} hint={t("cflow.ng.hint.pct")} />
+            <Th label={t("cflow.ng.col.waiting")} align="right" hint={t("cflow.ng.hint.waiting")} />
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? Array.from({ length: 6 }).map((_, i) => (
+            <tr key={i}><td colSpan={COLS} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
+          )) : failed ? (
+            <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--status-bad)" }}>{t("cflow.ng.failed")}</td></tr>
+          ) : !shown.length ? (
+            <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--text-3)" }}>
+              {t(only === "short" ? "cflow.ng.noneShort" : "cflow.ng.none")}
+            </td></tr>
+          ) : pageRows.map((r) => {
+            const tone = ngTone(r.pct);
+            const color = tone ? TONE_HEX[tone] : "#94a3b8";
+            return (
+              <tr key={`${r.day}|${r.manager_id}`} className="text-sm" title={typeTitle(r)}>
+                <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+                  {`${r.day.slice(8, 10)}.${r.day.slice(5, 7)}`}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap max-w-[240px] truncate" style={{ color: "var(--text-1)" }}>
+                  {tl(r.unit) || "—"}{r.shift ? <span className="text-[11px]" style={{ color: "var(--text-3)" }}> · S{r.shift}</span> : null}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: r.need ? "var(--text-1)" : "var(--text-4)" }}>{fmt(r.need)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.given ? "var(--text-1)" : "var(--text-4)" }}>{fmt(r.given)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: r.received ? "var(--text-1)" : "var(--text-4)" }}>{fmt(r.received)}</td>
+                <td className="px-3 py-2 text-right tabular-nums"
+                  style={{ color: !r.need ? "var(--text-4)" : r.diff < 0 ? "var(--status-bad)" : "var(--status-ok)" }}>
+                  {r.need ? `${r.diff > 0 ? "+" : ""}${fmt(r.diff)}` : "—"}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {r.pct == null ? <span style={{ color: "var(--text-4)" }}>—</span> : (
+                    <span className="flex items-center gap-2">
+                      <span className="w-16 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: "var(--bg-inner)" }} aria-hidden>
+                        <span className="block h-full rounded-full" style={{ width: `${Math.min(100, r.pct)}%`, background: color }} />
+                      </span>
+                      <span className="tabular-nums text-[13px] font-medium w-10 text-right" style={{ color: tone ? `var(--status-${tone})` : "var(--text-2)" }}>
+                        {r.pct}%
+                      </span>
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.unconfirmed ? "var(--status-warn)" : "var(--text-4)" }}>
+                  {fmt(r.unconfirmed)}
+                </td>
+              </tr>
+            );
+          })}
+          {/* the rows the filter keeps, summed — the same columns, so it reads as the table's own last line */}
+          {!loading && !failed && shown.length > 0 && (
+            <tr className="text-sm font-semibold" style={{ background: "var(--bg-inner)" }}>
+              <td className="px-3 py-2 whitespace-nowrap" colSpan={2} style={{ color: "var(--text-1)" }}>
+                {t("production.cont.total")}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.need)}</td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.given)}</td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.received)}</td>
+              <td className="px-3 py-2 text-right tabular-nums"
+                style={{ color: tot.received - tot.need < 0 ? "var(--status-bad)" : "var(--status-ok)" }}>
+                {tot.received - tot.need > 0 ? "+" : ""}{fmt(tot.received - tot.need)}
+              </td>
+              <td className="px-3 py-2 tabular-nums"
+                style={{ color: ngTone(totPct) ? `var(--status-${ngTone(totPct)})` : "var(--text-1)" }}>
+                {totPct == null ? "—" : `${totPct}%`}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: tot.unconfirmed ? "var(--status-warn)" : "var(--text-4)" }}>
+                {fmt(tot.unconfirmed)}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </TableCard>
+      <Pagination page={page} pageCount={Math.ceil(shown.length / NG_PAGE)} total={shown.length} pageSize={NG_PAGE} onPage={setPage} />
+    </div>
   );
 }

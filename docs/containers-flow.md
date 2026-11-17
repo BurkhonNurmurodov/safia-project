@@ -341,6 +341,24 @@ all the containers app».
     card's measured width); split on time % per day, each bar in its band's
     colour, the 95% line; containers per production hour (the peak hours);
     per container type.
+  - **«Kerak va olingan — kunlar bo'yicha»** (2026-11-17, the operator: «a
+    table — for a day, how many they have to get and how many they actually
+    got»; `need_vs_got`, in `GET /analytics` as `need_vs_got`): one row per
+    brigadir per day — **Kerak**, the day's need on «Konteynerlar» (`day_need`:
+    the page's own per-brigadir count, `pp_containers.count` over every catalog
+    line's plan through `zagruzka_source.line_facts`, the whole period in one
+    read, every non-archived unit — the day's total, not only what the hours
+    can place); **Taqsimlangan**, what logistics split to them (cancelled
+    requests out); **Qabul qilingan**, what they confirmed on «Qabul»; the
+    difference, the share received (the completion band, `vypTone`), and
+    **Tasdiqlanmagan** — split, not yet confirmed — in its own column, so a row
+    still waiting never reads as a shortfall. A brigadir who needed and got
+    nothing keeps a row. Per type in the row's hover; a brigadir filter and
+    «Kam olganlar» (received + unconfirmed below the need); a totals row of
+    what the filter keeps; 30 rows a page. A failed read of the need answers
+    `null` and the table says so — the rest of «Tahlil» stands. The operator
+    did not pick the «must get» source: this reads the plan's figure, the one
+    the split's limit is cut from.
   - «Brigadirlar bo'yicha»: given (an inline bar, relative to the largest),
     received, missing, splits confirmed %, time to confirm, reminders.
   - «Nega kam?»: the reasons logistics split short and brigadirs received

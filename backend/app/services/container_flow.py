@@ -1016,6 +1016,85 @@ def requests_report(db: Session, d_from: date, d_to: date) -> dict:
             "people": sorted(out_people, key=lambda p: p["name"] or "")}
 
 
+def day_need(db: Session, d_from: date, d_to: date) -> dict:
+    """{(day, manager_id): {ctype: n}} — what each brigadir's unit NEEDS for a
+    day, per container type: the «Konteynerlar» page's own per-brigadir figure
+    (`/api/shift-report/containers` `by_unit` — `pp_containers.count` over every
+    catalog line's plan, through `zagruzka_source.line_facts`), for every
+    non-archived unit, the whole period in one read. The day's total, not only
+    the part the hours can place."""
+    from app.services import pp_containers, zagruzka_source
+    keys = pp_containers.keys()
+    ids = [mid for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all()]
+    out: dict = {}
+    if not ids:
+        return out
+
+    def emit(mid, line, wc, qkey, lk, d, qp, qa, pv, av):
+        if line is None or not qp:
+            return
+        day = d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
+        for col, k in zip(pp_containers.CONTAINERS, keys):
+            n = pp_containers.count(qp, getattr(line, "uom", None), getattr(line, col, None))
+            if n:
+                u = out.setdefault((day, mid), {})
+                u[k] = u.get(k, 0) + n
+
+    zagruzka_source.line_facts(db, ids, d_from, d_to, emit)
+    return out
+
+
+def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = None) -> list:
+    """«Kerak va olingan» (2026-11-17, the operator: «a table — for a day, how
+    many they have to get and how many they actually got»): one row per
+    brigadir per day — what the day's plan needs (`day_need`), what logistics
+    split to them (requests not cancelled), and what they CONFIRMED receiving
+    on «Qabul»; `unconfirmed` is what was split and not yet confirmed, so a row
+    still waiting is never read as a shortfall. Every unit that needed or got
+    anything that day; per type under `types`."""
+    need = day_need(db, d_from, d_to) if need is None else need
+    rows: dict = {}
+
+    def row(day, mid):
+        return rows.setdefault((day, mid), {"day": day.isoformat(), "manager_id": mid,
+                                            "need": 0, "given": 0, "received": 0, "unconfirmed": 0,
+                                            "types": {}})
+
+    def typ(r, k):
+        return r["types"].setdefault(k, {"need": 0, "given": 0, "received": 0})
+
+    for (day, mid), counts in need.items():
+        r = row(day, mid)
+        for k, n in counts.items():
+            r["need"] += n
+            typ(r, k)["need"] += n
+    q = db.query(ContainerRequest.day, ContainerRequestPart).join(
+        ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
+        ContainerRequest.day >= d_from, ContainerRequest.day <= d_to,
+        ContainerRequest.status == "assigned")
+    for day, p in q.all():
+        r = row(day, p.manager_id)
+        r["given"] += p.count
+        typ(r, p.ctype)["given"] += p.count
+        if p.received is None:
+            r["unconfirmed"] += p.count
+        else:
+            r["received"] += p.received
+            typ(r, p.ctype)["received"] += p.received
+    mids = {mid for (_, mid) in rows}
+    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    out = []
+    for (day, mid), r in rows.items():
+        m = units.get(mid)
+        r["unit"], r["shift"] = getattr(m, "name", None), getattr(m, "shift", None)
+        r["diff"] = r["received"] - r["need"]
+        r["pct"] = round(100 * r["received"] / r["need"]) if r["need"] else None
+        out.append(r)
+    out.sort(key=lambda r: (r["day"], -r["need"], r["unit"] or ""), reverse=False)
+    out.sort(key=lambda r: r["day"], reverse=True)     # newest day first, the biggest need first within it
+    return out
+
+
 def analytics(db: Session, d_from: date, d_to: date) -> dict:
     """«Tahlil» (2026-11-15, the operator: «add more analytics with graphs»):
     the requests of a period cut the ways a chart needs — per day (the trend),
@@ -1107,7 +1186,14 @@ def analytics(db: Session, d_from: date, d_to: date) -> dict:
     s["reminded"] = reminded
     s["confirm_pct"] = round(100 * s["confirmed"] / s["units"]) if s["units"] else None
     s["received_pct"] = round(100 * s["received"] / s["sent_confirmed"]) if s["sent_confirmed"] else None
+    try:
+        nvg = need_vs_got(db, d_from, d_to)
+    except Exception:
+        logger.warning("container-flow: need vs got failed", exc_info=True)
+        db.rollback()
+        nvg = None      # the table says it could not be read; the rest of «Tahlil» stands
     return {"from": d_from.isoformat(), "to": d_to.isoformat(), "summary": s, "days": days,
+            "need_vs_got": nvg,
             "hours": [hours[h] for h in sorted(hours)],
             "types": [types[k] for k in KEYS if types[k]["asked"] or types[k]["given"]],
             "units": sorted(out_units, key=lambda u: (-u["given"], u["unit"] or "")),

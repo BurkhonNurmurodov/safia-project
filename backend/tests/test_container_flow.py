@@ -425,6 +425,43 @@ class FlowTest(unittest.TestCase):
             self.assertFalse(sent[-1][3])
         self.assertEqual(flow.receive_from_bot(self.db, r3.id, 1, 5001)[0], "cancelled")
 
+    def test_need_vs_got_per_brigadir_per_day(self):
+        """«Kerak va olingan»: the day's need per brigadir (the «Konteynerlar»
+        figure) beside what was split and what they confirmed; a unit that
+        needed and got nothing still has its row; a cancelled split counts
+        nowhere; an unconfirmed one is `unconfirmed`, not a shortfall."""
+        from app.models import ProfilePermission, RoleProfile
+        for t in ("container_request_parts", "container_requests", "profile_permissions"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        for i in (1, 2, 3):
+            if self.db.get(Manager, i) is None:
+                self.db.add(Manager(id=i, name=f"Unit {i}", shift=1))
+        p = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add(p)
+        self.db.flush()
+        nk = f"idle-owner:{p.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        need = {(DAY, 1): {"yellow": 20, "bucket": 4}, (DAY, 2): {"yellow": 10}, (DAY, 3): {"grey": 6}}
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30, "bucket": 4}, "", "axo", "guest:1")
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 20, "bucket": 4}},
+                                            {"manager_id": 2, "counts": {"yellow": 10}}], None, None, "n", nk, False)
+        self.db.commit()
+        flow.receive(self.db, r.id, 1, {"yellow": 18, "bucket": 4}, "damaged", None, "b")
+        c = flow.create_request(self.db, DAY, 11, nk, {"grey": 6}, "", "axo", "guest:1")
+        flow.assign_request(self.db, c.id, [{"manager_id": 3, "counts": {"grey": 6}}], None, None, "n", nk, False)
+        flow.cancel_request(self.db, c.id, "xato", "axo")
+        self.db.commit()
+        rows = {x["manager_id"]: x for x in flow.need_vs_got(self.db, DAY, DAY, need)}
+        self.assertEqual({k: rows[1][k] for k in ("need", "given", "received", "unconfirmed", "diff", "pct")},
+                         {"need": 24, "given": 24, "received": 22, "unconfirmed": 0, "diff": -2, "pct": 92})
+        self.assertEqual(rows[1]["types"]["yellow"], {"need": 20, "given": 20, "received": 18})
+        self.assertEqual({k: rows[2][k] for k in ("need", "given", "received", "unconfirmed", "pct")},
+                         {"need": 10, "given": 10, "received": 0, "unconfirmed": 10, "pct": 0})
+        self.assertEqual({k: rows[3][k] for k in ("need", "given", "received")},
+                         {"need": 6, "given": 0, "received": 0})            # needed, got nothing, cancelled split
+        self.assertEqual(rows[1]["unit"], self.db.get(Manager, 1).name)
+
     def test_yusuf_becomes_the_second_logistics_person(self):
         """16 Nov: Yusuf aka gets the logistics page like Nuriddin aka, so AXO
         picks between two; once, and only on exactly one matching profile."""
