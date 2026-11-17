@@ -174,6 +174,7 @@ async def lifespan(app: FastAPI):
         add_assessment_answer_columns,
         seed_hr_kaizen_questions,
         archive_sample_questions,
+        seed_tb_safety_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -367,6 +368,11 @@ async def lifespan(app: FastAPI):
     # once its flag reads «done».
     later(seed_hr_kaizen_questions)
     later(archive_sample_questions)
+    # ⚠ TEMPORARY one-shot (2026-11-17): «ТБ бўйича саволлар» — 20 questions into
+    # the empty TB bank. AFTER the two above (their TB → OKK move). Remove with
+    # startup.seed_tb_safety_questions and services/assessment_seed_tb_nov17.py
+    # once its flag reads «done».
+    later(seed_tb_safety_questions)
     run(add_pp_product_containers)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)

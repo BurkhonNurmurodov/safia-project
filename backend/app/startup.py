@@ -10230,6 +10230,51 @@ def archive_sample_questions() -> None:
                                      + [(d, per.get(d, 0)) for d in seed.ARCHIVE_DEPARTMENTS])
 
 
+def seed_tb_safety_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-11-17), `services/assessment_seed_tb_nov17.py`:
+    the operator's document «ТБ бўйича саволлар» — 20 THEORY questions, no
+    expected answers — into the TB bank, which has been empty since its earlier
+    questions moved to OKK on 2026-11-09 (so no sitting could be opened). A
+    question TB already holds (folded text, archived or not) is skipped. The
+    rows and the flag ride ONE transaction. Runs after
+    `seed_hr_kaizen_questions` (its TB → OKK move must not take these). Delete
+    this function, the module and both calls once the flag reads «done»."""
+    import re as _re
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services import assessment_seed_tb_nov17 as seed
+    fold = lambda t: _re.sub(r"\s+", " ", (t or "").strip().lower())
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.FLAG).first():
+            return
+        have = {fold(q.text) for q in db.query(AssessmentQuestion).filter(
+            AssessmentQuestion.department == seed.DEPARTMENT).all()}
+        added = skipped = 0
+        for text_ in seed.QUESTIONS:
+            if fold(text_) in have:
+                skipped += 1
+                continue
+            have.add(fold(text_))
+            db.add(AssessmentQuestion(department=seed.DEPARTMENT, qtype=seed.QTYPE,
+                                      text=text_, created_by=seed.SOURCE))
+            added += 1
+        db.add(AppSetting(key=seed.FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] TB safety questions import skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] assessment bank: TB {added} added, {skipped} already there")
+    action_log.record_system("training", "assessment.questions_imported",
+                             target_kind="assessment_question",
+                             details=[("department", seed.DEPARTMENT), ("added", added),
+                                      ("answered", 0), ("skipped", skipped),
+                                      ("source", seed.SOURCE)])
+
+
 def seed_hr_contact() -> None:
     """The HR contact job seekers are sent to (docs/registration.md «Job
     seekers go to HR») starts as the one the operator named on 2026-11-09,

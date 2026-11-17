@@ -159,6 +159,20 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   real questions). «Namunalarni o'chirish» still removes archived samples and
   the sittings that drew them. Delete the module, both functions and their
   calls once both flags read «done».
+- **On 2026-11-17 TB got real questions** (the operator: «Put these questions
+  for the bank of TB», the document «ТБ бўйича саволлар»): 20 open questions —
+  technical safety, hygiene, first aid, fire, the labour code — all THEORY,
+  with NO expected answer (the document gives none; one can be added per
+  question from the bank). Text word for word (extracted by script; numbering
+  dropped, double spaces folded, the document's capitals and spelling kept).
+  TEMPORARY `startup.seed_tb_safety_questions` (`later`, both entrypoints, run
+  AFTER `seed_hr_kaizen_questions` so its TB → OKK move cannot take them on a
+  database that has not run it yet; flag `assessment_tb_safety_seed_2026_11_17_v1`
+  in the same transaction as the rows; a question TB already holds is skipped)
+  over `services/assessment_seed_tb_nov17.py`, `created_by` «Import: ТБ бўйича
+  саволлар (docx)», Jurnal `assessment.questions_imported`. With these TB has
+  its 3, so a sitting can be opened again. Delete the module, the function and
+  both calls once the flag reads «done».
 - **SAMPLE questions for trying the page out** (the operator, 2026-10-31: «for
   now, later we delete and put actual questions»): 40 written by the
   assistant, in Russian, with expected answers — Kaizen 5 theory + 7
