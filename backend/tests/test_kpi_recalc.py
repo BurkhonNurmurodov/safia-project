@@ -48,6 +48,9 @@ class StartTest(unittest.TestCase):
         self.rf = mock.patch.object(kr, "_refreeze_month", return_value=None)
         self.rf.start()
         self.addCleanup(self.rf.stop)
+        self.fm = mock.patch.object(kr, "_foreign_month", return_value=None)
+        self.fm.start()
+        self.addCleanup(self.fm.stop)
 
     def test_auto_skips_when_every_source_is_fresh(self):
         with mock.patch.object(kr, "_past_compute", return_value=None), \
@@ -150,6 +153,45 @@ class WorkTest(unittest.TestCase):
         self.assertEqual(forgot, [1])
 
 
+class ForeignFreezeTest(unittest.TestCase):
+    """A closed month's foreign objects are a frozen copy (2026-11-17)."""
+    OCT = date(2026, 10, 1)
+
+    def _pick(self, auto, state="closed", copy=None, m=OCT):
+        with mock.patch.object(kr.turnover, "month_state", return_value=(state, None)), \
+                mock.patch.object(kr.foreign_objects, "frozen", return_value=copy), \
+                mock.patch.object(kr.turnover, "now_aware", return_value=kr.turnover.now_aware().replace(2026, 11, 17)):
+            return kr._foreign_month(None, m, auto)
+
+    def test_the_button_takes_a_closed_month_again(self):
+        self.assertEqual(self._pick(False, copy=object()), self.OCT)
+
+    def test_opening_takes_only_a_month_without_a_copy(self):
+        self.assertEqual(self._pick(True), self.OCT)
+        self.assertIsNone(self._pick(True, copy=object()))
+
+    def test_a_month_not_closed_stays_live(self):
+        self.assertIsNone(self._pick(False, state="closing"))
+        self.assertIsNone(self._pick(False, m=date(2026, 11, 1)))
+
+    def _work(self, quality):
+        kr._run = {"started_at": kr._now(), "finished_at": None, "auto": True, "month": "2026-10",
+                   "by": "hr", "steps": {"quality": None, "turnover": None, "compliance": None}}
+        with mock.patch.object(kr, "_quality", return_value=quality), \
+                mock.patch.object(kr, "_read", return_value={"ok": True}), \
+                mock.patch.object(kr, "_freeze_foreign", return_value={"frozen": "2026-10"}) as fz:
+            kr._work(None, None, "hr", True, None, foreign=self.OCT)
+        return fz
+
+    def test_the_copy_is_taken_after_a_good_pull(self):
+        fz = self._work({"ok": True})
+        fz.assert_called_once_with(self.OCT)
+        self.assertEqual(kr._last["steps"]["quality"], {"ok": True, "frozen": "2026-10"})
+
+    def test_a_failed_pull_keeps_the_copy(self):
+        self._work({"ok": False, "error": "x"}).assert_not_called()
+
+
 class RefreezeMonthTest(unittest.TestCase):
     """Which month a run closes again (2026-11-16)."""
     OCT, SEP = date(2026, 10, 1), date(2026, 9, 1)
@@ -195,6 +237,7 @@ class RefreezeMonthTest(unittest.TestCase):
         with mock.patch.object(kr, "status", return_value={}), \
                 mock.patch.object(kr, "_past_compute", return_value=None), \
                 mock.patch.object(kr, "_refreeze_month", return_value=self.OCT), \
+                mock.patch.object(kr, "_foreign_month", return_value=None), \
                 mock.patch.object(kr, "_all_fresh", return_value=True), \
                 mock.patch.object(threading, "Thread") as th:
             out = kr.start(None, month=self.OCT, by="hr", auto=True)

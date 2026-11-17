@@ -13,7 +13,9 @@ Now one run fetches all of them, in the order they depend on each other:
   1. the Quality register from its Google Sheet (the foreign-objects KPI) —
      seconds, on its own thread beside step 2. The Quality page has no
      scheduled sync at all, so before this the KPI moved only when somebody
-     pressed a refresh;
+     pressed a refresh. A CLOSED month reads its frozen copy; the button
+     takes that copy again after a good pull (`foreign_objects.freeze`,
+     2026-11-17), the automatic run only for a month that has none yet;
   2. the Verifix directory (turnover) — minutes. For a PAST month
      (`turnover.PAST_FROM` ≤ m < `START_MONTH`) the same read also computes the
      month and saves it, as «Hisoblash» did; for a CLOSED month the button
@@ -51,7 +53,7 @@ from typing import Callable, Optional
 
 from app.database import SessionLocal
 from app.models import QualitySyncMeta, SheetSource
-from app.services import action_log, category_compliance as cc, category_sync, turnover, turnover_sync
+from app.services import action_log, category_compliance as cc, category_sync, foreign_objects, turnover, turnover_sync
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +166,33 @@ def _refreeze_month(db, m: Optional[date], auto: bool) -> Optional[date]:
     return m
 
 
+def _foreign_month(db, m: Optional[date], auto: bool) -> Optional[date]:
+    """A CLOSED month whose foreign objects this run takes again from the
+    register it pulls: the button always; the page's own run only when the
+    month has no copy yet (closed before copies existed — October 2026)."""
+    if m is None or m >= turnover.month_start(turnover.local(turnover.now_aware()).date()):
+        return None      # only an ended month can be closed
+    if turnover.month_state(db, m)[0] != "closed":
+        return None
+    if auto and foreign_objects.frozen(db, m) is not None:
+        return None
+    return m
+
+
+def _freeze_foreign(m: date) -> dict:
+    db = SessionLocal()
+    try:
+        foreign_objects.freeze(db, m)
+        db.commit()
+        return {"frozen": turnover.ym(m)}
+    except Exception as exc:  # noqa: BLE001 — a background step reports, never dies silently
+        db.rollback()
+        log.exception("kpi-recalc: freezing foreign objects of %s failed", m)
+        return {"ok": False, "error": str(exc)[:300]}
+    finally:
+        db.close()
+
+
 def _refreeze(m: date, by: str) -> dict:
     db = SessionLocal()
     try:
@@ -186,13 +215,14 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
     global _run, _queued
     compute = _past_compute(db, month, auto)
     refreeze = _refreeze_month(db, month, auto)
+    foreign = _foreign_month(db, month, auto)
     with _lock:
         busy = _run is not None
         if busy and not auto:
             _queued = (month, by, on_done)
     if busy:
         return {"started": False, "reason": "queued" if not auto else "running", **status(db)}
-    if auto and compute is None and refreeze is None and _all_fresh(db, _now()):
+    if auto and compute is None and refreeze is None and foreign is None and _all_fresh(db, _now()):
         return {"started": False, "reason": "fresh", **status(db)}
     # `status` takes `_lock` itself: it is read AFTER the block, never inside
     # it — two pages opening at once race here, and a non-reentrant lock
@@ -208,7 +238,7 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
     if lost:
         return {"started": False, "reason": "running", **status(db)}
     threading.Thread(target=_work, args=(compute, refreeze, by, auto, on_done),
-                     name="kpi-recalc", daemon=True).start()
+                     kwargs={"foreign": foreign}, name="kpi-recalc", daemon=True).start()
     return {"started": True, "reason": None, **status(db)}
 
 
@@ -280,7 +310,8 @@ def _read(run_fn, running_fn, *args) -> dict:
     return {"ok": bool(res.get("ok")), "error": res.get("error")}
 
 
-def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool, on_done) -> None:
+def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool, on_done,
+          foreign: Optional[date] = None) -> None:
     global _run, _last, _queued
     trigger = f"{'auto' if auto else 'recalc'}:{by}"[:120]
     try:
@@ -296,6 +327,11 @@ def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool
         _set("turnover", tv)
         _set("compliance", _read(category_sync.run_read, category_sync.running, trigger))
         q.join()
+        if foreign is not None:   # only over a good pull: a failed one keeps the copy
+            with _lock:
+                qs = dict(((_run or {}).get("steps") or {}).get("quality") or {})
+            if qs.get("ok"):
+                _set("quality", {**qs, **_freeze_foreign(foreign)})
     except Exception:  # noqa: BLE001
         log.exception("kpi-recalc: run failed")
     finally:

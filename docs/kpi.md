@@ -833,10 +833,22 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
   `turnover.owned`, the very reading /turnover and /worker-concerns list by,
   so for one month the three KPI pages name the same owners and cells. An
   owned cell with no complaint scores 5; a cell with no owner is a notice.
-- **Nothing is frozen.** A month is re-read from the register as it stands
-  (the sync time is printed; from 2026-11-11 the page's «Qayta hisoblash»
-  pulls the register — before, the admin's «Reyestrni yangilash» was the Quality
-  page's own refresh). Before `LINKS_FROM` (2026-10-12, the dated cell links)
+- **A CLOSED month is frozen** (2026-11-17, the operator: «freeze it», like
+  turnover — asked after HR's October file: 32 October complaints carried no
+  cell code, 17 still open at QA, and any of them coded in November would have
+  moved a month HR had already paid on). Until its turnover month closes (the
+  5th, 09:00) a month is re-read from the register as it stands (the sync time
+  is printed; from 2026-11-11 the page's «Qayta hisoblash» pulls the
+  register). `turnover.close` then takes its complaints into `foreign_months`
+  (`foreign_objects.freeze`, `keep` — a re-close under «Sabablar» or the
+  page's own run leaves the copy alone) and the month reads that copy; the
+  payload's `sync` becomes the pull it was taken from, and `frozen_at` says
+  when. Only «Qayta hisoblash» PRESSED on a closed month takes it again, and
+  only over a good register pull (`kpi_recalc._foreign_month`); the page's own
+  run takes it only for a closed month with no copy — October 2026, closed
+  before copies existed, frozen the first time it is opened. The cell → owner
+  map is still read by the dated links; months before October are never
+  closed and stay live. Before `LINKS_FROM` (2026-10-12, the dated cell links)
   owners have no history, so an older month says it is credited by the
   earliest owners known (`approx_owners`). The rule is admin-editable
   (`foreign_rule` in app_settings, the shape of `turnover_rule`).

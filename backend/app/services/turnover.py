@@ -620,6 +620,10 @@ def close(db: Session, m: date, by: str, at: Optional[datetime] = None) -> dict:
     row.closed_at = at
     row.closed_by = by
     row.rule = rule(db)
+    # The foreign-objects KPI freezes with the month (2026-11-17) — imported
+    # here because foreign_objects imports this module.
+    from app.services import foreign_objects
+    foreign_objects.freeze(db, m, at, keep=True)
     db.flush()
     return {"month": ym(m), "leavers": len(leavers)}
 

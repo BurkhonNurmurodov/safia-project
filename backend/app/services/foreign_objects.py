@@ -26,11 +26,15 @@ and keeps HR's arithmetic:
   the very reading /turnover and /worker-concerns list by, so for one month
   the three KPI pages name the same owners and the same cells. A cell with no
   owner counts toward nobody; an owned cell with no complaint scores 5.
-* **Nothing is frozen.** The register is a dated log the sync reloads whole,
-  so a month is re-read from the register as it stands now (the page prints
-  the sync time; a month changes when the register does — a complaint
-  re-attributed in the sheet moves its month on the next sync). HR's figures
-  were a snapshot; this is the register.
+* **A CLOSED month is frozen** (the operator, 2026-11-17: «freeze it», like
+  turnover). Until its turnover month closes (the 5th, 09:00) a month is
+  re-read from the register as it stands — a complaint re-attributed in the
+  sheet moves it on the next sync. The close takes its complaints into
+  `foreign_months` (`freeze`), and from then on the month reads that copy: a
+  code QA types in later never moves a month HR has paid on. Only «Qayta
+  hisoblash» pressed on that month takes it again (`kpi_recalc`), after a good
+  register pull; a month closed before the copy existed (October 2026) is
+  taken by the page's own run the first time it is opened.
 * Before `LINKS_FROM` (the dated cell links, 2026-10-12) the owner map has no
   history, so an older month is credited by the owners in force at the first
   dated day — said so on the page (`approx_owners`).
@@ -44,11 +48,12 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Optional
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, QualityComplaint, QualitySyncMeta
+from app.models import AppSetting, ForeignMonth, QualityComplaint, QualitySyncMeta
 from app.services.turnover import (   # the shared month arithmetic and cell reading
-    PAST_FROM, START_MONTH, cell_map, code_key, last_day, local, month_start,
+    PAST_FROM, START_MONTH, cell_map, code_key, iso, last_day, local, month_start,
     now_aware, options, owned, ranked, ym,
 )
 
@@ -134,6 +139,22 @@ def complaints_of(db: Session, m: date) -> list[dict]:
         "product": r.product, "description": r.description, "status": r.status,
         "ref_no": r.ref_no, "sheet_brigadir": r.brigadir, "cell_name": r.cell_name,
     } for r in rows]
+
+
+def frozen(db: Session, m: date) -> Optional[ForeignMonth]:
+    return db.get(ForeignMonth, m)
+
+
+def freeze(db: Session, m: date, at: Optional[datetime] = None, keep: bool = False) -> None:
+    """Take month `m`'s complaints as the register holds them now. `keep`
+    leaves a copy already taken alone — a month's close (`turnover.close`,
+    also under «Sabablar» and the page's own re-close, which must not move
+    this KPI); the button takes it again (`kpi_recalc`)."""
+    ins = pg_insert(ForeignMonth).values(month=m, frozen_at=at or now_aware(),
+                                         sync=sync_info(db), rows=complaints_of(db, m))
+    db.execute(ins.on_conflict_do_nothing(index_elements=["month"]) if keep else
+               ins.on_conflict_do_update(index_elements=["month"], set_={
+                   k: ins.excluded[k] for k in ("frozen_at", "sync", "rows")}))
 
 
 def _in_scope(cell: dict, scope: dict) -> bool:
@@ -273,5 +294,9 @@ def month_payload(db: Session, m: date, scope: Optional[dict] = None,
     if state in ("before", "future"):
         return base
     cmap = cell_map(db, d)
-    agg = aggregate(complaints_of(db, m), cmap, base["rule"], scope)
+    snap = frozen(db, m)
+    base["frozen_at"] = iso(snap.frozen_at) if snap else None
+    if snap and snap.sync:
+        base["sync"] = snap.sync          # the pull the copy was taken from
+    agg = aggregate(snap.rows if snap else complaints_of(db, m), cmap, base["rule"], scope)
     return {**base, **agg, "options": options(cmap)}

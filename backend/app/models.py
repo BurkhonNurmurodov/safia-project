@@ -5123,6 +5123,18 @@ class TurnoverMonth(Base):
     reopened_by   = Column(String, nullable=True)
 
 
+class ForeignMonth(Base):
+    """A CLOSED month's foreign-object complaints as the Quality register held
+    them when it was frozen (`foreign_objects.freeze`, 2026-11-17) — a code
+    typed or changed in the sheet later never moves a closed month."""
+    __tablename__ = "foreign_months"
+
+    month     = Column(Date, primary_key=True)                  # the month's first day
+    frozen_at = Column(DateTime(timezone=True), nullable=False)
+    sync      = Column(JSONB, nullable=True)                    # the register's last pull, then
+    rows      = Column(JSONB, nullable=False)                   # complaints_of(), as it answered
+
+
 class TurnoverMonthPerson(Base):
     """A closed or captured month's people: `roster` = working on the last day
     (taken by the read at the month's end), `leaver` = left in the month
