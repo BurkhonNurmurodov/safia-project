@@ -285,12 +285,12 @@ def call(c: httpx.Client, path: str, body: Optional[dict] = None, *,
 
 
 def each_page(c: httpx.Client, path: str, body: dict, *, limit: int,
-              deadline: float) -> Any:
+              deadline: float, max_pages: int = MAX_PAGES) -> Any:
     """Yield pages until the API says there are no more. Stops at the deadline
     or the page cap and raises ``VerifixError("slow")`` so the caller can say
     the count is partial rather than print it as the whole."""
     cursor = None
-    for _ in range(MAX_PAGES):
+    for _ in range(max_pages):
         if time.monotonic() > deadline:
             raise VerifixError("slow", "stopped at the time limit")
         data, nxt = call(c, path, body, limit=limit, cursor=cursor)

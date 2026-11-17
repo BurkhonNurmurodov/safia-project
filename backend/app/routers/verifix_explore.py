@@ -103,6 +103,15 @@ def vx_schedule_days(schedule_id: str, year: Optional[int] = None, db: Session =
     return _run(vx.schedule_days, db, schedule_id, year)
 
 
+@router.get("/cell-hours")
+def vx_cell_hours(begin: date, end: date, force: bool = False, db: Session = Depends(get_db),
+                  _: dict = Depends(verify_admin)):
+    """People and hours per Verifix cell over a period — read in the background
+    (`services/verifix_cell_hours.py`); ask again until it is in."""
+    from app.services import verifix_cell_hours
+    return _run(verifix_cell_hours.ask, db, begin, end, force)
+
+
 @router.get("/timesheet")
 def vx_timesheet(day: Optional[date] = None, force: bool = False, db: Session = Depends(get_db),
                  _: dict = Depends(verify_admin)):

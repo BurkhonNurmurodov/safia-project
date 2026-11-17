@@ -645,3 +645,28 @@ the role opens. **Admin-only**, three ways (`adminOnly` nav entries,
   (shift status), never guessed into a word.
 - Not built: Excel exports, charts, recruitment (`rec/vacancy$*`, readable on
   the raw viewer), and any write.
+
+## People and hours per cell over a period (`verifix_cell_hours`, 2026-11-17)
+
+Asked for the «Yacheyka effektivnost» table (Q3 2025 against Q3 2026: per
+cell, how many people worked there and their total hours, from Verifix).
+`GET /api/verifix-test/cell-hours?begin=&end=` (admin-only, ≤ 200 days, ending
+before today) starts a background read and answers `loading`; once in, the
+same GET returns the stored result (app setting
+`vfx_cell_hours:<begin>:<end>`; `force=1` reads again). No page shows it.
+
+- **A day sits in the org unit in force THAT day** — the latest posted hiring
+  or transfer (`pro/hiring$list`, `pro/transfer$list`, open to the API role and
+  going back to January 2024) dated on or before it, not today's placement
+  (which is all `employee$list` knows). Someone with no journal at all falls
+  back to their current org unit; a day before a person's first journal is
+  `unknown` and counted in `stats`, never put in a cell. `transfer_end` is
+  ignored (counted as `transfers_with_end`).
+- **Hours** = «Отработано» exactly as «Davomat» stores a row
+  (`verifix_attendance._row`, the parity rule: only days with both clocks).
+  **People** = distinct employees with hours > 0 in the cell over the whole
+  period — someone who worked in two cells counts in each.
+- Keyed by every Verifix node carrying a code, not only our `cells`. Read a
+  month at a time, 800 people per request, only people who sat in a coded node
+  at some point; a read cut short is stored `partial: true` and is not the
+  whole.
