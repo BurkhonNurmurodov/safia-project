@@ -222,9 +222,15 @@ containers row from production and move it into the new button».
     confirmed fewer than sent (`container_short_receipt`), a request still
     unsplit at its deadline (`container_request_overdue`). To EVERY
     shift-manager profile (`shift_scope`'s fan-out), switch `notify_managers`
-    — **OFF until an admin turns it on, nobody has told them**: the same
-    overdue request, and a brigadir still unconfirmed `ESCALATE_AFTER_MIN`
-    (30) after the reminder (`container_unconfirmed`). The two clock-driven
+    — shipped OFF on 16 Nov, **ON since 2026-11-17** (the operator, asked
+    whether to switch it on: «Yes, switch on»;
+    `startup.container_flow_managers_alerts_on`, once under a flag, so an
+    admin's «off» later sticks): the same overdue request, and a brigadir
+    still unconfirmed `ESCALATE_AFTER_MIN` (30) after the reminder
+    (`container_unconfirmed`). Switching it on sends nothing about the past
+    beyond the alert window: a request already claimed for its AXO author is
+    never re-sent, and only a brigadir reminded 30–150 minutes before the
+    switch can still be named. The two clock-driven
     ones run on the flow's tick, are claimed before sending
     (`container_requests.overdue_alerted_at`,
     `container_request_parts.escalated_at`) and fire only inside

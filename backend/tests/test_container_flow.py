@@ -512,6 +512,26 @@ class FlowTest(unittest.TestCase):
             self.assertFalse(flow.settings(self.db)["notify_brigadirs"])   # an «off» sticks
             self.assertEqual(dm.call_count, 1)
 
+    def test_managers_alerts_oneshot_switches_on_once(self):
+        from app import startup
+        from app.models import RoleProfile
+        self.assertFalse(flow.settings(self.db)["notify_managers"])     # shipped off
+        n = self.db.query(RoleProfile).filter(RoleProfile.role == "shift-manager").count()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_flow_managers_alerts_on()
+            self.db.expire_all()
+            cfg = flow.settings(self.db)
+            self.assertTrue(cfg["notify_managers"])
+            # the other three switches are where they were
+            self.assertEqual((cfg["notify"], cfg["notify_brigadirs"], cfg["notify_axo"]), (False, False, True))
+            self.assertIn(f"{n} ta smena menejeri", dm.call_args[0][0])
+            flow.save_settings(self.db, [1], 2, notify_managers=False)
+            startup.container_flow_managers_alerts_on()
+            self.db.expire_all()
+            self.assertFalse(flow.settings(self.db)["notify_managers"])   # an «off» sticks
+            self.assertEqual(dm.call_count, 1)
+
     def test_split_hint_follows_each_units_hour(self):
         from app.models import ContainerRequest
         for i, n in ((12, "Bravo"), (13, "Alfa")):

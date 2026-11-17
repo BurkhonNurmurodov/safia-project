@@ -10888,6 +10888,53 @@ def container_receive_brigadirs() -> None:
         db.close()
 
 
+# ── 17 Nov: the container alerts reach the shift managers ───────────────────
+# The alerts to the shift managers shipped switched OFF on 16 Nov (v4.576.0 —
+# a feature that messages staff waits for the operator's word). The operator,
+# 2026-11-17, to «should I switch on the alerts to shift managers?»: «Yes,
+# switch on». So the «Sozlamalar» switch `notify_managers` goes ON — a request
+# not split by its deadline, and a brigadir still unconfirmed 30 minutes after
+# the reminder, now reach every shift-manager profile. Once, under a flag: an
+# admin's «off» later sticks.
+CONTAINER_SM_ALERTS_FLAG = "oneshot:container_flow_notify_managers_on_nov17"
+
+
+def container_flow_managers_alerts_on() -> None:
+    import html
+
+    from app.services import container_flow as flow
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_SM_ALERTS_FLAG).first():
+            return
+        row = db.get(AppSetting, flow._NOTIFY_SM_KEY)
+        was = row is not None and row.value == "1"
+        if row is None:
+            db.add(AppSetting(key=flow._NOTIFY_SM_KEY, value="1"))
+        else:
+            row.value = "1"
+        db.add(AppSetting(key=CONTAINER_SM_ALERTS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        n = len(flow._sm_keys(db))
+        print(f"[startup] container alerts to shift managers: ON ({n} profiles"
+              f"{', already on' if was else ''})")
+        _dm_admins_plain(
+            "✅ <b>«Konteyner berish» — smena menejerlariga ogohlantirishlar yoqildi</b>\n"
+            f"Endi {n} ta smena menejeri Telegramda xabar oladi"
+            f"{' (allaqachon yoqilgan edi)' if was else ''}: so'rov muddati o'tib ham "
+            "taqsimlanmaganda, va brigadir eslatmadan 30 daqiqa o'tib ham qabulni "
+            "tasdiqlamaganda. O'chirish: «Sozlamalar» → «Telegram xabarlari».")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container alerts to shift managers failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteyner berish» — smena menejerlariga ogohlantirishlar yoqilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

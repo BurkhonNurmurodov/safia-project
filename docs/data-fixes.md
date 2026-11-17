@@ -450,6 +450,18 @@ and makes him the second addressee on AXO's «Yangi so'rov». Not exactly one
 match → nothing changes and the admins get a DM saying so. Nothing he held is
 revoked.
 
+## Container alerts on for the shift managers (`startup.container_flow_managers_alerts_on`, 2026-11-17)
+
+The alerts «Konteyner berish» sends to the shift managers — a request not
+split by its deadline, a brigadir still unconfirmed 30 minutes after the
+reminder — shipped switched off on 16 Nov (v4.576.0), waiting for the
+operator's word. On 17 Nov the operator answered «Yes, switch on». A one-shot
+(flag `oneshot:container_flow_notify_managers_on_nov17`, `later`) sets
+`container_flow.notify_managers` = 1 and DMs the admins how many shift-manager
+profiles now hear them. Once: an admin's «off» on «Sozlamalar» → «Telegram
+xabarlari» later sticks. The other three switches are untouched.
+docs/containers-flow.md.
+
 ## The 13 Nov window edits count from 13 Nov (`startup.date_window_edits_nov13`, 2026-11-13)
 
 On 13 Nov 15:36–16:09 Shahzoda Maxmurova set all 13 task windows of three
