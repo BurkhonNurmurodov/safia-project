@@ -827,7 +827,12 @@ workbook, `routers/foreign_objects.py` the door; `pages/ForeignObjects.jsx` (+
   to a /cells cell (`cell_lookup`'s zero-padding rule) → 0 → 5, 1 → 4, 2–3 → 3,
   4–5 → 2, 6+ → 1, KPI points = score × 0.25. A complaint with the flag «no»
   or blank is LISTED and never counted; a code on no cell counts toward nobody
-  and is named (`unregistered`).
+  and is named (`unregistered`). **5211 stays off** (the operator, 2026-11-17):
+  it is Verifix's CLOSED «5211 Кабинет ЗамНач» (division 103, «Производственное
+  управление», nobody in it), and the register's «Отв. бригадир» on it,
+  Sultonov Abror, is a top-manager — QA codes systemic complaints there (10 in
+  October). It is not a cell and is not to be made one: the sync would archive
+  it and it has no «Egasi».
 - **The KPI is the CELL's, credited to its OWNER («Egasi») on the month's
   last day, one ranking row per OWNED cell** — `turnover.cell_map` +
   `turnover.owned`, the very reading /turnover and /worker-concerns list by,
