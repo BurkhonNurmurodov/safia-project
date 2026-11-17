@@ -353,9 +353,18 @@ all the containers app».
     difference, the share received (the completion band, `vypTone`), and
     **Tasdiqlanmagan** — split, not yet confirmed — in its own column, so a row
     still waiting never reads as a shortfall. A brigadir who needed and got
-    nothing keeps a row. Per type in the row's hover; a brigadir filter and
-    «Kam olganlar» (received + unconfirmed below the need); a totals row of
-    what the filter keeps; 30 rows a page. A failed read of the need answers
+    nothing keeps a row. Per type in the row's hover; 30 rows a page.
+    **Filters and a clearer read** (the same day, the operator: «we need a
+    filter here, and it should be easy to see»): it opens on the LATEST day
+    of the period, so each brigadir is one row; the `FilterPanel` picks a day
+    (or «Barcha kunlar»), a shift, a brigadir and a state — «To'liq oldi»
+    (received ≥ need), «Tasdiq kutilmoqda» (something split is unconfirmed),
+    «Berilmagan» (nothing split), «Kam oldi» (the rest below the need) — each
+    state a chip on its row and counted in the filter's list. A strip above
+    the rows sums what the filter keeps (need, split, received, difference,
+    the share received with its bar, unconfirmed) and is always drawn, so a
+    filter change never moves the rows; every column sorts (need, largest
+    first, by default). A failed read of the need answers
     `null` and the table says so — the rest of «Tahlil» stands. The operator
     did not pick the «must get» source: this reads the plan's figure, the one
     the split's limit is cut from.

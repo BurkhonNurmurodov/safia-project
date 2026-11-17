@@ -9,10 +9,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  ArrowRight, BarChart3, BellRing, CalendarCheck, ClipboardList, Clock, Eye, Gauge, PackageCheck, Split, Timer, UsersRound,
+  ArrowRight, BarChart3, BellRing, CalendarCheck, CalendarDays, Layers, ListFilter, ClipboardList, Clock, Eye, Gauge, PackageCheck, Split, Timer, UsersRound,
 } from "lucide-react";
 import DateRangePicker from "../ui/DateRangePicker";
-import StyledSelect from "../ui/StyledSelect";
+import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import Pagination from "../ui/Pagination";
 import KPICard from "../ui/KPICard";
@@ -28,7 +28,7 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { TONE_HEX, GREEN, AMBER, RED, vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone } from "./flowUtil";
+import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip } from "./flowUtil";
 
 const CHART_H = 260;
 const WEEK_AFTER = 45;      // a longer period draws weeks, not days
@@ -406,64 +406,177 @@ function ReasonsCard({ t, a, loading }) {
 }
 
 // «Kerak va olingan» (2026-11-17, the operator: «a table — for a day, how many
-// they have to get and how many they actually got»): one row per brigadir per
-// day — the day's need on «Konteynerlar», what logistics split to them, what
-// they confirmed on «Qabul», the difference and the share received. What was
-// split and is not confirmed yet stands in its own column, so a row still
+// they have to get and how many they actually got»; filters and a clearer read
+// the same day: «we need a filter here, and it should be easy to see»): one
+// row per brigadir per day — the day's need on «Konteynerlar», what logistics
+// split to them, what they confirmed on «Qabul», the difference and the share
+// received. It opens on the LATEST day of the period, so each brigadir is one
+// row; the filter panel picks another day or all of them, a shift, a
+// brigadir, a state. The strip above the rows sums what the filter keeps.
+// What was split and is not confirmed yet stands apart, so a row still
 // waiting never reads as a shortfall. Per type in the row's hover.
 const NG_PAGE = 30;
 const ngTone = (pct) => (pct == null ? null : vypTone(pct / 100));
+const NG_STATES = ["short", "full", "waiting", "none"];
+// a row's state, the one the chip prints and the filter picks
+const ngState = (r) => {
+  if (!r.need) return null;
+  if (r.received >= r.need) return "full";
+  if (r.unconfirmed > 0) return "waiting";
+  if (!r.given) return "none";
+  return "short";
+};
+const NG_TONE = { full: "ok", waiting: "warn", short: "bad", none: "idle" };
+const dayLabel = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+const NG_SORT = {
+  day: (r) => r.day, unit: (r) => r.unit || "", need: (r) => r.need, given: (r) => r.given,
+  received: (r) => r.received, diff: (r) => r.diff, pct: (r) => r.pct ?? -1, unconfirmed: (r) => r.unconfirmed,
+};
 
 function NeedGotTable({ t, tl, rows, loading, period }) {
+  const [dayPick, setDayPick] = useState(undefined);      // undefined = the latest day
+  const [shift, setShift] = useState(null);
   const [unit, setUnit] = useState(null);
-  const [only, setOnly] = useState("all");
+  const [state, setState] = useState(null);
+  const [sort, setSort] = useState({ key: "need", dir: "desc" });
   const [page, setPage] = useState(1);
-  // back to page 1 on a filter or period change — keyed on the VALUES, never on the rows
-  useEffect(() => { setPage(1); }, [unit, only, period]);
-  const failed = !loading && rows === null;
   const all = rows ?? [];
+  const failed = !loading && rows === null;
+  const days = useMemo(() => [...new Set(all.map((r) => r.day))].sort().reverse(), [all]);
+  // a new period opens on its own latest day again
+  useEffect(() => { setDayPick(undefined); }, [period]);
+  const day = dayPick === undefined ? (days[0] ?? null) : dayPick;
+  // back to page 1 on a filter, sort or period change — keyed on the VALUES, never on the rows
+  useEffect(() => { setPage(1); }, [day, shift, unit, state, sort.key, sort.dir, period]);
+
+  const inScope = (r) => (day == null || r.day === day) && (shift == null || r.shift === shift);
   const unitOpts = useMemo(() => {
     const seen = new Map();
-    for (const r of all) if (!seen.has(r.manager_id)) seen.set(r.manager_id, r);
+    for (const r of all) if (inScope(r) && !seen.has(r.manager_id)) seen.set(r.manager_id, r);
     return [...seen.values()].map((r) => ({ value: r.manager_id, label: `${tl(r.unit) || "—"}${r.shift ? ` · S${r.shift}` : ""}` }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [all, tl]);
-  const shown = all.filter((r) => (unit == null || r.manager_id === unit)
-    && (only === "all" || (r.need > 0 && r.received + r.unconfirmed < r.need)));
+  }, [all, tl, day, shift]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unitName = unitOpts.find((o) => o.value === unit)?.label
+    ?? (() => { const r = all.find((x) => x.manager_id === unit); return r ? tl(r.unit) : ""; })();
+  const shown = useMemo(() => {
+    const keep = all.filter((r) => inScope(r) && (unit == null || r.manager_id === unit)
+      && (state == null || ngState(r) === state));
+    const val = NG_SORT[sort.key] ?? NG_SORT.need;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return keep.map((r) => ({ r, v: val(r) }))
+      .sort((a, b) => (a.v < b.v ? -dir : a.v > b.v ? dir : (a.r.day < b.r.day ? 1 : a.r.day > b.r.day ? -1 : 0)))
+      .map((x) => x.r);
+  }, [all, day, shift, unit, state, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onSort = (k) => setSort((s) => (s.key === k ? { key: k, dir: s.dir === "desc" ? "asc" : "desc" }
+    : { key: k, dir: k === "unit" || k === "day" ? "asc" : "desc" }));
   const tot = shown.reduce((s, r) => ({
     need: s.need + r.need, given: s.given + r.given, received: s.received + r.received,
     unconfirmed: s.unconfirmed + r.unconfirmed,
   }), { need: 0, given: 0, received: 0, unconfirmed: 0 });
   const totPct = tot.need ? Math.round((100 * tot.received) / tot.need) : null;
+  const counts = Object.fromEntries(NG_STATES.map((k) => [k, all.filter((r) => inScope(r)
+    && (unit == null || r.manager_id === unit) && ngState(r) === k).length]));
   const pageRows = shown.slice((page - 1) * NG_PAGE, page * NG_PAGE);
   const typeTitle = (r) => KEYS.filter((k) => r.types?.[k])
     .map((k) => `${t(`cflow.ct.${k}`)}: ${fmt(r.types[k].need)} → ${fmt(r.types[k].given)} → ${fmt(r.types[k].received)}`)
     .join("\n");
-  const COLS = 8;
+
+  const sections = [
+    {
+      key: "day", icon: CalendarDays, label: t("cflow.ng.f.day"),
+      // always stated: the table shows ONE day unless told otherwise, and the
+      // control must say which; its ✕ only when a pick moved it off the latest
+      active: true,
+      display: day == null ? t("cflow.ng.allDays") : dayPick === undefined ? `${dayLabel(day)} · ${t("cflow.ng.latest")}` : dayLabel(day),
+      onClear: dayPick !== undefined ? () => setDayPick(undefined) : undefined,
+      render: ({ close } = {}) => (
+        <PickFilter close={close} value={day ?? "__all"} onChange={(v) => setDayPick(v === "__all" ? null : v)}
+          opts={[{ value: "__all", label: t("cflow.ng.allDays") },
+            ...days.map((d) => ({ value: d, label: d === days[0] ? `${dayLabel(d)} · ${t("cflow.ng.latest")}` : dayLabel(d) }))]} />
+      ),
+    },
+    {
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: shift != null, display: shift != null ? `S${shift}` : "",
+      onClear: () => setShift(null),
+      render: () => (
+        <SegmentedToggle fill value={shift} onChange={setShift} options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]} />
+      ),
+    },
+    {
+      key: "unit", icon: UsersRound, label: t("containers.brigadir"),
+      active: unit != null, display: unitName,
+      onClear: () => setUnit(null),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close} value={unit ?? "__all"} onChange={(v) => setUnit(v === "__all" ? null : v)}
+          opts={[{ value: "__all", label: t("cflow.ng.allUnits") }, ...unitOpts]} />
+      ),
+    },
+    {
+      key: "state", icon: ListFilter, label: t("cflow.ng.f.state"),
+      active: state != null, display: state ? t(`cflow.ng.st.${state}`) : "",
+      onClear: () => setState(null),
+      render: ({ close } = {}) => (
+        <PickFilter close={close} value={state ?? "__all"} onChange={(v) => setState(v === "__all" ? null : v)}
+          opts={[{ value: "__all", label: t("cflow.ng.all") },
+            ...NG_STATES.map((k) => ({ value: k, label: `${t(`cflow.ng.st.${k}`)} · ${counts[k]}`, title: t(`cflow.ng.st.${k}`) }))]} />
+      ),
+    },
+  ];
+
+  const stat = (label, value, color, hint) => (
+    <div className="min-w-0 rounded-xl px-3 py-2" title={hint} style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="text-[18px] font-semibold tabular-nums leading-tight mt-0.5" style={{ color: color ?? "var(--text-1)" }}>
+        {loading ? "…" : value}
+      </div>
+    </div>
+  );
+  const COLS = 9;
   return (
     <div className="flex flex-col gap-2">
-      <TableCard icon={CalendarCheck} title={t("cflow.ng.title")} subtitle={t("cflow.ng.sub")} headSize="lg" maxHeight="560px"
+      <TableCard icon={CalendarCheck} title={t("cflow.ng.title")} subtitle={t("cflow.ng.sub")} headSize="lg" maxHeight="600px"
         right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{loading ? "" : shown.length}</span>}
         toolbar={(
-          <div className="flex flex-wrap items-center gap-2">
-            <StyledSelect searchable value={unit} onChange={setUnit} className="w-64 max-w-full"
-              placeholder={t("cflow.ng.allUnits")}
-              options={[{ value: null, label: t("cflow.ng.allUnits") }, ...unitOpts]} />
-            <SegmentedToggle value={only} onChange={setOnly}
-              options={[["all", t("cflow.ng.all")], ["short", t("cflow.ng.short")]]} />
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* the day is always stated, so «clear all» counts only what a person picked */}
+              <FilterPanel sections={sections} chipsWrap
+                activeCount={[dayPick !== undefined, shift != null, unit != null, state != null].filter(Boolean).length}
+                anyActive={dayPick !== undefined || shift != null || unit != null || state != null}
+                onClearAll={() => { setDayPick(undefined); setShift(null); setUnit(null); setState(null); }} />
+            </div>
+            {/* what the filter keeps, summed — always drawn, so a filter change never moves the rows */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {stat(t("cflow.ng.col.need"), fmt(tot.need), null, t("cflow.ng.hint.need"))}
+              {stat(t("cflow.ng.col.given"), fmt(tot.given), null, t("cflow.ng.hint.given"))}
+              {stat(t("cflow.ng.col.received"), fmt(tot.received), null, t("cflow.ng.hint.received"))}
+              {stat(t("cflow.ng.col.diff"), `${tot.received - tot.need > 0 ? "+" : ""}${fmt(tot.received - tot.need)}`,
+                tot.received - tot.need < 0 ? "var(--status-bad)" : "var(--status-ok)", t("cflow.ng.hint.diff"))}
+              <div className="min-w-0 rounded-xl px-3 py-2" title={t("cflow.ng.hint.pct")}
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--text-3)" }}>{t("cflow.ng.col.pct")}</div>
+                <div className="text-[18px] font-semibold tabular-nums leading-tight mt-0.5"
+                  style={{ color: ngTone(totPct) ? `var(--status-${ngTone(totPct)})` : "var(--text-1)" }}>
+                  {loading ? "…" : totPct == null ? "—" : `${totPct}%`}
+                </div>
+                <div className="mt-1.5"><Meter value={totPct} color={ngTone(totPct) ? TONE_HEX[ngTone(totPct)] : "#94a3b8"} label={t("cflow.ng.col.pct")} height={4} /></div>
+              </div>
+              {stat(t("cflow.ng.col.waiting"), fmt(tot.unconfirmed), tot.unconfirmed ? "var(--status-warn)" : null, t("cflow.ng.hint.waiting"))}
+            </div>
           </div>
-        )}
-        >
+        )}>
         <thead>
           <tr>
-            <Th label={t("cflow.rep.day")} />
-            <Th label={t("containers.brigadir")} />
-            <Th label={t("cflow.ng.col.need")} align="right" hint={t("cflow.ng.hint.need")} />
-            <Th label={t("cflow.ng.col.given")} align="right" hint={t("cflow.ng.hint.given")} />
-            <Th label={t("cflow.ng.col.received")} align="right" hint={t("cflow.ng.hint.received")} />
-            <Th label={t("cflow.ng.col.diff")} align="right" hint={t("cflow.ng.hint.diff")} />
-            <Th label={t("cflow.ng.col.pct")} hint={t("cflow.ng.hint.pct")} />
-            <Th label={t("cflow.ng.col.waiting")} align="right" hint={t("cflow.ng.hint.waiting")} />
+            <Th label={t("cflow.rep.day")} k="day" sort={sort} onSort={onSort} />
+            <Th label={t("containers.brigadir")} k="unit" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.f.state")} />
+            <Th label={t("cflow.ng.col.need")} align="right" hint={t("cflow.ng.hint.need")} k="need" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.col.given")} align="right" hint={t("cflow.ng.hint.given")} k="given" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.col.received")} align="right" hint={t("cflow.ng.hint.received")} k="received" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.col.diff")} align="right" hint={t("cflow.ng.hint.diff")} k="diff" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.col.pct")} hint={t("cflow.ng.hint.pct")} k="pct" sort={sort} onSort={onSort} />
+            <Th label={t("cflow.ng.col.waiting")} align="right" hint={t("cflow.ng.hint.waiting")} k="unconfirmed" sort={sort} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
@@ -473,18 +586,20 @@ function NeedGotTable({ t, tl, rows, loading, period }) {
             <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--status-bad)" }}>{t("cflow.ng.failed")}</td></tr>
           ) : !shown.length ? (
             <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--text-3)" }}>
-              {t(only === "short" ? "cflow.ng.noneShort" : "cflow.ng.none")}
+              {t(state || unit != null || shift != null ? "cflow.ng.noneFilter" : "cflow.ng.none")}
             </td></tr>
           ) : pageRows.map((r) => {
             const tone = ngTone(r.pct);
             const color = tone ? TONE_HEX[tone] : "#94a3b8";
+            const st = ngState(r);
             return (
               <tr key={`${r.day}|${r.manager_id}`} className="text-sm" title={typeTitle(r)}>
-                <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
-                  {`${r.day.slice(8, 10)}.${r.day.slice(5, 7)}`}
-                </td>
+                <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{dayLabel(r.day)}</td>
                 <td className="px-3 py-2 whitespace-nowrap max-w-[240px] truncate" style={{ color: "var(--text-1)" }}>
                   {tl(r.unit) || "—"}{r.shift ? <span className="text-[11px]" style={{ color: "var(--text-3)" }}> · S{r.shift}</span> : null}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {st ? <Chip tone={NG_TONE[st]}>{t(`cflow.ng.st.${st}`)}</Chip> : <span style={{ color: "var(--text-4)" }}>—</span>}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: r.need ? "var(--text-1)" : "var(--text-4)" }}>{fmt(r.need)}</td>
                 <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.given ? "var(--text-1)" : "var(--text-4)" }}>{fmt(r.given)}</td>
@@ -511,28 +626,6 @@ function NeedGotTable({ t, tl, rows, loading, period }) {
               </tr>
             );
           })}
-          {/* the rows the filter keeps, summed — the same columns, so it reads as the table's own last line */}
-          {!loading && !failed && shown.length > 0 && (
-            <tr className="text-sm font-semibold" style={{ background: "var(--bg-inner)" }}>
-              <td className="px-3 py-2 whitespace-nowrap" colSpan={2} style={{ color: "var(--text-1)" }}>
-                {t("production.cont.total")}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.need)}</td>
-              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.given)}</td>
-              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-1)" }}>{fmt(tot.received)}</td>
-              <td className="px-3 py-2 text-right tabular-nums"
-                style={{ color: tot.received - tot.need < 0 ? "var(--status-bad)" : "var(--status-ok)" }}>
-                {tot.received - tot.need > 0 ? "+" : ""}{fmt(tot.received - tot.need)}
-              </td>
-              <td className="px-3 py-2 tabular-nums"
-                style={{ color: ngTone(totPct) ? `var(--status-${ngTone(totPct)})` : "var(--text-1)" }}>
-                {totPct == null ? "—" : `${totPct}%`}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums" style={{ color: tot.unconfirmed ? "var(--status-warn)" : "var(--text-4)" }}>
-                {fmt(tot.unconfirmed)}
-              </td>
-            </tr>
-          )}
         </tbody>
       </TableCard>
       <Pagination page={page} pageCount={Math.ceil(shown.length / NG_PAGE)} total={shown.length} pageSize={NG_PAGE} onPage={setPage} />
