@@ -1924,14 +1924,19 @@ export default function Production() {
   // (`routers/production.set_catalog_uom`); this is what draws the control.
   // Shift managers set it too (2026-10-30, the operator) — over the units of
   // their shift ∩ plant, the reach `_resolve_manager_id` already gives them.
-  const canEditUomRole = ["admin", "supervisor", "shift-manager"].includes(auth?.role);
+  // CLOSED to everybody but admins on 2026-11-17 (the operator: «close unit of
+  // measurement for all except for admins») — supervisors and shift-managers
+  // read the column, the backend's `UOM_ROLES` refuses their write.
+  const canEditUomRole = auth?.role === "admin";
   const canEditUom = canEditUomRole && catalogEditable && !isPlaceholderData
     && uomOpts.length > 0;
   // The checkbox column, the row-pick model and the sticky bar below the table
   // serve BOTH audiences — what each may then do with a selection is the bar's
   // own question, not this one.
   const canPickRows = canEditCatalog || canEditUom;
-  const canEditCaps = canEditUomRole && catalogEditable && !isPlaceholderData;
+  // Container capacities keep their own audience (`CONTAINER_ROLES`), no
+  // longer the measure's since the measure became admin-only.
+  const canEditCaps = CONTAINER_ROLES.includes(auth?.role) && catalogEditable && !isPlaceholderData;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
     ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
@@ -4190,7 +4195,7 @@ export default function Production() {
             {/* A day an edit made now cannot reach: it keeps the catalog it
                 had, so the controls are gone — and the admin is told where
                 they are instead of wondering why. */}
-            {(canEditUomRole || sapGrant) && !catalogEditable && catalogInfo?.from && (
+            {(canEditUomRole || containerRole || sapGrant) && !catalogEditable && catalogInfo?.from && (
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-3)" }}>
                   <History size={13} className="flex-shrink-0" />

@@ -611,6 +611,14 @@ four and nothing else.
   - **Shift-managers set it too** (2026-10-30, the operator), over the units
     of their shift ∩ plant (`_resolve_manager_id`); `UOM_ROLES` and the page's
     `canEditUomRole` name the three roles. Top-managers still only read.
+  - **CLOSED to all but admins on 2026-11-17** (the operator: «close unit of
+    measurement for all except for admins»). `UOM_ROLES` is `("admin",)` and
+    `canEditUomRole` is the admin check, so supervisors and shift-managers see
+    «Birlik» as a read-only chip and lose the brigadir bulk bar; the door
+    refuses their write with a 403. Everything in this list above it is the
+    record of who held it before. Container capacities, which borrowed this
+    flag on the page, now ask `CONTAINER_ROLES` themselves (admin +
+    shift-manager, unchanged).
   - Logged as `production.catalog_uom_set`, so «a brigadir set the measure»
     and «an admin edited a catalog line» are two acts in the Jurnal.
   - **On screen the column is EDITABLE IN PLACE** for whoever may set it: the

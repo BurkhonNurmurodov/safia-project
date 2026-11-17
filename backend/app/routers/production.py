@@ -4918,7 +4918,9 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
 # the SAP code, the name, Трудоемкость, Команда, the group letter, the SAP
 # switch, adding, archiving, deleting — moves a figure or a stored quantity and
 # stays admin-only behind `_verify_admin`.
-UOM_ROLES = ("admin", "supervisor", "shift-manager")
+# CLOSED again on 2026-11-17 (the operator: «close unit of measurement for all
+# except for admins»): supervisors and shift-managers read it, admins alone set it.
+UOM_ROLES = ("admin",)
 # Container capacities (`set_catalog_container`): brigadirs typed them until
 # 2026-11-15, when the operator closed that — the columns are now drawn for
 # these roles only (`CONTAINER_ROLES` in Production.jsx), and so is the write.
