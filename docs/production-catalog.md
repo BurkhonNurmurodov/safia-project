@@ -619,6 +619,12 @@ four and nothing else.
     record of who held it before. Container capacities, which borrowed this
     flag on the page, now ask `CONTAINER_ROLES` themselves (admin +
     shift-manager, unchanged).
+  - **…and the same day REMOVED for them** (the operator: «not just close can
+    you remove it too for them»): «Birlik» is in the page's `absentCols` for
+    every role but admin, so it is not drawn, not offered to the
+    `ColumnsPicker` and — the Excel mirroring the visible columns — not in
+    their workbook either. The dashboard still carries `uom` per row; nothing
+    else on their screen changed.
   - Logged as `production.catalog_uom_set`, so «a brigadir set the measure»
     and «an admin edited a catalog line» are two acts in the Jurnal.
   - **On screen the column is EDITABLE IN PLACE** for whoever may set it: the
@@ -637,7 +643,7 @@ four and nothing else.
 - **Shown** as a «Birlik» column (uz_cyrl «Бирлик», ru «Ед. изм.», en «Unit»)
   directly after «Trud.», sortable, in the `ColumnsPicker` like every other —
   a NEUTRAL chip, never a traffic light, because it is a property and not a
-  verdict; not stated is a dash. Visible to everybody by default (unlike
+  verdict; not stated is a dash. Visible to every ADMIN by default (absent for everybody else from 2026-11-17; unlike
   «Manba» / «Guruh»): it qualifies the quantities every reader reads.
   `uomLabel` compares `t`'s answer against the key, since `t` returns the key
   itself for a missing string — a unit added before its words would otherwise

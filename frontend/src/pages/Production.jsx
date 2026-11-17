@@ -2024,12 +2024,15 @@ export default function Production() {
   // groups, «Manba» on a day ПЛАН/ФАКТ are typed only, the two «SAP»
   // columns for anybody outside `SAP_ROLES` (the dashboard drops their figures
   // for everybody else too), and the ten container columns outside
-  // `CONTAINER_ROLES`. None is offered to the picker either, since a
-  // picker row that toggles nothing is a control that says nothing.
+  // `CONTAINER_ROLES`, and «Birlik» for anybody but an admin (2026-11-17, the
+  // operator: closed to them, then «remove it too for them»). None is offered
+  // to the picker either, since a picker row that toggles nothing is a
+  // control that says nothing.
   const absentCols = useMemo(
     () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : []),
-           ...(sapRole ? [] : SAP_COLS), ...(containerRole ? [] : CONTAINER_COLS)],
-    [hasGroups, typedOnly, sapRole, containerRole],
+           ...(sapRole ? [] : SAP_COLS), ...(containerRole ? [] : CONTAINER_COLS),
+           ...(isAdmin ? [] : ["uom"])],
+    [hasGroups, typedOnly, sapRole, containerRole, isAdmin],
   );
   const onColsChange = (value) => {
     // The picker is never shown an absent column, and its hide-all / show-all /
