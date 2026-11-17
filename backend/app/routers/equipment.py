@@ -1,7 +1,7 @@
 """«Uskunalar» — the equipment register (/equipment, an app of «Avtomatizatsiya»).
 
-ADMIN-ONLY on every route (`verify_admin`), never grantable: the page is an
-`adminOnly` link behind `RequireAdmin`. A plain table the operator edits by
+Page key `equipment` on every route (`require_page`): admins always, anybody
+else only through a personal grant (no role holds it by default). A plain table the operator edits by
 hand — add, change, delete — seeded once from the workbook
 (startup.seed_equipment). Every write lands in the action register.
 """
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Equipment
-from app.routers.admin import verify_admin
+from app.permissions import require_page
 from app.services import action_log
 
 router = APIRouter(prefix="/api/admin/equipment", tags=["equipment"])
@@ -67,13 +67,13 @@ def _title(e: Equipment) -> str:
 
 
 @router.get("")
-def list_equipment(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def list_equipment(db: Session = Depends(get_db), _: dict = Depends(require_page("equipment"))):
     rows = db.query(Equipment).order_by(Equipment.id).all()
     return {"rows": [_out(e) for e in rows]}
 
 
 @router.post("")
-def create_equipment(body: EquipmentIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def create_equipment(body: EquipmentIn, db: Session = Depends(get_db), admin: dict = Depends(require_page("equipment"))):
     _need_name(body)
     e = Equipment(**body.model_dump())
     db.add(e)
@@ -85,7 +85,7 @@ def create_equipment(body: EquipmentIn, db: Session = Depends(get_db), admin: di
 
 
 @router.put("/{eid}")
-def update_equipment(eid: int, body: EquipmentIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def update_equipment(eid: int, body: EquipmentIn, db: Session = Depends(get_db), admin: dict = Depends(require_page("equipment"))):
     _need_name(body)
     e = db.get(Equipment, eid)
     if not e:
@@ -105,7 +105,7 @@ def update_equipment(eid: int, body: EquipmentIn, db: Session = Depends(get_db),
 
 
 @router.delete("/{eid}")
-def delete_equipment(eid: int, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def delete_equipment(eid: int, db: Session = Depends(get_db), admin: dict = Depends(require_page("equipment"))):
     e = db.get(Equipment, eid)
     if not e:
         raise HTTPException(status_code=404, detail="Not found")

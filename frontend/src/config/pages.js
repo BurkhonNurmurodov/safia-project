@@ -47,6 +47,7 @@ export const PAGES = [
   { tier: "test", key: "assessment", route: "/assessment", labelKey: "nav.assessment" },
   { tier: "test", key: "people", route: "/people", labelKey: "nav.people" },
   { tier: "test", key: "ovens", route: "/ovens", labelKey: "nav.ovens" },
+  { tier: "test", key: "equipment", route: "/equipment", labelKey: "nav.equipment" },
   { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
   { tier: "test", key: "kitchen", route: "/kitchen", labelKey: "nav.kitchen" },
   { tier: "test", key: "container-flow", route: "/containers/flow", labelKey: "nav.containerFlow" },
@@ -104,6 +105,8 @@ export const DEFAULT_PAGE_ACCESS = {
   // «Pechlar» — the Revent ovens, read off the logs a collector on the factory
   // LAN posts (Laboratory). Admin-only until the operator opens it.
   ovens: [],
+  // «Uskunalar» — the equipment register. Admin-only until a person is granted it.
+  equipment: [],
   // «Oshxona» — the people at work in the factory now (Verifix): counts only.
   // Admin-only until the operator opens it.
   kitchen: [],

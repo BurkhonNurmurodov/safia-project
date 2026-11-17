@@ -645,7 +645,7 @@ function AppWithLang() {
             {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
-            <Route path="/equipment" element={<AuthGate><RequireAdmin><Equipment /></RequireAdmin></AuthGate>} />
+            <Route path="/equipment" element={<AuthGate><RequirePage page="equipment"><Equipment /></RequirePage></AuthGate>} />
             <Route path="/ovens" element={<AuthGate><RequirePage page="ovens"><Ovens /></RequirePage></AuthGate>} />
             <Route path="/kitchen" element={<AuthGate><RequirePage page="kitchen"><Kitchen /></RequirePage></AuthGate>} />
             <Route path="/tokens" element={<AuthGate><RequirePage page="api"><ApiAccess /></RequirePage></AuthGate>} />

@@ -147,8 +147,8 @@ export const ALL_LINKS = [
   // (2026-11-12, the operator), not a Laboratory page; its page access is
   // unchanged, and for anybody else it stays in the Laboratory group.
   // «Uskunalar» — the equipment register, edited by hand (routers/equipment.py).
-  // ADMINS ONLY, not grantable: no page key. A page of the «Avtomatizatsiya» app.
-  { to: "/equipment", adminOnly: true, key: "nav.equipment", icon: Hammer, group: "lab", app: "automation" },
+  // Page key `equipment`: admins, and anybody granted it personally. A page of the «Avtomatizatsiya» app.
+  { to: "/equipment", page: "equipment", key: "nav.equipment", icon: Hammer, group: "lab", app: "automation" },
   { to: "/ovens", page: "ovens", key: "nav.ovens", icon: CookingPot, group: "lab", app: "automation" },
   // «Ishdagilar soni» — how many people are at work in the factory right now,
   // read from Verifix (services/kitchen.py): counts only, for the kitchen that

@@ -1,8 +1,10 @@
 # «Uskunalar» — the equipment register (2026-11-17)
 
-`/equipment`, a page of the «Avtomatizatsiya» app (`navLinks.js`: `adminOnly`,
-`app: "automation"`, no page key — admins only, not grantable; `RequireAdmin` on
-the route, `verify_admin` on every `/api/admin/equipment` route).
+`/equipment`, a page of the «Avtomatizatsiya» app (`navLinks.js`: `page: "equipment"`,
+`app: "automation"`). **Grantable since 2026-11-17** (the operator wanted to give
+one person the page): page key `equipment`, no role holds it by default, so
+admins plus whoever is granted it on the Access tab; `RequirePage` on the route,
+`require_page("equipment")` on every `/api/admin/equipment` route.
 
 - **What it is**: the operator's workbook «Uskunalar ro'yxati SAFIA.xlsx» as a
   table the admin keeps by hand — add, edit, delete (`models.Equipment`,
