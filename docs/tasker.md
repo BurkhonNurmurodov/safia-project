@@ -86,3 +86,49 @@ never judged. The API answers none of that. To be asked of Tasker:
 Without (1)–(3) the only way to automate task 4 is an operator ruling that
 changes its question to the department's score — and every leader of a
 department would then share one verdict.
+
+## The panel's «Минусы» report (`/panel/sdpanel`, 2026-11-17)
+
+The operator asked for a page where they type the login and password of
+panel.safiabakery.uz, and for the platform to read EXACTLY
+`https://panel.safiabakery.uz/task-factory-reports/cancelled?start=2026-10-01&end=2026-10-31&type=16`.
+That panel (Yii2, «Exord Soft») has no API for the report, so
+`services/sd_panel.py` signs in the way its form does — GET `/login` for the
+`_csrf-backend` token, POST `LoginForm[username]` / `LoginForm[password]`, one
+session cookie — and reads that one page. The doors sit on the Tasker router
+(`GET` / `PUT /api/admin/tasker/panel`, `POST /api/admin/tasker/panel/fetch`);
+the screen is `pages/admin/SdPanelSettings.jsx` (+ `sdPanelText.js`, four
+languages). Admin-only, not grantable.
+
+- **The address is a constant** (`REPORT_URL`), the host fixed, redirects never
+  followed: a bounce to `/login` is the answer («no_access»), not a place to go.
+  The period is fixed to October 2026 because the operator named that address;
+  another period is a new ruling.
+- **The password is SEALED** (`sdpanel_password`, `web_auth.seal_password`) and
+  shown in plain text on the card (the 2026-11-12 token ruling), kept EXACTLY as
+  typed (no `clean_token`: a password may hold spaces and dashes). The action
+  register records that it changed and its length.
+- **One attempt per press**, no retry — a wrong password is never repeated into
+  a locked account. Failures are named on the card: `no_login`, `unreadable`,
+  `no_csrf`, `refused` (with the panel's own words), `no_access`, `status`,
+  `shape`, `network`, `timeout`. Three calls of ≤ 25 s each stay inside
+  Cloudflare's 100 s; the DB connection is handed back during the wait.
+- **The page is checked before it is read**: the table's ten headers must be
+  exactly `HEADERS`, every row ten cells — else `shape`, never a misread
+  column. The last read is kept in `sdpanel_last` (rows included, ~250 KB for
+  October); a failed read keeps the previous rows (`rows_at`).
+- **What a row is**: ONE checklist question that LOST points in one inspection —
+  an inspection scored 100 % has no row, so this is not an audit count. Columns:
+  workshop (its panel id from the `/task-factory/list?id=` link), inspector,
+  day, the inspection's overall %, this question's %, the task (its
+  `/task-scheduler/view?id=` — one per checklist section, not per inspection),
+  the question (`tr[data-id]`), the comment, «TOP (N)» or blank. No pagination:
+  October was one page, 505 rows from 208 inspections over 121 workshops.
+  `type` 16 = «Технический аудит», 10 = «КРУ Производство».
+- **Observed on the first read (not acted on):** the panel's workshop id equals
+  `public.audit.factory_id` (99 of 110 date + rating matches), but
+  `public.audit.division_name` disagrees with the panel's own name for EVERY
+  such id (104 of 104, one fixed name per id since 2025). «Texnologlar
+  auditi» (docs/kpi.md) picks the cell from `division_name`, so it credits
+  audits to the wrong cells. Choosing the cell by `factory_id` through the
+  panel's names (its `terminal[]` picker lists all 402) waits on the operator.

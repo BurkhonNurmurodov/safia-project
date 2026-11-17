@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.routers.admin import verify_admin
 from app.routers.verifix import _who
-from app.services import action_log, tasker
+from app.services import action_log, sd_panel, tasker
 
 router = APIRouter(prefix="/api/admin/tasker", tags=["tasker"])
 
@@ -80,3 +80,46 @@ def test_tasker(db: Session = Depends(get_db), admin: dict = Depends(verify_admi
     action_log.enrich(target_kind="setting", target_id="tasker",
                       target_name="Tasker", details=details)
     return result
+
+
+# ── panel.safiabakery.uz — the technical audit's «Минусы» (services/sd_panel.py) ──
+# The same «Задачник (фабрика)», read from its web panel with a login: that
+# report has no API. Admin-only like the token above; the GET shows the stored
+# password to the admin (the 2026-11-12 ruling), the register only its length.
+
+_PANEL = {"target_kind": "setting", "target_id": "sdpanel", "target_name": "panel.safiabakery.uz"}
+
+
+def _panel_state(db: Session) -> dict:
+    return {**sd_panel.config(db), "url": sd_panel.REPORT_URL, "last": sd_panel.last(db)}
+
+
+@router.get("/panel")
+def get_panel(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    return _panel_state(db)
+
+
+class PanelIn(BaseModel):
+    user: Optional[str] = Field(default=None, max_length=200)
+    # Sent only when edited; an emptied field sends `clear_password` instead.
+    password: Optional[str] = Field(default=None, max_length=200)
+    clear_password: bool = False
+
+
+@router.put("/panel")
+def save_panel(body: PanelIn, db: Session = Depends(get_db),
+               admin: dict = Depends(verify_admin)):
+    changed = sd_panel.save(db, user=body.user, password=body.password or None,
+                            clear_password=body.clear_password)
+    details = list(changed.items())  # the password as its LENGTH
+    action_log.enrich(**_PANEL, details=details)
+    log.info("sd_panel: %s saved the login (%s)", _who(admin), ", ".join(sorted(changed)) or "no change")
+    return _panel_state(db)
+
+
+@router.post("/panel/fetch")
+def fetch_panel(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+    res = sd_panel.fetch(db, actor=_who(admin))
+    action_log.enrich(**_PANEL, details=[("rows", len(res["rows"]))] if res["ok"]
+                      else [("error", res["code"])])
+    return res
