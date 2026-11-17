@@ -840,6 +840,134 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
+    # ── AXO's stock ──
+    def _stock(self):
+        nk = self._logistics()
+        self.db.execute(flow.text("DELETE FROM container_stock_moves"))
+        self.db.commit()
+        return nk
+
+    def _split(self, nk, hour, counts, at, day=DAY):
+        r = flow.create_request(self.db, day, hour, nk, counts, "", "axo", "guest:1")
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": counts}], None, None, "n", nk, False)
+        r.assigned_at = at
+        self.db.commit()
+        return r
+
+    def _count(self, at, **over):
+        m = flow.record_stock(self.db, "count", {**{k: 100 for k in flow.KEYS}, **over}, "", "Dilafruz", "guest:1", at)
+        self.db.commit()
+        return m
+
+    def test_stock_is_unknown_until_axo_counts(self):
+        nk = self._stock()
+        self._split(nk, 10, {"yellow": 20}, self.at(9))
+        flow.record_stock(self.db, "in", {"yellow": 5}, "", "axo", "guest:1", self.at(11))
+        self.db.commit()
+        s = flow.stock(self.db, DAY, DAY, self.at(12))
+        self.assertFalse(s["counted"])
+        self.assertIsNone(s["now"])
+        self.assertEqual((s["days"], s["moves"], s["today"]), ([], [], None))   # no figure, so no history of one
+
+    def test_stock_follows_what_leaves_and_what_axo_records(self):
+        nk = self._stock()
+        with mock.patch.object(flow, "prepared", return_value=[]):
+            self._split(nk, 9, {"yellow": 40}, self.at(7, 30))      # split BEFORE the count — already off the shelf
+            self._count(self.at(8))
+            a = self._split(nk, 10, {"yellow": 30, "bucket": 4}, self.at(9))
+            flow.record_stock(self.db, "in", {"yellow": 10}, "yuvilgan", "Dilafruz", "guest:1", self.at(11))
+            self.db.commit()
+            s = flow.stock(self.db, DAY, DAY, self.at(12))
+            self.assertTrue(s["counted"])
+            self.assertEqual((s["now"]["yellow"], s["now"]["bucket"], s["now"]["grey"]), (80, 96, 100))
+            self.assertEqual((s["today"]["given"]["yellow"], s["today"]["returned"]["yellow"]), (30, 10))
+            row, = s["days"]
+            self.assertIsNone(row["open"])                           # the first count was made this day
+            self.assertEqual((row["given"]["yellow"], row["returned"]["yellow"], row["adjust"]["yellow"],
+                              row["close"]["yellow"], row["counted"]), (30, 10, 0, 80, True))
+            self.assertEqual([(m["kind"], m["by"], m["note"]) for m in s["moves"]],
+                             [("in", "Dilafruz", "yuvilgan"), ("count", "Dilafruz", None)])   # newest first
+            # asked but not split yet: still on the shelf, and named as promised
+            flow.create_request(self.db, DAY, 14, nk, {"grey": 7}, "", "axo", "guest:1")
+            self.db.commit()
+            s = flow.stock(self.db, DAY, DAY, self.at(12))
+            self.assertEqual((s["now"]["grey"], s["today"]["reserved"]["grey"]), (100, 7))
+            # a split request that is cancelled gives its containers back
+            flow.cancel_request(self.db, a.id, "xato", "axo")
+            self.db.commit()
+            s = flow.stock(self.db, DAY, DAY, self.at(12))
+            self.assertEqual((s["now"]["yellow"], s["now"]["bucket"]), (110, 100))
+            # the figure is as of the moment asked for
+            self.assertEqual(flow.stock(self.db, DAY, DAY, self.at(10))["now"]["yellow"], 100)
+
+    def test_stock_days_carry_over_and_a_recount_corrects(self):
+        nk = self._stock()
+        d2 = DAY + timedelta(days=1)
+        nxt = lambda hh: self.at(hh) + timedelta(days=1)             # noqa: E731
+        with mock.patch.object(flow, "prepared", return_value=[]):
+            self._count(self.at(8))
+            self._split(nk, 10, {"yellow": 30}, self.at(9))
+            self._split(nk, 10, {"yellow": 25}, nxt(9), day=d2)
+            self._count(nxt(15), yellow=50)                          # the book said 45
+            s = flow.stock(self.db, DAY - timedelta(days=3), d2, nxt(18))
+            self.assertEqual([r["day"] for r in s["days"]], [DAY.isoformat(), d2.isoformat()])   # none before the first count
+            one, two = s["days"]
+            self.assertEqual((one["open"], one["close"]["yellow"]), (None, 70))
+            self.assertEqual((two["open"]["yellow"], two["given"]["yellow"], two["adjust"]["yellow"],
+                              two["close"]["yellow"], two["counted"]), (70, 25, 5, 50, True))
+            for k in flow.KEYS:
+                self.assertEqual(two["open"][k] - two["given"][k] + two["returned"][k] + two["adjust"][k],
+                                 two["close"][k], k)
+            self.assertEqual((s["now"]["yellow"], s["last_count"]["counts"]["yellow"]), (50, 50))
+            # a later period opens on the last count before it; a past one still answers «now»
+            d3 = d2 + timedelta(days=1)
+            row, = flow.stock(self.db, d3, d3, nxt(18) + timedelta(days=1))["days"]
+            self.assertEqual((row["open"]["yellow"], row["close"]["yellow"], row["counted"]), (50, 50, False))
+            self.assertEqual(flow.stock(self.db, DAY, DAY, nxt(18))["now"]["yellow"], 50)
+
+    def test_stock_counts_an_issued_batch_until_it_is_sent_back(self):
+        self._stock()
+        with mock.patch.object(flow, "prepared", return_value=[]):
+            self._count(self.at(6))
+            self.draft(7, 5)
+            b = self.batches()[0]
+            flow.issue(self.db, b.id, None, None, None, "axo")
+            b.issued_at = self.at(7, 30)
+            self.db.commit()
+            s = flow.stock(self.db, DAY, DAY, self.at(8))
+            self.assertEqual((s["now"]["yellow"], s["now"]["round"]), (76, 94))     # 18 + 6 yellow, 6 round
+            flow.send_back(self.db, b.id, "wrong unit", "mitsu")
+            self.db.commit()
+            self.assertEqual(flow.stock(self.db, DAY, DAY, self.at(8))["now"]["yellow"], 100)
+
+    def test_stock_names_what_today_still_takes(self):
+        nk = self._stock()
+        self._count(self.at(8))
+        need = {13: {"yellow": 40}, 14: {"yellow": 30, "grey": 5}}
+        with mock.patch.object(flow, "plant_hours", side_effect=lambda db, day: need if day == DAY else {}):
+            flow.create_request(self.db, DAY, 13, nk, {"yellow": 40}, "", "axo", "guest:1")   # asked, waiting
+            self.db.commit()
+            t = flow.stock(self.db, DAY, DAY, self.at(12))["today"]
+            self.assertEqual((t["reserved"]["yellow"], t["ahead"]["yellow"], t["ahead"]["grey"]), (40, 30, 5))
+            t = flow.stock(self.db, DAY, DAY, self.at(15))["today"]                # both hours are over
+            self.assertEqual((t["reserved"]["yellow"], t["ahead"]["yellow"]), (0, 0))
+        with mock.patch.object(flow, "prepared", side_effect=RuntimeError("no plan")):
+            s = flow.stock(self.db, DAY, DAY, self.at(12))
+            self.assertIsNone(s["today"]["ahead"])                                 # said, not guessed …
+            self.assertEqual(s["now"]["yellow"], 100)                              # … and the rest stands
+
+    def test_stock_record_is_checked(self):
+        self._stock()
+        for kind, counts in (("count", {"yellow": 5}),                             # a count names every type
+                             ("in", {}), ("in", {"yellow": 0}), ("in", {"yellow": -1}),
+                             ("in", {"yellow": True}), ("out", {"yellow": 1}), ("in", {"pallet": 3})):
+            with self.assertRaises(flow.FlowError, msg=(kind, counts)):
+                flow.record_stock(self.db, kind, counts, "", "a", "k")
+        m = flow.record_stock(self.db, "count", {k: 0 for k in flow.KEYS}, " ", "a", "k")
+        self.assertEqual((m.counts, m.note), ({k: 0 for k in flow.KEYS}, None))
+        m = flow.record_stock(self.db, "in", {"yellow": 3, "grey": 0}, "", "a", "k")
+        self.assertEqual(m.counts, {"yellow": 3})
+
 
 class PlantHoursTest(unittest.TestCase):
     """The request form's default is the «Konteynerlar» page's hour: every
@@ -894,7 +1022,7 @@ class PageKeyTest(unittest.TestCase):
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
                   ("GET", f"{p}/logistics"), ("GET", f"{p}/requests/prepared"),
-                  ("POST", f"{p}/requests/bulk")]:
+                  ("POST", f"{p}/requests/bulk"), ("POST", f"{p}/stock")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
@@ -909,7 +1037,8 @@ class PageKeyTest(unittest.TestCase):
                 self.assertNotIn(g, ("any", "who", "receive+watch"), (method, path))
         self.assertEqual(guard[("GET", f"{p}/settings")], "who")
         for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"), ("GET", f"{p}/analytics"),
-                  ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history")]:
+                  ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history"),
+                  ("GET", f"{p}/stock")]:
             self.assertEqual(guard[k], "any", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
                   ("PUT", f"{p}/settings"), ("DELETE", f"{p}/requests/{{request_id}}")]:

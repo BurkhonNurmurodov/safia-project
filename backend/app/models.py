@@ -6165,3 +6165,23 @@ class ContainerRequestPart(Base):
     # …and when the shift managers were told it is STILL unconfirmed after it
     # (`container_flow.escalate_unconfirmed`). NULL = not escalated.
     escalated_at     = Column(DateTime(timezone=True), nullable=True)
+
+
+class ContainerStockMove(Base):
+    """AXO's own stock of containers, as a log (2026-11-17, the operator: «add
+    for AXO how many containers they have»). Nothing on the platform knew it,
+    so AXO states it: `count` — «I counted, we have this many of each type» —
+    sets the stock; `in` — containers that came back or were added — raises
+    it. What leaves is NOT written here: it is read off the split requests and
+    the issued batches (`container_flow.stock`), so a cancelled or deleted
+    request gives its containers back by itself. `counts` is {ctype: n}; a
+    `count` names every type."""
+    __tablename__ = "container_stock_moves"
+
+    id      = Column(Integer, primary_key=True)
+    at      = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    kind    = Column(String(8), nullable=False)          # count · in
+    counts  = Column(JSONB, nullable=False)
+    note    = Column(Text, nullable=True)
+    by_name = Column(String, nullable=True)
+    by_key  = Column(String, nullable=True)

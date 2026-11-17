@@ -429,6 +429,59 @@ all the containers app».
   brigadir the same day: «put 5 instead of 4»). Not in TV mode (that board is scaled as a whole and its
   table already shows the hours around now).
 
+### «AXO zaxirasi» — how many containers AXO has (2026-11-17)
+
+The operator: «we have to add for AXO how many containers they have in
+analytics part in the end, and it will be very crucial information for them
+too, and show this thing for them». Nothing on the platform knew AXO's stock —
+the plan (§3.11) left the balance out because returns are not tracked — so
+AXO STATES it, and the platform keeps it from there.
+
+- **Where**: the LAST section of «Tahlil» (`components/containers/FlowStock.jsx`),
+  its own read (`GET /stock`, the tab's period), so it stands on a period with
+  no requests too. Read by everybody the page is open to (`ANY`); written by
+  AXO's key and admins (`POST /stock`, `PAGE`) — a watcher sees no button and
+  the door answers 403.
+- **Two records** (`ContainerStockMove`, table `container_stock_moves`, from
+  `create_all`; `record_stock`): **«Sanab kiritish»** (`count`) — how many of
+  EVERY type AXO has now; the dialog opens on the book figure, so only what
+  differs is retyped — and **«Qaytdi / qo'shildi»** (`in`) — what came back
+  from washing or was bought, at least one type. Each keeps who, when and a
+  note. Nothing is edited or deleted: a wrong record is put right by the next
+  count. The action register: `containers.stock_recorded`.
+- **What leaves is READ, never stored** (`_stock_out`): every container a
+  logistics person SPLIT to a brigadir (a request, at `assigned_at`) and every
+  one AXO ISSUED in a batch (`issued_at`). So a split request that is cancelled
+  or deleted, and a batch Logistics sent back, give their containers back by
+  themselves, and the figure cannot drift from the requests. A request asked
+  but not split yet has NOT left — it is «promised» (below).
+- **The figure** (`stock`): the latest count, less what left after it, plus
+  what AXO added after it. Before the first count there is no figure — the
+  section says so and offers the count; it never guesses from zero. It is a
+  BOOK value: returns are only what AXO records, so it sinks below zero when
+  they go unrecorded — the tile then reads yellow with «Qayta sanang», never a
+  clamped 0.
+- **The tiles** — «Jami» and one per container type (`TYPE_COLORS`), all one
+  height: the number on the shelf now; **«Bugun yana ketadi»** — what the
+  hours not over still take (`stock_ahead`): requests asked and not split yet,
+  plus the need of the hours nobody asked for yet (`prepared`, yesterday's
+  production day included for a night shift's hours past midnight); a bar of
+  that share against what remains; and the verdict — «Yetadi», «N ta
+  yetmaydi» (red, the tile outlined), «Talab yo'q». «Jami»'s shortage is the
+  SUM of the types' shortages — types do not replace each other. If the plan
+  cannot be read the need ahead is `null`: the hover says so and the verdict
+  counts the promised requests alone.
+- **«Zaxira harakati»** — the period day by day (calendar days, Tashkent;
+  newest first, 30 a page): «Kun boshida» → «Berildi» → «Qaytdi» →
+  «Tuzatish» → «Kun oxirida», for all types or one (`SegmentedToggle`).
+  «Tuzatish» is a count that differed from the book that day («—» on a day
+  nobody counted), so opening − given + returned + correction = closing on
+  every row. Days before the first count are not listed. Its second view,
+  «Yozuvlar», is the records AXO made in the period.
+- Not built: the stock on «So'rovlar» / «Yangi so'rov» (a warning when a
+  request asks for more than the shelf holds), a Telegram alert when a type
+  will not cover the day, returns recorded by anybody but AXO.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card; the brigadir's view of the AUTOMATIC batches (their
@@ -436,7 +489,8 @@ all the containers app».
 - Every other notification (leaders, a second reminder, an automatic top-up
   after a short receipt).
 - The printed QR label and the scan (Logistics confirms with a tap for now).
-- AXO delivery on-time % on the KPI pages; the peak hour against AXO's stock.
+- AXO delivery on-time % on the KPI pages. (AXO's stock is built — «AXO
+  zaxirasi», above.)
 - The operator's rulings on: the deadline of a late-drafted batch (a default
   is in place, above), the top-up threshold per container type (one number
   for every type today), the first-day date.

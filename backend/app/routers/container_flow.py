@@ -16,6 +16,8 @@ docs/containers-flow.md). Two doors:
   their line — only their own unit; admins any. Admin-only until granted.
 - `verify_admin`: a leader's answer, a forced close, the settings, deleting
   a request outright.
+- AXO's stock (2026-11-17): `GET /stock` is `ANY`'s, `POST /stock` — a count
+  or an addition — is `PAGE`'s.
 
 The messages: a new / cancelled request to its logistics person
 (`flow.notify_later`), and a split request to each of its brigadirs with
@@ -296,6 +298,39 @@ def get_analytics(date_from: date = Query(...), date_to: date = Query(...),
     brigadir — what the charts draw."""
     _span(date_from, date_to)
     return flow.analytics(db, date_from, date_to)
+
+
+@router.get("/stock")
+def get_stock(date_from: date = Query(...), date_to: date = Query(...),
+              db: Session = Depends(get_db), payload: dict = Depends(ANY)):
+    """AXO's stock of containers: now, what today still takes from it, and the
+    period day by day (`flow.stock`). Read by everybody the page is open to."""
+    _span(date_from, date_to)
+    return flow.stock(db, date_from, date_to)
+
+
+class StockBody(BaseModel):
+    kind: str
+    counts: Dict[str, int]
+    note: str = ""
+
+
+@router.post("/stock")
+def post_stock(body: StockBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """AXO states its stock: a count (every type) or an addition (what came
+    back or was bought). AXO's door — the watchers read, never write."""
+    try:
+        m = flow.record_stock(db, body.kind, body.counts, body.note, _actor(payload), _me(db, payload))
+        kind, counts, mid = m.kind, dict(m.counts or {}), m.id
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    note = (body.note or "").strip()
+    action_log.enrich(target_kind="container_stock", target_id=mid,
+                      details=[("kind", kind), ("counts", flow.counts_text(counts) or "0")]
+                      + ([("note", note)] if note else []))
+    return {"ok": True, "id": mid}
 
 
 class ReportXlsxBody(BaseModel):

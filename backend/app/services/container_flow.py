@@ -30,8 +30,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerEvent,
-                        ContainerRequest, ContainerRequestPart, ContainerShare, Manager,
-                        ProfilePermission, RoleProfile)
+                        ContainerRequest, ContainerRequestPart, ContainerShare, ContainerStockMove,
+                        Manager, ProfilePermission, RoleProfile)
 from app.services import hourly_containers
 
 logger = logging.getLogger(__name__)
@@ -2010,4 +2010,174 @@ def units_hours(db: Session, day: date) -> dict:
         if hm:
             out[mid] = hm
     _hours_cache[day] = (started, out)
+    return out
+
+
+# ── AXO's stock (2026-11-17, the operator: «add for AXO how many containers
+# they have … it will be very crucial information for them») ─────────────────
+# Nothing on the platform knew how many containers AXO holds, so AXO states it
+# (`ContainerStockMove`): a COUNT sets the stock of every type, an IN adds what
+# came back or was bought. From the latest count on the platform keeps the
+# figure itself: every container a logistics person SPLIT to a brigadir (a
+# request, at `assigned_at`) and every one AXO ISSUED in a batch (`issued_at`)
+# has left. What left is read, never stored — a cancelled or deleted request
+# gives its containers back, and the figure cannot drift from the requests.
+# Returns are only what AXO records, so the figure is a BOOK value: it sinks
+# below zero when returns go unrecorded, which the page says («count again»)
+# instead of hiding.
+STOCK_KINDS = ("count", "in")
+STOCK_MOVES_MAX = 200
+
+
+def record_stock(db: Session, kind: str, counts: dict, note, actor, actor_key,
+                 at: Optional[datetime] = None) -> ContainerStockMove:
+    """A count (every type named, 0 allowed) or an addition (at least one)."""
+    if kind not in STOCK_KINDS:
+        raise FlowError("kind")
+    counts = counts or {}
+    if any(k not in KEYS for k in counts):
+        raise FlowError("type")
+    clean = {}
+    for k in KEYS:
+        if counts.get(k) is None:
+            if kind == "count":
+                raise FlowError("count")
+            continue
+        n = _count(counts[k])
+        if kind == "count" or n > 0:
+            clean[k] = n
+    if not clean:
+        raise FlowError("count")
+    m = ContainerStockMove(kind=kind, counts=clean, note=(note or "").strip() or None,
+                           by_name=actor, by_key=actor_key, at=at or now())
+    db.add(m)
+    db.flush()
+    return m
+
+
+def _stock_out(db: Session, since: datetime, until: datetime) -> list:
+    """What left AXO after `since`: [(at, {ctype: n})] — a split request at its
+    split, an issued batch at its issue."""
+    from sqlalchemy import func as _f
+    out: dict = {}
+    for rid, at, k, n in db.query(ContainerRequest.id, ContainerRequest.assigned_at,
+                                  ContainerRequestPart.ctype, _f.sum(ContainerRequestPart.count)) \
+            .join(ContainerRequestPart, ContainerRequestPart.request_id == ContainerRequest.id) \
+            .filter(ContainerRequest.status == "assigned", ContainerRequest.assigned_at > since,
+                    ContainerRequest.assigned_at <= until) \
+            .group_by(ContainerRequest.id, ContainerRequest.assigned_at, ContainerRequestPart.ctype).all():
+        out.setdefault(("r", rid, at), {})[k] = int(n or 0)
+    for bid, at, k, n in db.query(ContainerBatch.id, ContainerBatch.issued_at,
+                                  ContainerBatchLine.ctype, ContainerBatchLine.issued) \
+            .join(ContainerBatchLine, ContainerBatchLine.batch_id == ContainerBatch.id) \
+            .filter(ContainerBatch.status != "requested", ContainerBatch.issued_at > since,
+                    ContainerBatch.issued_at <= until, ContainerBatchLine.issued.isnot(None)).all():
+        out.setdefault(("b", bid, at), {})[k] = int(n or 0)
+    return [(key[2], counts) for key, counts in out.items()]
+
+
+def stock_ahead(db: Session, at: datetime) -> tuple:
+    """What still has to leave AXO for the hours not over: (`reserved` — asked
+    of a logistics person, not split yet; `ahead` — the hours' need nobody
+    asked for yet, None when the plan could not be read)."""
+    reserved: dict = {}
+    for r in db.query(ContainerRequest).filter(ContainerRequest.status == "requested",
+                                               ContainerRequest.day >= at.date() - timedelta(days=1)).all():
+        if hour_start(r.day, r.hour) + timedelta(hours=1) <= at:
+            continue
+        for k, n in (r.lines or {}).items():
+            reserved[k] = reserved.get(k, 0) + int(n or 0)
+    try:
+        ahead: Optional[dict] = {}
+        # yesterday's production day too: a night shift's hours run past midnight
+        for d in (at.date() - timedelta(days=1), at.date()):
+            for h in prepared(db, d, at):
+                for k, n in h["counts"].items():
+                    ahead[k] = ahead.get(k, 0) + n
+    except Exception:
+        logger.warning("container-flow: the hours ahead could not be read for the stock", exc_info=True)
+        db.rollback()
+        ahead = None
+    return reserved, ahead
+
+
+def stock(db: Session, d_from: date, d_to: date, at: Optional[datetime] = None) -> dict:
+    """AXO's stock now, what today still takes from it, and the period day by
+    day: opening → given → returned → correction → closing (a correction is a
+    count that differed from the book). Days before the first count are not
+    listed — there was no figure."""
+    at = at or now()
+    zero = lambda: {k: 0 for k in KEYS}                                # noqa: E731
+    M = ContainerStockMove
+    is_count = M.kind == "count"
+    first = db.query(M).filter(is_count, M.at <= at).order_by(M.at, M.id).first()
+    out = {"types": list(KEYS), "counted": first is not None, "last_count": None, "now": None,
+           "today": None, "days": [], "moves": []}
+    if first is None:
+        return out
+    start = hour_start(d_from, 0)
+    base = db.query(M).filter(is_count, M.at <= start).order_by(M.at.desc(), M.id.desc()).first() or first
+    last = db.query(M).filter(is_count, M.at <= at).order_by(M.at.desc(), M.id.desc()).first()
+    ev = [(m.at, 0, m.id, m.kind, m.counts or {})
+          for m in db.query(M).filter(M.at >= base.at, M.at <= at).order_by(M.at, M.id).all()]
+    ev += [(t, 1, 0, "out", counts) for t, counts in _stock_out(db, base.at, at)]
+    ev.sort(key=lambda e: e[:3])
+
+    today0 = hour_start(at.date(), 0)
+    today = {"given": zero(), "returned": zero()}
+    bal: Optional[dict] = None
+
+    def apply(e, row=None):
+        nonlocal bal
+        t, _o, _i, kind, counts = e
+        if kind == "count":
+            if bal is not None and row is not None:
+                for k in KEYS:
+                    row["adjust"][k] += int(counts.get(k, 0)) - bal[k]
+            bal = {k: int(counts.get(k, 0)) for k in KEYS}
+            if row is not None:
+                row["counted"] = True
+            return
+        if bal is None:
+            return
+        sign, slot = (1, "returned") if kind == "in" else (-1, "given")
+        for k, n in counts.items():
+            if k not in bal:
+                continue
+            bal[k] += sign * int(n or 0)
+            if row is not None:
+                row[slot][k] += int(n or 0)
+            if t >= today0:
+                today[slot][k] += int(n or 0)
+
+    i = 0
+    d = max(d_from, base.at.astimezone(TZ).date())
+    end = min(d_to, at.date())
+    while i < len(ev) and ev[i][0] < hour_start(d, 0):
+        apply(ev[i])
+        i += 1
+    while d <= end:
+        row = {"day": d.isoformat(), "open": dict(bal) if bal is not None else None,
+               "given": zero(), "returned": zero(), "adjust": zero(), "counted": False}
+        nxt = hour_start(d + timedelta(days=1), 0)
+        while i < len(ev) and ev[i][0] < nxt:
+            apply(ev[i], row)
+            i += 1
+        row["close"] = dict(bal) if bal is not None else None
+        out["days"].append(row)
+        d += timedelta(days=1)
+    while i < len(ev):
+        apply(ev[i])
+        i += 1
+
+    reserved, ahead = stock_ahead(db, at)
+    today["reserved"] = {k: reserved.get(k, 0) for k in KEYS}
+    today["ahead"] = None if ahead is None else {k: ahead.get(k, 0) for k in KEYS}
+    out["now"], out["today"] = bal, today
+    out["last_count"] = {"at": _iso(last.at), "by": last.by_name, "counts": last.counts or {}}
+    lo, hi = start, hour_start(d_to + timedelta(days=1), 0)
+    out["moves"] = [{"id": m.id, "at": _iso(m.at), "kind": m.kind, "counts": m.counts or {},
+                     "note": m.note, "by": m.by_name}
+                    for m in db.query(M).filter(M.at >= lo, M.at < hi)
+                    .order_by(M.at.desc(), M.id.desc()).limit(STOCK_MOVES_MAX).all()]
     return out

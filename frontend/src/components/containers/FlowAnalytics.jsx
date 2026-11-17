@@ -29,6 +29,7 @@ import { TONE_HEX, GREEN, AMBER, RED, vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip } from "./flowUtil";
+import FlowStock from "./FlowStock";
 
 const CHART_H = 260;
 const WEEK_AFTER = 45;      // a longer period draws weeks, not days
@@ -58,7 +59,7 @@ function buckets(days) {
   return [...by.values()].map((b) => ({ ...b, on_time_pct: b.judged ? Math.round((100 * b.on_time) / b.judged) : null }));
 }
 
-export default function FlowAnalytics({ t }) {
+export default function FlowAnalytics({ t, canStock = false, toast }) {
   const { tl } = useTranslit();
   const today = tashkentNow().iso;
   const [from, setFrom] = useState(() => shiftISO(today, -6));
@@ -139,6 +140,9 @@ export default function FlowAnalytics({ t }) {
           </div>
         </>
       )}
+
+      {/* AXO's stock closes the tab — its own read, so it stands on a period with no requests too */}
+      <FlowStock t={t} from={from} to={to} canEdit={canStock} toast={toast} />
     </div>
   );
 }

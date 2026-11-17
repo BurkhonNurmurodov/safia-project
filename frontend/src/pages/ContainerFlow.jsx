@@ -200,7 +200,7 @@ export default function ContainerFlow() {
               : <AllTab {...ctx} isAdmin={isAdmin} canSettle={roles.axo} />}
           </div>
         )
-        : tab === "analytics" ? <FlowAnalytics t={t} />
+        : tab === "analytics" ? <FlowAnalytics t={t} canStock={roles.axo} toast={toast} />
         : tab === "report" ? <FlowReport t={t} toast={toast} />
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
             onSaved={() => { qc.invalidateQueries({ queryKey: ["cflow-settings"] }); refresh(); }} />}
