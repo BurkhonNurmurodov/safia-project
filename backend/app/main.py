@@ -175,6 +175,7 @@ async def lifespan(app: FastAPI):
         seed_hr_kaizen_questions,
         archive_sample_questions,
         seed_tb_safety_questions,
+        seed_production_sap_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -373,6 +374,11 @@ async def lifespan(app: FastAPI):
     # startup.seed_tb_safety_questions and services/assessment_seed_tb_nov17.py
     # once its flag reads «done».
     later(seed_tb_safety_questions)
+    # ⚠ TEMPORARY one-shot (2026-11-17): the SAP file's 10 questions into the
+    # Production bank + its 12 samples archived. Remove with
+    # startup.seed_production_sap_questions and
+    # services/assessment_seed_production_nov17.py once its flag reads «done».
+    later(seed_production_sap_questions)
     run(add_pp_product_containers)
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)

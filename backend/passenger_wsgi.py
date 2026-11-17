@@ -159,6 +159,7 @@ try:
         seed_hr_kaizen_questions,
         archive_sample_questions,
         seed_tb_safety_questions,
+        seed_production_sap_questions,
         add_pp_product_containers,
         add_forecast_answer_columns,
         add_assistant_run_lease,
@@ -346,6 +347,7 @@ try:
     seed_hr_kaizen_questions()
     archive_sample_questions()
     seed_tb_safety_questions()
+    seed_production_sap_questions()
     add_pp_product_containers()
     add_forecast_answer_columns()
     add_assistant_run_lease()

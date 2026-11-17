@@ -173,6 +173,31 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   саволлар (docx)», Jurnal `assessment.questions_imported`. With these TB has
   its 3, so a sitting can be opened again. Delete the module, the function and
   both calls once the flag reads «done».
+- **The same day Production got its first real questions** (the operator sent
+  an SAP file, sheet «Саволлар ва жавоблар»): 10 questions WITH expected
+  answers — the transactions C203 (five questions: what it is for, how to open
+  it, Lead Time, operation phases, raw materials), COGI, clearing a cell's
+  leftover stock, MIGO, CORS — all THEORY (knowledge questions; the file marks
+  no type). Text word for word, extracted by script. **Three rulings, asked
+  that day:** (1) the bank is **Production**; (2) question 8's answer
+  («Ячейкадаги қолдиқ нима мақсадда ўчирилади?») lost its closing bracketed
+  note «(Компаниянгиз жараёнига қараб текшириб олинг.)», the rest as written,
+  and the file's footnote («Эслатма: жавоблар умумий SAP билимлари асосида
+  ёзилган …») is not a question and was not imported; (3) **all 12 Production
+  SAMPLE questions were archived** (the operator chose that over keeping the
+  practical ones — «Archive all 12»). TEMPORARY
+  `startup.seed_production_sap_questions` (`later`, both entrypoints, after the
+  TB step; flag `assessment_production_sap_seed_2026_11_17_v1`; the rows and
+  the archiving ride ONE transaction; a question Production already holds is
+  skipped, its missing answer filled in) over
+  `services/assessment_seed_production_nov17.py`, `created_by` «Import: SAP
+  саволлар ва жавоблар (xlsx)», Jurnal `assessment.questions_imported` +
+  `assessment.samples_archived`. **Consequence: Production holds no PRACTICAL
+  question, and the Kaizen + Production block needs at least 3 of them from
+  EACH department (`min_each`), so no sitting can be opened (`pool_short`)
+  until somebody adds 3 Production practical questions** — the page's red
+  «Bankda savol yetmaydi» card says so (Production · amaliy). Delete the
+  module, the function and both calls once the flag reads «done».
 - **SAMPLE questions for trying the page out** (the operator, 2026-10-31: «for
   now, later we delete and put actual questions»): 40 written by the
   assistant, in Russian, with expected answers — Kaizen 5 theory + 7

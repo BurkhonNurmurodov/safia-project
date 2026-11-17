@@ -10275,6 +10275,73 @@ def seed_tb_safety_questions() -> None:
                                       ("source", seed.SOURCE)])
 
 
+def seed_production_sap_questions() -> None:
+    """⚠ TEMPORARY one-shot (2026-11-17), `services/assessment_seed_production_nov17.py`:
+    the operator's SAP file — 10 THEORY questions with their expected answers —
+    becomes the Production department's first real questions, and in the SAME
+    transaction every SAMPLE question of Production (`assessment.SAMPLE_SOURCE`,
+    not yet archived) is ARCHIVED: out of the draw, kept, restorable one by one
+    from the bank. A question Production already holds (folded text) is skipped,
+    its answer filled in if it has none. Production is left with no PRACTICAL
+    question, so no sitting can be opened until 3 are added (the operator chose
+    «archive all 12»). The rows and the flag ride ONE transaction. Delete this
+    function, the module and both calls once the flag reads «done»."""
+    import re as _re
+    from datetime import datetime, timezone
+    from app.models import AppSetting, AssessmentQuestion
+    from app.services import action_log
+    from app.services.assessment import SAMPLE_SOURCE
+    from app.services import assessment_seed_production_nov17 as seed
+    fold = lambda t: _re.sub(r"\s+", " ", (t or "").strip().lower())
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter(AppSetting.key == seed.FLAG).first():
+            return
+        now = datetime.now(timezone.utc)
+        have = {fold(q.text): q for q in db.query(AssessmentQuestion).filter(
+            AssessmentQuestion.department == seed.DEPARTMENT).all()}
+        added = answered = skipped = 0
+        for text_, answer in seed.QUESTIONS:
+            q = have.get(fold(text_))
+            if q is not None:
+                if not (q.answer or "").strip():
+                    q.answer = answer
+                    answered += 1
+                else:
+                    skipped += 1
+                continue
+            row = AssessmentQuestion(department=seed.DEPARTMENT, qtype=seed.QTYPE,
+                                     text=text_, answer=answer, created_by=seed.SOURCE)
+            db.add(row)
+            have[fold(text_)] = row
+            added += 1
+        samples = (db.query(AssessmentQuestion)
+                   .filter(AssessmentQuestion.department == seed.DEPARTMENT,
+                           AssessmentQuestion.created_by == SAMPLE_SOURCE,
+                           AssessmentQuestion.archived_at.is_(None)).all())
+        for q in samples:
+            q.archived_at, q.archived_by = now, seed.ARCHIVED_BY
+        db.add(AppSetting(key=seed.FLAG, value="done"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] Production SAP questions import skipped: {exc}")
+        return
+    finally:
+        db.close()
+    print(f"[startup] assessment bank: Production {added} added, {answered} answers filled, "
+          f"{skipped} already there; {len(samples)} sample questions archived")
+    action_log.record_system("training", "assessment.questions_imported",
+                             target_kind="assessment_question",
+                             details=[("department", seed.DEPARTMENT), ("added", added),
+                                      ("answered", answered), ("skipped", skipped),
+                                      ("source", seed.SOURCE)])
+    action_log.record_system("training", "assessment.samples_archived",
+                             target_kind="assessment_question",
+                             details=[("archived", len(samples)),
+                                      (seed.DEPARTMENT, len(samples))])
+
+
 def seed_hr_contact() -> None:
     """The HR contact job seekers are sent to (docs/registration.md «Job
     seekers go to HR») starts as the one the operator named on 2026-11-09,
