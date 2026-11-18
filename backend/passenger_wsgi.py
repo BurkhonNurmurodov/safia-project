@@ -283,6 +283,8 @@ try:
     nuriddin_cat_e()
     from app.startup import yusuf_container_logistics
     yusuf_container_logistics()
+    from app.startup import davron_container_logistics
+    davron_container_logistics()
     from app.startup import container_flow_notify_on, containers_tv_managers
     container_flow_notify_on()
     containers_tv_managers()

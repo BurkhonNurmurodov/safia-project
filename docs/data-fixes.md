@@ -450,6 +450,29 @@ the STORED access of `container-receive` (the default moves with it) and sets
 `container_flow.notify_brigadirs` = 1, then DMs the admins. Once: an untick
 or an «off» later sticks. docs/containers-flow.md.
 
+## Davron Kuldimirodov → «Konteyner berish» like Nuriddin aka (`startup.davron_container_logistics`, 2026-11-18)
+
+The operator: «I added Davron Kuldimirodov, make the container app the same as
+Nuriddin's». Nuriddin's container access is a set of PERSONAL grants, so the
+step copies every `page.view.container-*` grant on the Nuriddin profile that
+holds the Logistics page onto Davron's profile. The Logistics page is always
+included, so Davron becomes an addressee AXO can pick and is one of the people
+a request «to everyone» reaches. Davron's other grants are left as they are.
+
+How the profile is found:
+- Among live profiles (no `ended_on`) whose name has a «Davron…» word, take the
+  one also spelled Kuldimurodov / Qo'ldimurodov / Kuldimirodov.
+- With two such profiles, take the one that is not a leader. Leaders come from
+  Verifix and are never added by hand.
+- With no surname match, take the only non-leader «Davron».
+
+If nothing settles on one profile, nothing changes. The admins get the list of
+names that matched, and the step runs again on the next start, so it lands once
+the profile exists. On success the admins' DM gives the profile, how many
+Telegram accounts hold it (zero means he hears no request yet), and the
+logistics people AXO can now choose from. It runs once (flag
+`oneshot:davron_container_logistics_nov18`).
+
 ## Yusuf aka → «Konteyner berish» as Logistics too (`startup.yusuf_container_logistics`, 2026-11-16)
 
 The operator: «add the container app like for Nuriddin — Yusuf aka is the same

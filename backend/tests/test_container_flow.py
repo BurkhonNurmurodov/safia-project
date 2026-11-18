@@ -347,6 +347,44 @@ class FlowTest(unittest.TestCase):
         self.assertEqual([p["name"] for p in flow.logistics_people(self.db)], ["Nuriddin aka", "Yusuf aka"])
         self.assertEqual(dm.call_count, 1)
 
+    def test_davron_gets_nuriddins_container_access(self):
+        """18 Nov: Davron Kuldimirodov gets Nuriddin aka's container grants —
+        the one live «Davron» profile, a leader namesake and a left one aside;
+        once, and nothing while no profile is found."""
+        from datetime import date as _d
+
+        from app import capabilities, startup
+        from app.models import ProfilePermission, RoleProfile
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        self.db.execute(flow.text("DELETE FROM app_settings WHERE key = :k"), {"k": startup.DAVRON_LOGISTICS_FLAG})
+        n = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        leader = RoleProfile(role="leader", name="Davron Karimov")              # Verifix's namesake
+        gone = RoleProfile(role="idle-owner", name="Davron Qo'ldimurodov", ended_on=_d(2026, 1, 1))
+        self.db.add_all([n, leader, gone])
+        self.db.flush()
+        nk = f"idle-owner:{n.id}"
+        self.db.add_all([
+            ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"),
+            ProfilePermission(profile_key=nk, capability="page.view.container-watch", mode="grant", scope="all"),
+            ProfilePermission(profile_key=nk, capability="page.view.downtime", mode="grant", scope="all"),
+        ])
+        self.db.commit()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.davron_container_logistics()                     # no live profile yet: nothing
+            self.assertEqual([p["name"] for p in flow.logistics_people(self.db)], ["Nuriddin aka"])
+            d = RoleProfile(role="shift-manager", name="Davron Kuldimirodov", name_ru="Даврон Кулдимуродов")
+            self.db.add(d)
+            self.db.commit()
+            startup.davron_container_logistics()
+            startup.davron_container_logistics()                     # the flag: once
+        self.db.expire_all()
+        self.assertEqual([p["name"] for p in flow.logistics_people(self.db)],
+                         ["Davron Kuldimirodov", "Nuriddin aka"])
+        self.assertEqual(sorted(capabilities.perms_for_profile(self.db, f"shift-manager:{d.id}")),
+                         ["page.view.container-logistics", "page.view.container-watch"])
+        self.assertEqual(dm.call_count, 2)                           # the miss, then the grant
+
     def test_receive_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access

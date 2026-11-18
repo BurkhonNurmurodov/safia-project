@@ -10807,6 +10807,91 @@ def nuriddin_container_logistics() -> None:
         db.close()
 
 
+# ── 18 Nov: Davron Kuldimirodov → «Konteyner berish» like Nuriddin aka ──────
+# The operator, 2026-11-18: «I added Davron Kuldimirodov, make the container
+# app the same as Nuriddin's». Nuriddin's container access is his PERSONAL
+# grants (`page.view.container-*`, the Logistics page first of all), so those
+# are copied onto Davron's profile — which also makes him an addressee AXO can
+# pick and one of «Hammasi» (a request to every logistics person). His profile
+# is the one live profile named «Davron …» — a «Kuldimurodov» spelling first,
+# leaders (Verifix's, never added by hand) last; anything else changes nothing
+# and tells the admins, and the step tries again on the next start.
+DAVRON_LOGISTICS_FLAG = "oneshot:davron_container_logistics_nov18"
+
+
+def _davron_profile(db):
+    """(profile, candidates): the one profile to grant, or None + who matched."""
+    from app.services.people import fold_name
+
+    def toks(p):
+        return {t for n in (p.name, p.name_uz_cyrl, p.name_ru, p.name_en) if n
+                for t in fold_name(n).split()}
+
+    def surname(ts):        # Qo'ldimurodov / Kuldimurodov / Kuldimirodov
+        return any(t.replace("q", "k").replace("o", "u").startswith("kuldim") for t in ts)
+
+    pool = [p for p in db.query(RoleProfile).filter(RoleProfile.ended_on.is_(None)).all()
+            if any(t.startswith("davron") for t in toks(p))]
+    named = [p for p in pool if surname(toks(p))]
+    for group in (named, [p for p in named if p.role != "leader"],
+                  [] if named else [p for p in pool if p.role != "leader"]):
+        if len(group) == 1:
+            return group[0], pool
+    return None, pool
+
+
+def davron_container_logistics() -> None:
+    import html
+
+    from app import capabilities
+    from app.identity import profile_holders
+    from app.services import container_flow as flow
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DAVRON_LOGISTICS_FLAG).first():
+            return
+        prof, pool = _davron_profile(db)
+        if prof is None:
+            listed = ", ".join(f"{p.role}:{p.id} {p.name}" for p in pool) or "—"
+            print(f"[startup] Davron logistics: {len(pool)} profiles named Davron — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Davron Kuldimirodov — «Konteyner berish» (logistika) berilmadi</b>\n"
+                f"«Davron» nomli profillar: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            return
+        key = f"{prof.role}:{prof.id}"
+        # Nuriddin's own container grants, the Logistics page always among them
+        grants = {flow.LOGISTICS_CAP: "all"}
+        held = {p["key"] for p in flow.logistics_people(db)}
+        nur = [k for k in (f"idle-owner:{p.id}" for p in _nuriddin_profiles(db)) if k in held]
+        if len(nur) == 1:
+            for cap, v in capabilities.perms_for_profile(db, nur[0]).items():
+                if cap.startswith("page.view.container") and v["mode"] == "grant":
+                    grants[cap] = v["scope"]
+        capabilities.apply_profile_perms(
+            db, [key], grants=grants, actor_name="system (one-shot 2026-11-18)")
+        db.add(AppSetting(key=DAVRON_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        tg = len(profile_holders(db, key))
+        names = ", ".join(p["name"] for p in flow.logistics_people(db))
+        print(f"[startup] Davron logistics: {key} → {sorted(grants)} (Telegram: {tg})")
+        _dm_admins_plain(
+            "✅ <b>Davron Kuldimirodov — «Konteyner berish» (logistika)</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            f"Telegram: {tg} ta akkaunt"
+            + (" — profilga hali hech kim ulanmagan, xabarlar bormaydi" if not tg else "") + "\n"
+            f"Endi AXO so'rovni yuborishi mumkin: {esc(names)}.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Davron logistics failed: {exc}")
+        _dm_admins_plain("🛑 <b>Davron Kuldimirodov — «Konteyner berish» (logistika) berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
 # The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
 # «Kutish mas'uli» reads /downtime and /idle-cell through the categories he
