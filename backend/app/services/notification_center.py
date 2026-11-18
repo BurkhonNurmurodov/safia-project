@@ -83,6 +83,7 @@ _EXACT = {
     "idle_solution_reminder": "idle",
     "idle_solution_behind": "idle",
     "container_request_new": "other", "container_request_cancelled": "other",
+    "container_request_edited": "other", "container_request_moved": "other",
     "container_split": "other", "container_split_remind": "other",
     "container_split_cancelled": "other", "container_requests_new": "other",
     "container_short_split": "other", "container_short_receipt": "other",

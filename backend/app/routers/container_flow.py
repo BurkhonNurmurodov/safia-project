@@ -1,21 +1,22 @@
 """«Konteyner berish» — the container flow's API (services/container_flow.py,
 docs/containers-flow.md). Two doors:
 
-- `PAGE` (page key `container-flow`) is AXO: issuing an hour, a REQUEST to a
-  logistics person, cancelling one, settling a dispute. First holder: Fozilova
-  Dilafruz.
+- `PAGE` (page key `container-flow`) is AXO: a REQUEST to a logistics person
+  (or to all of them), changing or cancelling one while it waits, the stock,
+  a brigadir's extra. First holder: Fozilova Dilafruz.
 - `LOGI` (page key `container-logistics`) is Logistics: splitting a request
-  addressed to them across brigadirs, confirming / sending back a batch.
-  First holder: Nuriddin aka.
-- `ANY` (either key): reading the board, the requests, the history, the
-  report. Both keys are admin-only until granted.
+  addressed to them (or to everybody) across brigadirs. Nuriddin aka and
+  Yusuf aka.
+- `ANY` (either key): reading the requests, the analytics, the report.
+  Both keys are admin-only until granted.
+- The automatic batches («Partiyalar») and their doors (`/board`, `/issue`,
+  `/batches/…`, `/teams`) were removed on 2026-11-18.
 - `container-watch` (shift- and top-managers by default, 2026-11-15) reads
   everything the page shows — it joins `ANY`, `WHO` and the receipts' `RECW`
   — and writes nothing.
 - `RECV` (page key `container-receive`): a brigadir confirming what reached
   their line — only their own unit; admins any. Admin-only until granted.
-- `verify_admin`: a leader's answer, a forced close, the settings, deleting
-  a request outright.
+- `verify_admin`: the settings, deleting a request outright.
 - AXO's stock (2026-11-17): `GET /stock` is `ANY`'s, `POST /stock` — a count
   or an addition — is `PAGE`'s.
 - A brigadir's EXTRA request (2026-11-18): `EXT` (page key `container-extra`,
@@ -29,8 +30,6 @@ The messages: a new / cancelled request to its logistics person
 from __future__ import annotations
 
 import io
-import threading
-import time
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -83,160 +82,13 @@ def _me(db: Session, payload: dict) -> Optional[str]:
     from app.identity import viewer_profile_key
     return viewer_profile_key(db, payload)
 
-_draft_lock = threading.Lock()
-_drafted_at = 0.0
-_DRAFT_EVERY_S = 60
-
-
 def _actor(payload: dict) -> str:
     return payload.get("full_name") or str(payload.get("sub") or "admin")
-
-
-def _draft_now(db: Session) -> None:
-    """A board read brings the drafts up to date too (at most once a minute per
-    process), so a unit enrolled a moment ago shows its hours without waiting
-    for the clock's next pass."""
-    global _drafted_at
-    with _draft_lock:
-        if time.monotonic() - _drafted_at < _DRAFT_EVERY_S:
-            return
-        _drafted_at = time.monotonic()
-    try:
-        flow.draft_due(db)
-    except Exception:
-        db.rollback()
-
-
-def _step(db: Session, fn, *args) -> dict:
-    """Run one step, commit, answer the batch — a refused step is a 409 whose
-    `detail` is the code the page words."""
-    try:
-        b = fn(db, *args)
-        db.commit()
-    except flow.FlowError as e:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=e.code)
-    out = flow.one(db, b)
-    action_log.enrich(target_kind="container_batch", target_id=b.id, unit_id=b.manager_id,
-                      unit_name=out.get("unit"), day=b.day,
-                      details=[("hour", f"{b.hour % 24:02d}:00"), ("kind", b.kind), ("status", b.status)])
-    return out
-
-
-@router.get("/board")
-def get_board(day: date = Query(...), db: Session = Depends(get_db),
-              payload: dict = Depends(ANY)):
-    _draft_now(db)
-    return flow.board(db, day)
-
-
-class IssueItem(BaseModel):
-    batch_id: int
-    counts: Dict[str, int] = Field(default_factory=dict)
-
-
-class IssueBody(BaseModel):
-    items: List[IssueItem]
-    reason: Optional[str] = None
-    comment: Optional[str] = None
-
-
-@router.post("/issue")
-def post_issue(body: IssueBody, db: Session = Depends(get_db),
-               payload: dict = Depends(PAGE)):
-    """AXO issues an HOUR: several batches in one press, all or nothing."""
-    if not body.items:
-        raise HTTPException(status_code=422, detail="no batches")
-    actor = _actor(payload)
-    try:
-        done = [flow.issue(db, it.batch_id, it.counts, body.reason, body.comment, actor)
-                for it in body.items]
-        db.commit()
-    except flow.FlowError as e:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=e.code)
-    action_log.enrich(target_kind="container_batch", day=done[0].day,
-                      details=[("batches", len(done)), ("hour", f"{done[0].hour % 24:02d}:00")])
-    return {"issued": [b.id for b in done]}
-
-
-class CountsBody(BaseModel):
-    counts: Optional[Dict[str, int]] = None
-    reason: Optional[str] = None
-    comment: Optional[str] = None
-
-
-@router.post("/batches/{batch_id}/deliver")
-def post_deliver(batch_id: int, body: CountsBody, db: Session = Depends(get_db),
-                 payload: dict = Depends(LOGI)):
-    return _step(db, flow.deliver, batch_id, body.counts, body.reason, body.comment, _actor(payload))
 
 
 class NoteBody(BaseModel):
     note: str = ""
 
-
-@router.post("/batches/{batch_id}/return")
-def post_return(batch_id: int, body: NoteBody, db: Session = Depends(get_db),
-                payload: dict = Depends(LOGI)):
-    return _step(db, flow.send_back, batch_id, body.note, _actor(payload))
-
-
-class AnswerBody(CountsBody):
-    team: str
-    mode: str
-
-
-@router.post("/batches/{batch_id}/answer")
-def post_answer(batch_id: int, body: AnswerBody, db: Session = Depends(get_db),
-                payload: dict = Depends(verify_admin)):
-    return _step(db, flow.answer, batch_id, body.team, body.mode, body.counts, body.reason,
-                 body.comment, _actor(payload))
-
-
-@router.post("/batches/{batch_id}/settle")
-def post_settle(batch_id: int, body: NoteBody, db: Session = Depends(get_db),
-                payload: dict = Depends(PAGE)):
-    return _step(db, flow.settle, batch_id, body.note, _actor(payload))
-
-
-@router.post("/batches/{batch_id}/close")
-def post_close(batch_id: int, body: NoteBody, db: Session = Depends(get_db),
-               payload: dict = Depends(verify_admin)):
-    return _step(db, flow.force_close, batch_id, body.note, _actor(payload))
-
-
-@router.get("/batches/{batch_id}/history")
-def get_history(batch_id: int, db: Session = Depends(get_db),
-                payload: dict = Depends(ANY)):
-    return {"events": flow.history(db, batch_id)}
-
-
-@router.get("/teams")
-def get_teams(manager_id: int = Query(...), day: date = Query(...),
-              db: Session = Depends(get_db), payload: dict = Depends(ANY)):
-    """A unit's teams for the manual request's picker — every work centre of
-    its «Zagruzka fayli» and each group of it, whether the hours see it or not."""
-    from app.routers import production
-    try:
-        dash = production._build_dashboard(db, manager_id, day)
-    except HTTPException:
-        return {"teams": []}
-    out = []
-    for w in dash.get("work_centers") or []:
-        code = str(w.get("work_center") or "").strip().upper()
-        if not code:
-            continue
-        groups = [g for g in (w.get("groups") or []) if not g.get("orphan")]
-        if not groups:
-            cell = w.get("cell") or {}
-            out.append({"work_center": code, "group": "", "cell_code": cell.get("verifix_code"),
-                        "leader": cell.get("leader")})
-        for g in groups:
-            cell = g.get("cell") or w.get("cell") or {}
-            out.append({"work_center": code, "group": g.get("group") or "",
-                        "cell_code": cell.get("verifix_code"), "leader": cell.get("leader")})
-    return {"teams": out}
 
 
 def _units(db: Session) -> list:
@@ -249,17 +101,16 @@ def _units(db: Session) -> list:
 
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db), payload: dict = Depends(WHO)):
-    """Read by every holder (the manual request's unit picker, «is anything
-    enrolled»); written by admins only."""
-    return {**flow.settings(db), "all_units": _units(db), "reasons": list(flow.REASONS),
-            "extra_reasons": list(flow.EXTRA_REASONS),
-            "draft_min": flow.DRAFT_MIN, "lead_min": flow.LEAD_MIN, **_roles(db, payload)}
+    """Read by every holder (the viewer's roles, the switches); written by
+    admins only."""
+    return {**flow.settings(db), "reasons": list(flow.REASONS), "extra_reasons": list(flow.EXTRA_REASONS),
+            "lead_min": flow.LEAD_MIN, **_roles(db, payload)}
 
 
 class SettingsBody(BaseModel):
-    units: List[int]
-    topup_min: int = Field(ge=1, le=1000)
-    notify: Optional[bool] = None   # absent = unchanged (an older tab)
+    # an older tab still sends `units` / `topup_min` (the removed batches'):
+    # they are ignored, never refused
+    notify: Optional[bool] = None   # absent = unchanged
     notify_brigadirs: Optional[bool] = None
     notify_axo: Optional[bool] = None
     notify_managers: Optional[bool] = None
@@ -270,18 +121,14 @@ class SettingsBody(BaseModel):
 def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(verify_admin)):
     was = flow.settings(db)
-    out = flow.save_settings(db, body.units, body.topup_min, body.notify, body.notify_brigadirs,
-                             body.notify_axo, body.notify_managers, body.notify_extra)
-    action_log.enrich(changes=[("units", len(was["units"]), len(out["units"])),
-                               ("topup_min", was["topup_min"], out["topup_min"]),
-                               ("notify", was["notify"], out["notify"]),
+    out = flow.save_settings(db, body.notify, body.notify_brigadirs, body.notify_axo,
+                             body.notify_managers, body.notify_extra)
+    action_log.enrich(changes=[("notify", was["notify"], out["notify"]),
                                ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"]),
                                ("notify_axo", was["notify_axo"], out["notify_axo"]),
                                ("notify_managers", was["notify_managers"], out["notify_managers"]),
                                ("notify_extra", was["notify_extra"], out["notify_extra"])])
-    global _drafted_at
-    _drafted_at = 0.0   # the next board read drafts for a unit just enrolled
-    return {**out, "all_units": _units(db)}
+    return out
 
 
 @router.get("/readiness")
@@ -299,7 +146,7 @@ def _span(d_from: date, d_to: date) -> None:
 def get_report(date_from: date = Query(...), date_to: date = Query(...),
                db: Session = Depends(get_db), payload: dict = Depends(ANY)):
     _span(date_from, date_to)
-    return {**flow.report(db, date_from, date_to), "requests": flow.requests_report(db, date_from, date_to)}
+    return {"requests": flow.requests_report(db, date_from, date_to)}
 
 
 @router.get("/analytics")
@@ -358,28 +205,12 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     from openpyxl import Workbook
     from openpyxl.styles import Font
     _span(body.date_from, body.date_to)
-    rep = flow.report(db, body.date_from, body.date_to)
-    cols = ["day", "unit", "ctype", "need", "issued", "delivered", "accepted",
-            "gap_axo", "gap_logistics", "gap_dispute", "surplus"]
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Containers"
-    ws.append([body.headers.get(c, c) for c in cols])
-    for c in ws[1]:
-        c.font = Font(bold=True)
-    for r in rep["rows"]:
-        ws.append([r["day"], r["unit"] or "—", body.types.get(r["ctype"], r["ctype"])]
-                  + [r[c] for c in cols[3:]])
-    ws.append([body.headers.get("total", "Total"), "", ""] + [rep["totals"][c] for c in cols[3:]])
-    for c in ws[ws.max_row]:
-        c.font = Font(bold=True)
-    for i, w in enumerate([12, 30, 22, 10, 10, 12, 12, 10, 12, 10, 10]):
-        ws.column_dimensions[chr(65 + i)].width = w
-    ws.freeze_panes = "A2"
-    # the requests side: one row per day, as the page's table
+    # one row per day, as the page's table
     rq = flow.requests_report(db, body.date_from, body.date_to)
     rcols = ["day", "requests", "asked", "given", "received", "missing", "late", "overdue", "short"]
-    ws2 = wb.create_sheet("Requests")
+    wb = Workbook()
+    ws2 = wb.active
+    ws2.title = "Requests"
     ws2.append([body.headers.get(f"rq_{c}", c) for c in rcols])
     for c in ws2[1]:
         c.font = Font(bold=True)
@@ -473,6 +304,37 @@ def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict
         raise HTTPException(status_code=409, detail=e.code)
     flow.notify_later(r.id, "new")
     return _req_out(db, r, body.day)
+
+
+class EditBody(BaseModel):
+    hour: int
+    logistics_key: str
+    counts: Dict[str, int]
+    note: str = ""
+
+
+@router.put("/requests/{request_id}")
+def put_request(request_id: int, body: EditBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """AXO changes a request while it waits — the hour, the counts, whom it
+    goes to, the note. Whoever it reaches is told: the same people «changed»,
+    a new addressee «new», the one it left «moved»."""
+    try:
+        r, changes, old_key = flow.edit_request(db, request_id, body.hour, body.logistics_key, body.counts, body.note)
+        new_key, rid, day = r.logistics_key, r.id, r.day
+        gone = [k for k in flow.addressees(db, old_key) if k not in flow.addressees(db, new_key)]
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    if changes:
+        if old_key == new_key:
+            flow.notify_later(rid, "edited")
+        else:
+            flow.notify_later(rid, "new")
+            if gone:
+                flow.notify_later(rid, "moved", gone)
+    action_log.enrich(changes=changes)
+    return _req_out(db, r, day)
 
 
 @router.get("/requests/prepared")

@@ -2,10 +2,9 @@
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
-import GroupBadge from "../ui/GroupBadge";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
@@ -55,31 +54,6 @@ export function Chip({ tone = "idle", icon: Icon, title, children }) {
   );
 }
 
-// What a batch waits on — one chip, traffic-light: grey not started, yellow on
-// its way, red a dispute or a missed deadline, green closed.
-export function StatusChip({ b, t }) {
-  if (b.overdue) return <Chip tone="bad" icon={AlertTriangle}>{t("cflow.st.overdue")}</Chip>;
-  const tone = { requested: "idle", issued: "warn", delivered: "warn", disputed: "bad", closed: "ok" }[b.status] ?? "idle";
-  return <Chip tone={tone}>{t(`cflow.st.${b.status}`)}</Chip>;
-}
-
-export function KindChip({ kind, t }) {
-  if (kind === "regular") return null;
-  return <Chip tone="idle" title={t(`cflow.kindHint.${kind}`)}>{t(`cflow.kind.${kind}`)}</Chip>;
-}
-
-// A team as it is named everywhere: the work centre's code, its group letter,
-// «harfsiz» for a grouped centre's unlettered lines.
-export function TeamLabel({ team, t }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
-      <span className="font-mono text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>{team.work_center}</span>
-      <GroupBadge group={team.group} />
-      {team.rest && <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("cflow.rest")}</span>}
-    </span>
-  );
-}
-
 export const fieldCls = "w-full rounded-xl px-3 py-2 text-sm outline-none";
 export const fieldStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
@@ -100,18 +74,6 @@ export function ReasonFields({ reason, setReason, comment, setComment, t, error 
 }
 
 export const reasonOk = (reason, comment) => REASONS.includes(reason) && (reason !== "other" || comment.trim().length > 0);
-
-// Batches of one hour together, hours in order.
-export function byHour(batches) {
-  const m = new Map();
-  for (const b of batches) {
-    if (!m.has(b.hour)) m.set(b.hour, []);
-    m.get(b.hour).push(b);
-  }
-  return [...m.entries()].sort((a, b) => a[0] - b[0]);
-}
-
-export const lineOf = (b, k) => b.lines.find((ln) => ln.ctype === k) ?? null;
 
 
 // ── time ─────────────────────────────────────────────────────────────────────
@@ -236,14 +198,14 @@ export const canAskFor = (day) => hourNow(day) <= 31;
 // server's `ALL_KEY`) — or one named person. The form starts on «everybody»
 // unless this device last picked a person who is still listed.
 export const ALL_KEY = "*";
-export function useLogisticsPick() {
+export function useLogisticsPick(initial = null) {
   const people = useQuery({
     queryKey: ["cflow-logistics"],
     queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
   });
   const list = people.data ?? [];
   const [last, setLast] = usePersistentState("cflow_last_logistics_v2", ALL_KEY);
-  const [who, setWho] = useState(null);
+  const [who, setWho] = useState(initial);
   const remembered = last === ALL_KEY || list.some((p) => p.key === last) ? last : ALL_KEY;
   const to = list.length ? (who ?? remembered) : null;
   return { loading: people.isLoading, list, to, setWho, remember: () => setLast(to) };

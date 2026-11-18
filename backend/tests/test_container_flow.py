@@ -13,15 +13,10 @@ try:
 except ImportError:  # run from inside tests/
     from pg_scratch import SERVER, ScratchDB
 
-from app.models import ContainerBatch, ContainerShare, Manager
+from app.models import Manager
 from app.services import container_flow as flow
 
 DAY = date(2026, 11, 16)
-
-
-def team(wc, group, hours, cell=None):
-    return {"work_center": wc, "group": group, "rest": False, "cell": cell,
-            "people": 4, "hours": hours, "untimed": {}}
 
 
 class SplitTest(unittest.TestCase):
@@ -50,8 +45,8 @@ class SplitTest(unittest.TestCase):
 
 class UnitTeamsTest(unittest.TestCase):
     """`hourly_containers.unit_teams` is `unit_hours` kept per team: summed
-    back together it is the same answer, so a batch's need is the «Soatlik»
-    figure and nothing else."""
+    back together it is the same answer, so the readiness check («Sozlamalar»)
+    counts the «Soatlik» figure and nothing else."""
 
     DASH = {
         "constants": {"shift_min": 480, "productive_min": 408, "shift_hours": {"start": "08:00"}},
@@ -87,11 +82,6 @@ class UnitTeamsTest(unittest.TestCase):
         self.assertTrue(hours and untimed)
         self.assertEqual([(t["work_center"], t["group"], t["rest"]) for t in teams],
                          [("A1", "A", False), ("A1", "B", False), ("A1", "", True), ("B2", "", False)])
-        need = flow.need_by_hour(teams)
-        first = min(need)
-        self.assertEqual(need[first][0][0]["cell_code"], "9002")     # a group's own cell names its leader
-        self.assertEqual(sum(sum(c.values()) for teams_ in need.values() for _m, c in teams_),
-                         sum(sum(e.values()) for e in hours.values()))
 
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
@@ -112,12 +102,6 @@ class FlowTest(unittest.TestCase):
         if self.db.get(Manager, 1) is None:
             self.db.add(Manager(id=1, name="Unit One", shift=1))
         self.db.commit()
-        flow.save_settings(self.db, [1], 2)
-        self.teams = [team("A2894", "A", {9: {"yellow": 18, "round": 6}},
-                           {"id": 7, "verifix_code": "9422", "leader": "Leader A"}),
-                      team("A2894", "B", {9: {"yellow": 6}})]
-        self._p = mock.patch.object(flow, "unit_teams", side_effect=lambda db, mid, day: self.teams)
-        self._p.start()
         # every unit's «Konteynerlar» figure — a brigadir's LIMIT for an hour;
         # generous here, so only the limit tests meet it
         big = {k: 100 for k in flow.KEYS}
@@ -127,131 +111,10 @@ class FlowTest(unittest.TestCase):
 
     def tearDown(self):
         self._h.stop()
-        self._p.stop()
         self.db.close()
 
     def at(self, hh, mm=0):
         return datetime.combine(DAY, datetime.min.time(), flow.TZ) + timedelta(hours=hh, minutes=mm)
-
-    def draft(self, hh, mm=0):
-        return flow.draft_due(self.db, self.at(hh, mm))
-
-    def batches(self):
-        return self.db.query(ContainerBatch).order_by(ContainerBatch.id).all()
-
-    # ── drafting ──
-    def test_nothing_before_the_window_and_no_unit_no_batch(self):
-        self.assertEqual(self.draft(6, 55), 0)          # H − 125 min
-        flow.save_settings(self.db, [], 2)
-        self.assertEqual(self.draft(7), 0)
-
-    def test_draft_freezes_the_need_and_is_due_an_hour_ahead(self):
-        self.assertEqual(self.draft(7), 1)
-        self.assertEqual(self.draft(7, 5), 0)           # once
-        b = self.batches()[0]
-        self.assertEqual((b.kind, b.status, b.hour), ("regular", "requested", 9))
-        self.assertEqual(b.due_at, self.at(8))
-        got = flow.one(self.db, b)
-        self.assertEqual({ln["ctype"]: ln["need"] for ln in got["lines"]}, {"yellow": 24, "round": 6})
-        self.assertEqual(got["teams"][0]["cell_code"], "9422")
-
-    def test_a_late_draft_is_due_an_hour_after_it(self):
-        self.draft(8, 30)
-        self.assertEqual(self.batches()[0].due_at, self.at(9, 30))
-
-    def test_topup_only_from_the_threshold(self):
-        self.draft(7)
-        self.teams[1]["hours"][9]["yellow"] = 7          # +1 — under the threshold
-        self.assertEqual(self.draft(7, 10), 0)
-        self.teams[1]["hours"][9]["yellow"] = 9          # +3
-        self.assertEqual(self.draft(7, 15), 1)
-        top = self.batches()[1]
-        self.assertEqual(top.kind, "topup")
-        self.assertEqual([(s.wc_group, s.ctype, s.due) for s in
-                          self.db.query(ContainerShare).filter_by(batch_id=top.id)], [("B", "yellow", 3)])
-        self.assertEqual(self.draft(7, 20), 0)           # the top-up is frozen too
-        self.teams[1]["hours"][9]["yellow"] = 2          # a shrinking plan takes nothing back
-        self.assertEqual(self.draft(7, 25), 0)
-
-    # ── the steps ──
-    def flow_to_delivery(self, issued=None, delivered=None, reason=None):
-        self.draft(7)
-        b = self.batches()[0]
-        flow.issue(self.db, b.id, issued, reason, None, "axo")
-        flow.deliver(self.db, b.id, delivered, reason, None, "mitsu")
-        self.db.commit()
-        return b
-
-    def test_full_flow_closes(self):
-        b = self.flow_to_delivery()
-        self.assertEqual(b.status, "delivered")
-        flow.answer(self.db, b.id, "A2894|A|0", "all", None, None, None, "leader")
-        self.assertEqual(b.status, "delivered")          # team B has not answered
-        flow.answer(self.db, b.id, "A2894|B|0", "all", None, None, None, "leader")
-        self.assertEqual(b.status, "closed")
-        self.assertIsNotNone(b.closed_at)
-
-    def test_a_lower_number_needs_a_reason_at_every_step(self):
-        self.draft(7)
-        b = self.batches()[0]
-        with self.assertRaises(flow.FlowError) as e:
-            flow.issue(self.db, b.id, {"yellow": 20}, None, None, "axo")
-        self.assertEqual(e.exception.code, "reason")
-        with self.assertRaises(flow.FlowError) as e:
-            flow.issue(self.db, b.id, {"yellow": 20}, "other", " ", "axo")
-        self.assertEqual(e.exception.code, "comment")
-        self.db.rollback()
-        flow.issue(self.db, b.id, {"yellow": 20}, "short", None, "axo")
-        with self.assertRaises(flow.FlowError):
-            flow.deliver(self.db, b.id, {"yellow": 15}, None, None, "mitsu")
-
-    def test_short_delivery_is_split_by_need(self):
-        b = self.flow_to_delivery(issued={"yellow": 15}, reason="short")
-        got = {t["key"]: t for t in flow.one(self.db, b)["teams"]}
-        self.assertEqual(got["A2894|A|0"]["sent"], {"yellow": 11, "round": 6})
-        self.assertEqual(got["A2894|B|0"]["sent"], {"yellow": 4})
-
-    def test_dispute_then_settle(self):
-        b = self.flow_to_delivery()
-        with self.assertRaises(flow.FlowError):
-            flow.answer(self.db, b.id, "A2894|A|0", "actual", {"yellow": 19}, None, None, "l")   # more than sent
-        self.db.rollback()
-        b = self.batches()[0]
-        flow.answer(self.db, b.id, "A2894|A|0", "actual", {"yellow": 10}, "damaged", None, "l")
-        self.assertEqual(b.status, "disputed")
-        flow.answer(self.db, b.id, "A2894|B|0", "refuse", None, "wrong_type", None, "l")
-        with self.assertRaises(flow.FlowError):
-            flow.settle(self.db, b.id, "", "admin")
-        flow.settle(self.db, b.id, "replaced", "admin")
-        self.assertEqual(b.status, "closed")
-        self.db.commit()
-        rep = flow.report(self.db, DAY, DAY)
-        y = next(r for r in rep["rows"] if r["ctype"] == "yellow")
-        self.assertEqual((y["need"], y["issued"], y["delivered"], y["accepted"], y["gap_dispute"]),
-                         (24, 24, 24, 10, 14))
-
-    def test_send_back_and_force_close(self):
-        self.draft(7)
-        b = self.batches()[0]
-        flow.issue(self.db, b.id, None, None, None, "axo")
-        with self.assertRaises(flow.FlowError):
-            flow.send_back(self.db, b.id, "", "mitsu")
-        flow.send_back(self.db, b.id, "wrong unit", "mitsu")
-        self.assertEqual((b.status, b.returned), ("requested", 1))
-        with self.assertRaises(flow.FlowError):
-            flow.force_close(self.db, b.id, " ", "admin")
-        flow.force_close(self.db, b.id, "line stopped", "admin")
-        self.assertTrue(b.forced)
-        with self.assertRaises(flow.FlowError):
-            flow.issue(self.db, b.id, None, None, None, "axo")
-
-    def test_late_is_read_from_the_delivery(self):
-        self.draft(7)
-        b = self.batches()[0]
-        flow.issue(self.db, b.id, None, None, None, "axo")
-        with mock.patch.object(flow, "now", return_value=self.at(8, 1)):
-            flow.deliver(self.db, b.id, None, None, None, "mitsu")
-        self.assertTrue(b.late)
 
     def test_notify_and_tv_oneshots_run_once(self):
         """15 Nov: the Telegram switch ON and the TV board open to the two
@@ -283,7 +146,7 @@ class FlowTest(unittest.TestCase):
             self.db.expire_all()
             self.assertTrue(flow.settings(self.db)["notify"])
             self.assertEqual(access(), ["top-manager", "shift-manager"])
-            flow.save_settings(self.db, [1], 2, False)   # an admin switches it off, unticks the roles
+            flow.save_settings(self.db, False)   # an admin switches it off, unticks the roles
             matrix_with([])
             startup.container_flow_notify_on()
             startup.containers_tv_managers()
@@ -331,7 +194,7 @@ class FlowTest(unittest.TestCase):
         with mock.patch("app.database.SessionLocal", self.pg.Session), \
              mock.patch.object(staff, "notify_profile", side_effect=capture):
             self.assertEqual(flow.notify_split(r.id), 0)          # switch off: nobody
-            flow.save_settings(self.db, [1], 2, None, True)
+            flow.save_settings(self.db, None, True)
             self.assertEqual(flow.notify_split(r.id), 1)          # unit 2's brigadir cannot open «Qabul»
         key, nkey, html, markup = sent[-1]
         self.assertEqual((key, nkey), ("supervisor:1", "container_split"))
@@ -380,7 +243,7 @@ class FlowTest(unittest.TestCase):
         self.db.add(TelegramUserRole(telegram_id=5001, role="supervisor", role_id=1, full_name="Brig One",
                                      status="approved", profile_key="supervisor:1"))
         self.db.commit()
-        flow.save_settings(self.db, [1], 2, None, True)
+        flow.save_settings(self.db, None, True)
 
         def split(hour, at):
             with mock.patch.object(flow, "now", return_value=at):
@@ -410,10 +273,10 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(flow.remind_at(late), self.at(12, 10))
             self.assertEqual(flow.remind_unconfirmed(self.db, self.at(14, 30)), 0)  # stale: silent
             # the switch off: nobody
-            flow.save_settings(self.db, [1], 2, None, False)
+            flow.save_settings(self.db, None, False)
             r3 = split(12, self.at(9))
             self.assertEqual(flow.remind_unconfirmed(self.db, self.at(12, 1)), 0)
-            flow.save_settings(self.db, [1], 2, None, True)
+            flow.save_settings(self.db, None, True)
 
             # cancel after the split: allowed while nobody confirmed; brigadirs told, no buttons
             flow.cancel_request(self.db, r3.id, "reja o'zgardi", "axo")
@@ -506,7 +369,7 @@ class FlowTest(unittest.TestCase):
             self.db.expire_all()
             self.assertEqual(access(), ["supervisor"])
             self.assertTrue(flow.settings(self.db)["notify_brigadirs"])
-            flow.save_settings(self.db, [1], 2, None, False)
+            flow.save_settings(self.db, None, False)
             startup.container_receive_brigadirs()
             self.db.expire_all()
             self.assertFalse(flow.settings(self.db)["notify_brigadirs"])   # an «off» sticks
@@ -526,7 +389,7 @@ class FlowTest(unittest.TestCase):
             # the other three switches are where they were
             self.assertEqual((cfg["notify"], cfg["notify_brigadirs"], cfg["notify_axo"]), (False, False, True))
             self.assertIn(f"{n} ta smena menejeri", dm.call_args[0][0])
-            flow.save_settings(self.db, [1], 2, notify_managers=False)
+            flow.save_settings(self.db, notify_managers=False)
             startup.container_flow_managers_alerts_on()
             self.db.expire_all()
             self.assertFalse(flow.settings(self.db)["notify_managers"])   # an «off» sticks
@@ -722,13 +585,13 @@ class FlowTest(unittest.TestCase):
             self.assertIn("Shikastlangan", sent[-1][2])
             self.assertEqual(flow.alert_short_receipt(r.id, 1), 0)             # nothing confirmed yet
             # the escalation: reminded at 10:00, still silent 30 min later — managers only when on
-            flow.save_settings(self.db, [1], 2, None, True)
+            flow.save_settings(self.db, None, True)
             self.db.add(__import__("app.models", fromlist=["ProfilePermission"]).ProfilePermission(
                 profile_key="supervisor:1", capability=flow.RECEIVE_CAP, mode="grant", scope="all"))
             self.db.commit()
             self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 1)), 1)
             self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 40)), 0)   # switch off
-            flow.save_settings(self.db, [1], 2, None, None, None, True)
+            flow.save_settings(self.db, None, None, None, True)
             self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 20)), 0)   # too early
             n = flow.escalate_unconfirmed(self.db, self.at(10, 40))
             self.assertGreaterEqual(n, 1)
@@ -743,9 +606,9 @@ class FlowTest(unittest.TestCase):
     def test_notify_switch_and_message(self):
         from app.models import ContainerRequest
         self.assertFalse(flow.settings(self.db)["notify"])            # off by default
-        flow.save_settings(self.db, [1], 2, True)
+        flow.save_settings(self.db, True)
         self.assertTrue(flow.settings(self.db)["notify"])
-        flow.save_settings(self.db, [1], 3)                            # an older tab keeps it
+        flow.save_settings(self.db)                                    # an older tab keeps it
         self.assertTrue(flow.settings(self.db)["notify"])
         r = ContainerRequest(day=DAY, hour=20, lines={"yellow": 30, "bucket": 8}, note="tez",
                              logistics_key="x", status="requested", due_at=self.at(19),
@@ -869,6 +732,81 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
+    # ── AXO edits a waiting request ──
+    def test_axo_edits_a_waiting_request(self):
+        from app.models import ProfilePermission, RoleProfile
+        from app.routers import staff
+        nk = self._logistics()
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30}, "tez", "Dilafruz", "guest:1")
+        r.created_at = self.at(6)
+        r.due_at = self.at(9)
+        self.db.commit()
+        flow.mark_seen(self.db, r.id, nk)
+        self.db.commit()
+        # nothing changed: nothing to tell
+        _r, changes, _old = flow.edit_request(self.db, r.id, 10, nk, {"yellow": 30}, " tez ")
+        self.assertEqual(changes, [])
+        # the counts, the hour and the note: «new» again for its logistics person, a deadline from the new hour
+        with mock.patch.object(flow, "now", return_value=self.at(6, 30)):
+            r, changes, old = flow.edit_request(self.db, r.id, 11, nk, {"yellow": 24, "grey": 3}, "")
+        self.db.commit()
+        self.assertEqual([c[0] for c in changes], ["hour", "counts", "note"])
+        self.assertEqual((r.hour, r.lines, r.note, r.seen_at, r.due_at, old), (11, {"yellow": 24, "grey": 3}, None, None, self.at(10), nk))
+        # to everybody instead
+        y = RoleProfile(role="idle-owner", name="Third Logist")
+        self.db.add(y)
+        self.db.flush()
+        yk = f"idle-owner:{y.id}"
+        self.db.add(ProfilePermission(profile_key=yk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        r, changes, old = flow.edit_request(self.db, r.id, 11, flow.ALL_KEY, {"yellow": 24, "grey": 3}, "")
+        self.db.commit()
+        self.assertEqual((changes, old, r.logistics_name), ([("to", "Nuriddin aka", "*")], nk, None))
+        for bad, code in (({"hour": 48}, "hour"), ({"key": "nobody:1"}, "logistics"), ({"counts": {}}, "count")):
+            with self.assertRaises(flow.FlowError) as cm:
+                flow.edit_request(self.db, r.id, bad.get("hour", 11), bad.get("key", nk), bad.get("counts", {"yellow": 1}), "")
+            self.assertEqual(cm.exception.code, code)
+            self.db.rollback()
+        # who is told: the same people «changed», a new addressee «new», the one it left «moved»
+        sent = []
+
+        def capture(db, key, nkey, params, **kw):
+            sent.append((key, nkey, kw["html_fn"]("uz")))
+            return {len(sent)}
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=capture):
+            flow.save_settings(self.db, True)
+            self.assertTrue(flow.notify_request(r.id, "edited"))
+            self.assertTrue(flow.notify_request(r.id, "moved", [nk]))
+        self.assertEqual(sorted((k, n) for k, n, _h in sent),
+                         sorted([(nk, "container_request_edited"), (yk, "container_request_edited"),
+                                 (nk, "container_request_moved")]))
+        self.assertIn("endi siz taqsimlamaysiz", [h for k, n, h in sent if n == "container_request_moved"][0])
+        # once split it is the brigadirs' — cancelling stays the tool
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 24, "grey": 3}}],
+                            None, None, "Nuriddin aka", nk, False)
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.edit_request(self.db, r.id, 11, nk, {"yellow": 1}, "")
+        self.assertEqual(cm.exception.code, "state")
+        self.db.rollback()
+
+    def test_editing_an_approved_extra_keeps_its_hour_and_cap(self):
+        nk = self._extras()
+        e = self._ask(counts={"yellow": 8, "grey": 2})
+        e, x = flow.approve_extra(self.db, e.id, {"yellow": 6}, nk, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        for kw, code in ((dict(hour=11), "extra_hour"), (dict(counts={"yellow": 9}), "over_ask"),
+                         (dict(counts={"bucket": 1}), "over_ask")):
+            with self.assertRaises(flow.FlowError) as cm:
+                flow.edit_request(self.db, x.id, kw.get("hour", 10), nk, kw.get("counts", {"yellow": 6}), "")
+            self.assertEqual(cm.exception.code, code, kw)
+            self.db.rollback()
+        flow.edit_request(self.db, x.id, 10, nk, {"yellow": 8, "grey": 2}, "")
+        self.db.commit()
+        self.db.expire_all()
+        self.assertEqual(self.db.get(flow.ContainerExtra, e.id).approved, {"yellow": 8, "grey": 2})
+
     # ── a request to every logistics person ──
     def test_request_to_everybody_goes_to_whoever_splits_it_first(self):
         from app.models import ProfilePermission, RoleProfile
@@ -894,7 +832,7 @@ class FlowTest(unittest.TestCase):
             return {len(sent)}
         with mock.patch("app.database.SessionLocal", self.pg.Session), \
              mock.patch.object(staff, "notify_profile", side_effect=capture):
-            flow.save_settings(self.db, [1], 2, True)
+            flow.save_settings(self.db, True)
             self.assertTrue(flow.notify_request(r.id, "new"))
         self.assertEqual(sorted(k for k, _n, _h in sent), sorted([nk, yk]))
         self.assertIn("birinchi taqsimlagan oladi", sent[0][2])
@@ -1077,9 +1015,9 @@ class FlowTest(unittest.TestCase):
             self.assertEqual((key, nkey), (axo, "container_extra_new"))
             self.assertIn("Konteyner yaroqsiz", html)
             self.assertIn("tab=requests", kb["inline_keyboard"][0][0]["web_app"]["url"])
-            flow.save_settings(self.db, [1], 2, notify_extra=False)
+            flow.save_settings(self.db, notify_extra=False)
             self.assertEqual(flow.notify_extra_new(e.id), 0)
-            flow.save_settings(self.db, [1], 2, notify_brigadirs=True)
+            flow.save_settings(self.db, notify_brigadirs=True)
             flow.approve_extra(self.db, e.id, {"yellow": 5}, nk, "", "Dilafruz", axo)
             self.db.commit()
             from app.permissions import get_page_access, set_page_access
@@ -1182,21 +1120,6 @@ class FlowTest(unittest.TestCase):
             self.assertEqual((row["open"]["yellow"], row["close"]["yellow"], row["counted"]), (50, 50, False))
             self.assertEqual(flow.stock(self.db, DAY, DAY, nxt(18))["now"]["yellow"], 50)
 
-    def test_stock_counts_an_issued_batch_until_it_is_sent_back(self):
-        self._stock()
-        with mock.patch.object(flow, "prepared", return_value=[]):
-            self._count(self.at(6))
-            self.draft(7, 5)
-            b = self.batches()[0]
-            flow.issue(self.db, b.id, None, None, None, "axo")
-            b.issued_at = self.at(7, 30)
-            self.db.commit()
-            s = flow.stock(self.db, DAY, DAY, self.at(8))
-            self.assertEqual((s["now"]["yellow"], s["now"]["round"]), (76, 94))     # 18 + 6 yellow, 6 round
-            flow.send_back(self.db, b.id, "wrong unit", "mitsu")
-            self.db.commit()
-            self.assertEqual(flow.stock(self.db, DAY, DAY, self.at(8))["now"]["yellow"], 100)
-
     def test_stock_names_what_today_still_takes(self):
         nk = self._stock()
         self._count(self.at(8))
@@ -1264,8 +1187,8 @@ class PageKeyTest(unittest.TestCase):
         self.assertEqual(DEFAULT_PAGE_ACCESS["container-watch"], ["top-manager", "shift-manager"])
 
     def test_axo_doors_and_admin_doors(self):
-        """AXO's steps and the reads take the page key; Logistics', a
-        leader's, a forced close and the settings write stay admin-only."""
+        """AXO's steps and the reads take the page key; the settings write and
+        deleting a request stay admin-only; the batches' doors are gone."""
         from app.routers import container_flow as r
         from app.routers.admin import verify_admin
         guard = {}
@@ -1278,14 +1201,13 @@ class PageKeyTest(unittest.TestCase):
                 else "extra" if r.EXT in deps else "extra+read" if r.EXTR in deps
                 else "who" if r.WHO in deps else "?")
         p = "/api/container-flow"
-        for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
-                  ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
+        for k in [("POST", f"{p}/requests"), ("PUT", f"{p}/requests/{{request_id}}"),
+                  ("POST", f"{p}/requests/{{request_id}}/cancel"),
                   ("GET", f"{p}/logistics"), ("GET", f"{p}/requests/prepared"),
                   ("POST", f"{p}/requests/bulk"), ("POST", f"{p}/stock"),
                   ("POST", f"{p}/extras/{{extra_id}}/approve"), ("POST", f"{p}/extras/{{extra_id}}/reject")]:
             self.assertEqual(guard[k], "axo", k)
-        for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
-                  ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
+        for k in [("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
                   ("GET", f"{p}/units"), ("GET", f"{p}/requests/{{request_id}}/split-hint")]:
             self.assertEqual(guard[k], "logistics", k)
         self.assertEqual(guard[("POST", f"{p}/requests/{{request_id}}/receive")], "receive")
@@ -1300,14 +1222,15 @@ class PageKeyTest(unittest.TestCase):
             if method in ("POST", "PUT") and not path.endswith("/report.xlsx"):
                 self.assertNotIn(g, ("any", "who", "receive+watch", "extra+read"), (method, path))
         self.assertEqual(guard[("GET", f"{p}/settings")], "who")
-        for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"), ("GET", f"{p}/analytics"),
-                  ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history"),
-                  ("GET", f"{p}/stock")]:
+        for k in [("GET", f"{p}/requests"), ("GET", f"{p}/report"), ("GET", f"{p}/analytics"),
+                  ("GET", f"{p}/stock"), ("GET", f"{p}/readiness")]:
             self.assertEqual(guard[k], "any", k)
-        for k in [("POST", f"{p}/batches/{{batch_id}}/answer"), ("POST", f"{p}/batches/{{batch_id}}/close"),
-                  ("PUT", f"{p}/settings"), ("DELETE", f"{p}/requests/{{request_id}}")]:
+        for k in [("PUT", f"{p}/settings"), ("DELETE", f"{p}/requests/{{request_id}}")]:
             self.assertEqual(guard[k], "admin", k)
         self.assertNotIn("?", guard.values())
+        # «Partiyalar» was removed on 2026-11-18: none of its doors is left
+        gone = ("/board", "/issue", "/batches/", "/teams")
+        self.assertEqual([k for k in guard if any(g in k[1] for g in gone)], [])
 
 
 if __name__ == "__main__":

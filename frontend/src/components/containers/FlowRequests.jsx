@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Plus, Sparkles, Split, Trash2, Wand2,
+  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -111,6 +111,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   });
   const [assign, setAssign] = useState(null);
   const [cancel, setCancel] = useState(null);
+  const [editing, setEditing] = useState(null);
   // a brigadir's EXTRA asks (2026-11-18): AXO approves or rejects them under the requests
   const extras = useExtras(day, roles.axo || roles.watch);
   const [approve, setApprove] = useState(null);
@@ -139,6 +140,10 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
     if (isFresh(r, me, logi)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
   };
   const menu = (r) => [
+    // AXO changes a request while it waits (2026-11-18) — once split it is the brigadirs'
+    roles.axo && r.status === "requested" && {
+      key: "edit", label: t("cflow.req.edit"), icon: Pencil, onSelect: () => setEditing(r),
+    },
     mayCancel(r) && {
       key: "cancel", label: t("cflow.req.cancel"), icon: Ban, tone: "danger", onSelect: () => setCancel(r),
       disabled: cancelBlocked(r), title: cancelBlocked(r) ? t("cflow.req.cancelBlocked") : undefined,
@@ -226,6 +231,15 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
             // sent to everybody and somebody else split it first: the dialog has nothing left to do
             fail(e);
             if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setAssign(null);
+            refreshFlow(qc);
+          }} />
+      )}
+      {editing && (
+        <NewRequestModal t={t} day={day} edit={editing} onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); done(t("cflow.req.edited")); }}
+          onFail={(e) => {
+            fail(e);
+            if (["state", "gone"].includes(e?.response?.data?.detail)) setEditing(null);   // split meanwhile
             refreshFlow(qc);
           }} />
       )}
@@ -537,12 +551,17 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
 }
 
 // AXO: counts, the hour, and the logistics person it goes to.
-export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, onFail }) {
+// `edit` (a request still waiting, 2026-11-18): the same form opened on that
+// request — its hour, counts, addressee and note — saved in place (`PUT`).
+// A brigadir's approved extra keeps its hour and never goes past what the
+// brigadir asked (the server's rule too).
+export function NewRequestModal({ t, day, initialHour = null, edit = null, onClose, onDone, onFail }) {
   // to every logistics person at once by default (2026-11-18) — or one of them
-  const pick = useLogisticsPick();
+  const pick = useLogisticsPick(edit?.logistics_key ?? null);
   const { to } = pick;
-  const [hour, setHour] = useState(() => initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
-  const [counts, setCounts] = useState({});
+  const extraCap = edit?.extra?.lines ?? null;
+  const [hour, setHour] = useState(() => edit?.hour ?? initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
+  const [counts, setCounts] = useState(() => (edit ? { ...edit.lines } : {}));
   // The hour's figure from the «Konteynerlar» page fills the counts whenever
   // an hour is picked (the operator, 2026-11-14: «the number of containers
   // should appear by default, then if it is incorrect they will correct it by
@@ -553,35 +572,44 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
     staleTime: 60_000,
   });
   const hourNeed = need.data?.[String(hour)] ?? null;
-  const [filledFor, setFilledFor] = useState(null);
+  // editing: the request's own counts stand until another hour is picked
+  const [filledFor, setFilledFor] = useState(edit ? edit.hour : null);
   useEffect(() => {
     if (!need.data || filledFor === hour) return;
     setFilledFor(hour);
     setCounts(Object.fromEntries(KEYS.map((k) => [k, need.data[String(hour)]?.[k] ?? null])));
   }, [need.data, hour, filledFor]);
   const changed = hourNeed != null && KEYS.some((k) => (counts[k] ?? 0) !== (hourNeed[k] ?? 0));
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(() => edit?.note ?? "");
   const any = KEYS.some((k) => counts[k] > 0);
   const m = useMutation({
-    mutationFn: () => api.post("/api/container-flow/requests", {
-      day, hour, logistics_key: to, note,
-      counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
-    }),
-    onSuccess: (...a) => { pick.remember(); onDone(...a); },
+    mutationFn: () => {
+      const body = {
+        hour, logistics_key: to, note,
+        counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
+      };
+      return edit ? api.put(`/api/container-flow/requests/${edit.id}`, body)
+        : api.post("/api/container-flow/requests", { day, ...body });
+    },
+    onSuccess: (...a) => { if (!edit) pick.remember(); onDone(...a); },
     onError: onFail,
   });
   return (
-    <Modal onClose={onClose} title={t("cflow.req.new")} subtitle={t("cflow.req.newSub")} maxWidth="max-w-xl"
+    <Modal onClose={onClose} title={t(edit ? "cflow.req.editTitle" : "cflow.req.new")}
+      subtitle={edit ? `${span(edit.hour)} · ${countsText(t, edit.lines)}` : t("cflow.req.newSub")} maxWidth="max-w-xl"
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button loading={m.isPending} disabled={!to || !any} onClick={() => m.mutate()}>{t("cflow.req.send")}</Button>
+          <Button loading={m.isPending} disabled={!to || !any} onClick={() => m.mutate()}>
+            {t(edit ? "cflow.req.editSave" : "cflow.req.send")}
+          </Button>
         </>
       )}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <LogisticsField t={t} pick={pick} />
-        <FormField label={t("cflow.req.forHour")} required hint={t("cflow.req.forHourHint")}>
-          <StyledSelect value={hour} onChange={setHour}
+        <FormField label={t("cflow.req.forHour")} required
+          hint={extraCap ? t("cflow.req.extraHour") : t("cflow.req.forHourHint")}>
+          <StyledSelect value={hour} onChange={setHour} disabled={!!extraCap}
             options={Array.from({ length: 32 }, (_, h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
         </FormField>
       </div>
@@ -593,8 +621,10 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {KEYS.map((k) => (
           <FormField key={k} label={t(`production.cont.${k}`)}
-            hint={hourNeed && (counts[k] ?? 0) !== (hourNeed[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", hourNeed[k] ?? 0) : undefined}>
-            <CountStepper min={0} value={counts[k] ?? null} placeholder="0" onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />
+            hint={extraCap ? t("cflow.ex.askedN").replace("{n}", extraCap[k] ?? 0)
+              : hourNeed && (counts[k] ?? 0) !== (hourNeed[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", hourNeed[k] ?? 0) : undefined}>
+            <CountStepper min={0} max={extraCap ? (extraCap[k] ?? 0) : undefined} value={counts[k] ?? null} placeholder="0"
+              disabled={!!extraCap && !extraCap[k]} onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />
           </FormField>
         ))}
       </div>

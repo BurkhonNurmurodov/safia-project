@@ -122,7 +122,42 @@ containers row from production and move it into the new button».
   commit, so a save never waits on Telegram. Nothing else here messages
   anybody.
 
-### How it works (`services/container_flow.py`, `routers/container_flow.py`)
+### «Partiyalar» REMOVED, and AXO edits a waiting request (2026-11-18)
+
+After a review of the app the operator answered «make it» to two points:
+
+- **The automatic batches are gone.** «Partiyalar» — a batch drafted for each
+  ENROLLED unit and hour, issued by AXO, delivered by Logistics, split between
+  teams and accepted by leaders — was the first design; the request flow
+  (AXO → a logistics person → brigadirs) replaced it on 2026-11-14, no unit
+  used it, and only admins could see it. Removed: the tab and its four steps
+  (`pages/ContainerFlow.jsx`), the drafting on the clock (`tick` now runs the
+  reminder, the overdue alert and the escalation), the doors `/board`,
+  `/issue`, `/batches/…`, `/teams`, the enrolled units and the top-up
+  threshold on «Sozlamalar» (`settings` / `save_settings` carry only the
+  switches; an older tab still sending `units` / `topup_min` is ignored, never
+  refused), and the batches' half of «Hisobot» and its Excel (requests only
+  now). Kept: the tables and their data (`container_batches`, `…_batch_lines`,
+  `container_shares`, `container_events` — migrations stay additive), the
+  readiness check on «Sozlamalar» (a line with no hour adds nothing to its
+  brigadir's limit — reworded so), and «AXO zaxirasi» still counting a batch
+  issued in the past. The sections below that describe the batches are the
+  record of what was removed. A tab remembered on «Partiyalar» opens on the
+  first tab.
+- **AXO edits a request while it waits** (`edit_request`, `PUT /requests/{id}`,
+  `PAGE`; ⋮ → «Tahrirlash» opens «Yangi so'rov» on that request): the hour,
+  the counts, whom it goes to (a person or everybody), the note. Once split it
+  is the brigadirs' — cancelling stays the tool (`state`). A changed request
+  is «Yangi» again (`seen_at` cleared); a new hour moves its deadline (`_due`
+  from now) and re-arms the overdue alert. A brigadir's approved extra keeps
+  its hour (`extra_hour`) and never goes past what the brigadir asked
+  (`over_ask`; `approved` follows). Telegram (behind `notify`): the same
+  people «o'zgartirildi» (`container_request_edited`), a new addressee the
+  ordinary «new» message, the one it left «boshqa logistga o'tkazildi»
+  (`container_request_moved`). The action register keeps every changed field
+  old → new (`containers.request_edited`).
+
+### How it worked — the removed batches (`services/container_flow.py` before 2026-11-18)
 
 - **Only ENROLLED units get batches** — `container_flow.units` in
   `app_settings`, set on the page's «Sozlamalar» tab; **none by default**, so
@@ -342,7 +377,7 @@ containers row from production and move it into the new button».
 - **Tables** (all from `create_all`, additive): `container_batches`,
   `container_batch_lines`, `container_shares`, `container_events`.
 
-### The page
+### The page — the batch tabs as they were (removed 2026-11-18)
 
 Tabs (`SegmentedToggle asTabs`, remembered in `cflow_tab`), then the day:
 
@@ -573,13 +608,11 @@ AXO STATES it, and the platform keeps it from there.
 
 ### Not built (the plan's remaining parts — ask first)
 
-- A leader's own card; the brigadir's view of the AUTOMATIC batches (their
-  «Qabul» covers requests only).
+- A leader's own card.
 - Every other notification (leaders, a second reminder, an automatic top-up
   after a short receipt).
 - The printed QR label and the scan (Logistics confirms with a tap for now).
 - AXO delivery on-time % on the KPI pages. (AXO's stock is built — «AXO
   zaxirasi», above.)
-- The operator's rulings on: the deadline of a late-drafted batch (a default
-  is in place, above), the top-up threshold per container type (one number
-  for every type today), the first-day date.
+- Returns from the brigadirs (containers coming back to AXO are only what AXO
+  records on «AXO zaxirasi»).

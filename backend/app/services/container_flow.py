@@ -1,37 +1,30 @@
-"""Container issuing: AXO → Logistics → Leader (docs/containers-flow.md; the
-design is docs/plan-axo-containers.md).
+"""Container issuing: AXO → a logistics person → brigadirs
+(docs/containers-flow.md).
 
-Every container a team works with comes from AXO. For each unit and each
-production hour H the platform DRAFTS a batch two hours ahead, with the hour's
-need FROZEN on it; AXO issues it, Logistics confirms it at the unit (the
-delivery — due an hour before H), the platform splits it between the unit's
-teams by each team's frozen need, and each team's leader accepts its share.
-Nothing passes by itself; a lower number at any step carries a reason.
+AXO sends a REQUEST — the counts per container type and the production hour —
+to one logistics person or to all of them; a logistics person splits it
+across brigadirs, each within their limit (the hour's figure on
+«Konteynerlar», carried over through the day); each brigadir confirms what
+reached their line. A brigadir may ask AXO for extra; AXO keeps its stock.
 
-The need is `hourly_containers.unit_teams` off the unit's own «Zagruzka
-fayli» dashboard — the «Soatlik» view's figure, per TEAM (a work centre, one
-group of it, or its unlettered lines). It is an estimate that moves with every
-edit of the plan, which is why it is copied onto the batch at the draft and
-never read again: AXO is judged against the stored number. A plan that grows
-after the draft gets a TOP-UP batch for the difference.
-
-Only the units an admin enrolled (`settings`) get batches — none by default,
-so the engine does nothing until somebody turns a unit on. While the app is
-admin-only every step is pressed by an admin; no message goes to the floor."""
+The automatic BATCHES the first design drafted for each enrolled unit and
+hour («Partiyalar») were removed on 2026-11-18 — the request flow had
+replaced them and no unit used them. Their tables (`container_batches`,
+`container_batch_lines`, `container_shares`, `container_events`) and data stay
+in the database; «AXO zaxirasi» still counts a batch issued in the past."""
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import text
+from sqlalchemy import text  # noqa: F401 — the tests run raw SQL through it
 from sqlalchemy.orm import Session
 
-from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerEvent,
-                        ContainerExtra, ContainerRequest, ContainerRequestPart, ContainerShare,
-                        ContainerStockMove, Manager, ProfilePermission, RoleProfile)
+from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerExtra,
+                        ContainerRequest, ContainerRequestPart, ContainerStockMove, Manager,
+                        ProfilePermission, RoleProfile)
 from app.services import hourly_containers
 
 logger = logging.getLogger(__name__)
@@ -39,13 +32,10 @@ logger = logging.getLogger(__name__)
 TZ = ZoneInfo("Asia/Tashkent")
 KEYS = hourly_containers.KEYS
 REASONS = ("short", "damaged", "wrong_type", "other")
-DRAFT_MIN = 120          # a batch is drafted this long before its hour …
-LEAD_MIN = 60            # … and is due at the unit this long before it
-GRACE_MIN = 10           # the tick's own slack before a draft counts as late
+DRAFT_MIN = 120          # a request made this long before its hour is on time …
+LEAD_MIN = 60            # … and is due at the brigadirs this long before it
+GRACE_MIN = 10           # slack before a request counts as made late
 TICK_MIN = 5
-TOPUP_MIN_DEFAULT = 2
-_UNITS_KEY = "container_flow.units"
-_TOPUP_KEY = "container_flow.topup_min"
 # Telegram to the addressed logistics person on a new / cancelled request —
 # OFF until an admin switches it on in «Sozlamalar» (nothing on this page
 # messages anybody before the operator says so).
@@ -65,11 +55,10 @@ _NOTIFY_SM_KEY = "container_flow.notify_managers"
 # never sent (the router decides), and the page key `container-extra` is
 # admin-only until the operator opens it.
 _NOTIFY_EXTRA_KEY = "container_flow.notify_extra"
-_LOCK_KEY = 8_140_573_112_014_001   # distinct from every other advisory key
 
 
 class FlowError(ValueError):
-    """A step the batch's state or the entered numbers do not allow. `code`
+    """A step the request's state or the entered numbers do not allow. `code`
     is what the page translates (`cflow.err.<code>`)."""
 
     def __init__(self, code: str):
@@ -85,38 +74,26 @@ def hour_start(day: date, hour: int) -> datetime:
     return datetime.combine(day, time(0), TZ) + timedelta(hours=int(hour))
 
 
-def team_key(work_center, group, rest) -> str:
-    return f"{work_center}|{group or ''}|{1 if rest else 0}"
-
-
 # ── settings ────────────────────────────────────────────────────────────────
 
 def settings(db: Session) -> dict:
+    """The «Sozlamalar» switches — each message the page sends has its own."""
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
-        AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY, _NOTIFY_BRIG_KEY,
-                            _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY, _NOTIFY_EXTRA_KEY])).all()}
-    try:
-        units = [int(x) for x in json.loads(rows.get(_UNITS_KEY) or "[]")]
-    except (ValueError, TypeError):
-        units = []
-    try:
-        topup = max(1, int(rows.get(_TOPUP_KEY) or TOPUP_MIN_DEFAULT))
-    except (ValueError, TypeError):
-        topup = TOPUP_MIN_DEFAULT
-    return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1",
+        AppSetting.key.in_([_NOTIFY_KEY, _NOTIFY_BRIG_KEY, _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY,
+                            _NOTIFY_EXTRA_KEY])).all()}
+    return {"notify": rows.get(_NOTIFY_KEY) == "1",
             "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1",
             "notify_axo": rows.get(_NOTIFY_AXO_KEY, "1") == "1",
             "notify_managers": rows.get(_NOTIFY_SM_KEY) == "1",
             "notify_extra": rows.get(_NOTIFY_EXTRA_KEY, "1") == "1"}
 
 
-def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None,
+def save_settings(db: Session, notify: Optional[bool] = None,
                   notify_brigadirs: Optional[bool] = None, notify_axo: Optional[bool] = None,
                   notify_managers: Optional[bool] = None, notify_extra: Optional[bool] = None) -> dict:
     """A switch given as None stays as it is (a tab on an older bundle saves
     without it)."""
-    vals = {_UNITS_KEY: json.dumps(sorted({int(x) for x in units})),
-            _TOPUP_KEY: str(max(1, int(topup_min)))}
+    vals = {}
     if notify is not None:
         vals[_NOTIFY_KEY] = "1" if notify else "0"
     if notify_brigadirs is not None:
@@ -137,146 +114,24 @@ def save_settings(db: Session, units: list, topup_min: int, notify: Optional[boo
     return settings(db)
 
 
-# ── the need ────────────────────────────────────────────────────────────────
-
-def unit_teams(db: Session, manager_id: int, day: date) -> list:
-    """The unit's teams with their hours for `day` (`hourly_containers
-    .unit_teams`), [] for a unit with no «Zagruzka fayli»."""
-    from fastapi import HTTPException
-    from app.routers import production
-    try:
-        return hourly_containers.unit_teams(production._build_dashboard(db, manager_id, day))
-    except HTTPException:
-        return []
-
-
-def _meta(team: dict) -> dict:
-    cell = team.get("cell") or {}
-    return {"work_center": team["work_center"], "group": team.get("group") or "",
-            "rest": bool(team.get("rest")), "cell_id": cell.get("id"),
-            "cell_code": cell.get("verifix_code"), "leader": cell.get("leader")}
-
-
-def need_by_hour(teams: list) -> dict:
-    """{hour: [(meta, {ctype: n})]} — each team's containers in each hour."""
-    out: dict = {}
-    for t in teams:
-        for h, counts in (t.get("hours") or {}).items():
-            c = {k: int(n) for k, n in counts.items() if n and n > 0}
-            if c:
-                out.setdefault(int(h), []).append((_meta(t), c))
-    return out
-
-
-# ── drafting ────────────────────────────────────────────────────────────────
+# ── deadlines and the clock ─────────────────────────────────────────────────
 
 def _due(hs: datetime, at: datetime) -> datetime:
-    """Delivery deadline: an hour before H for a batch drafted on time, an hour
-    after the draft for one that could only be drafted later (a plan typed
-    late, a top-up, a manual request) — it is judged from when it existed."""
+    """Delivery deadline: an hour before H for a request made in time, an hour
+    after it was made for one made later — it is judged from when it existed."""
     if at <= hs - timedelta(minutes=DRAFT_MIN - GRACE_MIN):
         return hs - timedelta(minutes=LEAD_MIN)
     return at + timedelta(minutes=LEAD_MIN)
 
 
-def _event(db: Session, batch_id: int, action: str, actor: Optional[str], **detail) -> None:
-    db.add(ContainerEvent(batch_id=batch_id, action=action, actor=actor,
-                          detail={k: v for k, v in detail.items() if v not in (None, "", {}, [])} or None))
-
-
-def _create(db: Session, manager_id: int, day: date, hour: int, kind: str, teams: list,
-            at: datetime, actor: Optional[str] = None, note: Optional[str] = None) -> ContainerBatch:
-    b = ContainerBatch(manager_id=manager_id, day=day, hour=hour, kind=kind, status="requested",
-                       drafted_at=at, due_at=_due(hour_start(day, hour), at), note=note,
-                       created_by=actor)
-    db.add(b)
-    db.flush()
-    totals: dict = {}
-    for meta, counts in teams:
-        for k, n in counts.items():
-            if n <= 0 or k not in KEYS:
-                continue
-            totals[k] = totals.get(k, 0) + n
-            db.add(ContainerShare(batch_id=b.id, work_center=meta["work_center"],
-                                  wc_group=meta.get("group") or "", rest=bool(meta.get("rest")),
-                                  cell_id=meta.get("cell_id"), cell_code=meta.get("cell_code"),
-                                  leader=meta.get("leader"), ctype=k, due=n))
-    for k in KEYS:
-        if totals.get(k):
-            db.add(ContainerBatchLine(batch_id=b.id, ctype=k, need=totals[k]))
-    _event(db, b.id, "drafted", actor, kind=kind, need=totals, note=note)
-    return b
-
-
-def _lock(db: Session) -> None:
-    """One drafter at a time (the clock's tick and a board read may race)."""
-    try:
-        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY})
-    except Exception:
-        db.rollback()
-
-
-def draft_due(db: Session, at: Optional[datetime] = None) -> int:
-    """Draft every batch whose time has come, for the enrolled units: the
-    regular batch of each hour from H − 120 min until the hour ends, and a
-    top-up where the live need of an hour has outgrown what its batches froze
-    by `topup_min` or more of a container type. Returns how many were made."""
-    at = at or now()
-    cfg = settings(db)
-    if not cfg["units"]:
-        return 0
-    _lock(db)
-    made = 0
-    for day in (at.date() - timedelta(days=1), at.date()):
-        for mid in cfg["units"]:
-            need = need_by_hour(unit_teams(db, mid, day))
-            if not need:
-                continue
-            prior = db.query(ContainerBatch).filter(
-                ContainerBatch.manager_id == mid, ContainerBatch.day == day,
-                ContainerBatch.kind.in_(("regular", "topup"))).all()
-            frozen: dict = {}
-            if prior:
-                hour_of = {b.id: b.hour for b in prior}
-                for s in db.query(ContainerShare).filter(ContainerShare.batch_id.in_(list(hour_of))).all():
-                    key = (hour_of[s.batch_id], team_key(s.work_center, s.wc_group, s.rest), s.ctype)
-                    frozen[key] = frozen.get(key, 0) + s.due
-            drafted_hours = {b.hour for b in prior}
-            for hour, teams in sorted(need.items()):
-                hs = hour_start(day, hour)
-                if not (hs - timedelta(minutes=DRAFT_MIN) <= at < hs + timedelta(hours=1)):
-                    continue
-                if hour not in drafted_hours:
-                    _create(db, mid, day, hour, "regular", teams, at)
-                    made += 1
-                    continue
-                grown = []
-                growth: dict = {}
-                for meta, counts in teams:
-                    tk = team_key(meta["work_center"], meta["group"], meta["rest"])
-                    more = {k: n - frozen.get((hour, tk, k), 0) for k, n in counts.items()}
-                    more = {k: n for k, n in more.items() if n > 0}
-                    if more:
-                        grown.append((meta, more))
-                        for k, n in more.items():
-                            growth[k] = growth.get(k, 0) + n
-                big = {k for k, n in growth.items() if n >= cfg["topup_min"]}
-                if big:
-                    _create(db, mid, day, hour, "topup",
-                            [(m, {k: n for k, n in c.items() if k in big}) for m, c in grown], at)
-                    made += 1
-    db.commit()
-    return made
-
-
 def tick() -> None:
-    """The clock's pass (every TICK_MIN minutes): drafts, the brigadirs'
-    reminder, the overdue alert and the escalation — each on its own, so one
-    failing never stops the rest. Never raises."""
+    """The clock's pass (every TICK_MIN minutes): the brigadirs' reminder, the
+    overdue alert and the escalation — each on its own, so one failing never
+    stops the rest. Never raises."""
     from app.database import SessionLocal
     db = SessionLocal()
     try:
-        for name, fn in (("draft", draft_due), ("reminder", remind_unconfirmed),
+        for name, fn in (("reminder", remind_unconfirmed),
                          ("overdue alert", alert_overdue), ("escalation", escalate_unconfirmed)):
             try:
                 n = fn(db)
@@ -290,28 +145,12 @@ def tick() -> None:
 
 
 def register_jobs() -> None:
-    """Every TICK_MIN minutes (mirrored in passenger_wsgi.py). With no unit
-    enrolled a tick is one settings read."""
+    """Every TICK_MIN minutes (mirrored in passenger_wsgi.py)."""
     from app.scheduler import schedule_interval
     schedule_interval("container-flow", tick, minutes=TICK_MIN)
 
 
-# ── the steps ───────────────────────────────────────────────────────────────
-
-def _batch(db: Session, batch_id: int) -> ContainerBatch:
-    b = db.query(ContainerBatch).filter(ContainerBatch.id == batch_id).with_for_update().first()
-    if b is None:
-        raise FlowError("gone")
-    return b
-
-
-def _lines(db: Session, batch_id: int) -> list:
-    return db.query(ContainerBatchLine).filter(ContainerBatchLine.batch_id == batch_id).all()
-
-
-def _shares(db: Session, batch_id: int) -> list:
-    return db.query(ContainerShare).filter(ContainerShare.batch_id == batch_id).order_by(ContainerShare.id).all()
-
+# ── numbers ─────────────────────────────────────────────────────────────────
 
 def _count(v) -> int:
     if isinstance(v, bool) or not isinstance(v, int) or v < 0 or v > 100000:
@@ -329,30 +168,9 @@ def _why(reason, comment) -> tuple:
     return reason, comment
 
 
-def issue(db: Session, batch_id: int, counts: Optional[dict], reason, comment, actor) -> ContainerBatch:
-    """AXO hands the batch out: a count per container type, the frozen need
-    where none is given. Fewer than the need of any type needs a reason."""
-    b = _batch(db, batch_id)
-    if b.status != "requested":
-        raise FlowError("state")
-    counts = counts or {}
-    given = {}
-    for ln in _lines(db, b.id):
-        n = _count(counts.get(ln.ctype, ln.need))
-        if n < ln.need:
-            ln.issue_reason, ln.issue_comment = _why(reason, comment)
-        else:
-            ln.issue_reason = ln.issue_comment = None
-        ln.issued = n
-        given[ln.ctype] = n
-    b.status, b.issued_at, b.issued_by = "issued", now(), actor
-    _event(db, b.id, "issued", actor, counts=given, reason=reason, comment=comment)
-    return b
-
-
 def split(delivered: int, dues: list) -> list:
-    """`delivered` containers between teams by their frozen `dues`: everybody
-    whole when there are enough (a surplus stays with the batch), otherwise
+    """`delivered` containers between brigadirs by what each may take (`dues`):
+    everybody whole when there are enough (the rest stays unsplit), otherwise
     cut in proportion by LARGEST REMAINDER, so the parts add up to `delivered`
     exactly."""
     total = sum(dues)
@@ -383,285 +201,18 @@ def share_out(total: int, weights: list) -> list:
     return out
 
 
-def _refresh(b: ContainerBatch, shares: list, actor, note=None) -> None:
-    """The batch's status off its shares: disputed while any team's lower
-    number is unsettled, closed once every team has answered."""
-    if any(s.status == "disputed" for s in shares):
-        b.status = "disputed"
-    elif any(s.status == "pending" for s in shares):
-        b.status = "delivered"
-    else:
-        b.status, b.closed_at, b.closed_by = "closed", now(), actor
-        if note:
-            b.close_note = note
-
-
-def deliver(db: Session, batch_id: int, counts: Optional[dict], reason, comment, actor) -> ContainerBatch:
-    """Logistics confirms the batch AT THE UNIT — this is the delivery, and
-    what on-time is read from. A count may be corrected; fewer than AXO issued
-    needs a reason. The split between the unit's teams is made here."""
-    b = _batch(db, batch_id)
-    if b.status != "issued":
-        raise FlowError("state")
-    counts = counts or {}
-    got = {}
-    lines = _lines(db, b.id)
-    for ln in lines:
-        n = _count(counts.get(ln.ctype, ln.issued or 0))
-        if n < (ln.issued or 0):
-            ln.deliver_reason, ln.deliver_comment = _why(reason, comment)
-        ln.delivered = n
-        got[ln.ctype] = n
-    at = now()
-    b.delivered_at, b.delivered_by, b.late = at, actor, at > b.due_at
-    shares = _shares(db, b.id)
-    for ln in lines:
-        mine = [s for s in shares if s.ctype == ln.ctype]
-        for s, n in zip(mine, split(ln.delivered, [s.due for s in mine])):
-            s.sent = n
-    _refresh(b, shares, actor)
-    _event(db, b.id, "delivered", actor, counts=got, reason=reason, comment=comment, late=b.late)
-    return b
-
-
-def send_back(db: Session, batch_id: int, comment, actor) -> ContainerBatch:
-    """Logistics returns an issued batch to AXO (wrong unit, wrong load). The
-    deadline does not move."""
-    b = _batch(db, batch_id)
-    if b.status != "issued":
-        raise FlowError("state")
-    comment = (comment or "").strip()
-    if not comment:
-        raise FlowError("comment")
-    for ln in _lines(db, b.id):
-        ln.issued = ln.issue_reason = ln.issue_comment = None
-    b.status, b.issued_at, b.issued_by = "requested", None, None
-    b.returned = (b.returned or 0) + 1
-    _event(db, b.id, "returned", actor, comment=comment)
-    return b
-
-
-def answer(db: Session, batch_id: int, team: str, mode: str, counts: Optional[dict],
-           reason, comment, actor) -> ContainerBatch:
-    """A team's leader answers its share: `all` (took what was sent), `actual`
-    (a count per type) or `refuse`. Fewer than was sent needs a reason and
-    opens a dispute."""
-    b = _batch(db, batch_id)
-    if b.status not in ("delivered", "disputed"):
-        raise FlowError("state")
-    shares = _shares(db, b.id)
-    mine = [s for s in shares if team_key(s.work_center, s.wc_group, s.rest) == team and s.status == "pending"]
-    if not mine or mode not in ("all", "actual", "refuse"):
-        raise FlowError("state")
-    counts = counts or {}
-    at = now()
-    took = {}
-    for s in mine:
-        sent = s.sent or 0
-        n = sent if mode == "all" else 0 if mode == "refuse" else _count(counts.get(s.ctype, sent))
-        if n > sent:
-            raise FlowError("over")
-        if n < sent:
-            s.reason, s.comment = _why(reason, comment)
-            s.status = "disputed"
-        else:
-            s.status = "accepted"
-        s.accepted, s.answered_at, s.answered_by = n, at, actor
-        took[s.ctype] = n
-    _refresh(b, shares, actor)
-    _event(db, b.id, "refused" if mode == "refuse" else "accepted", actor,
-           team=team, counts=took, reason=reason, comment=comment)
-    return b
-
-
-def settle(db: Session, batch_id: int, note, actor) -> ContainerBatch:
-    """AXO or an admin settles a dispute, with a note."""
-    b = _batch(db, batch_id)
-    if b.status != "disputed":
-        raise FlowError("state")
-    note = (note or "").strip()
-    if not note:
-        raise FlowError("note")
-    shares = _shares(db, b.id)
-    for s in shares:
-        if s.status == "disputed":
-            s.status = "settled"
-    _refresh(b, shares, actor, note)
-    _event(db, b.id, "settled", actor, note=note)
-    return b
-
-
-def force_close(db: Session, batch_id: int, note, actor) -> ContainerBatch:
-    """An admin closes a stuck batch — the only way one closes without its
-    steps — with a note."""
-    b = _batch(db, batch_id)
-    if b.status == "closed":
-        raise FlowError("state")
-    note = (note or "").strip()
-    if not note:
-        raise FlowError("note")
-    was = b.status
-    b.status, b.closed_at, b.closed_by, b.close_note, b.forced = "closed", now(), actor, note, True
-    _event(db, b.id, "forced", actor, note=note, was=was)
-    return b
-
-
 # ── reading ─────────────────────────────────────────────────────────────────
 
 def _iso(v) -> Optional[str]:
     return v.astimezone(TZ).isoformat(timespec="minutes") if v else None
 
 
-def _serialize(b: ContainerBatch, lines: list, shares: list, units: dict, at: datetime) -> dict:
-    u = units.get(b.manager_id)
-    teams: dict = {}
-    for s in shares:
-        k = team_key(s.work_center, s.wc_group, s.rest)
-        t = teams.setdefault(k, {"key": k, "work_center": s.work_center, "group": s.wc_group or "",
-                                 "rest": bool(s.rest), "cell_id": s.cell_id, "cell_code": s.cell_code,
-                                 "leader": s.leader, "status": "accepted", "due": {}, "sent": {},
-                                 "accepted": {}, "reason": None, "comment": None,
-                                 "answered_at": None, "answered_by": None})
-        t["due"][s.ctype] = s.due
-        if s.sent is not None:
-            t["sent"][s.ctype] = s.sent
-        if s.accepted is not None:
-            t["accepted"][s.ctype] = s.accepted
-        # the team's state is its least settled share's
-        rank = {"pending": 0, "disputed": 1, "settled": 2, "accepted": 3}
-        if rank.get(s.status, 3) < rank[t["status"]]:
-            t["status"] = s.status
-        if s.reason:
-            t["reason"], t["comment"] = s.reason, s.comment
-        if s.answered_at:
-            t["answered_at"], t["answered_by"] = _iso(s.answered_at), s.answered_by
-    order = {k: i for i, k in enumerate(KEYS)}
-    return {
-        "id": b.id, "manager_id": b.manager_id, "unit": getattr(u, "name", None),
-        "shift": getattr(u, "shift", None), "day": b.day.isoformat(), "hour": b.hour,
-        "kind": b.kind, "status": b.status, "drafted_at": _iso(b.drafted_at), "due_at": _iso(b.due_at),
-        "issued_at": _iso(b.issued_at), "issued_by": b.issued_by,
-        "delivered_at": _iso(b.delivered_at), "delivered_by": b.delivered_by,
-        "closed_at": _iso(b.closed_at), "closed_by": b.closed_by, "close_note": b.close_note,
-        "forced": bool(b.forced), "late": b.late, "returned": b.returned or 0, "note": b.note,
-        "overdue": b.status in ("requested", "issued") and at > b.due_at,
-        "lines": sorted(({"ctype": ln.ctype, "need": ln.need, "issued": ln.issued,
-                          "delivered": ln.delivered, "issue_reason": ln.issue_reason,
-                          "issue_comment": ln.issue_comment, "deliver_reason": ln.deliver_reason,
-                          "deliver_comment": ln.deliver_comment} for ln in lines),
-                        key=lambda x: order.get(x["ctype"], 9)),
-        "teams": list(teams.values()),
-    }
-
-
-def _load(db: Session, batches: list) -> tuple:
-    ids = [b.id for b in batches]
-    lines: dict = {}
-    shares: dict = {}
-    if ids:
-        for ln in db.query(ContainerBatchLine).filter(ContainerBatchLine.batch_id.in_(ids)).all():
-            lines.setdefault(ln.batch_id, []).append(ln)
-        for s in db.query(ContainerShare).filter(ContainerShare.batch_id.in_(ids)).order_by(ContainerShare.id).all():
-            shares.setdefault(s.batch_id, []).append(s)
-    mids = {b.manager_id for b in batches}
-    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
-    return lines, shares, units
-
-
-def board(db: Session, day: date) -> dict:
-    """Every batch of one production day, with its lines and teams."""
-    at = now()
-    batches = db.query(ContainerBatch).filter(ContainerBatch.day == day).order_by(
-        ContainerBatch.hour, ContainerBatch.manager_id, ContainerBatch.id).all()
-    lines, shares, units = _load(db, batches)
-    return {"day": day.isoformat(), "now": _iso(at), "keys": KEYS,
-            "batches": [_serialize(b, lines.get(b.id, []), shares.get(b.id, []), units, at)
-                        for b in batches]}
-
-
-def one(db: Session, b: ContainerBatch) -> dict:
-    lines, shares, units = _load(db, [b])
-    return _serialize(b, lines.get(b.id, []), shares.get(b.id, []), units, now())
-
-
-def history(db: Session, batch_id: int) -> list:
-    return [{"at": _iso(e.at), "actor": e.actor, "action": e.action, "detail": e.detail or {}}
-            for e in db.query(ContainerEvent).filter(ContainerEvent.batch_id == batch_id)
-            .order_by(ContainerEvent.at, ContainerEvent.id).all()]
-
-
-def report(db: Session, d_from: date, d_to: date) -> dict:
-    """«Konteynerlar oqimi» for a period: per day × unit × container type the
-    need → issued → delivered → accepted, and the three gaps with their owner —
-    need − issued is AXO's, issued − delivered is Logistics', sent − accepted a
-    dispute. A batch nobody issued counts its whole need against AXO once its
-    deadline has passed. On-time is read from the DELIVERY."""
-    at = now()
-    batches = db.query(ContainerBatch).filter(
-        ContainerBatch.day >= d_from, ContainerBatch.day <= d_to).order_by(
-        ContainerBatch.day, ContainerBatch.manager_id, ContainerBatch.hour).all()
-    lines, shares, units = _load(db, batches)
-    rows: dict = {}
-    summary = {"batches": 0, "regular": 0, "topup": 0, "manual": 0, "delivered": 0, "on_time": 0,
-               "late": 0, "overdue": 0, "issued": 0, "issued_on_time": 0, "forced": 0, "open": 0}
-    for b in batches:
-        summary["batches"] += 1
-        summary[b.kind] = summary.get(b.kind, 0) + 1
-        overdue = b.status in ("requested", "issued") and at > b.due_at
-        if b.forced:
-            summary["forced"] += 1
-        if b.status != "closed":
-            summary["open"] += 1
-        if b.delivered_at is not None:
-            summary["delivered"] += 1
-            summary["late" if b.late else "on_time"] += 1
-        elif overdue or (b.forced and b.delivered_at is None):
-            summary["overdue"] += 1
-        if b.issued_at is not None:
-            summary["issued"] += 1
-            if b.issued_at <= b.due_at:
-                summary["issued_on_time"] += 1
-        acc: dict = {}
-        sent: dict = {}
-        for s in shares.get(b.id, []):
-            if s.accepted is not None:
-                acc[s.ctype] = acc.get(s.ctype, 0) + s.accepted
-                sent[s.ctype] = sent.get(s.ctype, 0) + (s.sent or 0)
-        for ln in lines.get(b.id, []):
-            u = units.get(b.manager_id)
-            r = rows.setdefault((b.day, b.manager_id, ln.ctype), {
-                "day": b.day.isoformat(), "manager_id": b.manager_id,
-                "unit": getattr(u, "name", None), "ctype": ln.ctype, "need": 0, "issued": 0,
-                "delivered": 0, "accepted": 0, "gap_axo": 0, "gap_logistics": 0,
-                "gap_dispute": 0, "surplus": 0})
-            r["need"] += ln.need
-            r["issued"] += ln.issued or 0
-            r["delivered"] += ln.delivered or 0
-            r["accepted"] += acc.get(ln.ctype, 0)
-            if ln.issued is not None:
-                r["gap_axo"] += max(0, ln.need - ln.issued)
-                r["surplus"] += max(0, ln.issued - ln.need)
-            elif overdue or b.status == "closed":
-                r["gap_axo"] += ln.need
-            if ln.delivered is not None:
-                r["gap_logistics"] += max(0, (ln.issued or 0) - ln.delivered)
-            r["gap_dispute"] += max(0, sent.get(ln.ctype, 0) - acc.get(ln.ctype, 0))
-    judged = summary["delivered"] + summary["overdue"]
-    summary["on_time_pct"] = round(100 * summary["on_time"] / judged) if judged else None
-    summary["issued_on_time_pct"] = (round(100 * summary["issued_on_time"] / (summary["issued"] + summary["overdue"]))
-                                     if summary["issued"] + summary["overdue"] else None)
-    out = sorted(rows.values(), key=lambda r: (r["day"], r["unit"] or "", KEYS.index(r["ctype"]) if r["ctype"] in KEYS else 9))
-    totals = {k: sum(r[k] for r in out) for k in
-              ("need", "issued", "delivered", "accepted", "gap_axo", "gap_logistics", "gap_dispute", "surplus")}
-    return {"from": d_from.isoformat(), "to": d_to.isoformat(), "rows": out,
-            "summary": summary, "totals": totals}
-
-
 def readiness(db: Session, day: date) -> list:
     """Per unit with a «Zagruzka fayli»: how much of the day's plan the hours
     can see — the planned lines, those with a container capacity, and those
     with an hour (a capacity AND a labour standard, in a team with people).
-    A unit with gaps runs on manual requests until its catalog is filled."""
+    A line with no hour adds nothing to its brigadir's limit, so the brigadir
+    asks AXO for extra until the catalog is filled."""
     from fastapi import HTTPException
     from app.routers import production
     out = []
@@ -840,6 +391,58 @@ def cancel_request(db: Session, request_id: int, note, actor) -> ContainerReques
         raise FlowError("note")
     r.status, r.cancelled_at, r.cancelled_by, r.cancel_note = "cancelled", now(), actor, note
     return r
+
+
+def edit_request(db: Session, request_id: int, hour: int, logistics_key: str, counts: dict,
+                 note) -> tuple:
+    """AXO changes a request while it still waits (2026-11-18, the operator:
+    AXO could only cancel a request and make a new one): the hour, the counts,
+    whom it goes to, the note. Once split it is the brigadirs' — cancelling
+    stays the tool. A changed request is NEW again for whoever splits it
+    (`seen_at` cleared); a new hour moves its deadline (`_due` from now) and
+    re-arms the overdue alert. A brigadir's approved extra keeps its hour and
+    never goes past what the brigadir asked (`approved` follows the counts).
+    Returns (request, [(field, old, new)], the old addressee key)."""
+    r = _request(db, request_id)
+    if r.status != "requested":
+        raise FlowError("state")
+    hour = int(hour)
+    if not (0 <= hour <= 47):
+        raise FlowError("hour")
+    people = {p["key"]: p["name"] for p in logistics_people(db)}
+    if logistics_key not in people and not (logistics_key == ALL_KEY and people):
+        raise FlowError("logistics")
+    c = _clean_counts(counts)
+    if not c:
+        raise FlowError("count")
+    extra = db.query(ContainerExtra).filter(ContainerExtra.request_id == r.id).first()
+    if extra is not None:
+        if hour != r.hour:
+            raise FlowError("extra_hour")
+        if any(k not in (extra.lines or {}) or n > int(extra.lines[k]) for k, n in c.items()):
+            raise FlowError("over_ask")
+    note = (note or "").strip() or None
+    name = lambda key: "*" if key == ALL_KEY else (people.get(key) or key)      # noqa: E731
+    changes = []
+    if hour != r.hour:
+        changes.append(("hour", hour_span(r.hour), hour_span(hour)))
+    if c != dict(r.lines or {}):
+        changes.append(("counts", counts_text(r.lines or {}), counts_text(c)))
+    if logistics_key != r.logistics_key:
+        changes.append(("to", name(r.logistics_key), name(logistics_key)))
+    if note != r.note:
+        changes.append(("note", r.note or "", note or ""))
+    old_key = r.logistics_key
+    if not changes:
+        return r, [], old_key
+    if hour != r.hour:
+        r.hour, r.due_at, r.overdue_alerted_at = hour, _due(hour_start(r.day, hour), now()), None
+    r.lines, r.note = c, note
+    r.logistics_key, r.logistics_name = logistics_key, people.get(logistics_key)
+    r.seen_at = None
+    if extra is not None:
+        extra.approved = c
+    return r, changes, old_key
 
 
 def delete_request(db: Session, request_id: int) -> ContainerRequest:
@@ -1269,18 +872,26 @@ _CT_NAMES = {
 }
 _TG = {
     "uz": {"new": "Yangi konteyner so'rovi", "cancelled": "Konteyner so'rovi bekor qilindi",
+           "edited": "Konteyner so'rovi o'zgartirildi", "moved": "Konteyner so'rovi boshqa logistga o'tkazildi",
+           "moved_hint": "Bu so'rovni endi siz taqsimlamaysiz.",
            "hour": "Soat", "due": "Muddat", "by": "Yubordi", "note": "Izoh", "why": "Sabab",
            "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish",
            "hint_all": "Barcha logistlarga yuborildi — birinchi taqsimlagan oladi.", "all": "Barcha logistlarga"},
     "uz_cyrl": {"new": "Янги контейнер сўрови", "cancelled": "Контейнер сўрови бекор қилинди",
+                "edited": "Контейнер сўрови ўзгартирилди", "moved": "Контейнер сўрови бошқа логистга ўтказилди",
+                "moved_hint": "Бу сўровни энди сиз тақсимламайсиз.",
                 "hour": "Соат", "due": "Муддат", "by": "Юборди", "note": "Изоҳ", "why": "Сабаб",
                 "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш",
                 "hint_all": "Барча логистларга юборилди — биринчи тақсимлаган олади.", "all": "Барча логистларга"},
     "ru": {"new": "Новая заявка на контейнеры", "cancelled": "Заявка на контейнеры отменена",
+           "edited": "Заявка на контейнеры изменена", "moved": "Заявка на контейнеры передана другому логисту",
+           "moved_hint": "Эту заявку теперь распределяете не вы.",
            "hour": "Час", "due": "Срок", "by": "Отправил(а)", "note": "Комментарий", "why": "Причина",
            "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку",
            "hint_all": "Отправлено всем логистам — берёт тот, кто распределит первым.", "all": "Всем логистам"},
     "en": {"new": "New container request", "cancelled": "Container request cancelled",
+           "edited": "Container request changed", "moved": "Container request moved to another logistics person",
+           "moved_hint": "You no longer split this request.",
            "hour": "Hour", "due": "Due", "by": "Sent by", "note": "Note", "why": "Reason",
            "hint": "Split it across the brigadirs.", "btn": "📦 Open the request",
            "hint_all": "Sent to every logistics person — whoever splits it first takes it.", "all": "Every logistics person"},
@@ -1308,7 +919,9 @@ def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
     rows = [f"📦 <b>{escape(t[kind])}</b>", "",
             f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
             escape(counts_text(r.lines or {}, lang))]
-    if kind == "new":
+    if kind == "moved":
+        rows += ["", f"<i>{escape(t['moved_hint'])}</i>"]
+    elif kind in ("new", "edited"):
         rows += [f"{t['due']}: <b>{r.due_at.astimezone(TZ):%H:%M}</b>", f"{t['by']}: {escape(name)}"]
         if r.note:
             rows.append(f"{t['note']}: {escape(transliterate_text(r.note, lang) or r.note)}")
@@ -1342,21 +955,23 @@ def to_text(r: ContainerRequest, lang: str) -> str:
     return transliterate(r.logistics_name or "", lang)
 
 
-def notify_request(request_id: int, kind: str) -> bool:
-    """Tell the addressee a request came (`new`) or went (`cancelled`): one
-    bell row + a DM with a button to the page. Only while the «Sozlamalar»
-    switch is on. Own session; never raises. Returns whether it was sent."""
+def notify_request(request_id: int, kind: str, keys: Optional[list] = None) -> bool:
+    """Tell the addressee a request came (`new`), changed (`edited`), went to
+    somebody else (`moved` — to `keys`, the people it left) or went
+    (`cancelled`): one bell row + a DM with a button to the page. Only while
+    the «Sozlamalar» switch is on. Own session; never raises. Returns whether
+    it was sent."""
     from app.database import SessionLocal
     db = SessionLocal()
     try:
         if not settings(db)["notify"]:
             return False
         r = db.get(ContainerRequest, request_id)
-        if r is None or (kind == "new" and r.status != "requested"):
+        if r is None or (kind in ("new", "edited", "moved") and r.status != "requested"):
             return False
         from app.routers.staff import notify_profile
         done: set = set()
-        for key in addressees(db, r.logistics_key):
+        for key in (keys if keys is not None else addressees(db, r.logistics_key)):
             done |= notify_profile(
                 db, key, f"container_request_{kind}",
                 {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
@@ -1375,10 +990,10 @@ def notify_request(request_id: int, kind: str) -> bool:
         db.close()
 
 
-def notify_later(request_id: int, kind: str) -> None:
+def notify_later(request_id: int, kind: str, keys: Optional[list] = None) -> None:
     """`notify_request` on a thread — a request's save never waits on Telegram."""
     import threading
-    threading.Thread(target=notify_request, args=(request_id, kind), daemon=True).start()
+    threading.Thread(target=notify_request, args=(request_id, kind, keys), daemon=True).start()
 
 
 # ── the brigadir's card: containers split to their unit (2026-11-15) ─────────

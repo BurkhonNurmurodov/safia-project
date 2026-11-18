@@ -562,6 +562,18 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Бригадир не подтвердил контейнеры: {hour}", "{name} | {counts}"),
         "en": ("A brigadir has not confirmed containers: {hour}", "{name} | {counts}"),
     },
+    "container_request_edited": {
+        "uz": ("Konteyner so'rovi o'zgartirildi: {hour}", "{counts} | Muddat: {due}"),
+        "uz_cyrl": ("Контейнер сўрови ўзгартирилди: {hour}", "{counts} | Муддат: {due}"),
+        "ru": ("Заявка на контейнеры изменена: {hour}", "{counts} | Срок: {due}"),
+        "en": ("Container request changed: {hour}", "{counts} | Due: {due}"),
+    },
+    "container_request_moved": {
+        "uz": ("Konteyner so'rovi boshqa logistga o'tkazildi: {hour}", "{counts}"),
+        "uz_cyrl": ("Контейнер сўрови бошқа логистга ўтказилди: {hour}", "{counts}"),
+        "ru": ("Заявка на контейнеры передана другому логисту: {hour}", "{counts}"),
+        "en": ("Container request moved to another logistics person: {hour}", "{counts}"),
+    },
     "container_request_cancelled": {
         "uz": ("Konteyner so'rovi bekor qilindi: {hour}", "{counts}\n{note}"),
         "uz_cyrl": ("Контейнер сўрови бекор қилинди: {hour}", "{counts}\n{note}"),
