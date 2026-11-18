@@ -10807,6 +10807,57 @@ def nuriddin_container_logistics() -> None:
         db.close()
 
 
+# ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
+# The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
+# «Kutish mas'uli» reads /downtime and /idle-cell through the categories he
+# OWNS (`idle_scope.viewer_categories`), so seeing Cat E = owning it. Added to
+# what he already owns; one owner per category, so a previous owner of Cat E
+# is replaced — the admin DM names them. Once: a later re-assignment sticks.
+NURIDDIN_CAT_E_FLAG = "oneshot:idle_owner_nuriddin_cat_e_nov18"
+
+
+def nuriddin_cat_e() -> None:
+    import html
+
+    from app.services import idle_scope
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=NURIDDIN_CAT_E_FLAG).first():
+            return
+        found = _nuriddin_profiles(db)
+        if len(found) != 1:
+            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            print(f"[startup] Nuriddin Cat E: {len(found)} idle-owner profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Nuriddin aka — Cat E berilmadi</b>\n"
+                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
+                "«Kutish mas'ullari» (/panel/idleowners) da Cat E ni qo'lda belgilang.")
+            return
+        prof = found[0]
+        key = f"idle-owner:{prof.id}"
+        before = idle_scope.owners(db).get("Cat E")
+        if before != key:
+            idle_scope.set_owner(db, "Cat E", key, None)
+        db.add(AppSetting(key=NURIDDIN_CAT_E_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        cats = idle_scope.categories_of(db, key)
+        print(f"[startup] Nuriddin Cat E: {key} (was {before or '—'}) → owns {cats}")
+        _dm_admins_plain(
+            "✅ <b>Nuriddin aka — Cat E (ojidaniya)</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            f"Oldingi mas'ul: {esc(before or '—')}\n"
+            f"Endi ko'radigan toifalar: {esc(', '.join(cats))}")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Nuriddin Cat E failed: {exc}")
+        _dm_admins_plain("🛑 <b>Nuriddin aka — Cat E berilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── 15 Nov: Telegram on for the logistics person (docs/data-fixes.md) ───────
 # The operator, 2026-11-15: «turn on the telegram messages for nuriddin aka».
 # The «Sozlamalar» → «Telegram xabarlari» switch (`container_flow

@@ -279,6 +279,8 @@ try:
     dilafruz_container_flow()
     from app.startup import nuriddin_container_logistics
     nuriddin_container_logistics()
+    from app.startup import nuriddin_cat_e
+    nuriddin_cat_e()
     from app.startup import yusuf_container_logistics
     yusuf_container_logistics()
     from app.startup import container_flow_notify_on, containers_tv_managers

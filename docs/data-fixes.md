@@ -407,6 +407,18 @@ brigadirs». A one-shot (flag
 him an addressee of AXO's requests. Not exactly one match → nothing changes
 and the admins get a DM saying so. Nothing he held is revoked.
 
+## Cat E → Nuriddin aka (`startup.nuriddin_cat_e`, 2026-11-18)
+
+The operator: for idle time, «make visible Cat E» to Nuriddin. A «Kutish
+mas'uli» reads `/downtime` and `/idle-cell` through the categories he OWNS
+(docs/ojidaniya.md, «WHO answers for a waiting category»), so the one-shot
+(flag `oneshot:idle_owner_nuriddin_cat_e_nov18`, `later`) makes his ONE
+`idle-owner` profile the owner of Cat E, added to whatever he already owns.
+One owner per category, so a previous owner of Cat E is replaced; the admin
+DM names them and lists every category he now sees. Not exactly one matching
+profile → nothing changes and the admins are told. Once: a later
+re-assignment on «Kutish mas'ullari» sticks.
+
 ## Telegram on for the container requests (`startup.container_flow_notify_on`, 2026-11-15)
 
 The operator: «turn on the telegram messages for nuriddin aka». A one-shot
