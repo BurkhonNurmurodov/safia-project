@@ -43,7 +43,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.models import IdleCategoryOwner, Manager, RoleProfile
+from app.models import AppSetting, IdleCategoryOwner, Manager, RoleProfile
 from app.services.sheets_reader import SHIFT_CATEGORY_ORDER
 
 # The role whose whole reach is one or more categories. Only this role is
@@ -176,7 +176,54 @@ def viewer_categories(db: Session, payload: dict) -> Optional[list[str]]:
     """
     if not is_owner(payload):
         return None
-    return categories_of(db, identity.viewer_profile_key(db, payload))
+    key = identity.viewer_profile_key(db, payload)
+    cats = set(categories_of(db, key))
+    for other in sees_as(db, key):
+        cats.update(categories_of(db, other))
+    order = {c: i for i, c in enumerate(CATEGORIES)}
+    return sorted(cats, key=lambda c: (order.get(c, len(order)), c))
+
+
+# ── «sees what X owns» (2026-11-18) ──────────────────────────────────────────
+# The operator: Yusuf aka's idle time «same with Nuriddin aka». A category has
+# ONE owner (the unique key above), so a second person cannot own it too; this
+# lets a profile READ through another profile's categories as well, live — a
+# re-assignment moves both views at once. Only the lock widens: the NAME on
+# every surface, the solutions owed and the reminders stay with the owner.
+# Stored as JSON {viewer_profile_key: [profile_key, …]}.
+SEES_AS_SETTING = "idle_scope.sees_as"
+
+
+def sees_as_map(db: Session) -> dict[str, list[str]]:
+    import json
+    row = db.query(AppSetting).filter(AppSetting.key == SEES_AS_SETTING).first()
+    try:
+        data = json.loads(row.value) if row and row.value else {}
+    except ValueError:
+        return {}
+    return {str(k): [str(x) for x in (v or []) if x]
+            for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def sees_as(db: Session, profile_key: Optional[str]) -> list[str]:
+    """The profiles whose categories ``profile_key`` also reads."""
+    if not profile_key:
+        return []
+    return [k for k in sees_as_map(db).get(profile_key, []) if k != profile_key]
+
+
+def link_sees_as(db: Session, viewer_key: str, owner_key: str) -> None:
+    """Let ``viewer_key`` read ``owner_key``'s categories too. The caller commits."""
+    import json
+    data = sees_as_map(db)
+    keys = data.setdefault(viewer_key, [])
+    if owner_key not in keys:
+        keys.append(owner_key)
+    row = db.query(AppSetting).filter(AppSetting.key == SEES_AS_SETTING).first()
+    if row is None:
+        db.add(AppSetting(key=SEES_AS_SETTING, value=json.dumps(data)))
+    else:
+        row.value = json.dumps(data)
 
 
 def resolve_cats(db: Session, payload: dict,

@@ -303,6 +303,8 @@ async def lifespan(app: FastAPI):
     later(nuriddin_container_logistics)
     from app.startup import nuriddin_cat_e
     later(nuriddin_cat_e)
+    from app.startup import yusuf_sees_nuriddin
+    later(yusuf_sees_nuriddin)
     from app.startup import yusuf_container_logistics
     later(yusuf_container_logistics)
     from app.startup import davron_container_logistics

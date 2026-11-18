@@ -419,6 +419,17 @@ DM names them and lists every category he now sees. Not exactly one matching
 profile → nothing changes and the admins are told. Once: a later
 re-assignment on «Kutish mas'ullari» sticks.
 
+## Yusuf aka reads idle time like Nuriddin aka (`startup.yusuf_sees_nuriddin`, 2026-11-18)
+
+The operator: «idle time for yusuf aka make it same with Nuriddin aka». A
+category has ONE owner, so Yusuf is not made a second owner of Cat E: a
+one-shot (flag `oneshot:idle_owner_yusuf_sees_nuriddin_nov18`, `later`) links
+his ONE `idle-owner` profile to Nuriddin's through `idle_scope.sees_as`
+(docs/ojidaniya.md, «A profile may READ another owner's categories»). He reads
+whatever Nuriddin owns, live, plus his own; the name printed beside the
+category stays Nuriddin's. Not exactly one profile each → nothing changes and
+the admins are told.
+
 ## Telegram on for the container requests (`startup.container_flow_notify_on`, 2026-11-15)
 
 The operator: «turn on the telegram messages for nuriddin aka». A one-shot

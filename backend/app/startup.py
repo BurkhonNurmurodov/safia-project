@@ -10943,6 +10943,54 @@ def nuriddin_cat_e() -> None:
         db.close()
 
 
+# ── 18 Nov: Yusuf aka sees what Nuriddin aka owns (docs/data-fixes.md) ───────
+# The operator, 2026-11-18: «idle time for yusuf aka make it same with Nuriddin
+# aka». One owner per category, so Yusuf is not made a second owner: his
+# «Kutish mas'uli» profile READS through Nuriddin's categories as well, live
+# (`idle_scope.sees_as`). The owner named everywhere stays Nuriddin.
+YUSUF_SEES_NURIDDIN_FLAG = "oneshot:idle_owner_yusuf_sees_nuriddin_nov18"
+
+
+def yusuf_sees_nuriddin() -> None:
+    import html
+
+    from app.services import idle_scope
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=YUSUF_SEES_NURIDDIN_FLAG).first():
+            return
+        yusuf, nuriddin = _idle_owner_profiles(db, "yusuf"), _nuriddin_profiles(db)
+        if len(yusuf) != 1 or len(nuriddin) != 1:
+            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in yusuf + nuriddin) or "—"
+            print(f"[startup] Yusuf sees Nuriddin: {len(yusuf)}/{len(nuriddin)} profiles match — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Yusuf aka — Nuriddin aka toifalari ulanmadi</b>\n"
+                f"Mos kelgan profillar (Yusuf {len(yusuf)}, Nuriddin {len(nuriddin)}): {esc(listed)}.")
+            return
+        ykey, nkey = f"idle-owner:{yusuf[0].id}", f"idle-owner:{nuriddin[0].id}"
+        idle_scope.link_sees_as(db, ykey, nkey)
+        db.add(AppSetting(key=YUSUF_SEES_NURIDDIN_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        cats = sorted(set(idle_scope.categories_of(db, ykey)) | set(idle_scope.categories_of(db, nkey)))
+        print(f"[startup] Yusuf sees Nuriddin: {ykey} → {nkey}, sees {cats}")
+        _dm_admins_plain(
+            "✅ <b>Yusuf aka — ojidaniya Nuriddin aka bilan bir xil</b>\n"
+            f"{esc(yusuf[0].name)} ({ykey}) endi {esc(nuriddin[0].name)} ({nkey}) "
+            "toifalarini ham ko'radi.\n"
+            f"Ko'radigan toifalar: {esc(', '.join(cats) or '—')}\n"
+            "Mas'ul sifatida Nuriddin aka nomi qoladi.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Yusuf sees Nuriddin failed: {exc}")
+        _dm_admins_plain("🛑 <b>Yusuf aka — Nuriddin aka toifalari ulanmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── 15 Nov: Telegram on for the logistics person (docs/data-fixes.md) ───────
 # The operator, 2026-11-15: «turn on the telegram messages for nuriddin aka».
 # The «Sozlamalar» → «Telegram xabarlari» switch (`container_flow

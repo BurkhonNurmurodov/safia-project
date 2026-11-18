@@ -932,6 +932,16 @@ new decision; the two locks below are the feature.
 
 Related memory: `idle-category-owner-role`.
 
+**A profile may READ another owner's categories** (`idle_scope.sees_as`,
+2026-11-18 — the operator: Yusuf aka's idle time «same with Nuriddin aka»).
+The unique key forbids a second owner, so the link widens the LOCK only:
+`viewer_categories` returns the viewer's own categories plus those of every
+profile in the `idle_scope.sees_as` setting (JSON `{viewer_key: [owner_key, …]}`),
+read live, so re-assigning a category moves both views at once. The NAME
+(`owner_labels`), what waits on a cause's owner and its reminders stay with the
+owner alone. No admin screen yet — set by a one-shot
+(`startup.yusuf_sees_nuriddin`).
+
 ## «Kutish yechimlari» — Tahlil tab: is it SOLVED or REPEATING? (`/idle-solutions`, 2026-11-07 — REPLACED 2026-11-13)
 
 **Gone.** This design judged each cause by OCCURRENCES against its newest
