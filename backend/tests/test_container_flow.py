@@ -385,6 +385,38 @@ class FlowTest(unittest.TestCase):
                          ["page.view.container-logistics", "page.view.container-watch"])
         self.assertEqual(dm.call_count, 2)                           # the miss, then the grant
 
+    def test_davron_loses_idle_time_keeps_containers(self):
+        """18 Nov: Davron's profile is denied /downtime and /idle-cell and lets
+        go of the ojidaniya categories he answered for; logistics stays; once."""
+        from app import capabilities, startup
+        from app.models import ProfilePermission, RoleProfile
+        from app.services import idle_scope
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        self.db.execute(flow.text("DELETE FROM idle_category_owners"))
+        self.db.execute(flow.text("DELETE FROM role_profiles WHERE name LIKE 'Davron%'"))
+        self.db.execute(flow.text("DELETE FROM app_settings WHERE key = :k"), {"k": startup.DAVRON_NO_IDLE_FLAG})
+        d = RoleProfile(role="idle-owner", name="Davron Kuldimirodov")
+        other = RoleProfile(role="idle-owner", name="Someone Else")
+        self.db.add_all([d, other])
+        self.db.flush()
+        dk, ok = f"idle-owner:{d.id}", f"idle-owner:{other.id}"
+        self.db.add(ProfilePermission(profile_key=dk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        cats = list(idle_scope.CATEGORIES)
+        idle_scope.set_owner(self.db, cats[0], dk)
+        idle_scope.set_owner(self.db, cats[1], ok)
+        self.db.commit()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.davron_no_idle_time()
+            startup.davron_no_idle_time()                            # the flag: once
+        self.db.expire_all()
+        self.assertEqual(capabilities.denied_pages_for_profile(self.db, dk), {"downtime", "idle-cell"})
+        self.assertEqual(idle_scope.categories_of(self.db, dk), [])
+        self.assertEqual(idle_scope.owners(self.db), {cats[1]: ok})     # nobody else's touched
+        self.assertIn(dk, {p["key"] for p in flow.logistics_people(self.db)})
+        self.assertEqual(capabilities.denied_pages_for_profile(self.db, ok), set())
+        self.assertEqual(dm.call_count, 1)
+
     def test_receive_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access

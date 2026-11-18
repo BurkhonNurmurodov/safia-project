@@ -461,6 +461,23 @@ the STORED access of `container-receive` (the default moves with it) and sets
 `container_flow.notify_brigadirs` = 1, then DMs the admins. Once: an untick
 or an «off» later sticks. docs/containers-flow.md.
 
+## No idle time for Davron Kuldimirodov (`startup.davron_no_idle_time`, 2026-11-18)
+
+The operator, right after the container step below: «remove from him idle time».
+The step finds the same profile the same way (`_davron_profile`) and does two
+things:
+- It puts a personal DENY on his profile for the two ojidaniya pages: /downtime
+  (which carries «Kutish yechimlari») and /idle-cell. The pages are closed
+  whatever his role opens, and stay closed for whoever holds the profile.
+- It releases every ojidaniya category he answered for. Those categories are
+  left with NO owner, so no «Kutish yechimlari» reminder reaches him.
+
+His container access is untouched. An admin profile is never denied, and the
+admins' DM says so if his profile turns out to be one. If no profile is found,
+nothing changes and the step tries again on the next start. It runs once (flag
+`oneshot:davron_no_idle_time_nov18`). It reopens like any personal entry: lift
+the deny on his «Shaxsiy vakolatlar».
+
 ## Davron Kuldimirodov → «Konteyner berish» like Nuriddin aka (`startup.davron_container_logistics`, 2026-11-18)
 
 The operator: «I added Davron Kuldimirodov, make the container app the same as

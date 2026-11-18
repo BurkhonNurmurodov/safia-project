@@ -287,6 +287,8 @@ try:
     yusuf_container_logistics()
     from app.startup import davron_container_logistics
     davron_container_logistics()
+    from app.startup import davron_no_idle_time
+    davron_no_idle_time()          # after it: no ojidaniya for him
     from app.startup import container_flow_notify_on, containers_tv_managers
     container_flow_notify_on()
     containers_tv_managers()

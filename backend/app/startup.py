@@ -10892,6 +10892,65 @@ def davron_container_logistics() -> None:
         db.close()
 
 
+# ── 18 Nov: no idle time for Davron (docs/data-fixes.md) ────────────────────
+# The operator, 2026-11-18, right after the container step above: «remove from
+# him idle time». His profile is DENIED the two ojidaniya pages — /downtime
+# (with «Kutish yechimlari» on it) and /idle-cell — whatever his role opens,
+# and any ojidaniya category he answers for is released (no owner), so no
+# «Kutish yechimlari» reminder reaches him either. The container access stays.
+# Runs after `davron_container_logistics`; no profile found → nothing, the
+# admins are told, and it tries again on the next start.
+DAVRON_NO_IDLE_FLAG = "oneshot:davron_no_idle_time_nov18"
+DAVRON_IDLE_PAGES = ("downtime", "idle-cell")
+
+
+def davron_no_idle_time() -> None:
+    import html
+
+    from app import capabilities
+    from app.services import idle_scope
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DAVRON_NO_IDLE_FLAG).first():
+            return
+        prof, pool = _davron_profile(db)
+        if prof is None:
+            listed = ", ".join(f"{p.role}:{p.id} {p.name}" for p in pool) or "—"
+            print(f"[startup] Davron idle time: {len(pool)} profiles named Davron — nothing changed")
+            _dm_admins_plain(
+                "⚠️ <b>Davron Kuldimirodov — «Ojidaniya» yopilmadi</b>\n"
+                f"«Davron» nomli profillar: {esc(listed)}.\n"
+                "«Shaxsiy vakolatlar»da «Ojidaniya» va «Yacheyka ojidaniyasi» sahifalarini qo'lda o'chiring.")
+            return
+        key = f"{prof.role}:{prof.id}"
+        capabilities.apply_profile_perms(
+            db, [key], denies=[capabilities.page_cap(pg) for pg in DAVRON_IDLE_PAGES],
+            actor_name="system (one-shot 2026-11-18)")
+        released = idle_scope.categories_of(db, key)
+        for cat in released:
+            idle_scope.set_owner(db, cat, None)
+        db.add(AppSetting(key=DAVRON_NO_IDLE_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        closed = sorted(capabilities.denied_pages_for_profile(db, key))
+        print(f"[startup] Davron idle time: {key} denied {closed}, released {released or '—'}")
+        _dm_admins_plain(
+            "✅ <b>Davron Kuldimirodov — «Ojidaniya» yopildi</b>\n"
+            f"Profil: {esc(prof.name)} ({key})\n"
+            f"Yopilgan sahifalar: {esc(', '.join(closed))}\n"
+            f"Bo'shatilgan toifalar: {esc(', '.join(released) or '—')}\n"
+            + ("Diqqat: bu admin profili — adminlarga taqiq ishlamaydi.\n" if prof.role == "admin" else "")
+            + "«Konteyner berish» (logistika) o'z joyida.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Davron idle time failed: {exc}")
+        _dm_admins_plain("🛑 <b>Davron Kuldimirodov — «Ojidaniya» yopilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
 # The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
 # «Kutish mas'uli» reads /downtime and /idle-cell through the categories he
