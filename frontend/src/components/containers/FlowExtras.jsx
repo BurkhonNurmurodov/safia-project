@@ -23,11 +23,10 @@ import { SplitBar, SplitLegend } from "../ui/Meter";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { tashkentNow } from "../production/HourlyContainers";
 import { useTranslit } from "../../utils/transliterate";
-import { usePersistentState } from "../../hooks/usePersistentState";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, fmt, Chip, CountPills, countsText, fieldCls, fieldStyle,
-  EXTRA_REASONS, reasonText, hourNow,
+  EXTRA_REASONS, reasonText, hourNow, useLogisticsPick, LogisticsField,
 } from "./flowUtil";
 
 const REASON_COLORS = { plan: "#3b82f6", damaged: "#ef4444", short: "#f97316", other: "#94a3b8" };
@@ -277,15 +276,8 @@ export function ExtrasPanel({ t, data, loading, canDecide, onApprove, onReject }
 export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
   const { tl } = useTranslit();
   const types = KEYS.filter((k) => e.lines[k] != null);
-  const people = useQuery({
-    queryKey: ["cflow-logistics"],
-    queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
-  });
-  const list = people.data ?? [];
-  const [last, setLast] = usePersistentState("cflow_last_logistics", null);
-  const [who, setWho] = useState(null);
-  const remembered = list.some((p) => p.key === last) ? last : null;
-  const to = who ?? remembered ?? (list.length === 1 ? list[0].key : null);
+  const pick = useLogisticsPick();
+  const { to } = pick;
   // what is on AXO's shelf now (`flow.stock`) — beside each count, so a yes is an informed one
   const today = tashkentNow().iso;
   const stock = useQuery({
@@ -302,7 +294,7 @@ export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
       logistics_key: to, note,
       counts: Object.fromEntries(types.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
     }),
-    onSuccess: (...a) => { setLast(to); onDone(...a); },
+    onSuccess: (...a) => { pick.remember(); onDone(...a); },
     onError: onFail,
   });
   return (
@@ -318,11 +310,8 @@ export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
       <p className="text-sm rounded-xl px-3 py-2 mb-3" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
         <b style={{ color: "var(--text-1)" }}>{t("cflow.ex.why")}:</b> {reasonText(t, e)}
       </p>
-      <FormField label={t("cflow.req.to")} required
-        hint={!people.isLoading && !list.length ? t("cflow.req.noLogistics") : t("cflow.ex.toHint")}>
-        <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
-          options={list.map((p) => ({ value: p.key, label: tl(p.name) }))} />
-      </FormField>
+      <LogisticsField t={t} pick={pick} />
+      <p className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>{t("cflow.ex.toHint")}</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
         {types.map((k) => (
           <FormField key={k} label={t(`production.cont.${k}`)}

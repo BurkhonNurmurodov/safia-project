@@ -120,7 +120,7 @@ export default function ContainerFlow() {
     enabled: flowSide,
     ...LIVE_LIST,
   });
-  const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
+  const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me, !!reqs.data?.logistics)).length;
   // AXO: brigadirs' extra asks still waiting for her answer — on the same badge
   const extras = useExtras(day, roles.axo);
   const askedN = roles.axo ? extraWaiting(extras.data) : 0;

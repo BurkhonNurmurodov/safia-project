@@ -8,6 +8,8 @@ import StyledSelect from "../ui/StyledSelect";
 import GroupBadge from "../ui/GroupBadge";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
+import { useTranslit } from "../../utils/transliterate";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
@@ -226,3 +228,39 @@ export function hourNow(day) {
   return day > n.iso ? 0 : 48;
 }
 export const canAskFor = (day) => hourNow(day) <= 31;
+
+// ── whom AXO sends a request to (2026-11-18, the operator: «AXO should send
+// one request and this request should go to both, and one of them should
+// approve it») ────────────────────────────────────────────────────────────────
+// Every logistics person at once — whoever splits it first takes it (the
+// server's `ALL_KEY`) — or one named person. The form starts on «everybody»
+// unless this device last picked a person who is still listed.
+export const ALL_KEY = "*";
+export function useLogisticsPick() {
+  const people = useQuery({
+    queryKey: ["cflow-logistics"],
+    queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
+  });
+  const list = people.data ?? [];
+  const [last, setLast] = usePersistentState("cflow_last_logistics_v2", ALL_KEY);
+  const [who, setWho] = useState(null);
+  const remembered = last === ALL_KEY || list.some((p) => p.key === last) ? last : ALL_KEY;
+  const to = list.length ? (who ?? remembered) : null;
+  return { loading: people.isLoading, list, to, setWho, remember: () => setLast(to) };
+}
+
+export function LogisticsField({ t, pick }) {
+  const { tl } = useTranslit();
+  const { loading, list, to, setWho } = pick;
+  return (
+    <FormField label={t("cflow.req.to")} required
+      hint={!loading && !list.length ? t("cflow.req.noLogistics")
+        : to === ALL_KEY ? t("cflow.req.toAllHint") : undefined}>
+      <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
+        options={[{ value: ALL_KEY, label: t("cflow.req.toAll") }, ...list.map((p) => ({ value: p.key, label: tl(p.name) }))]} />
+    </FormField>
+  );
+}
+
+// The addressee as words: a name, or «every logistics person» while nobody took it.
+export const toName = (t, tl, r) => (r.logistics_key === ALL_KEY ? t("cflow.req.toAll") : tl(r.logistics_name) || "—");

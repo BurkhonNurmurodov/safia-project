@@ -31,11 +31,10 @@ import { SplitBar, SplitLegend } from "../ui/Meter";
 import { tashkentNow } from "../production/HourlyContainers";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { usePersistentState } from "../../hooks/usePersistentState";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
-  refreshFlow, LIVE_LIST, useExtras,
+  refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
@@ -46,7 +45,10 @@ const SOON_HOURS = 2;           // an hour with no request inside this window re
 // A request still waiting that its addressee has not opened yet (2026-11-14,
 // the operator: Nuriddin aka must see which requests are new). Only for the
 // person it is addressed to — AXO and admins see every row plain.
-export const isFresh = (r, me) => r.status === "requested" && !r.seen_at && !!me && r.logistics_key === me;
+// A request sent to EVERY logistics person (2026-11-18) is new for each of
+// them (`logi`: the viewer is one) until the first of them opens it.
+export const isFresh = (r, me, logi = false) => r.status === "requested" && !r.seen_at && !!me
+  && (r.logistics_key === me || (r.logistics_key === ALL_KEY && logi));
 
 function StateChip({ r, t }) {
   if (r.status === "requested" && r.overdue) return <Chip tone="bad" icon={AlertTriangle}>{t("cflow.st.overdue")}</Chip>;
@@ -121,10 +123,12 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   });
   const list = q.data?.requests ?? [];
   const me = q.data?.me;
+  const logi = !!q.data?.logistics;
   // a write here changes «Qabul», «Tahlil» and «Hisobot» too — re-read them all
   const done = (msg) => { toast.success(msg); refreshFlow(qc); };
   const fail = (e) => toast.error(errText(t, e));
-  const mayAssign = (r) => r.status === "requested" && roles.logistics && (roles.admin || r.logistics_key === me);
+  const mayAssign = (r) => r.status === "requested" && roles.logistics
+    && (roles.admin || r.logistics_key === me || r.logistics_key === ALL_KEY);
   // AXO withdraws a request while it waits — or after its split (2026-11-15),
   // until a brigadir confirms containers arriving (the server's rule too)
   const mayCancel = (r) => roles.axo && (r.status === "requested" || r.status === "assigned");
@@ -132,7 +136,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   // Opening the split is «opening» the request: its «new» mark goes.
   const openAssign = (r) => {
     setAssign(r);
-    if (isFresh(r, me)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
+    if (isFresh(r, me, logi)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
   };
   const menu = (r) => [
     mayCancel(r) && {
@@ -150,7 +154,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       {roles.axo && <Button icon={<Plus size={14} />} onClick={() => onNew()}>{t("cflow.req.new")}</Button>}
     </span>
   );
-  const ctx = { t, tl, now, me, mayAssign, openAssign, menu };
+  const ctx = { t, tl, now, me, logi, mayAssign, openAssign, menu };
 
   return (
     <div className="flex flex-col gap-4">
@@ -217,7 +221,13 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       )}
       {assign && (
         <AssignModal t={t} r={assign} onClose={() => setAssign(null)}
-          onDone={() => { setAssign(null); done(t("cflow.req.assigned")); }} onFail={fail} />
+          onDone={() => { setAssign(null); done(t("cflow.req.assigned")); }}
+          onFail={(e) => {
+            // sent to everybody and somebody else split it first: the dialog has nothing left to do
+            fail(e);
+            if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setAssign(null);
+            refreshFlow(qc);
+          }} />
       )}
       {cancel && (
         <CancelModal t={t} r={cancel} onClose={() => setCancel(null)}
@@ -283,8 +293,9 @@ function DayStatus({ t, list, loading }) {
   );
 }
 
-function RequestRow({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
-  const fresh = isFresh(r, me);
+function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
+  const fresh = isFresh(r, me, logi);
+  const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const given = {};
   for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
   const title = r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`).join(" · ");
@@ -295,8 +306,8 @@ function RequestRow({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
         style={{ color: "var(--text-1)", boxShadow: fresh ? "inset 3px 0 0 var(--brand)" : undefined }}>{span(r.hour)}</td>
       <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-1)" }} title={r.note || undefined}>
         <span className="inline-flex items-center gap-2">
-          {tl(r.logistics_name) || "—"}
-          {r.logistics_key !== me && <SeenMark r={r} t={t} now={now} />}
+          {toName(t, tl, r)}
+          {!addressee && <SeenMark r={r} t={t} now={now} />}
         </span>
       </td>
       {KEYS.map((k) => {
@@ -344,9 +355,9 @@ function RequestRow({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
   );
 }
 
-function RequestCard({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
-  const fresh = isFresh(r, me);
-  const addressee = r.logistics_key === me;
+function RequestCard({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
+  const fresh = isFresh(r, me, logi);
+  const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const items = menu(r).filter(Boolean);
   return (
     <article className="rounded-2xl overflow-hidden"
@@ -377,7 +388,7 @@ function RequestCard({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
           {addressee
             ? <span>{t("cflow.req.fromX").replace("{x}", tl(r.created_by) || "—")}</span>
-            : <span>{t("cflow.req.toX").replace("{x}", tl(r.logistics_name) || "—")}</span>}
+            : <span>{t("cflow.req.toX").replace("{x}", toName(t, tl, r))}</span>}
           {!addressee && <SeenMark r={r} t={t} now={now} />}
         </div>
         {r.note && (
@@ -527,18 +538,9 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
 
 // AXO: counts, the hour, and the logistics person it goes to.
 export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, onFail }) {
-  const { tl } = useTranslit();
-  const people = useQuery({
-    queryKey: ["cflow-logistics"],
-    queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
-  });
-  const list = people.data ?? [];
-  // two logistics people since 2026-11-16 (Nuriddin aka, Yusuf aka): the form
-  // starts on whoever this device sent to last, while that person is still listed
-  const [last, setLast] = usePersistentState("cflow_last_logistics", null);
-  const [who, setWho] = useState(null);
-  const remembered = list.some((p) => p.key === last) ? last : null;
-  const to = who ?? remembered ?? (list.length === 1 ? list[0].key : null);
+  // to every logistics person at once by default (2026-11-18) — or one of them
+  const pick = useLogisticsPick();
+  const { to } = pick;
   const [hour, setHour] = useState(() => initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
   const [counts, setCounts] = useState({});
   // The hour's figure from the «Konteynerlar» page fills the counts whenever
@@ -565,7 +567,7 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
       day, hour, logistics_key: to, note,
       counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
     }),
-    onSuccess: (...a) => { setLast(to); onDone(...a); },
+    onSuccess: (...a) => { pick.remember(); onDone(...a); },
     onError: onFail,
   });
   return (
@@ -577,11 +579,7 @@ export function NewRequestModal({ t, day, initialHour = null, onClose, onDone, o
         </>
       )}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label={t("cflow.req.to")} required
-          hint={!people.isLoading && !list.length ? t("cflow.req.noLogistics") : undefined}>
-          <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
-            options={list.map((p) => ({ value: p.key, label: tl(p.name) }))} />
-        </FormField>
+        <LogisticsField t={t} pick={pick} />
         <FormField label={t("cflow.req.forHour")} required hint={t("cflow.req.forHourHint")}>
           <StyledSelect value={hour} onChange={setHour}
             options={Array.from({ length: 32 }, (_, h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
@@ -812,16 +810,8 @@ function CancelModal({ t, r, onClose, onDone, onFail }) {
 // addressee gets ONE message for the lot. An hour whose counts need changing
 // is unticked here and made with «Yangi so'rov».
 export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
-  const { tl } = useTranslit();
-  const people = useQuery({
-    queryKey: ["cflow-logistics"],
-    queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
-  });
-  const list = people.data ?? [];
-  const [last, setLast] = usePersistentState("cflow_last_logistics", null);
-  const [who, setWho] = useState(null);
-  const remembered = list.some((p) => p.key === last) ? last : null;
-  const to = who ?? remembered ?? (list.length === 1 ? list[0].key : null);
+  const pick = useLogisticsPick();
+  const { to } = pick;
   const [off, setOff] = useState(() => new Set());      // the hours left out
   const picked = hours.filter((h) => !off.has(h.hour));
   const total = picked.reduce((s, h) => s + sum(h.counts), 0);
@@ -834,7 +824,7 @@ export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
     mutationFn: () => api.post("/api/container-flow/requests/bulk", {
       day, logistics_key: to, items: picked.map((h) => ({ hour: h.hour, counts: h.counts })),
     }),
-    onSuccess: () => { setLast(to); onDone(picked.length); },
+    onSuccess: () => { pick.remember(); onDone(picked.length); },
     onError: onFail,
   });
   return (
@@ -848,11 +838,7 @@ export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
         </>
       )}>
       <div className="flex flex-col gap-3">
-        <FormField label={t("cflow.req.to")} required
-          hint={!people.isLoading && !list.length ? t("cflow.req.noLogistics") : undefined}>
-          <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
-            options={list.map((p) => ({ value: p.key, label: tl(p.name) }))} />
-        </FormField>
+        <LogisticsField t={t} pick={pick} />
         {!hours.length ? (
           <p className="text-sm py-6 text-center" style={{ color: "var(--text-3)" }}>{t("cflow.prep.none")}</p>
         ) : (

@@ -195,6 +195,29 @@ containers row from production and move it into the new button».
   filled «Taqsimlash» button, and the «So'rovlar» tab carries the count
   (`isFresh` in `FlowRequests.jsx`). Only a waiting request is new; nobody
   else sees the mark.
+- **A request to EVERY logistics person — the first to split it takes it**
+  (2026-11-18, the operator: «AXO should send one request and this request
+  should go to both, and one of them should approve it, and that's all»; it
+  came out of a review: a request addressed to Nuriddin aka waited until it
+  was overdue if he was not on shift). `ALL_KEY` = `"*"` in
+  `logistics_key` (no migration — the column is free text): «Barcha
+  logistlarga» is the FIRST option on «Yangi so'rov», «Tayyor so'rovlar» and
+  AXO's approval of a brigadir's extra, and the default on every device
+  (`useLogisticsPick` / `LogisticsField` in `flowUtil.jsx`, stored under a new
+  key `cflow_last_logistics_v2`, so an older remembered person does not
+  override it; a named person can still be picked). While it waits it is on
+  every logistics person's list (`requests_of` takes `[me, "*"]`), «Yangi» for
+  each of them (`isFresh(r, me, logi)`; `/requests` says `logistics` — the
+  viewer is one of them) until the first of them opens it, and each gets the
+  Telegram message (`addressees`; `_tg_body` says «birinchi taqsimlagan
+  oladi»). **Whoever splits it first takes it** (`assign_request`, the row is
+  locked): its `logistics_key` / `logistics_name` become theirs, so from then
+  on it is an ordinary request of that person everywhere — the list, the
+  brigadir's card, the alerts, «Hisobot». The other one, a moment late, gets
+  `taken` («Bu so'rovni boshqa logist allaqachon taqsimladi»), the dialog
+  closes and the list refreshes; it is no longer on their list. A waiting
+  request to everybody that is past its deadline names «Barcha logistlarga»
+  in AXO's / the managers' alert (`to_text`).
 - **Three fixes after a review of the app** (2026-11-17; the operator asked
   what was wrong and what to add, and answered «Yes, build those 3»):
   - **The limit carries over** (`unit_limits`). It was counted hour by hour,

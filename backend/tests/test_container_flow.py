@@ -869,6 +869,73 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
+    # ── a request to every logistics person ──
+    def test_request_to_everybody_goes_to_whoever_splits_it_first(self):
+        from app.models import ProfilePermission, RoleProfile
+        from app.routers import staff
+        nk = self._logistics()
+        y = RoleProfile(role="idle-owner", name="Second Logist")
+        self.db.add(y)
+        self.db.flush()
+        yk = f"idle-owner:{y.id}"
+        self.db.add(ProfilePermission(profile_key=yk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        r = flow.create_request(self.db, DAY, 10, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        self.assertEqual((r.logistics_key, r.logistics_name), (flow.ALL_KEY, None))
+        # both see it as theirs
+        self.assertEqual([q["id"] for q in flow.requests_of(self.db, DAY, nk)], [r.id])
+        self.assertEqual([q["id"] for q in flow.requests_of(self.db, DAY, yk)], [r.id])
+        # both are told, once each, and the card says the first to split takes it
+        sent = []
+
+        def capture(db, key, nkey, params, **kw):
+            sent.append((key, nkey, kw["html_fn"]("uz")))
+            return {len(sent)}
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=capture):
+            flow.save_settings(self.db, [1], 2, True)
+            self.assertTrue(flow.notify_request(r.id, "new"))
+        self.assertEqual(sorted(k for k, _n, _h in sent), sorted([nk, yk]))
+        self.assertIn("birinchi taqsimlagan oladi", sent[0][2])
+        # somebody who is not a logistics person cannot take it
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 30}}],
+                                None, None, "Stranger", "idle-owner:99999", False)
+        self.assertEqual(cm.exception.code, "not_yours")
+        self.db.rollback()
+        # the first opener clears «new» for everybody
+        self.assertTrue(flow.mark_seen(self.db, r.id, yk))
+        self.db.commit()
+        # the second person splits it first: it is theirs from now on
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 30}}],
+                            None, None, "Second Logist", yk, False)
+        self.db.commit()
+        self.db.refresh(r)
+        self.assertEqual((r.status, r.logistics_key, r.logistics_name), ("assigned", yk, "Second Logist"))
+        # Nuriddin aka, a moment late, finds it taken — and it leaves his list
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.assign_request(self.db, r.id, [{"manager_id": 2, "counts": {"yellow": 30}}],
+                                None, None, "Nuriddin aka", nk, False)
+        self.assertEqual(cm.exception.code, "taken")
+        self.db.rollback()
+        self.assertEqual(flow.requests_of(self.db, DAY, nk), [])
+        self.assertEqual([q["id"] for q in flow.requests_of(self.db, DAY, yk)], [r.id])
+        # an approved extra can be sent to everybody too
+        e = flow.ask_extra(self.db, DAY, 12, 1, {"grey": 4}, "plan", "", "Brig", "supervisor:1", self.at(9))
+        _e, x = flow.approve_extra(self.db, e.id, {"grey": 4}, flow.ALL_KEY, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        self.assertEqual(x.logistics_key, flow.ALL_KEY)
+
+    def test_request_to_everybody_needs_somebody_to_go_to(self):
+        self._logistics()
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.create_request(self.db, DAY, 10, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+        self.assertEqual(cm.exception.code, "logistics")
+        self.db.rollback()
+
     # ── a brigadir's extra request ──
     def _extras(self):
         self.db.execute(flow.text("DELETE FROM container_extras"))

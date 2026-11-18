@@ -407,8 +407,12 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     """The day's requests. AXO and admins see every one; a logistics person
     who is not AXO sees only those addressed to them."""
     r = _roles(db, payload)
-    mine = None if (r["admin"] or r["axo"] or r["watch"]) else (_me(db, payload) or "—")
-    return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": _me(db, payload)}
+    me = _me(db, payload)
+    mine = None if (r["admin"] or r["axo"] or r["watch"]) else (me or "—")
+    # `logistics`: the viewer is one of the people a request «to everybody»
+    # goes to — such a request is new and theirs to split, as their own is
+    return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": me,
+            "logistics": bool(me) and me in {p["key"] for p in flow.logistics_people(db)}}
 
 
 @router.post("/seen/{request_id}")

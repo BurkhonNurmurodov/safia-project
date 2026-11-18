@@ -691,6 +691,13 @@ def readiness(db: Session, day: date) -> list:
 # person; that person splits it across brigadirs, which closes it.
 
 LOGISTICS_CAP = "page.view.container-logistics"
+# A request to EVERY logistics person at once (2026-11-18, the operator: «AXO
+# should send one request and this request should go to both, and one of them
+# should approve it, and that's all»). Its `logistics_key` stays ALL_KEY while
+# it waits; whoever splits it first takes it — `assign_request` writes their
+# key and name over it — and the other one finds it taken. A request no
+# longer waits on one person who is off shift.
+ALL_KEY = "*"
 
 
 def profile_name(db: Session, key: str) -> Optional[str]:
@@ -729,14 +736,14 @@ def create_request(db: Session, day: date, hour: int, logistics_key: str, counts
     if not (0 <= int(hour) <= 47):
         raise FlowError("hour")
     people = {p["key"]: p["name"] for p in logistics_people(db)}
-    if logistics_key not in people:
+    if logistics_key not in people and not (logistics_key == ALL_KEY and people):
         raise FlowError("logistics")
     c = _clean_counts(counts)
     if not c:
         raise FlowError("count")
     at = now()
     r = ContainerRequest(day=day, hour=int(hour), lines=c, note=(note or "").strip() or None,
-                         logistics_key=logistics_key, logistics_name=people[logistics_key],
+                         logistics_key=logistics_key, logistics_name=people.get(logistics_key),
                          status="requested", due_at=_due(hour_start(day, int(hour)), at),
                          created_at=at, created_by=actor, created_key=actor_key)
     db.add(r)
@@ -756,10 +763,14 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
     """The logistics person splits the request across brigadirs: `parts` is
     [{manager_id, counts}]. No type may go over what was asked; fewer needs a
     reason. Only the addressee (or an admin) may do it, once."""
-    r = _request(db, request_id)
+    r = _request(db, request_id)       # row-locked: of two people splitting at once, one wins
+    if r.status == "assigned" and r.logistics_key != actor_key:
+        raise FlowError("taken")        # somebody else split it first
     if r.status != "requested":
         raise FlowError("state")
-    if not is_admin and actor_key != r.logistics_key:
+    people = {p["key"]: p["name"] for p in logistics_people(db)}
+    to_all = r.logistics_key == ALL_KEY
+    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)):
         raise FlowError("not_yours")
     given: dict = {}
     clean = []
@@ -806,6 +817,10 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
         db.add(ContainerRequestPart(request_id=r.id, manager_id=mid, ctype=k, count=n))
     at = now()
     r.status, r.assigned_at, r.assigned_by, r.late = "assigned", at, actor, at > r.due_at
+    if to_all:
+        # sent to everybody — it is now the request of whoever took it
+        r.logistics_key = actor_key or ALL_KEY
+        r.logistics_name = people.get(actor_key) or actor
     return r
 
 
@@ -846,9 +861,12 @@ def mark_seen(db: Session, request_id: int, actor_key) -> bool:
     person it is addressed to clears it — an admin or AXO opening it does
     not. Returns whether anything changed."""
     r = db.get(ContainerRequest, request_id)
-    if r is None or not actor_key or r.logistics_key != actor_key or r.seen_at is not None:
+    if r is None or not actor_key or r.seen_at is not None:
         return False
-    r.seen_at = now()
+    if r.logistics_key != actor_key and not (
+            r.logistics_key == ALL_KEY and actor_key in {p["key"] for p in logistics_people(db)}):
+        return False
+    r.seen_at = now()       # sent to everybody: the first one who opens it
     return True
 
 
@@ -858,7 +876,8 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
     at = now()
     q = db.query(ContainerRequest).filter(ContainerRequest.day == day)
     if logistics_key is not None:
-        q = q.filter(ContainerRequest.logistics_key == logistics_key)
+        # theirs, and those sent to everybody (still waiting, or taken by them)
+        q = q.filter(ContainerRequest.logistics_key.in_([logistics_key, ALL_KEY]))
     rows = q.order_by(ContainerRequest.hour, ContainerRequest.id).all()
     parts: dict = {}
     if rows:
@@ -1251,16 +1270,20 @@ _CT_NAMES = {
 _TG = {
     "uz": {"new": "Yangi konteyner so'rovi", "cancelled": "Konteyner so'rovi bekor qilindi",
            "hour": "Soat", "due": "Muddat", "by": "Yubordi", "note": "Izoh", "why": "Sabab",
-           "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish"},
+           "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish",
+           "hint_all": "Barcha logistlarga yuborildi — birinchi taqsimlagan oladi.", "all": "Barcha logistlarga"},
     "uz_cyrl": {"new": "Янги контейнер сўрови", "cancelled": "Контейнер сўрови бекор қилинди",
                 "hour": "Соат", "due": "Муддат", "by": "Юборди", "note": "Изоҳ", "why": "Сабаб",
-                "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш"},
+                "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш",
+                "hint_all": "Барча логистларга юборилди — биринчи тақсимлаган олади.", "all": "Барча логистларга"},
     "ru": {"new": "Новая заявка на контейнеры", "cancelled": "Заявка на контейнеры отменена",
            "hour": "Час", "due": "Срок", "by": "Отправил(а)", "note": "Комментарий", "why": "Причина",
-           "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку"},
+           "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку",
+           "hint_all": "Отправлено всем логистам — берёт тот, кто распределит первым.", "all": "Всем логистам"},
     "en": {"new": "New container request", "cancelled": "Container request cancelled",
            "hour": "Hour", "due": "Due", "by": "Sent by", "note": "Note", "why": "Reason",
-           "hint": "Split it across the brigadirs.", "btn": "📦 Open the request"},
+           "hint": "Split it across the brigadirs.", "btn": "📦 Open the request",
+           "hint_all": "Sent to every logistics person — whoever splits it first takes it.", "all": "Every logistics person"},
 }
 NOTIFY_PAGE = "/containers/flow"
 
@@ -1289,7 +1312,7 @@ def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
         rows += [f"{t['due']}: <b>{r.due_at.astimezone(TZ):%H:%M}</b>", f"{t['by']}: {escape(name)}"]
         if r.note:
             rows.append(f"{t['note']}: {escape(transliterate_text(r.note, lang) or r.note)}")
-        rows += ["", f"<i>{escape(t['hint'])}</i>"]
+        rows += ["", f"<i>{escape(t['hint_all'] if r.logistics_key == ALL_KEY else t['hint'])}</i>"]
     elif r.cancel_note:
         rows.append(f"{t['why']}: {escape(r.cancel_note)}")
     return "\n".join(rows)
@@ -1305,6 +1328,20 @@ def _tg_markup(lang: str):
     return kb
 
 
+def addressees(db: Session, key: str) -> list:
+    """Whom a request's message goes to: its logistics person, or — sent to
+    everybody — every logistics person."""
+    return [p["key"] for p in logistics_people(db)] if key == ALL_KEY else [key]
+
+
+def to_text(r: ContainerRequest, lang: str) -> str:
+    """The addressee as words: a name, or «every logistics person»."""
+    from app.translit import transliterate
+    if r.logistics_key == ALL_KEY:
+        return (_TG.get(lang) or _TG["uz"])["all"]
+    return transliterate(r.logistics_name or "", lang)
+
+
 def notify_request(request_id: int, kind: str) -> bool:
     """Tell the addressee a request came (`new`) or went (`cancelled`): one
     bell row + a DM with a button to the page. Only while the «Sozlamalar»
@@ -1318,14 +1355,16 @@ def notify_request(request_id: int, kind: str) -> bool:
         if r is None or (kind == "new" and r.status != "requested"):
             return False
         from app.routers.staff import notify_profile
-        notify_profile(
-            db, r.logistics_key, f"container_request_{kind}",
-            {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
-             "due": f"{r.due_at.astimezone(TZ):%H:%M}", "by": r.created_by or "—",
-             "note": r.note or r.cancel_note or ""},
-            type="warning" if kind == "cancelled" else "info",
-            html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_tg_markup,
-            subject=("page", NOTIFY_PAGE))
+        done: set = set()
+        for key in addressees(db, r.logistics_key):
+            done |= notify_profile(
+                db, key, f"container_request_{kind}",
+                {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
+                 "due": f"{r.due_at.astimezone(TZ):%H:%M}", "by": r.created_by or "—",
+                 "note": r.note or r.cancel_note or ""},
+                type="warning" if kind == "cancelled" else "info",
+                html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_tg_markup,
+                subject=("page", NOTIFY_PAGE), skip_accounts=done) or set()
         db.commit()
         return True
     except Exception:
@@ -1597,10 +1636,13 @@ def notify_requests(request_ids: list) -> bool:
             return "\n".join(lines)
 
         from app.routers.staff import notify_profile
-        notify_profile(
-            db, rows[0].logistics_key, "container_requests_new",
-            {"n": len(rows), "hours": ", ".join(hour_span(r.hour) for r in rows), "by": rows[0].created_by or "—"},
-            type="info", html_fn=body, markup_fn=_tg_markup, subject=("page", NOTIFY_PAGE))
+        done: set = set()
+        for key in addressees(db, rows[0].logistics_key):
+            done |= notify_profile(
+                db, key, "container_requests_new",
+                {"n": len(rows), "hours": ", ".join(hour_span(r.hour) for r in rows), "by": rows[0].created_by or "—"},
+                type="info", html_fn=body, markup_fn=_tg_markup, subject=("page", NOTIFY_PAGE),
+                skip_accounts=done) or set()
         db.commit()
         return True
     except Exception:
@@ -1785,11 +1827,11 @@ def alert_overdue(db: Session, at: Optional[datetime] = None) -> int:
         def body(lang, rr=r):
             return _alert_body("overdue", lang, [
                 ("hour", hour_span(rr.hour)), ("asked", counts_text(rr.lines or {}, lang)),
-                ("to", transliterate(rr.logistics_name or "", lang)),
+                ("to", to_text(rr, lang)),
                 ("due", f"{rr.due_at.astimezone(TZ):%H:%M}")])
         sent += _send_alert(db, keys, "container_request_overdue",
                             {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
-                             "by": r.logistics_name or "—"}, body)
+                             "by": to_text(r, "uz") or "—"}, body)
         db.commit()
     return sent
 
