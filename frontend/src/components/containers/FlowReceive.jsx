@@ -7,7 +7,7 @@
 // docs/containers-flow.md.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Clock, PackageCheck, PencilLine } from "lucide-react";
+import { AlertTriangle, Check, Clock, PackageCheck, PackagePlus, PencilLine } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import FormField from "../ui/FormField";
@@ -17,7 +17,10 @@ import { SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk, refreshFlow, LIVE_LIST } from "./flowUtil";
+import {
+  KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk, refreshFlow, LIVE_LIST, useExtras, canAskFor,
+} from "./flowUtil";
+import { AskExtraModal, ExtrasList } from "./FlowExtras";
 
 const REFRESH_MS = 60_000;
 
@@ -29,15 +32,28 @@ function ReceiptChip({ x, t }) {
     : <Chip tone="ok" icon={Check}>{t("cflow.rcv.st.all")}</Chip>;
 }
 
-export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onOpened }) {
+// `canReceive` reads the receipts (a brigadir's «Qabul», the managers
+// watching); `extra` is the brigadir's EXTRA request (2026-11-18): `ask` may
+// ask (their own unit; an admin names one), `read` sees the asks.
+export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onOpened, canReceive = true,
+  extra = { ask: false, read: false, unit: null } }) {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["cflow-receipts", day],
     queryFn: () => api.get("/api/container-flow/receipts", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
+    enabled: canReceive,
     ...LIVE_LIST,
   });
+  const ex = useExtras(day, extra.read);
+  const [asking, setAsking] = useState(false);
+  const withdraw = useMutation({
+    mutationFn: (e) => api.post(`/api/container-flow/extras/${e.id}/cancel`),
+    onSuccess: () => { toast.success(t("cflow.ex.withdrawn")); refreshFlow(qc); },
+    onError: (e) => { toast.error(errText(t, e)); refreshFlow(qc); },
+  });
+  const askOpen = canAskFor(day);
   // a card whose request was deleted or cancelled meanwhile says so and leaves the list
   const failed = (e) => {
     const code = e?.response?.data?.detail;
@@ -69,6 +85,39 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
   if (q.isError) {
     return <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, q.error)} />;
   }
+  const extras = extra.read ? (
+    <ExtrasList t={t} data={ex.data} loading={ex.isLoading} showUnit={ex.data?.unit == null}
+      canCancel={() => extra.ask} busyId={withdraw.isPending ? withdraw.variables?.id : null}
+      onCancel={(e) => withdraw.mutate(e)} />
+  ) : null;
+  const askModal = asking && (
+    <AskExtraModal t={t} day={day} unit={extra.unit} isAdmin={isAdmin} onClose={() => setAsking(false)}
+      onDone={() => { setAsking(false); toast.success(t("cflow.ex.sent")); refreshFlow(qc); }}
+      onFail={(e) => toast.error(errText(t, e))} />
+  );
+  // «Need more?» — always the same strip, so asking never moves the cards under it
+  const askStrip = extra.ask ? (
+    <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 pb-3.5 sm:pb-4 -mt-1">
+      <span className="text-[13px] flex-1 min-w-[180px]" style={{ color: "var(--text-2)" }}>
+        {t(askOpen ? "cflow.ex.prompt" : "cflow.ex.dayOver")}
+      </span>
+      <Button size="lg" variant="secondary" icon={<PackagePlus size={15} />} disabled={!askOpen} onClick={() => setAsking(true)}>
+        {t("cflow.ex.ask")}
+      </Button>
+    </div>
+  ) : null;
+  if (!canReceive) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={PackagePlus} title={t("cflow.ex.title")} size="lg" subtitle={t("cflow.ex.titleSub")} />
+          {askStrip}
+        </div>
+        {extras}
+        {askModal}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
@@ -78,6 +127,7 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
             // the slot stays filled once there is a list: a confirm never moves the cards under it
             : waiting > 0 ? <Chip tone="warn">{t("cflow.rcv.waiting").replace("{n}", waiting)}</Chip>
             : <Chip tone="ok" icon={Check}>{t("cflow.rcv.allDone")}</Chip>} />
+        {askStrip}
       </div>
 
       {q.isLoading ? (
@@ -139,11 +189,15 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
         </div>
       )}
 
+      {/* the asks sit under the receipts: one sent never moves a card a brigadir confirms */}
+      {extras}
+
       {edit && (
         <ReceiveModal t={t} x={edit} onClose={() => setEdit(null)}
           onDone={() => { setEdit(null); toast.success(t("cflow.rcv.saved")); refreshFlow(qc); }}
           onFail={(e) => { setEdit(null); failed(e); }} />
       )}
+      {askModal}
     </div>
   );
 }

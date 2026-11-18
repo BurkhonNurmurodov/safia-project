@@ -520,6 +520,24 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новые заявки на контейнеры: {n}", "{hours} | Отправил(а): {by}"),
         "en": ("New container requests: {n}", "{hours} | Sent by: {by}"),
     },
+    "container_extra_new": {
+        "uz": ("Brigadirdan qo'shimcha so'rov: {hour}", "{name} | {counts}"),
+        "uz_cyrl": ("Бригадирдан қўшимча сўров: {hour}", "{name} | {counts}"),
+        "ru": ("Бригадир просит доп. контейнеры: {hour}", "{name} | {counts}"),
+        "en": ("A brigadir asks for extra containers: {hour}", "{name} | {counts}"),
+    },
+    "container_extra_approved": {
+        "uz": ("Qo'shimcha so'rovingiz tasdiqlandi: {hour}", "Tasdiqlandi: {counts}"),
+        "uz_cyrl": ("Қўшимча сўровингиз тасдиқланди: {hour}", "Тасдиқланди: {counts}"),
+        "ru": ("Ваша доп. заявка одобрена: {hour}", "Одобрено: {counts}"),
+        "en": ("Your extra request was approved: {hour}", "Approved: {counts}"),
+    },
+    "container_extra_rejected": {
+        "uz": ("Qo'shimcha so'rovingiz rad etildi: {hour}", "Sabab: {note}"),
+        "uz_cyrl": ("Қўшимча сўровингиз рад этилди: {hour}", "Сабаб: {note}"),
+        "ru": ("Ваша доп. заявка отклонена: {hour}", "Причина: {note}"),
+        "en": ("Your extra request was refused: {hour}", "Reason: {note}"),
+    },
     "container_short_split": {
         "uz": ("Kam taqsimlandi: {hour}", "Taqsimlangan: {counts} | Logistika: {by}"),
         "uz_cyrl": ("Кам тақсимланди: {hour}", "Тақсимланган: {counts} | Логистика: {by}"),

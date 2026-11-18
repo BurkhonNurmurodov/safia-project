@@ -35,8 +35,9 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
-  refreshFlow, LIVE_LIST,
+  refreshFlow, LIVE_LIST, useExtras,
 } from "./flowUtil";
+import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
 const REFRESH_MS = 60_000;
 const LEAD_MIN = 60;            // a request is due an hour before its hour
@@ -108,6 +109,10 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   });
   const [assign, setAssign] = useState(null);
   const [cancel, setCancel] = useState(null);
+  // a brigadir's EXTRA asks (2026-11-18): AXO approves or rejects them under the requests
+  const extras = useExtras(day, roles.axo || roles.watch);
+  const [approve, setApprove] = useState(null);
+  const [reject, setReject] = useState(null);
   // an admin deletes a request outright — any state (2026-11-15, the operator)
   const [del, setDel] = useState(null);
   const delM = useMutation({
@@ -194,6 +199,22 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
         </TableCard>
       </div>
 
+      {/* below the requests: an ask arriving never moves the rows above */}
+      {(roles.axo || roles.watch) && (
+        <ExtrasPanel t={t} data={extras.data} loading={extras.isLoading} canDecide={roles.axo}
+          onApprove={setApprove} onReject={setReject} />
+      )}
+
+      {approve && (
+        <ApproveExtraModal t={t} e={approve} onClose={() => setApprove(null)}
+          onDone={() => { setApprove(null); done(t("cflow.ex.approved")); }}
+          onFail={(e) => { fail(e); refreshFlow(qc); }} />
+      )}
+      {reject && (
+        <RejectExtraModal t={t} e={reject} onClose={() => setReject(null)}
+          onDone={() => { setReject(null); done(t("cflow.ex.rejected")); }}
+          onFail={(e) => { fail(e); refreshFlow(qc); }} />
+      )}
       {assign && (
         <AssignModal t={t} r={assign} onClose={() => setAssign(null)}
           onDone={() => { setAssign(null); done(t("cflow.req.assigned")); }} onFail={fail} />
@@ -292,6 +313,7 @@ function RequestRow({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
       <td className="px-3 py-2 text-center">
         <span className="inline-flex items-center gap-1">
           {fresh && <Chip tone="fresh" icon={Sparkles} title={t("cflow.req.freshHint")}>{t("cflow.req.fresh")}</Chip>}
+          <ExtraTag r={r} t={t} />
           <StateChip r={r} t={t} />
           {r.late && <Chip tone="bad" title={t("cflow.late")}>{t("cflow.req.lateShort")}</Chip>}
         </span>
@@ -339,6 +361,7 @@ function RequestCard({ r, t, tl, now, me, mayAssign, openAssign, menu }) {
             <div className="text-[16px] font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>{span(r.hour)}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {fresh && <Chip tone="fresh" icon={Sparkles}>{t("cflow.req.fresh")}</Chip>}
+              <ExtraTag r={r} t={t} />
               <StateChip r={r} t={t} />
               {r.late && <Chip tone="bad" title={t("cflow.late")}>{t("cflow.req.lateShort")}</Chip>}
             </div>
@@ -609,6 +632,8 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   });
   const hintRows = hint.data?.rows;
   const limits = hint.data?.limits ?? {};
+  // a brigadir's approved EXTRA goes to that brigadir only — the server's rule too
+  const extraFor = hint.data?.extra_for ?? r.extra?.manager_id ?? null;
   const leftOf = (unit) => limits[String(unit)]?.left ?? {};
   const givenOf = (unit) => limits[String(unit)]?.given ?? {};
   const capOf = (unit, k) => Math.min(r.lines[k], leftOf(unit)[k] ?? 0);
@@ -679,6 +704,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
           <Wand2 size={14} className="shrink-0" style={{ color: hinted ? "var(--brand-text)" : "var(--text-3)" }} />
           <span className="flex-1 min-w-0">
             {hint.isLoading ? t("cflow.split.loading")
+              : extraFor != null ? t("cflow.split.extra").replace("{x}", tl(r.extra?.unit) || "—")
               : hinted ? t(touched ? "cflow.split.edited" : "cflow.split.filled")
               : t("cflow.split.none")}
           </span>
@@ -697,6 +723,8 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                     const left = Object.fromEntries(types.map((k) => [k, capOf(row.unit, k)]));
                     const before = countsText(t, Object.fromEntries(types.map((k) => [k, givenOf(row.unit)[k] ?? 0])));
                     if (!Object.values(left).some(Boolean)) return t("cflow.lim.noneLeft");
+                    // an approved extra has no plan limit — what AXO approved is the whole of it
+                    if (extraFor != null) return t("cflow.ex.approvedRow").replace("{x}", countsText(t, left));
                     return t("cflow.lim.row").replace("{x}", countsText(t, left))
                       + (before ? ` ${t("cflow.lim.before").replace("{x}", before)}` : "");
                   })()}>
@@ -725,12 +753,14 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
             </div>
           </div>
         ))}
-        <div>
-          <Button variant="secondary" icon={<Plus size={14} />}
-            onClick={() => { setTouched(true); setRows((rs) => [...rs, blankRow()]); }}>
-            {t("cflow.req.addRow")}
-          </Button>
-        </div>
+        {extraFor == null && (
+          <div>
+            <Button variant="secondary" icon={<Plus size={14} />}
+              onClick={() => { setTouched(true); setRows((rs) => [...rs, blankRow()]); }}>
+              {t("cflow.req.addRow")}
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
           {types.map((k) => {
             const left = r.lines[k] - (given[k] ?? 0);

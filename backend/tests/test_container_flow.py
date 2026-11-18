@@ -840,6 +840,163 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list
 
+    # ── a brigadir's extra request ──
+    def _extras(self):
+        self.db.execute(flow.text("DELETE FROM container_extras"))
+        self.db.commit()
+        return self._logistics()
+
+    def _ask(self, mid=1, hour=10, counts=None, reason="plan", comment="", at=None):
+        e = flow.ask_extra(self.db, DAY, hour, mid, counts or {"yellow": 8}, reason, comment,
+                           "Brig One", f"supervisor:{mid}", at or self.at(9))
+        self.db.commit()
+        return e
+
+    def test_extra_ask_is_checked(self):
+        self._extras()
+        for kw, code in ((dict(at=self.at(11)), "hour"),                 # the hour is over
+                         (dict(hour=48), "hour"), (dict(mid=999), "unit"),
+                         (dict(counts={"yellow": 0}), "count"), (dict(counts={"pallet": 3}), "count"),
+                         (dict(reason="why"), "reason"), (dict(reason="other", comment=" "), "comment")):
+            with self.assertRaises(flow.FlowError, msg=kw) as cm:
+                self._ask(**kw)
+            self.assertEqual(cm.exception.code, code, kw)
+            self.db.rollback()
+        e = self._ask(reason="other", comment="  yangi mahsulot ")
+        self.assertEqual((e.status, e.lines, e.comment), ("asked", {"yellow": 8}, "yangi mahsulot"))
+        with self.assertRaises(flow.FlowError) as cm:                     # one waiting ask per unit and hour
+            self._ask(counts={"grey": 2})
+        self.assertEqual(cm.exception.code, "extra_dup")
+        self.db.rollback()
+        self._ask(hour=11)                                                # another hour is another ask
+
+    def test_extra_goes_past_the_limit_to_its_unit_only(self):
+        nk = self._extras()
+        self.hours[1] = {10: {"yellow": 10}}                              # unit 1 needs 10 at 10:00
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 10}, "", "axo", "guest:1")
+        flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 10}}], None, None, "n", nk, False)
+        self.db.commit()
+        self.assertEqual(flow.unit_limits(self.db, DAY, 10)[1]["left"], {"yellow": 0})   # the plan is used up
+        e = self._ask(counts={"yellow": 8, "grey": 2})
+        with self.assertRaises(flow.FlowError) as cm:                     # never more than was asked
+            flow.approve_extra(self.db, e.id, {"yellow": 9}, nk, "", "Dilafruz", "guest:1")
+        self.assertEqual(cm.exception.code, "over_ask")
+        self.db.rollback()
+        with self.assertRaises(flow.FlowError) as cm:                     # a logistics person must be named
+            flow.approve_extra(self.db, e.id, {"yellow": 6}, "nobody:1", "", "Dilafruz", "guest:1")
+        self.assertEqual(cm.exception.code, "logistics")
+        self.db.rollback()
+        e, x = flow.approve_extra(self.db, e.id, {"yellow": 6}, nk, " ertaga ko'proq ", "Dilafruz", "guest:1")
+        self.db.commit()
+        self.assertEqual((e.status, e.approved, e.request_id, e.decision_note), ("approved", {"yellow": 6}, x.id, "ertaga ko'proq"))
+        self.assertEqual((x.status, x.lines, x.hour, x.logistics_key), ("requested", {"yellow": 6}, 10, nk))
+        with self.assertRaises(flow.FlowError) as cm:                     # answered once
+            flow.reject_extra(self.db, e.id, "yo'q", "Dilafruz", "guest:1")
+        self.assertEqual(cm.exception.code, "state")
+        self.db.rollback()
+        row, = flow.extras_of(self.db, DAY, 1)
+        self.assertEqual((row["stage"], row["request"]["id"], row["unit"]), ("logistics", x.id, self.db.get(Manager, 1).name))
+        listed = {q["id"]: q for q in flow.requests_of(self.db, DAY)}
+        self.assertEqual((listed[x.id]["extra"]["manager_id"], listed[r.id]["extra"]), (1, None))
+        # the extra is not the hour's own request: «Tayyor so'rovlar» still counts only the plain one
+        h10 = next(h for h in flow.prepared(self.db, DAY, self.at(9)) if h["hour"] == 10)
+        self.assertEqual(h10["asked"], {"yellow": 10})
+        with self.assertRaises(flow.FlowError) as cm:                     # to its own unit only
+            flow.assign_request(self.db, x.id, [{"manager_id": 2, "counts": {"yellow": 6}}], None, None, "n", nk, False)
+        self.assertEqual(cm.exception.code, "extra_unit")
+        self.db.rollback()
+        flow.assign_request(self.db, x.id, [{"manager_id": 1, "counts": {"yellow": 6}}], None, None, "n", nk, False)
+        self.db.commit()                                                  # past the limit, by what AXO approved
+        lim = flow.unit_limits(self.db, DAY, 10)[1]
+        self.assertEqual((lim["given"], lim["left"]), ({"yellow": 10}, {"yellow": 0}))    # the plan's room is untouched
+        self.assertEqual(flow.extras_of(self.db, DAY)[0]["stage"], "split")
+        flow.receive(self.db, x.id, 1, None, None, None, "Brig One")
+        self.db.commit()
+        row, = flow.extras_of(self.db, DAY)
+        self.assertEqual((row["stage"], row["received"]), ("received", {"yellow": 6}))
+
+    def test_extra_rejected_cancelled_and_withdrawn(self):
+        nk = self._extras()
+        a = self._ask()
+        with self.assertRaises(flow.FlowError) as cm:                     # a no always carries its reason
+            flow.reject_extra(self.db, a.id, "  ", "Dilafruz", "guest:1")
+        self.assertEqual(cm.exception.code, "note")
+        self.db.rollback()
+        flow.reject_extra(self.db, a.id, "Zaxira yo'q", "Dilafruz", "guest:1")
+        self.db.commit()
+        b = self._ask(mid=2)
+        with self.assertRaises(flow.FlowError) as cm:                     # a brigadir withdraws only their own
+            flow.cancel_extra(self.db, b.id, 1, "Brig One")
+        self.assertEqual(cm.exception.code, "not_yours")
+        self.db.rollback()
+        flow.cancel_extra(self.db, b.id, 2, "Brig Two")
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.cancel_extra(self.db, a.id, 1, "Brig One")               # already answered
+        self.assertEqual(cm.exception.code, "state")
+        self.db.rollback()
+        c = self._ask(hour=12)
+        c, x = flow.approve_extra(self.db, c.id, {"yellow": 8}, nk, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        flow.cancel_request(self.db, x.id, "xato", "Dilafruz")            # AXO withdrew the request it became
+        self.db.commit()
+        stages = {e["id"]: e["stage"] for e in flow.extras_of(self.db, DAY)}
+        self.assertEqual((stages[a.id], stages[b.id], stages[c.id]), ("rejected", "cancelled", "withdrawn"))
+        d = self._ask(hour=13)
+        d, y = flow.approve_extra(self.db, d.id, {"yellow": 8}, nk, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        flow.delete_request(self.db, y.id)                                 # an admin deleted it outright
+        self.db.commit()
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(flow.ContainerExtra, d.id).request_id)
+        self.assertEqual({e["id"]: e["stage"] for e in flow.extras_of(self.db, DAY)}[d.id], "withdrawn")
+        rep = flow.extras_report(self.db, DAY, DAY)
+        self.assertEqual({k: rep["summary"][k] for k in ("asks", "approved", "rejected", "waiting", "cancelled",
+                                                         "asked_n", "approved_n")},
+                         {"asks": 3, "approved": 2, "rejected": 1, "waiting": 0, "cancelled": 1,
+                          "asked_n": 24, "approved_n": 16})
+        u1, = rep["units"]
+        self.assertEqual((u1["manager_id"], u1["asks"], u1["top_reason"]), (1, 3, "plan"))
+        self.assertEqual(rep["reasons"]["plan"], 3)
+
+    def test_extra_notices(self):
+        from app.models import ProfilePermission, RoleProfile
+        from app.routers import staff
+        nk = self._extras()
+        ax = RoleProfile(role="idle-owner", name="Dilafruz")
+        self.db.add(ax)
+        self.db.flush()
+        axo = f"idle-owner:{ax.id}"
+        self.db.add(ProfilePermission(profile_key=axo, capability="page.view.container-flow", mode="grant", scope="all"))
+        self.db.commit()
+        e = self._ask(counts={"yellow": 8}, reason="damaged")
+        sent = []
+
+        def capture(db, key, nkey, params, **kw):
+            sent.append((key, nkey, kw["html_fn"]("uz"), kw["markup_fn"]("uz").to_dict()))
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=capture):
+            self.assertEqual(flow.notify_extra_new(e.id), 1)              # ON unless switched off
+            key, nkey, html, kb = sent[-1]
+            self.assertEqual((key, nkey), (axo, "container_extra_new"))
+            self.assertIn("Konteyner yaroqsiz", html)
+            self.assertIn("tab=requests", kb["inline_keyboard"][0][0]["web_app"]["url"])
+            flow.save_settings(self.db, [1], 2, notify_extra=False)
+            self.assertEqual(flow.notify_extra_new(e.id), 0)
+            flow.save_settings(self.db, [1], 2, notify_brigadirs=True)
+            flow.approve_extra(self.db, e.id, {"yellow": 5}, nk, "", "Dilafruz", axo)
+            self.db.commit()
+            self.assertFalse(flow.notify_extra_decided(e.id))              # the brigadir cannot open it yet
+            self.db.add(ProfilePermission(profile_key="supervisor:1", capability=flow.EXTRA_CAP,
+                                          mode="grant", scope="all"))
+            self.db.commit()
+            self.assertTrue(flow.notify_extra_decided(e.id))
+            key, nkey, html, kb = sent[-1]
+            self.assertEqual((key, nkey), ("supervisor:1", "container_extra_approved"))
+            self.assertIn("5", html)
+            self.assertIn("tab=receive", kb["inline_keyboard"][0][0]["web_app"]["url"])
+        self.assertEqual(len(sent), 2)
+
     # ── AXO's stock ──
     def _stock(self):
         nk = self._logistics()
@@ -997,7 +1154,7 @@ class PageKeyTest(unittest.TestCase):
     def test_page_key_and_capability(self):
         from app import capabilities
         from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
-        for key in ("container-flow", "container-logistics", "container-receive"):
+        for key in ("container-flow", "container-logistics", "container-receive", "container-extra"):
             self.assertIn(key, PAGE_KEYS)
             self.assertEqual(DEFAULT_PAGE_ACCESS[key], ["supervisor"] if key == "container-receive" else [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
@@ -1017,12 +1174,14 @@ class PageKeyTest(unittest.TestCase):
                 "admin" if verify_admin in deps else "axo" if r.PAGE in deps
                 else "logistics" if r.LOGI in deps else "any" if r.ANY in deps
                 else "receive" if r.RECV in deps else "receive+watch" if r.RECW in deps
+                else "extra" if r.EXT in deps else "extra+read" if r.EXTR in deps
                 else "who" if r.WHO in deps else "?")
         p = "/api/container-flow"
         for k in [("POST", f"{p}/issue"), ("POST", f"{p}/batches/{{batch_id}}/settle"),
                   ("POST", f"{p}/requests"), ("POST", f"{p}/requests/{{request_id}}/cancel"),
                   ("GET", f"{p}/logistics"), ("GET", f"{p}/requests/prepared"),
-                  ("POST", f"{p}/requests/bulk"), ("POST", f"{p}/stock")]:
+                  ("POST", f"{p}/requests/bulk"), ("POST", f"{p}/stock"),
+                  ("POST", f"{p}/extras/{{extra_id}}/approve"), ("POST", f"{p}/extras/{{extra_id}}/reject")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/batches/{{batch_id}}/deliver"), ("POST", f"{p}/batches/{{batch_id}}/return"),
                   ("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
@@ -1030,11 +1189,15 @@ class PageKeyTest(unittest.TestCase):
             self.assertEqual(guard[k], "logistics", k)
         self.assertEqual(guard[("POST", f"{p}/requests/{{request_id}}/receive")], "receive")
         self.assertEqual(guard[("GET", f"{p}/receipts")], "receive+watch")
+        # a brigadir asks and withdraws; everybody on the page reads
+        self.assertEqual(guard[("POST", f"{p}/extras")], "extra")
+        self.assertEqual(guard[("POST", f"{p}/extras/{{extra_id}}/cancel")], "extra")
+        self.assertEqual(guard[("GET", f"{p}/extras")], "extra+read")
         self.assertEqual(guard[("GET", f"{p}/hour-need")], "any")
         # watching opens no write: every POST / PUT but the Excel export keeps a door the watch key is not on
         for (method, path), g in guard.items():
             if method in ("POST", "PUT") and not path.endswith("/report.xlsx"):
-                self.assertNotIn(g, ("any", "who", "receive+watch"), (method, path))
+                self.assertNotIn(g, ("any", "who", "receive+watch", "extra+read"), (method, path))
         self.assertEqual(guard[("GET", f"{p}/settings")], "who")
         for k in [("GET", f"{p}/board"), ("GET", f"{p}/requests"), ("GET", f"{p}/report"), ("GET", f"{p}/analytics"),
                   ("GET", f"{p}/teams"), ("GET", f"{p}/batches/{{batch_id}}/history"),

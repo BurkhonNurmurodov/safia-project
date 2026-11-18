@@ -30,8 +30,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerEvent,
-                        ContainerRequest, ContainerRequestPart, ContainerShare, ContainerStockMove,
-                        Manager, ProfilePermission, RoleProfile)
+                        ContainerExtra, ContainerRequest, ContainerRequestPart, ContainerShare,
+                        ContainerStockMove, Manager, ProfilePermission, RoleProfile)
 from app.services import hourly_containers
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,11 @@ _NOTIFY_BRIG_KEY = "container_flow.notify_brigadirs"
 # admin switches it on (nobody has told them yet).
 _NOTIFY_AXO_KEY = "container_flow.notify_axo"
 _NOTIFY_SM_KEY = "container_flow.notify_managers"
+# A brigadir's EXTRA request, to AXO (2026-11-18) — ON unless switched off.
+# Nothing reaches AXO before brigadirs can ask: an admin's own test ask is
+# never sent (the router decides), and the page key `container-extra` is
+# admin-only until the operator opens it.
+_NOTIFY_EXTRA_KEY = "container_flow.notify_extra"
 _LOCK_KEY = 8_140_573_112_014_001   # distinct from every other advisory key
 
 
@@ -89,7 +94,7 @@ def team_key(work_center, group, rest) -> str:
 def settings(db: Session) -> dict:
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
         AppSetting.key.in_([_UNITS_KEY, _TOPUP_KEY, _NOTIFY_KEY, _NOTIFY_BRIG_KEY,
-                            _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY])).all()}
+                            _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY, _NOTIFY_EXTRA_KEY])).all()}
     try:
         units = [int(x) for x in json.loads(rows.get(_UNITS_KEY) or "[]")]
     except (ValueError, TypeError):
@@ -101,12 +106,13 @@ def settings(db: Session) -> dict:
     return {"units": units, "topup_min": topup, "notify": rows.get(_NOTIFY_KEY) == "1",
             "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1",
             "notify_axo": rows.get(_NOTIFY_AXO_KEY, "1") == "1",
-            "notify_managers": rows.get(_NOTIFY_SM_KEY) == "1"}
+            "notify_managers": rows.get(_NOTIFY_SM_KEY) == "1",
+            "notify_extra": rows.get(_NOTIFY_EXTRA_KEY, "1") == "1"}
 
 
 def save_settings(db: Session, units: list, topup_min: int, notify: Optional[bool] = None,
                   notify_brigadirs: Optional[bool] = None, notify_axo: Optional[bool] = None,
-                  notify_managers: Optional[bool] = None) -> dict:
+                  notify_managers: Optional[bool] = None, notify_extra: Optional[bool] = None) -> dict:
     """A switch given as None stays as it is (a tab on an older bundle saves
     without it)."""
     vals = {_UNITS_KEY: json.dumps(sorted({int(x) for x in units})),
@@ -119,6 +125,8 @@ def save_settings(db: Session, units: list, topup_min: int, notify: Optional[boo
         vals[_NOTIFY_AXO_KEY] = "1" if notify_axo else "0"
     if notify_managers is not None:
         vals[_NOTIFY_SM_KEY] = "1" if notify_managers else "0"
+    if notify_extra is not None:
+        vals[_NOTIFY_EXTRA_KEY] = "1" if notify_extra else "0"
     for k, v in vals.items():
         row = db.get(AppSetting, k)
         if row is None:
@@ -771,16 +779,23 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
         raise FlowError("count")
     if any(given.get(k, 0) > n for k, n in r.lines.items()):
         raise FlowError("over")
-    # no brigadir past their limit for the hour (`unit_limits`)
-    lim = unit_limits(db, r.day, r.hour, r.id)
-    per_unit: dict = {}
-    for mid, c in clean:
-        for k, n in c.items():
-            per_unit.setdefault(mid, {})[k] = per_unit.get(mid, {}).get(k, 0) + n
-    for mid, c in per_unit.items():
-        left = (lim.get(mid) or {}).get("left", {})
-        if any(n > left.get(k, 0) for k, n in c.items()):
-            raise FlowError("limit")
+    extra = extra_unit_of(db, r.id)
+    if extra is not None:
+        # a brigadir's EXTRA, approved by AXO: to that unit only, and past its
+        # limit by exactly what AXO approved (the request's own counts)
+        if any(mid != extra for mid, _c in clean):
+            raise FlowError("extra_unit")
+    else:
+        # no brigadir past their limit for the hour (`unit_limits`)
+        lim = unit_limits(db, r.day, r.hour, r.id)
+        per_unit: dict = {}
+        for mid, c in clean:
+            for k, n in c.items():
+                per_unit.setdefault(mid, {})[k] = per_unit.get(mid, {}).get(k, 0) + n
+        for mid, c in per_unit.items():
+            left = (lim.get(mid) or {}).get("left", {})
+            if any(n > left.get(k, 0) for k, n in c.items()):
+                raise FlowError("limit")
     if any(given.get(k, 0) < n for k, n in r.lines.items()):
         r.short_reason, r.short_comment = _why(reason, comment)
     merged: dict = {}
@@ -850,7 +865,9 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
         for p in db.query(ContainerRequestPart).filter(
                 ContainerRequestPart.request_id.in_([r.id for r in rows])).order_by(ContainerRequestPart.id).all():
             parts.setdefault(p.request_id, []).append(p)
-    mids = {p.manager_id for ps in parts.values() for p in ps}
+    extras = {e.request_id: e for e in db.query(ContainerExtra).filter(
+        ContainerExtra.request_id.in_([r.id for r in rows])).all()} if rows else {}
+    mids = {p.manager_id for ps in parts.values() for p in ps} | {e.manager_id for e in extras.values()}
     units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
     out = []
     for r in rows:
@@ -880,6 +897,11 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "cancelled_at": _iso(r.cancelled_at), "cancelled_by": r.cancelled_by, "cancel_note": r.cancel_note,
             "seen_at": _iso(r.seen_at), "parts": list(by_unit.values()),
             "receipt": _receipt(list(by_unit.values())) if r.status == "assigned" else None,
+            "extra": None if r.id not in extras else {
+                "id": extras[r.id].id, "manager_id": extras[r.id].manager_id,
+                "unit": getattr(units.get(extras[r.id].manager_id), "name", None),
+                "lines": extras[r.id].lines or {}, "reason": extras[r.id].reason,
+                "comment": extras[r.id].comment, "asked_by": extras[r.id].asked_by},
         })
     return out
 
@@ -1205,8 +1227,14 @@ def analytics(db: Session, d_from: date, d_to: date) -> dict:
         logger.warning("container-flow: need vs got failed", exc_info=True)
         db.rollback()
         nvg = None      # the table says it could not be read; the rest of «Tahlil» stands
+    try:
+        extras = extras_report(db, d_from, d_to)
+    except Exception:
+        logger.warning("container-flow: extras report failed", exc_info=True)
+        db.rollback()
+        extras = None
     return {"from": d_from.isoformat(), "to": d_to.isoformat(), "summary": s, "days": days,
-            "need_vs_got": nvg,
+            "need_vs_got": nvg, "extras": extras,
             "hours": [hours[h] for h in sorted(hours)],
             "types": [types[k] for k in KEYS if types[k]["asked"] or types[k]["given"]],
             "units": sorted(out_units, key=lambda u: (-u["given"], u["unit"] or "")),
@@ -1500,7 +1528,8 @@ def prepared(db: Session, day: date, at: Optional[datetime] = None) -> list:
     need = plant_hours(db, day)
     asked: dict = {}
     for r in db.query(ContainerRequest).filter(ContainerRequest.day == day,
-                                               ContainerRequest.status != "cancelled").all():
+                                               ContainerRequest.status != "cancelled",
+                                               ~ContainerRequest.id.in_(_extra_request_ids(db))).all():
         e = asked.setdefault(int(r.hour), {})
         for k, n in (r.lines or {}).items():
             e[k] = e.get(k, 0) + n
@@ -1927,7 +1956,9 @@ def unit_limits(db: Session, day: date, hour: int, exclude_request_id: Optional[
     q = db.query(ContainerRequestPart.manager_id, ContainerRequestPart.ctype, ContainerRequestPart.count,
                  ContainerRequest.hour).join(
         ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
-        ContainerRequest.day == day, ContainerRequest.status == "assigned")
+        ContainerRequest.day == day, ContainerRequest.status == "assigned",
+        # an approved EXTRA was given past the limit — it never uses the plan's room up
+        ~ContainerRequest.id.in_(_extra_request_ids(db)))
     if exclude_request_id is not None:
         q = q.filter(ContainerRequest.id != exclude_request_id)
     given: dict = {}
@@ -2181,3 +2212,357 @@ def stock(db: Session, d_from: date, d_to: date, at: Optional[datetime] = None) 
                     for m in db.query(M).filter(M.at >= lo, M.at < hi)
                     .order_by(M.at.desc(), M.id.desc()).limit(STOCK_MOVES_MAX).all()]
     return out
+
+
+# ── a brigadir's EXTRA request (2026-11-18, the operator: «add the request
+# page for supervisors if they need extra containers, and this request goes
+# through AXO») ───────────────────────────────────────────────────────────────
+# A brigadir's limit keeps logistics from giving more than the plan's figure,
+# so a line that runs short (the plan grew, containers broke, a delivery came
+# short) had no way in but the phone — and the report looked clean while it
+# was wrong. Now the brigadir ASKS (`ask_extra`, page key `container-extra`,
+# their own unit only); AXO approves — all or fewer, to a logistics person of
+# her choice — or rejects with a note. An approved extra becomes an ordinary
+# request (`create_request`) that logistics splits to THAT unit only, past the
+# limit by exactly what AXO approved (`assign_request`), and that never uses
+# the plan's limit up (`unit_limits`) nor counts as the hour's own request
+# (`prepared`). The brigadir confirms it on «Qabul» like any other.
+EXTRA_REASONS = ("plan", "damaged", "short", "other")
+EXTRA_CAP = "page.view.container-extra"
+
+
+def _extra_request_ids(db: Session):
+    """The requests that are approved extras — a subquery, NULLs left out so a
+    NOT IN over it stays a plain filter."""
+    return db.query(ContainerExtra.request_id).filter(ContainerExtra.request_id.isnot(None))
+
+
+def extra_unit_of(db: Session, request_id: int) -> Optional[int]:
+    """The unit a request was approved for as an extra; None for a plain one."""
+    row = db.query(ContainerExtra.manager_id).filter(ContainerExtra.request_id == request_id).first()
+    return int(row[0]) if row else None
+
+
+def extra_open(db: Session, manager_id: int) -> bool:
+    """May this unit's brigadir ask for extras? — the role's page access, or a
+    personal grant on their profile (and no personal deny)."""
+    from app.permissions import get_page_access
+    key = f"supervisor:{int(manager_id)}"
+    own = db.query(ProfilePermission).filter(ProfilePermission.profile_key == key,
+                                             ProfilePermission.capability == EXTRA_CAP).first()
+    if own is not None:
+        return own.mode == "grant"
+    return "supervisor" in get_page_access(db).get("container-extra", [])
+
+
+def _extra(db: Session, extra_id: int) -> ContainerExtra:
+    e = db.query(ContainerExtra).filter(ContainerExtra.id == extra_id).with_for_update().first()
+    if e is None:
+        raise FlowError("gone")
+    return e
+
+
+def ask_extra(db: Session, day: date, hour: int, manager_id: int, counts: dict, reason, comment,
+              actor, actor_key, at: Optional[datetime] = None) -> ContainerExtra:
+    """A brigadir asks AXO for containers past their limit. The hour may not be
+    over; one waiting ask per unit and hour (a second one is the same ask)."""
+    at = at or now()
+    hour = int(hour)
+    if not (0 <= hour <= 47) or hour_start(day, hour) + timedelta(hours=1) <= at:
+        raise FlowError("hour")
+    if db.get(Manager, int(manager_id)) is None:
+        raise FlowError("unit")
+    c = _clean_counts(counts)
+    if not c:
+        raise FlowError("count")
+    comment = (comment or "").strip() or None
+    if reason not in EXTRA_REASONS:
+        raise FlowError("reason")
+    if reason == "other" and not comment:
+        raise FlowError("comment")
+    if db.query(ContainerExtra.id).filter(ContainerExtra.manager_id == int(manager_id),
+                                          ContainerExtra.day == day, ContainerExtra.hour == hour,
+                                          ContainerExtra.status == "asked").first():
+        raise FlowError("extra_dup")
+    e = ContainerExtra(day=day, hour=hour, manager_id=int(manager_id), lines=c, reason=reason,
+                       comment=comment, status="asked", asked_at=at, asked_by=actor, asked_key=actor_key)
+    db.add(e)
+    db.flush()
+    return e
+
+
+def cancel_extra(db: Session, extra_id: int, manager_id: Optional[int], actor) -> ContainerExtra:
+    """The brigadir withdraws their ask while AXO has not answered it.
+    `manager_id` None = an admin (any unit)."""
+    e = _extra(db, extra_id)
+    if manager_id is not None and e.manager_id != int(manager_id):
+        raise FlowError("not_yours")
+    if e.status != "asked":
+        raise FlowError("state")
+    e.status, e.decided_at, e.decided_by = "cancelled", now(), actor
+    return e
+
+
+def approve_extra(db: Session, extra_id: int, counts: dict, logistics_key: str, note, actor,
+                  actor_key) -> tuple:
+    """AXO allows the ask — all of it or fewer of each type, never more — and
+    sends it to a logistics person as a request for that hour. Returns
+    (extra, request)."""
+    e = _extra(db, extra_id)
+    if e.status != "asked":
+        raise FlowError("state")
+    c = _clean_counts(counts)
+    if not c:
+        raise FlowError("count")
+    if any(k not in (e.lines or {}) or n > int(e.lines[k]) for k, n in c.items()):
+        raise FlowError("over_ask")
+    r = create_request(db, e.day, e.hour, logistics_key, c, note, actor, actor_key)
+    e.status, e.approved, e.request_id = "approved", c, r.id
+    e.decided_at, e.decided_by, e.decided_key = now(), actor, actor_key
+    e.decision_note = (note or "").strip() or None
+    return e, r
+
+
+def reject_extra(db: Session, extra_id: int, note, actor, actor_key) -> ContainerExtra:
+    """AXO says no — always with the reason, which the brigadir reads."""
+    e = _extra(db, extra_id)
+    if e.status != "asked":
+        raise FlowError("state")
+    note = (note or "").strip()
+    if not note:
+        raise FlowError("note")
+    e.status, e.decided_at, e.decided_by, e.decided_key, e.decision_note = "rejected", now(), actor, actor_key, note
+    return e
+
+
+def _extra_stage(e: ContainerExtra, r: Optional[ContainerRequest], parts: list) -> str:
+    """Where an ask stands, in one word: asked · rejected · cancelled ·
+    logistics (approved, waiting to be split) · split · received · withdrawn
+    (approved, then its request was cancelled or deleted)."""
+    if e.status != "approved":
+        return e.status
+    if r is None or r.status == "cancelled":
+        return "withdrawn"
+    if r.status == "requested":
+        return "logistics"
+    mine = [p for p in parts if p.manager_id == e.manager_id]
+    return "received" if mine and all(p.received is not None for p in mine) else "split"
+
+
+def extras_of(db: Session, day: date, manager_id: Optional[int] = None) -> list:
+    """The day's asks (one unit's when given), each with its stage and — once
+    approved — the request it became."""
+    q = db.query(ContainerExtra).filter(ContainerExtra.day == day)
+    if manager_id is not None:
+        q = q.filter(ContainerExtra.manager_id == int(manager_id))
+    rows = q.order_by(ContainerExtra.hour, ContainerExtra.id).all()
+    rids = [e.request_id for e in rows if e.request_id]
+    reqs = {r.id: r for r in db.query(ContainerRequest).filter(ContainerRequest.id.in_(rids)).all()} if rids else {}
+    parts: dict = {}
+    if rids:
+        for p in db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id.in_(rids)).all():
+            parts.setdefault(p.request_id, []).append(p)
+    mids = {e.manager_id for e in rows}
+    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    out = []
+    for e in rows:
+        r = reqs.get(e.request_id)
+        ps = parts.get(e.request_id, [])
+        got = {p.ctype: p.received for p in ps if p.manager_id == e.manager_id and p.received is not None}
+        out.append({
+            "id": e.id, "day": e.day.isoformat(), "hour": e.hour, "manager_id": e.manager_id,
+            "unit": getattr(units.get(e.manager_id), "name", None),
+            "shift": getattr(units.get(e.manager_id), "shift", None),
+            "lines": {k: e.lines[k] for k in KEYS if k in (e.lines or {})},
+            "reason": e.reason, "comment": e.comment, "status": e.status,
+            "stage": _extra_stage(e, r, ps),
+            "asked_at": _iso(e.asked_at), "asked_by": e.asked_by,
+            "decided_at": _iso(e.decided_at), "decided_by": e.decided_by, "decision_note": e.decision_note,
+            "approved": {k: e.approved[k] for k in KEYS if k in (e.approved or {})} if e.approved else None,
+            "received": got or None,
+            "request": None if r is None else {"id": r.id, "status": r.status,
+                                               "logistics_name": r.logistics_name,
+                                               "cancel_note": r.cancel_note},
+        })
+    return out
+
+
+def axo_people(db: Session) -> list:
+    """Who hears of a brigadir's ask: every PROFILE holding a personal grant of
+    AXO's page (`page.view.container-flow`) — Fozilova Dilafruz today."""
+    rows = db.query(ProfilePermission).filter(ProfilePermission.capability == "page.view.container-flow",
+                                              ProfilePermission.mode == "grant").all()
+    return sorted({r.profile_key for r in rows})
+
+
+_TG_EXTRA = {
+    "uz": {"new": "Brigadirdan qo'shimcha konteyner so'rovi", "approved": "Qo'shimcha so'rovingiz tasdiqlandi",
+           "rejected": "Qo'shimcha so'rovingiz rad etildi", "unit": "Brigadir", "hour": "Soat",
+           "asked": "So'radi", "ok": "Tasdiqlandi", "to": "Logistika", "why": "Sabab", "note": "Izoh",
+           "btn": "📦 Konteyner berish",
+           "reason": {"plan": "Reja oshdi", "damaged": "Konteyner yaroqsiz", "short": "Kam keldi", "other": "Boshqa"}},
+    "uz_cyrl": {"new": "Бригадирдан қўшимча контейнер сўрови", "approved": "Қўшимча сўровингиз тасдиқланди",
+                "rejected": "Қўшимча сўровингиз рад этилди", "unit": "Бригадир", "hour": "Соат",
+                "asked": "Сўради", "ok": "Тасдиқланди", "to": "Логистика", "why": "Сабаб", "note": "Изоҳ",
+                "btn": "📦 Контейнер бериш",
+                "reason": {"plan": "Режа ошди", "damaged": "Контейнер яроқсиз", "short": "Кам келди", "other": "Бошқа"}},
+    "ru": {"new": "Бригадир просит дополнительные контейнеры", "approved": "Ваша доп. заявка одобрена",
+           "rejected": "Ваша доп. заявка отклонена", "unit": "Бригадир", "hour": "Час",
+           "asked": "Просит", "ok": "Одобрено", "to": "Логистика", "why": "Причина", "note": "Комментарий",
+           "btn": "📦 Выдача контейнеров",
+           "reason": {"plan": "План вырос", "damaged": "Контейнеры негодны", "short": "Пришло меньше", "other": "Другое"}},
+    "en": {"new": "A brigadir asks for extra containers", "approved": "Your extra request was approved",
+           "rejected": "Your extra request was refused", "unit": "Brigadir", "hour": "Hour",
+           "asked": "Asked", "ok": "Approved", "to": "Logistics", "why": "Reason", "note": "Note",
+           "btn": "📦 Container issuing",
+           "reason": {"plan": "Plan grew", "damaged": "Containers unusable", "short": "Arrived short", "other": "Other"}},
+}
+
+
+def _extra_body(kind: str, lang: str, rows: list) -> str:
+    from html import escape as _esc
+    t = _TG_EXTRA.get(lang) or _TG_EXTRA["uz"]
+    icon = {"new": "🆕", "approved": "✅", "rejected": "⛔"}[kind]
+    out = [f"{icon} <b>{_esc(t[kind], quote=False)}</b>", ""]
+    out += [f"{t[k]}: <b>{_esc(str(v), quote=False)}</b>" for k, v in rows if v not in (None, "")]
+    return "\n".join(out)
+
+
+def _extra_markup(tab: str):
+    def _markup(lang: str):
+        from telebot import types
+        from app.config import settings as cfg
+        t = _TG_EXTRA.get(lang) or _TG_EXTRA["uz"]
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(t["btn"], web_app=types.WebAppInfo(
+            url=f"{cfg.webapp_url.rstrip('/')}{NOTIFY_PAGE}?tab={tab}")))
+        return kb
+    return _markup
+
+
+def _extra_why(lang: str, e: ContainerExtra) -> str:
+    t = _TG_EXTRA.get(lang) or _TG_EXTRA["uz"]
+    return " — ".join(x for x in (t["reason"].get(e.reason, e.reason), e.comment or "") if x)
+
+
+def notify_extra_new(extra_id: int) -> int:
+    """Tell AXO a brigadir asked (switch `notify_extra`). Own session; never
+    raises. Returns how many AXO profiles were told."""
+    from app.database import SessionLocal
+    from app.translit import transliterate
+    db = SessionLocal()
+    try:
+        if not settings(db)["notify_extra"]:
+            return 0
+        e = db.get(ContainerExtra, extra_id)
+        if e is None or e.status != "asked":
+            return 0
+        unit = profile_name(db, f"supervisor:{e.manager_id}") or "—"
+        keys = axo_people(db)
+        from app.routers.staff import notify_profile
+
+        def body(lang):
+            return _extra_body("new", lang, [
+                ("unit", transliterate(unit, lang)), ("hour", hour_span(e.hour)),
+                ("asked", counts_text(e.lines or {}, lang)), ("why", _extra_why(lang, e))])
+        for key in keys:
+            notify_profile(db, key, "container_extra_new",
+                           {"hour": hour_span(e.hour), "counts": counts_text(e.lines or {}), "name": unit},
+                           type="warning", html_fn=body, markup_fn=_extra_markup("requests"),
+                           subject=("page", NOTIFY_PAGE))
+        db.commit()
+        return len(keys)
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: extra notice failed", exc_info=True)
+        return 0
+    finally:
+        db.close()
+
+
+def notify_extra_decided(extra_id: int) -> bool:
+    """Tell the brigadir AXO's answer — only while «Sozlamalar» → brigadirs is
+    on and only to a brigadir who may open the extra request (a card that
+    leads to «no access» is worse than none). Own session; never raises."""
+    from app.database import SessionLocal
+    from app.translit import transliterate
+    db = SessionLocal()
+    try:
+        if not settings(db)["notify_brigadirs"]:
+            return False
+        e = db.get(ContainerExtra, extra_id)
+        if e is None or e.status not in ("approved", "rejected") or not extra_open(db, e.manager_id):
+            return False
+        r = db.get(ContainerRequest, e.request_id) if e.request_id else None
+        ok = e.status == "approved"
+        from app.routers.staff import notify_profile
+
+        def body(lang):
+            rows = [("hour", hour_span(e.hour)), ("asked", counts_text(e.lines or {}, lang))]
+            if ok:
+                rows += [("ok", counts_text(e.approved or {}, lang)),
+                         ("to", transliterate((r.logistics_name if r else "") or "", lang))]
+            rows += [("note" if ok else "why", e.decision_note or "")]
+            return _extra_body(e.status, lang, rows)
+        notify_profile(db, f"supervisor:{e.manager_id}", f"container_extra_{e.status}",
+                       {"hour": hour_span(e.hour),
+                        "counts": counts_text((e.approved if ok else e.lines) or {}),
+                        "note": e.decision_note or ""},
+                       type="success" if ok else "warning", html_fn=body,
+                       markup_fn=_extra_markup("receive"), subject=("page", NOTIFY_PAGE))
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        logger.warning("container-flow: extra decision notice failed", exc_info=True)
+        return False
+    finally:
+        db.close()
+
+
+def extra_later(kind: str, extra_id: int) -> None:
+    import threading
+    fn = notify_extra_new if kind == "new" else notify_extra_decided
+    threading.Thread(target=fn, args=(extra_id,), daemon=True).start()
+
+
+def extras_report(db: Session, d_from: date, d_to: date) -> dict:
+    """«Tahlil»: the period's asks — how many, how many containers asked and
+    approved, AXO's answers, per brigadir and per reason. A brigadir who keeps
+    asking is the sign that the plan's figures for their lines are wrong.
+    Asks the brigadir withdrew count only in `cancelled`."""
+    rows = db.query(ContainerExtra).filter(ContainerExtra.day >= d_from, ContainerExtra.day <= d_to).all()
+    live = [e for e in rows if e.status != "cancelled"]
+    tot = lambda o: sum(int(v or 0) for v in (o or {}).values())        # noqa: E731
+    s = {"asks": len(live), "approved": sum(e.status == "approved" for e in live),
+         "rejected": sum(e.status == "rejected" for e in live), "waiting": sum(e.status == "asked" for e in live),
+         "cancelled": len(rows) - len(live), "asked_n": sum(tot(e.lines) for e in live),
+         "approved_n": sum(tot(e.approved) for e in live if e.status == "approved")}
+    mids = {e.manager_id for e in live}
+    units = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
+    per: dict = {}
+    reasons = {k: 0 for k in EXTRA_REASONS}
+    for e in live:
+        u = per.setdefault(e.manager_id, {"manager_id": e.manager_id,
+                                          "unit": getattr(units.get(e.manager_id), "name", None),
+                                          "shift": getattr(units.get(e.manager_id), "shift", None),
+                                          "asks": 0, "asked_n": 0, "approved_n": 0, "approved": 0,
+                                          "rejected": 0, "waiting": 0, "reasons": {}})
+        u["asks"] += 1
+        u["asked_n"] += tot(e.lines)
+        if e.status == "approved":
+            u["approved"] += 1
+            u["approved_n"] += tot(e.approved)
+        elif e.status == "rejected":
+            u["rejected"] += 1
+        else:
+            u["waiting"] += 1
+        u["reasons"][e.reason] = u["reasons"].get(e.reason, 0) + 1
+        reasons[e.reason] = reasons.get(e.reason, 0) + 1
+    out_units = []
+    for u in per.values():
+        u["top_reason"] = sorted(u["reasons"], key=lambda k: (
+            -u["reasons"][k], EXTRA_REASONS.index(k) if k in EXTRA_REASONS else 99))[0]
+        out_units.append(u)
+    out_units.sort(key=lambda u: (-u["asks"], -u["asked_n"], u["unit"] or ""))
+    return {"summary": s, "units": out_units, "reasons": reasons}

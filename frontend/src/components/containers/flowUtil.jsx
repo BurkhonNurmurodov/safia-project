@@ -1,11 +1,13 @@
 // «Konteyner berish» — the pieces every tab of the page shares
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Clock } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import GroupBadge from "../ui/GroupBadge";
-import { hourLabel } from "../production/HourlyContainers";
+import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
+import api from "../../utils/api";
 import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
@@ -197,3 +199,30 @@ export const onTimeTone = (pct) => (pct == null ? null : ontimeTone(pct / 100));
 export const refreshFlow = (qc) =>
   qc.invalidateQueries({ predicate: (q) => String(q.queryKey?.[0] ?? "").startsWith("cflow-") });
 export const LIVE_LIST = { staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always" };
+
+// ── a brigadir's EXTRA request (2026-11-18, components in FlowExtras.jsx) ────
+export const EXTRA_REASONS = ["plan", "damaged", "short", "other"];
+export const reasonText = (t, e) => [t(`cflow.ex.reason.${e.reason}`), e.comment].filter(Boolean).join(" — ");
+export const extraWaiting = (data) => (data?.extras ?? []).filter((e) => e.stage === "asked").length;
+
+// The day's asks, one read for every part of the page that shows them.
+export function useExtras(day, enabled = true) {
+  return useQuery({
+    queryKey: ["cflow-extras", day],
+    queryFn: () => api.get("/api/container-flow/extras", { params: { day } }).then((r) => r.data),
+    refetchInterval: 60_000,
+    enabled,
+    ...LIVE_LIST,
+  });
+}
+
+// The hour a production day is at now: 0–23 today, 24+ for the night past
+// midnight (the day started yesterday), 48 for a day already over.
+export function hourNow(day) {
+  const n = tashkentNow();
+  const h = Math.floor(n.min / 60);
+  if (day === n.iso) return h;
+  if (day === prevISO(n.iso)) return 24 + h;
+  return day > n.iso ? 0 : 48;
+}
+export const canAskFor = (day) => hourNow(day) <= 31;

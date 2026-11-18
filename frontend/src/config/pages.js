@@ -54,6 +54,7 @@ export const PAGES = [
   { tier: "test", key: "container-logistics", route: "/containers/flow", labelKey: "nav.containerLogistics" },
   { tier: "test", key: "container-receive", route: "/containers/flow", labelKey: "nav.containerReceive" },
   { tier: "test", key: "container-watch", route: "/containers/flow", labelKey: "nav.containerWatch" },
+  { tier: "test", key: "container-extra", route: "/containers/flow", labelKey: "nav.containerExtra" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -116,6 +117,8 @@ export const DEFAULT_PAGE_ACCESS = {
   "container-logistics": [],
   "container-receive": ["supervisor"],   // brigadirs from 2026-11-15
   "container-watch": ["top-manager", "shift-manager"],
+  // A brigadir asking AXO for extra containers — admin-only until the operator opens it.
+  "container-extra": [],
   // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
   containers: ["top-manager", "shift-manager"],
   // «API» — personal tokens for the external read API. Admin-only until the

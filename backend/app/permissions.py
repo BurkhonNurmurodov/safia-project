@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -205,6 +205,11 @@ DEFAULT_PAGE_ACCESS = {
     # the operator: «make it visible for shift managers and top managers too» —
     # watch only).
     "container-watch": ["top-manager", "shift-manager"],
+    # A brigadir asking AXO for EXTRA containers past their limit (2026-11-18,
+    # the operator: «add the request page for supervisors if they need extra
+    # containers, and this request goes through AXO») — admin-only until the
+    # operator opens it to the brigadirs (docs/containers-flow.md).
+    "container-extra": [],
     # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
     # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
     # operator opens it: a token reads every cell's plan and people.

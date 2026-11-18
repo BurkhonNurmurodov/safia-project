@@ -71,7 +71,7 @@ export const ALL_LINKS = [
   // `container-flow` is AXO (Fozilova Dilafruz), `container-logistics` is
   // Logistics (Nuriddin aka), `container-receive` a brigadir's «Qabul»,
   // `container-watch` the shift- and top-managers watching — any opens it.
-  { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive", "container-watch"], key: "nav.containerFlow", icon: PackageCheck, group: "containers", app: "containers" },
+  { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"], key: "nav.containerFlow", icon: PackageCheck, group: "containers", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   // «Plan Prognoz» — on the launcher the «Planning» app's page (2026-11-15,

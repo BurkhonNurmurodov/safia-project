@@ -18,6 +18,9 @@ docs/containers-flow.md). Two doors:
   a request outright.
 - AXO's stock (2026-11-17): `GET /stock` is `ANY`'s, `POST /stock` — a count
   or an addition — is `PAGE`'s.
+- A brigadir's EXTRA request (2026-11-18): `EXT` (page key `container-extra`,
+  admin-only until the operator opens it) asks and withdraws — a brigadir for
+  their own unit only; AXO (`PAGE`) approves or rejects; `EXTR` reads.
 
 The messages: a new / cancelled request to its logistics person
 (`flow.notify_later`), and a split request to each of its brigadirs with
@@ -49,7 +52,10 @@ LOGI = require_page("container-logistics")
 ANY = require_page("container-flow", "container-logistics", "container-watch")
 RECV = require_page("container-receive")
 RECW = require_page("container-receive", "container-watch")
-WHO = require_page("container-flow", "container-logistics", "container-receive", "container-watch")
+EXT = require_page("container-extra")
+EXTR = require_page("container-extra", "container-flow", "container-logistics", "container-watch")
+WHO = require_page("container-flow", "container-logistics", "container-receive", "container-watch",
+                   "container-extra")
 
 
 def _roles(db: Session, payload: dict) -> dict:
@@ -57,11 +63,13 @@ def _roles(db: Session, payload: dict) -> dict:
     from app.capabilities import capability_pages, caller_denied_pages
     from app.permissions import get_page_access, role_can_access
     if payload.get("role") == "admin":
-        return {"admin": True, "axo": True, "logistics": True, "receive": True, "watch": True, "unit": None}
+        return {"admin": True, "axo": True, "logistics": True, "receive": True, "watch": True,
+                "extra": True, "unit": None}
     access, caps, denied = get_page_access(db), capability_pages(db, payload), caller_denied_pages(db, payload)
     can = lambda k: role_can_access(payload.get("role"), [k], access, caps, denied)  # noqa: E731
     return {"admin": False, "axo": can("container-flow"), "logistics": can("container-logistics"),
-            "receive": can("container-receive"), "watch": can("container-watch"), "unit": _my_unit(payload)}
+            "receive": can("container-receive"), "watch": can("container-watch"),
+            "extra": can("container-extra"), "unit": _my_unit(payload)}
 
 
 def _my_unit(payload: dict) -> Optional[int]:
@@ -244,6 +252,7 @@ def get_settings(db: Session = Depends(get_db), payload: dict = Depends(WHO)):
     """Read by every holder (the manual request's unit picker, «is anything
     enrolled»); written by admins only."""
     return {**flow.settings(db), "all_units": _units(db), "reasons": list(flow.REASONS),
+            "extra_reasons": list(flow.EXTRA_REASONS),
             "draft_min": flow.DRAFT_MIN, "lead_min": flow.LEAD_MIN, **_roles(db, payload)}
 
 
@@ -254,6 +263,7 @@ class SettingsBody(BaseModel):
     notify_brigadirs: Optional[bool] = None
     notify_axo: Optional[bool] = None
     notify_managers: Optional[bool] = None
+    notify_extra: Optional[bool] = None
 
 
 @router.put("/settings")
@@ -261,13 +271,14 @@ def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(verify_admin)):
     was = flow.settings(db)
     out = flow.save_settings(db, body.units, body.topup_min, body.notify, body.notify_brigadirs,
-                             body.notify_axo, body.notify_managers)
+                             body.notify_axo, body.notify_managers, body.notify_extra)
     action_log.enrich(changes=[("units", len(was["units"]), len(out["units"])),
                                ("topup_min", was["topup_min"], out["topup_min"]),
                                ("notify", was["notify"], out["notify"]),
                                ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"]),
                                ("notify_axo", was["notify_axo"], out["notify_axo"]),
-                               ("notify_managers", was["notify_managers"], out["notify_managers"])])
+                               ("notify_managers", was["notify_managers"], out["notify_managers"]),
+                               ("notify_extra", was["notify_extra"], out["notify_extra"])])
     global _drafted_at
     _drafted_at = 0.0   # the next board read drafts for a unit just enrolled
     return {**out, "all_units": _units(db)}
@@ -566,8 +577,18 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
     r = db.get(ContainerRequest, request_id)
     if r is None:
         raise HTTPException(status_code=404, detail="gone")
+    extra = flow.extra_unit_of(db, r.id)
+    if extra is not None:
+        # a brigadir's approved extra: all of it to that unit — the one row, and
+        # the one «limit», which is what AXO approved
+        m = db.get(Manager, extra)
+        counts = dict(r.lines or {})
+        return {"extra_for": extra,
+                "rows": [{"manager_id": extra, "unit": getattr(m, "name", None), "shift": getattr(m, "shift", None),
+                          "counts": counts, "need": {}}],
+                "limits": {str(extra): {"limit": counts, "given": {}, "left": counts}}}
     limits = flow.unit_limits(db, r.day, r.hour, r.id)
-    return {"rows": flow.split_hint(db, r, limits),
+    return {"rows": flow.split_hint(db, r, limits), "extra_for": None,
             # each brigadir's limit for the hour: the dialog caps every count at `left`
             "limits": {str(m): u for m, u in limits.items()}}
 
@@ -578,6 +599,103 @@ def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload:
     everybody else (admins, the managers watching) every unit."""
     mine = _my_unit(payload) if payload.get("role") != "admin" else None
     return {"day": day.isoformat(), "unit": mine, "receipts": flow.receipts_of(db, day, mine)}
+
+
+# ── a brigadir's EXTRA request (2026-11-18) ─────────────────────────────────
+def _extra_out(db: Session, e) -> dict:
+    out = next((x for x in flow.extras_of(db, e.day, e.manager_id) if x["id"] == e.id), {"id": e.id})
+    action_log.enrich(target_kind="container_extra", target_id=e.id, unit_id=e.manager_id,
+                      unit_name=out.get("unit"), day=e.day,
+                      details=[("hour", f"{e.hour % 24:02d}:00"), ("status", e.status),
+                               ("counts", flow.counts_text(e.approved or e.lines or {}) or "0")])
+    return out
+
+
+@router.get("/extras")
+def get_extras(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(EXTR)):
+    """The day's asks: a brigadir reads their own unit's, AXO, logistics, the
+    managers watching and admins every unit's."""
+    mine = _my_unit(payload) if payload.get("role") == "supervisor" else None
+    return {"day": day.isoformat(), "unit": mine, "extras": flow.extras_of(db, day, mine)}
+
+
+class ExtraBody(BaseModel):
+    day: date
+    hour: int
+    counts: Dict[str, int]
+    reason: str
+    comment: str = ""
+    manager_id: Optional[int] = None     # an admin names the unit; a brigadir's is their own
+
+
+@router.post("/extras")
+def post_extra(body: ExtraBody, db: Session = Depends(get_db), payload: dict = Depends(EXT)):
+    admin = payload.get("role") == "admin"
+    mid = body.manager_id if admin else _my_unit(payload)
+    if mid is None:
+        raise HTTPException(status_code=409, detail="unit")
+    try:
+        e = flow.ask_extra(db, body.day, body.hour, mid, body.counts, body.reason, body.comment,
+                           _actor(payload), _me(db, payload))
+        db.commit()
+    except flow.FlowError as ex:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=ex.code)
+    if not admin:
+        flow.extra_later("new", e.id)       # an admin's own (test) ask never reaches AXO
+    return _extra_out(db, e)
+
+
+@router.post("/extras/{extra_id}/cancel")
+def post_extra_cancel(extra_id: int, db: Session = Depends(get_db), payload: dict = Depends(EXT)):
+    admin = payload.get("role") == "admin"
+    mid = None if admin else _my_unit(payload)
+    if not admin and mid is None:
+        raise HTTPException(status_code=409, detail="unit")
+    try:
+        e = flow.cancel_extra(db, extra_id, mid, _actor(payload))
+        db.commit()
+    except flow.FlowError as ex:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=ex.code)
+    return _extra_out(db, e)
+
+
+class ApproveBody(BaseModel):
+    counts: Dict[str, int]
+    logistics_key: str
+    note: str = ""
+
+
+@router.post("/extras/{extra_id}/approve")
+def post_extra_approve(extra_id: int, body: ApproveBody, db: Session = Depends(get_db),
+                       payload: dict = Depends(PAGE)):
+    """AXO allows a brigadir's ask — all or fewer — and sends it to a logistics
+    person, who splits it to that unit only."""
+    try:
+        e, r = flow.approve_extra(db, extra_id, body.counts, body.logistics_key, body.note,
+                                  _actor(payload), _me(db, payload))
+        rid = r.id
+        db.commit()
+    except flow.FlowError as ex:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=ex.code)
+    flow.notify_later(rid, "new")              # the logistics person, behind their switch
+    flow.extra_later("decided", e.id)          # the brigadir, behind theirs
+    return _extra_out(db, e)
+
+
+@router.post("/extras/{extra_id}/reject")
+def post_extra_reject(extra_id: int, body: NoteBody, db: Session = Depends(get_db),
+                      payload: dict = Depends(PAGE)):
+    try:
+        e = flow.reject_extra(db, extra_id, body.note, _actor(payload), _me(db, payload))
+        db.commit()
+    except flow.FlowError as ex:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=ex.code)
+    flow.extra_later("decided", e.id)
+    return _extra_out(db, e)
 
 
 class ReceiveBody(BaseModel):

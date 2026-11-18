@@ -19,7 +19,7 @@ import { useToast } from "../components/ui/Toast";
 import { tashkentNow, prevISO } from "../components/production/HourlyContainers";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, StatusChip, KindChip, TeamLabel, ReasonFields, reasonOk,
-  byHour, lineOf, fieldCls, fieldStyle, refreshFlow, LIVE_LIST,
+  byHour, lineOf, fieldCls, fieldStyle, refreshFlow, LIVE_LIST, useExtras, extraWaiting,
 } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
@@ -63,7 +63,8 @@ const batchTabsFor = (r) => BATCH_TABS.filter((k) => r.admin || k === "all"
 const tabsFor = (r, enrolled) => TABS.filter((k) => r.admin
   || ((k === "requests" || k === "analytics" || k === "report") && (r.axo || r.logistics || r.watch))
   || (k === "batches" && enrolled && (r.axo || r.logistics || r.watch))
-  || (k === "receive" && (r.receive || r.watch)));
+  // «Qabul» also holds a brigadir's EXTRA request (`container-extra`, 2026-11-18)
+  || (k === "receive" && (r.receive || r.watch || r.extra)));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
@@ -96,6 +97,7 @@ export default function ContainerFlow() {
   const roles = {
     admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics,
     receive: isAdmin || !!settings.data?.receive, watch: isAdmin || !!settings.data?.watch,
+    extra: isAdmin || !!settings.data?.extra,
   };
   // a brigadir holding only «Qabul» reads nothing of the AXO / logistics side
   const flowSide = roles.axo || roles.logistics || roles.watch;
@@ -119,6 +121,12 @@ export default function ContainerFlow() {
     ...LIVE_LIST,
   });
   const freshN = (reqs.data?.requests ?? []).filter((r) => isFresh(r, reqs.data?.me)).length;
+  // AXO: brigadirs' extra asks still waiting for her answer — on the same badge
+  const extras = useExtras(day, roles.axo);
+  const askedN = roles.axo ? extraWaiting(extras.data) : 0;
+  const badgeN = freshN + askedN;
+  const badgeTitle = [freshN ? t("cflow.req.freshCount").replace("{n}", freshN) : null,
+    askedN ? t("cflow.ex.badge").replace("{n}", askedN) : null].filter(Boolean).join(" · ");
   // AXO: the hours still ahead that need containers and have no request yet
   const prep = useQuery({
     queryKey: ["cflow-prepared", day],
@@ -147,15 +155,15 @@ export default function ContainerFlow() {
         {tabs.length > 1 && <SegmentedToggle asTabs value={tab} onChange={setTab}
           options={tabs.map((k) => ({
             value: k,
-            label: k === "requests" && freshN > 0 ? (
+            label: k === "requests" && badgeN > 0 ? (
               <span className="inline-flex items-center gap-1.5">
                 {t(`cflow.tab.${k}`)}
                 <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-[18px] text-center tabular-nums"
-                  title={t("cflow.req.freshCount").replace("{n}", freshN)}
+                  title={badgeTitle}
                   style={tab === "requests"
                     ? { background: "var(--bg-card)", color: "var(--text-1)" }
                     : { background: "var(--brand)", color: "var(--on-brand)" }}>
-                  {freshN}
+                  {badgeN}
                 </span>
               </span>
             ) : t(`cflow.tab.${k}`),
@@ -187,7 +195,16 @@ export default function ContainerFlow() {
             ? <Button onClick={() => setTab("settings")}>{t("cflow.tab.settings")}</Button>
             : <Button onClick={() => setTab("requests")}>{t("cflow.tab.requests")}</Button>} />
       ) : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} />
-        : tab === "receive" ? <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone} />
+        : tab === "receive" ? (
+          <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone}
+            canReceive={roles.receive || roles.watch}
+            extra={{
+              // a brigadir asks for their own unit, an admin names one; the managers watching read
+              ask: isAdmin || (roles.extra && settings.data?.unit != null),
+              read: roles.extra || roles.watch || roles.axo,
+              unit: isAdmin ? null : settings.data?.unit ?? null,
+            }} />
+        )
         : tab === "batches" ? (
           <div className="flex flex-col gap-4">
             {batchTabs.length > 1 && (

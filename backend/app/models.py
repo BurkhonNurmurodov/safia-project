@@ -6167,6 +6167,39 @@ class ContainerRequestPart(Base):
     escalated_at     = Column(DateTime(timezone=True), nullable=True)
 
 
+class ContainerExtra(Base):
+    """A brigadir's ask for EXTRA containers (2026-11-18, the operator: «add the
+    request page for supervisors if they need extra containers, and this
+    request goes through AXO»). Their limit (`container_flow.unit_limits`)
+    keeps logistics from giving more than the plan's figure, so an extra goes
+    to AXO first: `asked` → `approved` (AXO turned it into a request to a
+    logistics person — `request_id`, split to THIS unit only, past the limit by
+    exactly `approved`) or `rejected` (with AXO's note), or `cancelled` by the
+    brigadir while it waited. `lines` is what the brigadir asked {ctype: n},
+    `approved` what AXO allowed. The request it became keeps its own state;
+    deleting that request leaves `request_id` NULL."""
+    __tablename__ = "container_extras"
+
+    id            = Column(Integer, primary_key=True)
+    day           = Column(Date, nullable=False, index=True)
+    hour          = Column(Integer, nullable=False)
+    manager_id    = Column(Integer, nullable=False, index=True)
+    lines         = Column(JSONB, nullable=False)
+    reason        = Column(String(20), nullable=False)
+    comment       = Column(Text, nullable=True)
+    status        = Column(String(10), nullable=False, default="asked")
+    asked_at      = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    asked_by      = Column(String, nullable=True)
+    asked_key     = Column(String, nullable=True)
+    decided_at    = Column(DateTime(timezone=True), nullable=True)
+    decided_by    = Column(String, nullable=True)
+    decided_key   = Column(String, nullable=True)
+    decision_note = Column(Text, nullable=True)
+    approved      = Column(JSONB, nullable=True)
+    request_id    = Column(Integer, ForeignKey("container_requests.id", ondelete="SET NULL"),
+                           nullable=True, index=True)
+
+
 class ContainerStockMove(Base):
     """AXO's own stock of containers, as a log (2026-11-17, the operator: «add
     for AXO how many containers they have»). Nothing on the platform knew it,

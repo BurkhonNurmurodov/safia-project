@@ -429,6 +429,70 @@ all the containers app».
   brigadir the same day: «put 5 instead of 4»). Not in TV mode (that board is scaled as a whole and its
   table already shows the hours around now).
 
+### A brigadir's EXTRA request — through AXO (2026-11-18)
+
+The operator: «can we add the request page for supervisors if they need extra
+containers and this request goes through AXO». A brigadir's limit
+(`unit_limits`) keeps logistics from giving more than the plan's figure, so a
+line that ran short had no way in but the phone — and the report looked clean
+while it was wrong. Agreed with the operator the same day («Yes, build it»):
+through logistics like every request; past the limit only by AXO's approval
+and only by the approved amount; admin-only until he announces it.
+
+- **Page key `container-extra`** (`permissions`, default `[]`) — ADMIN-ONLY
+  until the operator opens it to the brigadirs (tick «supervisor» on the
+  Access tab, or a one-shot on his word). It joins `WHO` (the page's roles) and
+  shows «Qabul» to its holder. Table `container_extras` (`ContainerExtra`,
+  from `create_all`): `asked` → `approved` (with `approved` counts and the
+  `request_id` it became) / `rejected` (AXO's note) / `cancelled` (the
+  brigadir withdrew it while it waited).
+- **The brigadir asks** on «Qabul» (`components/containers/FlowExtras.jsx`
+  `AskExtraModal`; `POST /extras`, `EXT`; `ask_extra`): counts per type, the
+  hour (the one now or later — a day over cannot be asked for), a reason
+  (`EXTRA_REASONS`: «Reja oshdi» · «Konteyner yaroqsiz» · «Kam keldi» ·
+  «Boshqa» with words). A brigadir asks for their own unit; an admin names
+  one. One waiting ask per unit and hour (`extra_dup`). The strip with the
+  button sits in «Qabul»'s head card, always drawn; «Qo'shimcha so'rovlarim»
+  — each ask with its stage — sits UNDER the receipts, so an ask never moves
+  a card the brigadir confirms. Withdrawn with «Qaytarib olish» while waiting
+  (`POST /extras/{id}/cancel`, their own only).
+- **AXO decides** on «So'rovlar» (`ExtrasPanel`, below the requests table —
+  an ask arriving never moves the rows above; drawn once the day has an ask;
+  AXO's tab badge counts the waiting ones beside the unopened requests).
+  «Tasdiqlash» (`POST /extras/{id}/approve`, `PAGE`; `approve_extra`): all or
+  fewer of each type, never more (`over_ask`), to a logistics person of her
+  choice (remembered like «Yangi so'rov»), the stock on her shelf beside each
+  count when «AXO zaxirasi» has one, a note to the brigadir. It becomes an
+  ordinary request (`create_request`) tagged «Qo'shimcha» on the list.
+  «Rad etish» (`/reject`): the reason is required — the brigadir reads it.
+  The managers watching see the panel without buttons.
+- **The split** (`assign_request`, `GET /requests/{id}/split-hint` →
+  `extra_for`): to THAT unit only (`extra_unit` otherwise) — the dialog opens
+  on it with the approved counts and no «add a row» — and PAST its limit by
+  exactly what AXO approved. An approved extra never uses the plan's room up
+  (`unit_limits` leaves its parts out) and is not the hour's own request
+  (`prepared` leaves it out). The brigadir confirms it on «Qabul» like any
+  other; «AXO zaxirasi» counts it as given when it is split.
+- **Stages** (`extras_of`, `_extra_stage`): asked · logistics (approved, not
+  split yet) · split · received · rejected · cancelled · withdrawn (approved,
+  then its request was cancelled or deleted — `request_id` goes NULL).
+- **Messages**: a brigadir's ask → every AXO profile (personal grant of
+  `page.view.container-flow`, `axo_people`; key `container_extra_new`) behind
+  the new «Sozlamalar» switch `notify_extra` — ON unless switched off — and
+  **never for an admin's own ask**, so testing it while closed tells nobody.
+  AXO's answer → the brigadir (`container_extra_approved` / `_rejected`)
+  behind `notify_brigadirs`, and only to a brigadir who may open
+  `container-extra` (`extra_open`). The approved request reaches its
+  logistics person as any new request does (`notify_later`).
+- **«Tahlil»** (`ExtrasAnalytics`, `analytics()["extras"]` =
+  `extras_report`): asks, approved, refused, waiting, containers asked and
+  approved; the reasons as one bar; per brigadir — asks, containers, refused,
+  the main reason. A brigadir who keeps asking is the sign the plan's figures
+  for their lines are wrong. It sits just above «AXO zaxirasi», which stays
+  last.
+- Action register: `containers.extra_asked` / `extra_cancelled` /
+  `extra_approved` / `extra_rejected`.
+
 ### «AXO zaxirasi» — how many containers AXO has (2026-11-17)
 
 The operator: «we have to add for AXO how many containers they have in

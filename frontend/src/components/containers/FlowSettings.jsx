@@ -44,6 +44,7 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
     { which: "notify_brigadirs", label: t("cflow.set.notifyBrigadirs"), hint: t("cflow.set.notifyBrigHint") },
     { which: "notify_axo", label: t("cflow.set.notifyAxo"), hint: t("cflow.set.notifyAxoHint") },
     { which: "notify_managers", label: t("cflow.set.notifyManagers"), hint: t("cflow.set.notifyManagersHint") },
+    { which: "notify_extra", label: t("cflow.set.notifyExtra"), hint: t("cflow.set.notifyExtraHint") },
   ];
   const ready = useQuery({
     queryKey: ["cflow-readiness", day],

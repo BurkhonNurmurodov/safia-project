@@ -30,6 +30,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip } from "./flowUtil";
 import FlowStock from "./FlowStock";
+import { ExtrasAnalytics } from "./FlowExtras";
 
 const CHART_H = 260;
 const WEEK_AFTER = 45;      // a longer period draws weeks, not days
@@ -140,6 +141,9 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
           </div>
         </>
       )}
+
+      {/* the brigadirs' extra asks — who asks, how often, why (a period with no request may still have asks) */}
+      {!q.isError && <ExtrasAnalytics t={t} x={a?.extras} loading={loading} />}
 
       {/* AXO's stock closes the tab — its own read, so it stands on a period with no requests too */}
       <FlowStock t={t} from={from} to={to} canEdit={canStock} toast={toast} />
