@@ -450,6 +450,16 @@ and makes him the second addressee on AXO's «Yangi so'rov». Not exactly one
 match → nothing changes and the admins get a DM saying so. Nothing he held is
 revoked.
 
+## Extra container requests closed to the brigadirs again (`startup.container_extra_brigadirs_off`, 2026-11-18)
+
+The afternoon after opening it, the operator: «can you remove for supervisors
+the ask-for-more option for now, we will add this thing later». A one-shot
+(flag `oneshot:container_extra_brigadirs_off_nov18`, `later`, wired right after
+the opening one so a fresh database ends closed) takes `supervisor` out of the
+STORED access of `container-extra` (the default goes back to `[]`) and DMs the
+admins. Once: a reopen on the Access tab later sticks. The feature itself is
+untouched. docs/containers-flow.md.
+
 ## Extra container requests open to the brigadirs (`startup.container_extra_brigadirs`, 2026-11-18)
 
 The brigadirs' request for extra containers through AXO shipped admin-only on

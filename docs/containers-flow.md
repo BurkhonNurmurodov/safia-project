@@ -497,11 +497,16 @@ while it was wrong. Agreed with the operator the same day («Yes, build it»):
 through logistics like every request; past the limit only by AXO's approval
 and only by the approved amount; admin-only until he announces it.
 
-- **Page key `container-extra`** (`permissions`) — shipped admin-only, then
-  **open to the brigadirs from 2026-11-18** the same day (the operator, asked
-  «now, or after you announce it?»: «Open it now»;
-  `startup.container_extra_brigadirs`, once under a flag, so an untick on the
-  Access tab later sticks; the default is `["supervisor"]` with it). It joins
+- **Page key `container-extra`** (`permissions`) — shipped admin-only, opened
+  to the brigadirs the same morning (the operator: «Open it now»;
+  `startup.container_extra_brigadirs`), and **CLOSED to them again that
+  afternoon** (the operator: «remove for supervisors the ask-for-more option
+  for now, we will add this thing later»; `startup.container_extra_brigadirs_off`,
+  once under its own flag, so a reopen on the Access tab later sticks; the
+  default is back to `[]`). Nothing was taken out: brigadirs simply no longer
+  see «Qo'shimcha so'rash» or their list, and get no answer in Telegram; asks
+  already made stay on AXO's «So'rovlar». Reopening = ticking «supervisor»
+  for «Konteyner berish — qo'shimcha so'rov» on the Access tab. It joins
   `WHO` (the page's roles) and shows «Qabul» to its holder. Table `container_extras` (`ContainerExtra`,
   from `create_all`): `asked` → `approved` (with `approved` counts and the
   `request_id` it became) / `rejected` (AXO's note) / `cancelled` (the

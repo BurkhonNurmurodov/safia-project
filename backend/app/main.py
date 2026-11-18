@@ -310,8 +310,9 @@ async def lifespan(app: FastAPI):
     later(container_receive_brigadirs)
     from app.startup import container_flow_managers_alerts_on
     later(container_flow_managers_alerts_on)
-    from app.startup import container_extra_brigadirs
+    from app.startup import container_extra_brigadirs, container_extra_brigadirs_off
     later(container_extra_brigadirs)
+    later(container_extra_brigadirs_off)     # after it: closed again the same day
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     later(date_window_edits_nov13)

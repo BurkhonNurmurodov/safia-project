@@ -11025,6 +11025,49 @@ def container_extra_brigadirs() -> None:
         db.close()
 
 
+# ── 18 Nov, later: extra requests closed to the brigadirs again ──────────────
+# Opened in the morning (`container_extra_brigadirs`, v4.585.0); the same day
+# the operator: «can you remove for supervisors the ask-for-more option for
+# now, we will add this thing later». The brigadir role leaves the STORED
+# access of `container-extra` (the default goes back to admin-only with it):
+# no «Qo'shimcha so'rash» on «Qabul», no list of their asks, no Telegram about
+# an answer. Everything built stays — reopening is one tick on the Access tab
+# or a one-shot on his word. Asks already made stay on AXO's «So'rovlar» for
+# her to answer. Once, under its own flag.
+CONTAINER_EXTRA_OFF_FLAG = "oneshot:container_extra_brigadirs_off_nov18"
+
+
+def container_extra_brigadirs_off() -> None:
+    import html
+
+    from app.permissions import get_page_access, set_page_access
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_EXTRA_OFF_FLAG).first():
+            return
+        matrix = get_page_access(db)
+        roles = list(matrix.get("container-extra", []))
+        had = "supervisor" in roles
+        matrix["container-extra"] = [r for r in roles if r != "supervisor"]
+        db.add(AppSetting(key=CONTAINER_EXTRA_OFF_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the flag with the matrix
+        print(f"[startup] container extra: brigadirs {'removed' if had else 'were not on it'}")
+        _dm_admins_plain(
+            "⏸ <b>«Konteyner berish» — qo'shimcha so'rov brigadirlardan yopildi</b>\n"
+            "«Qabul»dagi «Qo'shimcha so'rash» brigadirlarga endi ko'rinmaydi"
+            f"{'' if had else ' (ular uchun ochiq emas edi)'}. Hammasi saqlangan — keyin "
+            "«Ruxsatlar»da bitta belgi bilan qayta ochiladi.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] closing container extra for brigadirs failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteyner berish» — qo'shimcha so'rov brigadirlardan yopilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

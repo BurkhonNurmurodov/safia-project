@@ -424,6 +424,39 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(access(), [])                # … and it stays unticked
             self.assertEqual(dm.call_count, 1)
 
+    def test_extra_closed_to_brigadirs_again_once(self):
+        """Opened in the morning, closed the same afternoon: on a fresh
+        database both one-shots run in order and it ends closed; a reopen on
+        the Access tab later sticks."""
+        from app import startup
+        from app.permissions import get_page_access, set_page_access
+
+        def access():
+            s = self.pg.Session()
+            try:
+                return get_page_access(s)["container-extra"]
+            finally:
+                s.close()
+
+        s = self.pg.Session()
+        m = get_page_access(s)
+        m["container-extra"] = ["supervisor"]             # as production's stored matrix has it now
+        set_page_access(s, m)
+        s.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_extra_brigadirs()             # its flag may be set already — either way …
+            startup.container_extra_brigadirs_off()
+            self.assertEqual(access(), [])                  # … it ends closed
+            s = self.pg.Session()
+            m = get_page_access(s)
+            m["container-extra"] = ["supervisor"]           # the operator reopens it on the Access tab …
+            set_page_access(s, m)
+            s.close()
+            startup.container_extra_brigadirs_off()
+            self.assertEqual(access(), ["supervisor"])      # … and it stays open
+            self.assertIn("yopildi", dm.call_args_list[-1][0][0])
+
     def test_split_hint_follows_each_units_hour(self):
         from app.models import ContainerRequest
         for i, n in ((12, "Bravo"), (13, "Alfa")):
@@ -1180,7 +1213,7 @@ class PageKeyTest(unittest.TestCase):
         for key in ("container-flow", "container-logistics", "container-receive", "container-extra"):
             self.assertIn(key, PAGE_KEYS)
             self.assertEqual(DEFAULT_PAGE_ACCESS[key],
-                             ["supervisor"] if key in ("container-receive", "container-extra") else [])
+                             ["supervisor"] if key == "container-receive" else [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
         # the managers watch the whole page and press nothing on it
         self.assertIn("container-watch", PAGE_KEYS)
