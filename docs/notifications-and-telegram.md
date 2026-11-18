@@ -311,3 +311,46 @@ is marked done only by a manager, so `task_from_top` ends with «📎 Bajarganda
 izohga rasm yoki fayl yuboring — «Bajarildi»ni rahbariyat belgilaydi» and
 `task_reminder`'s «✅ Javob» row asks for a reply in the comments with a photo
 or file.
+
+## Admin reports: one card (`startup._dm_report`, 2026-11-18)
+
+The operator, seeing three one-shot reports in a row («Davron Kuldimirodov —
+«Konteyner berish» (logistika)», «Yusuf aka — ojidaniya Nuriddin aka bilan bir
+xil», «… «Ojidaniya» yopildi»): «redesign/restructure the notifications
+professionally. Give them a life.» They were hand-written strings with
+`guest:466` / `idle-owner:336` in them, a «—» for every empty field, and no
+way to tell a success from a thing that needs a person.
+
+A one-shot that tells the admins «done / needs you / failed» now sends ONE card,
+`startup._dm_report(tone, title, status=, rows=, notes=, error=, open=)`:
+
+- **title** names the subject, never a key — `«Davron Kulmurodov · «Konteyner
+  berish» (logistika)»`, from the profile's own name (a hard-coded spelling hid
+  that the match was a different surname); **one italic status line** says what
+  happened. `tone` is the icon and the default status: `ok` ✅ · `warn` ⚠️
+  (nothing changed, a person is needed) · `fail` 🛑 (the step retries on the
+  next start) · `pause` ⏸.
+- **rows** `(icon, label, value)`: a value is bold; a list is bullets under its
+  label; **an empty value drops the row** — never «—». The profile is
+  `_report_who(prof)` («name · role», the role from the bot's own
+  `_ROLE_LABELS`); the key `guest:466` is printed only in a `warn` card's list
+  of candidates, where a person has to pick.
+- **notes** `(icon, text)` share ONE quote: the thing to do (👉) or a caution
+  (⚠️ / ℹ️). **error** is the one `<pre>` block, cut at 600 characters, `fail`
+  only.
+- **open** `(label, path)` is ONE plain button (colour means a decision —
+  `tg_buttons`): `_report_open(prof)` → the profile page `/profile/<role>/<id>`
+  (an admin checks who was changed), `_REPORT_PERMS` → «Shaxsiy vakolatlar»,
+  `_REPORT_IDLE_OWNERS` → «Kutish mas'ullari».
+
+Every value is escaped inside `_report_text`; a caller never calls `html.escape`.
+`_dm_report` goes through `_dm_admins_plain(text, open=)`, which now also falls
+back to the bare text when Telegram refuses a tag or the button, so a report is
+not lost to its own formatting (it was swallowed silently before). The
+container / ojidaniya / Dilafruz family of one-shots (the 15 functions from
+`grant_dilafruz_pages` to `container_extra_brigadirs_off`) is converted; the
+older one-shots still send plain `_dm_admins_plain` strings. **A new one-shot
+uses `_dm_report`.** Layout test: `tests/test_admin_report.py`.
+
+Known, unchanged: a step that cannot settle (a `warn`) tells the admins again on
+every start, because it retries — it is the step's flag that stops it.

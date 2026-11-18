@@ -9011,19 +9011,87 @@ def _run_ddl(statements: list[str]) -> bool:
         db.close()
 
 
-def _dm_admins_plain(html_text: str) -> None:
+def _dm_admins_plain(html_text: str, open=None) -> None:
     """Say something to every admin. Used where a failure would otherwise be
-    invisible — the same door `report_leader_deadline_rules` uses."""
+    invisible — the same door `report_leader_deadline_rules` uses.
+
+    `open` = (label, path): ONE plain button under the message that opens that
+    page of the platform. A tag or a button Telegram refuses falls back to the
+    bare text — a report must not be lost to its own formatting."""
+    import html
+    import re
     try:
+        from telebot import types
+        from app.config import settings as cfg
         from app.routers.boot import _recipients
         from app.telegram_bot import bot
+        kb = None
+        if open:
+            kb = types.InlineKeyboardMarkup()
+            kb.add(types.InlineKeyboardButton(
+                open[0], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{open[1]}")))
         for chat_id in _recipients():
             try:
-                bot.send_message(chat_id, html_text, parse_mode="HTML")
+                bot.send_message(chat_id, html_text, parse_mode="HTML", reply_markup=kb)
             except Exception:
-                pass
+                try:
+                    bot.send_message(chat_id, html.unescape(re.sub(r"<[^>]+>", "", html_text)))
+                except Exception:
+                    pass
     except Exception as exc:
         print(f"[startup] admin alert not delivered: {exc}")
+
+
+# ── The admin-report CARD (docs/notifications-and-telegram.md, «Admin reports») ─
+# Every one-shot that tells the admins «done / needs you / failed» sends this
+# one card through `_dm_report`: a title that names the subject, ONE italic
+# line saying what happened, labelled rows (an empty value drops its row, a
+# list becomes bullets), the thing to do in a quote, and a button to the page
+# where it is done. Values are escaped HERE, never by the caller.
+_REPORT_TONE = {                       # tone → (icon, status when none is given)
+    "ok": ("✅", "Bajarildi"),
+    "warn": ("⚠️", "Hech narsa o'zgarmadi — qo'lda kerak"),
+    "fail": ("🛑", "Bajarilmadi — keyingi ishga tushirishda qayta uriniladi"),
+    "pause": ("⏸", "To'xtatildi"),
+}
+_REPORT_PERMS = ("Shaxsiy vakolatlar", "/panel/permissions")
+_REPORT_IDLE_OWNERS = ("Kutish mas'ullari", "/panel/idleowners")
+
+
+def _report_who(prof) -> str:
+    """«Davron Kulmurodov · Mehmon» — the profile as a person reads it."""
+    from app.telegram_bot import _ROLE_LABELS
+    return f"{prof.name} · {_ROLE_LABELS['uz'].get(prof.role, prof.role)}"
+
+
+def _report_open(prof) -> tuple:
+    return ("Profilni ochish", f"/profile/{prof.role}/{prof.id}")
+
+
+def _report_text(tone: str, title: str, status=None, rows=(), notes=(), error=None) -> str:
+    import html
+    e = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    icon, default = _REPORT_TONE[tone]
+    out = [f"{icon} <b>{e(title)}</b>", f"<i>{e(status or default)}</i>"]
+    body = []
+    for ic, label, value in rows:
+        if isinstance(value, (list, tuple, set)):
+            value = [v for v in value if v]
+            if value:
+                body.append(f"{ic} {e(label)}:\n" + "\n".join(f"   • {e(v)}" for v in value))
+        elif value:
+            body.append(f"{ic} {e(label)} — <b>{e(value)}</b>")
+    if body:
+        out += ["", *body]
+    if notes:
+        out += ["", "<blockquote>" + "\n".join(f"{ic} {e(t)}" for ic, t in notes) + "</blockquote>"]
+    if error is not None:
+        out += ["", f"<pre>{e(str(error)[:600])}</pre>"]
+    return "\n".join(out)
+
+
+def _dm_report(tone: str, title: str, *, open=None, **parts) -> None:
+    _dm_admins_plain(_report_text(tone, title, **parts), open=open)
 
 
 def report_auto_schema() -> None:
@@ -10540,12 +10608,9 @@ _DILAFRUZ_GRANTS = {"page.view.shift-daily": "all", "page.view.production": "all
 
 
 def grant_dilafruz_pages() -> None:
-    import html
-
     from app import capabilities
     from app.services.people import fold_name
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=DILAFRUZ_GRANT_FLAG).first():
@@ -10556,13 +10621,13 @@ def grant_dilafruz_pages() -> None:
             if any(_DILAFRUZ_TOKENS <= set(fold_name(n).split()) for n in names if n):
                 found.append(p)
         if len(found) != 1:
-            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · guest:{p.id}" for p in found]
             print(f"[startup] Dilafruz grant: {len(found)} guest profiles match — nothing granted")
-            _dm_admins_plain(
-                "⚠️ <b>Fozilova Dilafruz — sahifalar berilmadi</b>\n"
-                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda bering: «Smena kunligi» va "
-                "«Zagruzka fayli» (all).")
+            _dm_report("warn", "Fozilova Dilafruz · sahifalar berilmadi",
+                       rows=[("🔎", "Mehmon profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda bering: «Smena kunligi» va "
+                                    "«Zagruzka fayli» (faqat ko'rish).")],
+                       open=_REPORT_PERMS)
             return
         prof = found[0]
         key = f"guest:{prof.id}"
@@ -10576,16 +10641,16 @@ def grant_dilafruz_pages() -> None:
             TelegramUserRole.role == "guest", TelegramUserRole.role_id == prof.id).all()
         status = ", ".join(sorted({r.status or "?" for r in reqs})) or "ro'yxatdan o'tmagan"
         print(f"[startup] Dilafruz grant: {key} → {sorted(_DILAFRUZ_GRANTS)}; request: {status}")
-        _dm_admins_plain(
-            "✅ <b>Fozilova Dilafruz — sahifalar berildi</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            "«Smena kunligi» · «Zagruzka fayli» (all) — faqat ko'rish.\n"
-            f"Mehmon so'rovi holati: {esc(status)}")
+        _dm_report("ok", f"{prof.name} · sahifalar berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🔑", "Endi ochiq", ["Smena kunligi", "Zagruzka fayli"]),
+                         ("👁", "Huquq", "faqat ko'rish"),
+                         ("📝", "Mehmon so'rovi", status)],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Dilafruz grant failed: {exc}")
-        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — sahifalar berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Fozilova Dilafruz · sahifalar berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10607,24 +10672,21 @@ def _dilafruz_profiles(db) -> list:
 
 
 def dilafruz_containers_only() -> None:
-    import html
-
     from app import capabilities
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=DILAFRUZ_CONTAINERS_FLAG).first():
             return
         found = _dilafruz_profiles(db)
         if len(found) != 1:
-            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · guest:{p.id}" for p in found]
             print(f"[startup] Dilafruz containers: {len(found)} guest profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Fozilova Dilafruz — «Konteynerlar» berilmadi</b>\n"
-                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda: «Konteynerlar» yoqing; «Smena "
-                "kunligi», «Zagruzka fayli», «Ojidaniya» o'chiring.")
+            _dm_report("warn", "Fozilova Dilafruz · «Konteynerlar» berilmadi",
+                       rows=[("🔎", "Mehmon profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda: «Konteynerlar»ni yoqing; "
+                                    "«Smena kunligi», «Zagruzka fayli», «Ojidaniya»ni o'chiring.")],
+                       open=_REPORT_PERMS)
             return
         prof = found[0]
         key = f"guest:{prof.id}"
@@ -10638,16 +10700,16 @@ def dilafruz_containers_only() -> None:
                           value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         print(f"[startup] Dilafruz containers: {key} → containers only")
-        _dm_admins_plain(
-            "✅ <b>Fozilova Dilafruz — faqat «Konteynerlar»</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            "Berildi: «Konteynerlar». Olib tashlandi: «Smena kunligi», "
-            "«Zagruzka fayli», «Ojidaniya».")
+        _dm_report("ok", f"{prof.name} · faqat «Konteynerlar»",
+                   status="Sahifalar almashtirildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🔑", "Berildi", "Konteynerlar"),
+                         ("🚫", "Olib tashlandi", ["Smena kunligi", "Zagruzka fayli", "Ojidaniya"])],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Dilafruz containers failed: {exc}")
-        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — «Konteynerlar» berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Fozilova Dilafruz · «Konteynerlar» berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10660,23 +10722,20 @@ DILAFRUZ_FLOW_FLAG = "oneshot:guest_dilafruz_container_flow_nov14"
 
 
 def dilafruz_container_flow() -> None:
-    import html
-
     from app import capabilities
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=DILAFRUZ_FLOW_FLAG).first():
             return
         found = _dilafruz_profiles(db)
         if len(found) != 1:
-            listed = ", ".join(f"guest:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · guest:{p.id}" for p in found]
             print(f"[startup] Dilafruz container flow: {len(found)} guest profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Fozilova Dilafruz — «Konteyner berish» berilmadi</b>\n"
-                f"Mehmon profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish» sahifasini yoqing.")
+            _dm_report("warn", "Fozilova Dilafruz · «Konteyner berish» berilmadi",
+                       rows=[("🔎", "Mehmon profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish» sahifasini yoqing.")],
+                       open=_REPORT_PERMS)
             return
         prof = found[0]
         key = f"guest:{prof.id}"
@@ -10686,15 +10745,16 @@ def dilafruz_container_flow() -> None:
         db.add(AppSetting(key=DILAFRUZ_FLOW_FLAG, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         print(f"[startup] Dilafruz container flow: {key} → page.view.container-flow")
-        _dm_admins_plain(
-            "✅ <b>Fozilova Dilafruz — «Konteyner berish»</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            "Berildi: «Konteyner berish» (AXO: berish, qo'lda so'rov, nizoni hal qilish).")
+        _dm_report("ok", f"{prof.name} · «Konteyner berish»",
+                   status="AXO sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🔑", "Qila oladi", ["konteyner berish", "qo'lda so'rov",
+                                                "nizoni hal qilish"])],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Dilafruz container flow failed: {exc}")
-        _dm_admins_plain("🛑 <b>Fozilova Dilafruz — «Konteyner berish» berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Fozilova Dilafruz · «Konteyner berish» berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10721,23 +10781,21 @@ def _idle_owner_profiles(db, token: str) -> list:
 
 
 def yusuf_container_logistics() -> None:
-    import html
-
     from app import capabilities
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=YUSUF_LOGISTICS_FLAG).first():
             return
         found = _idle_owner_profiles(db, "yusuf")
         if len(found) != 1:
-            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · idle-owner:{p.id}" for p in found]
             print(f"[startup] Yusuf logistics: {len(found)} idle-owner profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Yusuf aka — «Konteyner berish» (logistika) berilmadi</b>\n"
-                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            _dm_report("warn", "Yusuf aka · «Konteyner berish» (logistika) berilmadi",
+                       rows=[("🔎", "«Kutish mas'uli» profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» "
+                                    "sahifasini yoqing.")],
+                       open=_REPORT_PERMS)
             return
         prof = found[0]
         key = f"idle-owner:{prof.id}"
@@ -10747,15 +10805,15 @@ def yusuf_container_logistics() -> None:
         db.add(AppSetting(key=YUSUF_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         print(f"[startup] Yusuf logistics: {key} → page.view.container-logistics")
-        _dm_admins_plain(
-            "✅ <b>Yusuf aka — «Konteyner berish» (logistika)</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            "Endi AXO so'rovni Nuriddin aka yoki Yusuf akaga yuborishi mumkin.")
+        _dm_report("ok", f"{prof.name} · «Konteyner berish» (logistika)",
+                   status="Logistika sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("📨", "AXO so'rovni yuborishi mumkin", ["Nuriddin aka", "Yusuf aka"])],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Yusuf logistics failed: {exc}")
-        _dm_admins_plain("🛑 <b>Yusuf aka — «Konteyner berish» (logistika) berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Yusuf aka · «Konteyner berish» (logistika) berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10768,23 +10826,21 @@ def _nuriddin_profiles(db) -> list:
 
 
 def nuriddin_container_logistics() -> None:
-    import html
-
     from app import capabilities
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=NURIDDIN_LOGISTICS_FLAG).first():
             return
         found = _nuriddin_profiles(db)
         if len(found) != 1:
-            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · idle-owner:{p.id}" for p in found]
             print(f"[startup] Nuriddin logistics: {len(found)} idle-owner profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Nuriddin aka — «Konteyner berish» (logistika) berilmadi</b>\n"
-                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            _dm_report("warn", "Nuriddin aka · «Konteyner berish» (logistika) berilmadi",
+                       rows=[("🔎", "«Kutish mas'uli» profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» "
+                                    "sahifasini yoqing.")],
+                       open=_REPORT_PERMS)
             return
         prof = found[0]
         key = f"idle-owner:{prof.id}"
@@ -10794,15 +10850,15 @@ def nuriddin_container_logistics() -> None:
         db.add(AppSetting(key=NURIDDIN_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         print(f"[startup] Nuriddin logistics: {key} → page.view.container-logistics")
-        _dm_admins_plain(
-            "✅ <b>Nuriddin aka — «Konteyner berish» (logistika)</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            "AXO so'rovlarini u qabul qilib, brigadirlarga taqsimlaydi.")
+        _dm_report("ok", f"{prof.name} · «Konteyner berish» (logistika)",
+                   status="Logistika sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🔄", "Tartib", "AXO so'rovini u qabul qilib, brigadirlarga taqsimlaydi")],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Nuriddin logistics failed: {exc}")
-        _dm_admins_plain("🛑 <b>Nuriddin aka — «Konteyner berish» (logistika) berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Nuriddin aka · «Konteyner berish» (logistika) berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10841,25 +10897,23 @@ def _davron_profile(db):
 
 
 def davron_container_logistics() -> None:
-    import html
-
     from app import capabilities
     from app.identity import profile_holders
     from app.services import container_flow as flow
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=DAVRON_LOGISTICS_FLAG).first():
             return
         prof, pool = _davron_profile(db)
         if prof is None:
-            listed = ", ".join(f"{p.role}:{p.id} {p.name}" for p in pool) or "—"
+            listed = [f"{p.name} · {p.role}:{p.id}" for p in pool]
             print(f"[startup] Davron logistics: {len(pool)} profiles named Davron — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Davron Kuldimirodov — «Konteyner berish» (logistika) berilmadi</b>\n"
-                f"«Davron» nomli profillar: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» sahifasini yoqing.")
+            _dm_report("warn", "Davron Kuldimirodov · «Konteyner berish» (logistika) berilmadi",
+                       rows=[("🔎", "«Davron» nomli profillar", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» "
+                                    "sahifasini yoqing.")],
+                       open=_REPORT_PERMS)
             return
         key = f"{prof.role}:{prof.id}"
         # Nuriddin's own container grants, the Logistics page always among them
@@ -10875,19 +10929,19 @@ def davron_container_logistics() -> None:
         db.add(AppSetting(key=DAVRON_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         tg = len(profile_holders(db, key))
-        names = ", ".join(p["name"] for p in flow.logistics_people(db))
+        names = [p["name"] for p in flow.logistics_people(db)]
         print(f"[startup] Davron logistics: {key} → {sorted(grants)} (Telegram: {tg})")
-        _dm_admins_plain(
-            "✅ <b>Davron Kuldimirodov — «Konteyner berish» (logistika)</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            f"Telegram: {tg} ta akkaunt"
-            + (" — profilga hali hech kim ulanmagan, xabarlar bormaydi" if not tg else "") + "\n"
-            f"Endi AXO so'rovni yuborishi mumkin: {esc(names)}.")
+        _dm_report("ok", f"{prof.name} · «Konteyner berish» (logistika)",
+                   status="Logistika sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("📲", "Telegram", f"{tg} ta akkaunt" if tg else "ulanmagan"),
+                         ("📨", "AXO so'rovni yuborishi mumkin", names)],
+                   notes=[] if tg else [("⚠️", "Profilga hali hech kim ulanmagan — xabarlar bormaydi.")],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Davron logistics failed: {exc}")
-        _dm_admins_plain("🛑 <b>Davron Kuldimirodov — «Konteyner berish» (logistika) berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Davron Kuldimirodov · «Konteyner berish» (logistika) berilmadi", error=exc)
     finally:
         db.close()
 
@@ -10905,24 +10959,22 @@ DAVRON_IDLE_PAGES = ("downtime", "idle-cell")
 
 
 def davron_no_idle_time() -> None:
-    import html
-
     from app import capabilities
     from app.services import idle_scope
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=DAVRON_NO_IDLE_FLAG).first():
             return
         prof, pool = _davron_profile(db)
         if prof is None:
-            listed = ", ".join(f"{p.role}:{p.id} {p.name}" for p in pool) or "—"
+            listed = [f"{p.name} · {p.role}:{p.id}" for p in pool]
             print(f"[startup] Davron idle time: {len(pool)} profiles named Davron — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Davron Kuldimirodov — «Ojidaniya» yopilmadi</b>\n"
-                f"«Davron» nomli profillar: {esc(listed)}.\n"
-                "«Shaxsiy vakolatlar»da «Ojidaniya» va «Yacheyka ojidaniyasi» sahifalarini qo'lda o'chiring.")
+            _dm_report("warn", "Davron Kuldimirodov · «Ojidaniya» yopilmadi",
+                       rows=[("🔎", "«Davron» nomli profillar", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da «Ojidaniya» va «Yacheyka ojidaniyasi» "
+                                    "sahifalarini qo'lda o'chiring.")],
+                       open=_REPORT_PERMS)
             return
         key = f"{prof.role}:{prof.id}"
         capabilities.apply_profile_perms(
@@ -10935,18 +10987,19 @@ def davron_no_idle_time() -> None:
         db.commit()
         closed = sorted(capabilities.denied_pages_for_profile(db, key))
         print(f"[startup] Davron idle time: {key} denied {closed}, released {released or '—'}")
-        _dm_admins_plain(
-            "✅ <b>Davron Kuldimirodov — «Ojidaniya» yopildi</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            f"Yopilgan sahifalar: {esc(', '.join(closed))}\n"
-            f"Bo'shatilgan toifalar: {esc(', '.join(released) or '—')}\n"
-            + ("Diqqat: bu admin profili — adminlarga taqiq ishlamaydi.\n" if prof.role == "admin" else "")
-            + "«Konteyner berish» (logistika) o'z joyida.")
+        pages = {"downtime": "Ojidaniya", "idle-cell": "Yacheyka ojidaniyasi"}
+        _dm_report("ok", f"{prof.name} · «Ojidaniya» yopildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🚫", "Yopilgan sahifalar", [pages.get(c, c) for c in closed]),
+                         ("♻️", "Bo'shatilgan toifalar", released)],
+                   notes=([("⚠️", "Bu admin profili — adminlarga taqiq ishlamaydi.")]
+                          if prof.role == "admin" else [])
+                         + [("ℹ️", "«Konteyner berish» (logistika) o'z joyida.")],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Davron idle time failed: {exc}")
-        _dm_admins_plain("🛑 <b>Davron Kuldimirodov — «Ojidaniya» yopilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Davron Kuldimirodov · «Ojidaniya» yopilmadi", error=exc)
     finally:
         db.close()
 
@@ -10961,23 +11014,20 @@ NURIDDIN_CAT_E_FLAG = "oneshot:idle_owner_nuriddin_cat_e_nov18"
 
 
 def nuriddin_cat_e() -> None:
-    import html
-
     from app.services import idle_scope
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=NURIDDIN_CAT_E_FLAG).first():
             return
         found = _nuriddin_profiles(db)
         if len(found) != 1:
-            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in found) or "—"
+            listed = [f"{p.name} · idle-owner:{p.id}" for p in found]
             print(f"[startup] Nuriddin Cat E: {len(found)} idle-owner profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Nuriddin aka — Cat E berilmadi</b>\n"
-                f"«Kutish mas'uli» profillari orasida {len(found)} ta mos keldi: {esc(listed)}.\n"
-                "«Kutish mas'ullari» (/panel/idleowners) da Cat E ni qo'lda belgilang.")
+            _dm_report("warn", "Nuriddin aka · Cat E berilmadi",
+                       rows=[("🔎", "«Kutish mas'uli» profillari", listed or "mos kelmadi")],
+                       notes=[("👉", "«Kutish mas'ullari»da Cat E ni qo'lda belgilang.")],
+                       open=_REPORT_IDLE_OWNERS)
             return
         prof = found[0]
         key = f"idle-owner:{prof.id}"
@@ -10988,16 +11038,16 @@ def nuriddin_cat_e() -> None:
         db.commit()
         cats = idle_scope.categories_of(db, key)
         print(f"[startup] Nuriddin Cat E: {key} (was {before or '—'}) → owns {cats}")
-        _dm_admins_plain(
-            "✅ <b>Nuriddin aka — Cat E (ojidaniya)</b>\n"
-            f"Profil: {esc(prof.name)} ({key})\n"
-            f"Oldingi mas'ul: {esc(before or '—')}\n"
-            f"Endi ko'radigan toifalar: {esc(', '.join(cats))}")
+        _dm_report("ok", f"{prof.name} · Cat E",
+                   status="Ojidaniya toifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("🔁", "Oldingi mas'ul", before if before != key else None),
+                         ("👁", "Endi ko'radigan toifalar", cats)],
+                   open=_report_open(prof))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Nuriddin Cat E failed: {exc}")
-        _dm_admins_plain("🛑 <b>Nuriddin aka — Cat E berilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Nuriddin aka · Cat E berilmadi", error=exc)
     finally:
         db.close()
 
@@ -11011,22 +11061,20 @@ YUSUF_SEES_NURIDDIN_FLAG = "oneshot:idle_owner_yusuf_sees_nuriddin_nov18"
 
 
 def yusuf_sees_nuriddin() -> None:
-    import html
-
     from app.services import idle_scope
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=YUSUF_SEES_NURIDDIN_FLAG).first():
             return
         yusuf, nuriddin = _idle_owner_profiles(db, "yusuf"), _nuriddin_profiles(db)
         if len(yusuf) != 1 or len(nuriddin) != 1:
-            listed = ", ".join(f"idle-owner:{p.id} {p.name}" for p in yusuf + nuriddin) or "—"
+            listed = [f"{p.name} · idle-owner:{p.id}" for p in yusuf + nuriddin]
             print(f"[startup] Yusuf sees Nuriddin: {len(yusuf)}/{len(nuriddin)} profiles match — nothing changed")
-            _dm_admins_plain(
-                "⚠️ <b>Yusuf aka — Nuriddin aka toifalari ulanmadi</b>\n"
-                f"Mos kelgan profillar (Yusuf {len(yusuf)}, Nuriddin {len(nuriddin)}): {esc(listed)}.")
+            _dm_report("warn", "Yusuf aka · Nuriddin aka toifalari ulanmadi",
+                       rows=[("🔎", f"Mos kelgan profillar (Yusuf {len(yusuf)}, "
+                                   f"Nuriddin {len(nuriddin)})", listed or "topilmadi")],
+                       open=_REPORT_IDLE_OWNERS)
             return
         ykey, nkey = f"idle-owner:{yusuf[0].id}", f"idle-owner:{nuriddin[0].id}"
         idle_scope.link_sees_as(db, ykey, nkey)
@@ -11035,17 +11083,17 @@ def yusuf_sees_nuriddin() -> None:
         db.commit()
         cats = sorted(set(idle_scope.categories_of(db, ykey)) | set(idle_scope.categories_of(db, nkey)))
         print(f"[startup] Yusuf sees Nuriddin: {ykey} → {nkey}, sees {cats}")
-        _dm_admins_plain(
-            "✅ <b>Yusuf aka — ojidaniya Nuriddin aka bilan bir xil</b>\n"
-            f"{esc(yusuf[0].name)} ({ykey}) endi {esc(nuriddin[0].name)} ({nkey}) "
-            "toifalarini ham ko'radi.\n"
-            f"Ko'radigan toifalar: {esc(', '.join(cats) or '—')}\n"
-            "Mas'ul sifatida Nuriddin aka nomi qoladi.")
+        _dm_report("ok", f"{yusuf[0].name} · ojidaniya Nuriddin aka bilan bir xil",
+                   status="Nuriddin aka toifalarini ham ko'radi",
+                   rows=[("🪪", "Profil", _report_who(yusuf[0])),
+                         ("🔗", "Bog'langan", _report_who(nuriddin[0])),
+                         ("👁", "Ko'radigan toifalar", cats)],
+                   notes=[("ℹ️", "Mas'ul sifatida Nuriddin aka nomi qoladi.")],
+                   open=_report_open(yusuf[0]))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] Yusuf sees Nuriddin failed: {exc}")
-        _dm_admins_plain("🛑 <b>Yusuf aka — Nuriddin aka toifalari ulanmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "Yusuf aka · Nuriddin aka toifalari ulanmadi", error=exc)
     finally:
         db.close()
 
@@ -11059,12 +11107,9 @@ CONTAINER_NOTIFY_FLAG = "oneshot:container_flow_notify_on_nov15"
 
 
 def container_flow_notify_on() -> None:
-    import html
-
     from app.identity import profile_holders
     from app.services import container_flow as flow
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINER_NOTIFY_FLAG).first():
@@ -11078,17 +11123,16 @@ def container_flow_notify_on() -> None:
         db.commit()
         # who will actually hear: each addressee and their linked Telegram accounts
         people = flow.logistics_people(db)
-        lines = [f"• {esc(p['name'])} — Telegram: {len(profile_holders(db, p['key']))} ta"
-                 for p in people] or ["• — (logistika xodimi yo'q)"]
+        lines = [f"{p['name']} · Telegram: {len(profile_holders(db, p['key']))} ta"
+                 for p in people]
         print(f"[startup] container flow: Telegram to logistics ON ({len(people)} addressee(s))")
-        _dm_admins_plain(
-            "✅ <b>«Konteyner berish» — Telegram xabarlari yoqildi</b>\n"
-            "Yangi yoki bekor qilingan so'rov logistika xodimiga yuboriladi:\n" + "\n".join(lines))
+        _dm_report("ok", "«Konteyner berish» · Telegram xabarlari yoqildi",
+                   status="Yangi yoki bekor qilingan so'rov logistika xodimiga yuboriladi",
+                   rows=[("📨", "Qabul qiluvchilar", lines or "logistika xodimi yo'q")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] container flow notify on failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteyner berish» — Telegram xabarlari yoqilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteyner berish» · Telegram xabarlari yoqilmadi", error=exc)
     finally:
         db.close()
 
@@ -11104,11 +11148,8 @@ CONTAINERS_TV_ROLES = ("top-manager", "shift-manager")
 
 
 def containers_tv_managers() -> None:
-    import html
-
     from app.permissions import get_page_access, set_page_access
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINERS_TV_FLAG).first():
@@ -11120,14 +11161,15 @@ def containers_tv_managers() -> None:
         db.add(AppSetting(key=CONTAINERS_TV_FLAG, value=datetime.now(timezone.utc).isoformat()))
         set_page_access(db, matrix)          # commits the flag with the matrix
         print(f"[startup] containers TV board: + {added or 'nothing (already open)'}")
-        _dm_admins_plain(
-            "✅ <b>«Konteynerlar» (TV rejimi) — smena va top menejerlarga ochildi</b>\n"
-            f"Qo'shildi: {esc(', '.join(added) or '— (allaqachon ochiq edi)')}")
+        from app.telegram_bot import _ROLE_LABELS
+        _dm_report("ok", "«Konteynerlar» · TV rejimi ochildi",
+                   status="Smena va top menejerlarga ochildi",
+                   rows=[("➕", "Qo'shildi", [_ROLE_LABELS["uz"].get(r, r) for r in added]
+                                              or "allaqachon ochiq edi")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] containers TV board failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteynerlar» (TV rejimi) ochilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteynerlar» (TV rejimi) ochilmadi", error=exc)
     finally:
         db.close()
 
@@ -11143,12 +11185,9 @@ CONTAINER_RECEIVE_FLAG = "oneshot:container_receive_brigadirs_nov15"
 
 
 def container_receive_brigadirs() -> None:
-    import html
-
     from app.permissions import get_page_access, set_page_access
     from app.services import container_flow as flow
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINER_RECEIVE_FLAG).first():
@@ -11165,16 +11204,15 @@ def container_receive_brigadirs() -> None:
         db.add(AppSetting(key=CONTAINER_RECEIVE_FLAG, value=datetime.now(timezone.utc).isoformat()))
         set_page_access(db, matrix)          # commits the switch and the flag with the matrix
         print(f"[startup] container receipt: brigadirs {'added' if added else 'already open'}, Telegram ON")
-        _dm_admins_plain(
-            "✅ <b>«Konteyner berish» — brigadirlar qabul qiladi</b>\n"
-            "«Konteyner berish — qabul» brigadirlarga ochildi"
-            f"{'' if added else ' (allaqachon ochiq edi)'}; logistika taqsimlaganda har bir "
-            "brigadirga Telegram xabari boradi — «Hammasi keldi» tugmasi bilan.")
+        _dm_report("ok", "«Konteyner berish» · brigadirlar qabul qiladi",
+                   status="«Qabul» brigadirlarga ochildi",
+                   rows=[("📲", "Telegram", "logistika taqsimlaganda har bir brigadirga xabar boradi"),
+                         ("☑️", "Tasdiqlash", "«Hammasi keldi» tugmasi")],
+                   notes=[] if added else [("ℹ️", "Allaqachon ochiq edi.")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] container receipt for brigadirs failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteyner berish» — brigadirlarga ochilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteyner berish» · brigadirlarga ochilmadi", error=exc)
     finally:
         db.close()
 
@@ -11191,11 +11229,8 @@ CONTAINER_SM_ALERTS_FLAG = "oneshot:container_flow_notify_managers_on_nov17"
 
 
 def container_flow_managers_alerts_on() -> None:
-    import html
-
     from app.services import container_flow as flow
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINER_SM_ALERTS_FLAG).first():
@@ -11211,17 +11246,17 @@ def container_flow_managers_alerts_on() -> None:
         n = len(flow._sm_keys(db))
         print(f"[startup] container alerts to shift managers: ON ({n} profiles"
               f"{', already on' if was else ''})")
-        _dm_admins_plain(
-            "✅ <b>«Konteyner berish» — smena menejerlariga ogohlantirishlar yoqildi</b>\n"
-            f"Endi {n} ta smena menejeri Telegramda xabar oladi"
-            f"{' (allaqachon yoqilgan edi)' if was else ''}: so'rov muddati o'tib ham "
-            "taqsimlanmaganda, va brigadir eslatmadan 30 daqiqa o'tib ham qabulni "
-            "tasdiqlamaganda. O'chirish: «Sozlamalar» → «Telegram xabarlari».")
+        _dm_report("ok", "«Konteyner berish» · smena menejerlariga ogohlantirishlar yoqildi",
+                   status=f"Endi {n} ta smena menejeri Telegramda xabar oladi",
+                   rows=[("⏰", "Qachon", ["so'rov muddati o'tib ham taqsimlanmaganda",
+                                           "brigadir eslatmadan 30 daqiqa o'tib ham "
+                                           "qabulni tasdiqlamaganda"])],
+                   notes=([("ℹ️", "Allaqachon yoqilgan edi.")] if was else [])
+                         + [("ℹ️", "O'chirish: «Sozlamalar» → «Telegram xabarlari».")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] container alerts to shift managers failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteyner berish» — smena menejerlariga ogohlantirishlar yoqilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteyner berish» · smena menejerlariga ogohlantirishlar yoqilmadi", error=exc)
     finally:
         db.close()
 
@@ -11238,11 +11273,8 @@ CONTAINER_EXTRA_FLAG = "oneshot:container_extra_brigadirs_nov18"
 
 
 def container_extra_brigadirs() -> None:
-    import html
-
     from app.permissions import get_page_access, set_page_access
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINER_EXTRA_FLAG).first():
@@ -11254,16 +11286,16 @@ def container_extra_brigadirs() -> None:
         db.add(AppSetting(key=CONTAINER_EXTRA_FLAG, value=datetime.now(timezone.utc).isoformat()))
         set_page_access(db, matrix)          # commits the flag with the matrix
         print(f"[startup] container extra: brigadirs {'added' if added else 'already open'}")
-        _dm_admins_plain(
-            "✅ <b>«Konteyner berish» — brigadirlar qo'shimcha konteyner so'ray oladi</b>\n"
-            "«Qabul»da «Qo'shimcha so'rash» brigadirlarga ochildi"
-            f"{'' if added else ' (allaqachon ochiq edi)'}. So'rov AXOga Telegramda boradi; "
-            "AXO «So'rovlar»da tasdiqlaydi yoki rad etadi, javob brigadirga boradi.")
+        _dm_report("ok", "«Konteyner berish» · qo'shimcha so'rash ochildi",
+                   status="«Qabul»da «Qo'shimcha so'rash» brigadirlarga ochildi",
+                   rows=[("📨", "Tartib", ["so'rov AXOga Telegramda boradi",
+                                           "AXO «So'rovlar»da tasdiqlaydi yoki rad etadi",
+                                           "javob brigadirga boradi"])],
+                   notes=[] if added else [("ℹ️", "Allaqachon ochiq edi.")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] container extra for brigadirs failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteyner berish» — qo'shimcha so'rov brigadirlarga ochilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteyner berish» · qo'shimcha so'rov brigadirlarga ochilmadi", error=exc)
     finally:
         db.close()
 
@@ -11281,11 +11313,8 @@ CONTAINER_EXTRA_OFF_FLAG = "oneshot:container_extra_brigadirs_off_nov18"
 
 
 def container_extra_brigadirs_off() -> None:
-    import html
-
     from app.permissions import get_page_access, set_page_access
 
-    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=CONTAINER_EXTRA_OFF_FLAG).first():
@@ -11297,16 +11326,15 @@ def container_extra_brigadirs_off() -> None:
         db.add(AppSetting(key=CONTAINER_EXTRA_OFF_FLAG, value=datetime.now(timezone.utc).isoformat()))
         set_page_access(db, matrix)          # commits the flag with the matrix
         print(f"[startup] container extra: brigadirs {'removed' if had else 'were not on it'}")
-        _dm_admins_plain(
-            "⏸ <b>«Konteyner berish» — qo'shimcha so'rov brigadirlardan yopildi</b>\n"
-            "«Qabul»dagi «Qo'shimcha so'rash» brigadirlarga endi ko'rinmaydi"
-            f"{'' if had else ' (ular uchun ochiq emas edi)'}. Hammasi saqlangan — keyin "
-            "«Ruxsatlar»da bitta belgi bilan qayta ochiladi.")
+        _dm_report("pause", "«Konteyner berish» · qo'shimcha so'rash yopildi",
+                   status="«Qabul»dagi «Qo'shimcha so'rash» brigadirlarga endi ko'rinmaydi",
+                   notes=([] if had else [("ℹ️", "Ular uchun ochiq emas edi.")])
+                         + [("ℹ️", "Hammasi saqlangan — «Ruxsatlar»da bitta belgi bilan "
+                                   "qayta ochiladi.")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[startup] closing container extra for brigadirs failed: {exc}")
-        _dm_admins_plain("🛑 <b>«Konteyner berish» — qo'shimcha so'rov brigadirlardan yopilmadi</b>\n"
-                         f"<pre>{esc(str(exc)[:600])}</pre>")
+        _dm_report("fail", "«Konteyner berish» · qo'shimcha so'rov brigadirlardan yopilmadi", error=exc)
     finally:
         db.close()
 
