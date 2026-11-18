@@ -532,6 +532,35 @@ class FlowTest(unittest.TestCase):
             self.assertFalse(flow.settings(self.db)["notify_managers"])   # an «off» sticks
             self.assertEqual(dm.call_count, 1)
 
+    def test_extra_oneshot_opens_to_brigadirs_once(self):
+        from app import startup
+        from app.permissions import get_page_access, set_page_access
+
+        def access():
+            s = self.pg.Session()
+            try:
+                return get_page_access(s)["container-extra"]
+            finally:
+                s.close()
+
+        s = self.pg.Session()
+        m = get_page_access(s)
+        m["container-extra"] = []                         # as production's stored matrix has it
+        set_page_access(s, m)
+        s.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_extra_brigadirs()
+            self.assertEqual(access(), ["supervisor"])
+            s = self.pg.Session()
+            m = get_page_access(s)
+            m["container-extra"] = []                     # an admin unticks it later …
+            set_page_access(s, m)
+            s.close()
+            startup.container_extra_brigadirs()
+            self.assertEqual(access(), [])                # … and it stays unticked
+            self.assertEqual(dm.call_count, 1)
+
     def test_split_hint_follows_each_units_hour(self):
         from app.models import ContainerRequest
         for i, n in ((12, "Bravo"), (13, "Alfa")):
@@ -986,9 +1015,13 @@ class FlowTest(unittest.TestCase):
             flow.save_settings(self.db, [1], 2, notify_brigadirs=True)
             flow.approve_extra(self.db, e.id, {"yellow": 5}, nk, "", "Dilafruz", axo)
             self.db.commit()
-            self.assertFalse(flow.notify_extra_decided(e.id))              # the brigadir cannot open it yet
+            from app.permissions import get_page_access, set_page_access
+            m = get_page_access(self.db)
+            m["container-extra"] = []                                     # the role closed …
+            set_page_access(self.db, m)
+            self.assertFalse(flow.notify_extra_decided(e.id))              # … so the brigadir cannot open it
             self.db.add(ProfilePermission(profile_key="supervisor:1", capability=flow.EXTRA_CAP,
-                                          mode="grant", scope="all"))
+                                          mode="grant", scope="all"))     # … unit 1 by a personal grant
             self.db.commit()
             self.assertTrue(flow.notify_extra_decided(e.id))
             key, nkey, html, kb = sent[-1]
@@ -1156,7 +1189,8 @@ class PageKeyTest(unittest.TestCase):
         from app.permissions import DEFAULT_PAGE_ACCESS, PAGE_KEYS
         for key in ("container-flow", "container-logistics", "container-receive", "container-extra"):
             self.assertIn(key, PAGE_KEYS)
-            self.assertEqual(DEFAULT_PAGE_ACCESS[key], ["supervisor"] if key == "container-receive" else [])
+            self.assertEqual(DEFAULT_PAGE_ACCESS[key],
+                             ["supervisor"] if key in ("container-receive", "container-extra") else [])
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
         # the managers watch the whole page and press nothing on it
         self.assertIn("container-watch", PAGE_KEYS)

@@ -10983,6 +10983,48 @@ def container_flow_managers_alerts_on() -> None:
         db.close()
 
 
+# ── 18 Nov: brigadirs may ask AXO for extra containers ──────────────────────
+# Built admin-only the same morning (v4.584.0); the operator, asked «open it
+# to brigadirs now, or after you announce it?»: «Open it now». The brigadir
+# role gets `container-extra` in the STORED access matrix (as ticking it on the
+# Access tab would — the new default alone would not reach a stored matrix).
+# Once, under a flag: an untick later sticks. The Telegram side needs nothing:
+# the ask to AXO (`notify_extra`) and the answer to the brigadir
+# (`notify_brigadirs`) are both ON already.
+CONTAINER_EXTRA_FLAG = "oneshot:container_extra_brigadirs_nov18"
+
+
+def container_extra_brigadirs() -> None:
+    import html
+
+    from app.permissions import get_page_access, set_page_access
+
+    esc = lambda v: html.escape(str(v), quote=False)        # noqa: E731
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_EXTRA_FLAG).first():
+            return
+        matrix = get_page_access(db)
+        roles = list(matrix.get("container-extra", []))
+        added = "supervisor" not in roles
+        matrix["container-extra"] = roles + (["supervisor"] if added else [])
+        db.add(AppSetting(key=CONTAINER_EXTRA_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the flag with the matrix
+        print(f"[startup] container extra: brigadirs {'added' if added else 'already open'}")
+        _dm_admins_plain(
+            "✅ <b>«Konteyner berish» — brigadirlar qo'shimcha konteyner so'ray oladi</b>\n"
+            "«Qabul»da «Qo'shimcha so'rash» brigadirlarga ochildi"
+            f"{'' if added else ' (allaqachon ochiq edi)'}. So'rov AXOga Telegramda boradi; "
+            "AXO «So'rovlar»da tasdiqlaydi yoki rad etadi, javob brigadirga boradi.")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container extra for brigadirs failed: {exc}")
+        _dm_admins_plain("🛑 <b>«Konteyner berish» — qo'shimcha so'rov brigadirlarga ochilmadi</b>\n"
+                         f"<pre>{esc(str(exc)[:600])}</pre>")
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

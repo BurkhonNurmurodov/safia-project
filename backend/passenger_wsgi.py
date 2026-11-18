@@ -288,6 +288,8 @@ try:
     container_receive_brigadirs()
     from app.startup import container_flow_managers_alerts_on
     container_flow_managers_alerts_on()
+    from app.startup import container_extra_brigadirs
+    container_extra_brigadirs()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     date_window_edits_nov13()

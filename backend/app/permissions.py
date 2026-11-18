@@ -207,9 +207,9 @@ DEFAULT_PAGE_ACCESS = {
     "container-watch": ["top-manager", "shift-manager"],
     # A brigadir asking AXO for EXTRA containers past their limit (2026-11-18,
     # the operator: «add the request page for supervisors if they need extra
-    # containers, and this request goes through AXO») — admin-only until the
-    # operator opens it to the brigadirs (docs/containers-flow.md).
-    "container-extra": [],
+    # containers, and this request goes through AXO») — admin-only for its
+    # first morning, then opened to the brigadirs (docs/containers-flow.md).
+    "container-extra": ["supervisor"],   # brigadirs from 2026-11-18 (`startup.container_extra_brigadirs`)
     # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
     # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
     # operator opens it: a token reads every cell's plan and people.

@@ -450,6 +450,17 @@ and makes him the second addressee on AXO's «Yangi so'rov». Not exactly one
 match → nothing changes and the admins get a DM saying so. Nothing he held is
 revoked.
 
+## Extra container requests open to the brigadirs (`startup.container_extra_brigadirs`, 2026-11-18)
+
+The brigadirs' request for extra containers through AXO shipped admin-only on
+the morning of 18 Nov (v4.584.0). Asked whether to open it now or after an
+announcement, the operator answered «Open it now». A one-shot (flag
+`oneshot:container_extra_brigadirs_nov18`, `later`) adds `supervisor` to the
+STORED access of `container-extra` (the default moves with it) and DMs the
+admins. Once: an untick later sticks. Nothing else was switched — AXO's
+message about an ask (`notify_extra`) and the brigadir's answer
+(`notify_brigadirs`) were already ON. docs/containers-flow.md.
+
 ## Container alerts on for the shift managers (`startup.container_flow_managers_alerts_on`, 2026-11-17)
 
 The alerts «Konteyner berish» sends to the shift managers — a request not

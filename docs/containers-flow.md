@@ -439,10 +439,12 @@ while it was wrong. Agreed with the operator the same day («Yes, build it»):
 through logistics like every request; past the limit only by AXO's approval
 and only by the approved amount; admin-only until he announces it.
 
-- **Page key `container-extra`** (`permissions`, default `[]`) — ADMIN-ONLY
-  until the operator opens it to the brigadirs (tick «supervisor» on the
-  Access tab, or a one-shot on his word). It joins `WHO` (the page's roles) and
-  shows «Qabul» to its holder. Table `container_extras` (`ContainerExtra`,
+- **Page key `container-extra`** (`permissions`) — shipped admin-only, then
+  **open to the brigadirs from 2026-11-18** the same day (the operator, asked
+  «now, or after you announce it?»: «Open it now»;
+  `startup.container_extra_brigadirs`, once under a flag, so an untick on the
+  Access tab later sticks; the default is `["supervisor"]` with it). It joins
+  `WHO` (the page's roles) and shows «Qabul» to its holder. Table `container_extras` (`ContainerExtra`,
   from `create_all`): `asked` → `approved` (with `approved` counts and the
   `request_id` it became) / `rejected` (AXO's note) / `cancelled` (the
   brigadir withdrew it while it waited).

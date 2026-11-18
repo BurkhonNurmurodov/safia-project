@@ -117,8 +117,8 @@ export const DEFAULT_PAGE_ACCESS = {
   "container-logistics": [],
   "container-receive": ["supervisor"],   // brigadirs from 2026-11-15
   "container-watch": ["top-manager", "shift-manager"],
-  // A brigadir asking AXO for extra containers — admin-only until the operator opens it.
-  "container-extra": [],
+  // A brigadir asking AXO for extra containers — brigadirs from 2026-11-18.
+  "container-extra": ["supervisor"],
   // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
   containers: ["top-manager", "shift-manager"],
   // «API» — personal tokens for the external read API. Admin-only until the
