@@ -12,6 +12,7 @@ import StyledSelect from "../ui/StyledSelect";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { PAGES, ROLE_LABEL_KEYS } from "../../config/pages";
+import { capName } from "../../utils/capLabel";
 import { adminPage } from "../../config/adminNav";
 import { TOP, navName } from "../../utils/navLayout";
 import { moveTab, movePage, orderApps, orderPages, orderTabs } from "../../utils/navLayoutEdit";
@@ -487,7 +488,7 @@ function ScreenBody({ node, ed, data, acc, A, P, ui, onSelect }) {
           <Muted>{A.adminNote}</Muted>
           {tabCaps.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {tabCaps.map((c) => <Tag key={c.key} tone="grant" icon={ShieldCheck}>{c.page ? pageName(c.page) : t(`caps.${c.key}.label`)}</Tag>)}
+              {tabCaps.map((c) => <Tag key={c.key} tone="grant" icon={ShieldCheck}>{capName(t, c.key)}</Tag>)}
             </div>
           )}
           {holders.length > 0 && (

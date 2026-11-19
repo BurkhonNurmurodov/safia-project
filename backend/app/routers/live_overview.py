@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.models import (
     Attendance, Cell, CellOjidaniyaInterval, DayApproval, Manager, PPDaily, PPLineDaily,
@@ -57,7 +58,7 @@ def _own_scope(db: Session, payload: dict):
     """(unit ids the caller is locked to or None, the shift that lock implies or None)."""
     role = payload.get("role")
     rid = payload.get("role_id")
-    if role in ("supervisor", "leader"):
+    if role in ("supervisor", "leader") and not page_admin(db, payload, "live"):
         # A supervisor's role_id IS the unit; a leader's role_id is their UNIT too
         # (identity.py) — both read their own brigadir's board and nothing else.
         try:
@@ -183,7 +184,8 @@ def get_live_overview(
     frame = frames[shift_n]
 
     replay = None
-    if date_str and payload.get("role") in ("admin", "top-manager"):
+    can_replay = payload.get("role") == "top-manager" or page_admin(db, payload, "live")
+    if date_str and can_replay:
         try:
             d = date.fromisoformat(date_str)
         except ValueError:
@@ -303,6 +305,6 @@ def get_live_overview(
         "factory_locked": viewer_factory_id(db, payload) is not None,
         "units": len(unit_ids),
         "replay": replay,
-        "can_replay": payload.get("role") in ("admin", "top-manager"),
+        "can_replay": can_replay,
     }
     return data

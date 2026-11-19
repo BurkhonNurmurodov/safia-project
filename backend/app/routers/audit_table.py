@@ -12,8 +12,8 @@ report door's masking (`ops_door.mask_rows`), so a column or value shaped like
 a credential reads •••, and the search never looks inside such a column (a
 search would otherwise reveal a masked value one character at a time).
 
-Admins only (`verify_admin` on every route), never grantable: the page is an
-`adminOnly` Laboratory row behind `RequireAdmin`.
+Page key `audit` on every route — admin-only by default, grantable since
+2026-11-19 (the operator: every page can be granted).
 """
 from __future__ import annotations
 
@@ -30,11 +30,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import allow_long, get_db
-from app.routers.admin import verify_admin
+from app.permissions import require_page
 from app.services import action_log, ops_door
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/audit-table", tags=["audit-table"])
+_page = require_page("audit")
 
 SCHEMA, TABLE = "public", "audit"
 TZ = ZoneInfo("Asia/Tashkent")
@@ -200,7 +201,7 @@ def _require(meta: dict) -> None:
 
 
 @router.get("/meta")
-def get_meta(payload: dict = Depends(verify_admin), db: Session = Depends(get_db)):
+def get_meta(payload: dict = Depends(_page), db: Session = Depends(get_db)):
     """What `public.audit` is: whether it exists, its columns and their kinds,
     the column a period applies to, the default order."""
     _read_only(db)
@@ -219,7 +220,7 @@ def get_rows(
     date_to: Optional[date] = None,
     sort: Optional[str] = None,
     dir: str = Query("desc"),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_page),
     db: Session = Depends(get_db),
 ):
     """One page of the table, the filter applied, newest first by default.
@@ -250,7 +251,7 @@ def get_rows(
 
 
 @router.get("/row")
-def get_row(key: str = Query(..., max_length=500), payload: dict = Depends(verify_admin),
+def get_row(key: str = Query(..., max_length=500), payload: dict = Depends(_page),
             db: Session = Depends(get_db)):
     """One row WHOLE, by its primary key (a table with none is read from its
     page, where long values are cut)."""
@@ -282,7 +283,7 @@ class ExportBody(BaseModel):
 
 
 @router.post("/export.xlsx")
-def export_xlsx(body: ExportBody, request: Request, payload: dict = Depends(verify_admin),
+def export_xlsx(body: ExportBody, request: Request, payload: dict = Depends(_page),
                 db: Session = Depends(get_db)):
     """The filtered rows in the screen's column order, ≤ EXPORT_MAX."""
     from openpyxl import Workbook

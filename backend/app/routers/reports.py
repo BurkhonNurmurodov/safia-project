@@ -36,6 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.permissions import require_page
 from app.services import (
@@ -198,7 +199,7 @@ def _idle_share_by_month(db: Session, payload: dict, months: list[dict],
     return out
 
 
-def _sees_cost(payload: dict) -> bool:
+def _sees_cost(db: Session, payload: dict) -> bool:
     """Whether the «Xarajat» section is this viewer's — `/downtime/cost`'s own
     rule (`downtime.COST_ROLES`: admins and shift managers, the operator's
     ruling of 2026-10-04), imported rather than re-spelled, so the report and
@@ -206,7 +207,9 @@ def _sees_cost(payload: dict) -> bool:
     anybody else the section is not in the payload at all, as the tab is not
     on /downtime for them."""
     from app.routers.downtime import COST_ROLES
-    return payload.get("role") in COST_ROLES
+    # + an admin's powers on /downtime by grant — keep in step with
+    # `downtime._require_cost_viewer`.
+    return payload.get("role") in COST_ROLES or page_admin(db, payload, "downtime")
 
 
 def _cost_by_month(db: Session, payload: dict, months: list[dict], ids: list[int]) -> dict:
@@ -336,7 +339,7 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
     ontime_pct: dict = {}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
     # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
-    cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(payload) else None
+    cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(db, payload) else None
     turn = {m0["ym"]: None for m0 in months}
     if ids:
         from app.routers.brigadirs import build_metrics_list
@@ -505,7 +508,7 @@ def _scope(db: Session, payload: dict, factory, shift, mids: list[int]) -> tuple
     key = (factory, shift, tuple(mids),
            None if scoped is None else tuple(sorted(scoped)),
            None if lock is None else tuple(sorted(lock)),
-           _sees_cost(payload))
+           _sees_cost(db, payload))
     return units, lock, key
 
 

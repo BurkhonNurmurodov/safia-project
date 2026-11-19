@@ -26,15 +26,15 @@ export function useLauncher() {
   const isAdmin = role === "admin";
   const { access, nav, isLoading: accessLoading } = usePageAccess();
   const layout = useMemo(() => resolveLayout(nav), [nav]);
-  const { capPages, capTabs, deniedPages, isLoading: capsLoading } = useCapabilities();
+  const { capPages, capTabs, deniedPages, can: capCan, isLoading: capsLoading } = useCapabilities();
 
   const may = useCallback((l) => {
     if (isAdmin) return true;
-    if (l.adminOnly) return false;
+    if (l.adminOnly) return !!l.cap && capCan(l.cap);
     // An admin-app page (`tab`), in whichever app the layout seats it.
     if (l.tab) return capTabs.includes(l.capKey ?? l.tab);
     return canAccessPage(role, l.page, access, capPages, deniedPages);
-  }, [isAdmin, role, access, capPages, capTabs, deniedPages]);
+  }, [isAdmin, role, access, capPages, capTabs, deniedPages, capCan]);
 
   const apps = useMemo(
     () => layout.apps.filter((a) => linksOfApp(a.id, may, layout).length > 0),

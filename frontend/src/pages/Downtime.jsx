@@ -30,6 +30,7 @@ import { exportXlsx } from "../utils/exportXlsx";
 import CategoryMatrix from "../components/idle/CategoryMatrix";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { padChartParams, axisDate, ticksForWidth, axisLabelPx } from "../utils/chartRange";
 import useElementWidth from "../hooks/useElementWidth";
 import { Info, Layers, UserRound, Tag, FileSpreadsheet, Presentation, Table2 } from "lucide-react";
@@ -95,7 +96,11 @@ export default function Downtime() {
   // routers/downtime.py, keep the two in step). A «cost» value saved before the
   // rule reads as the Analysis tab, so nobody lands on a tab they cannot open.
   const { auth } = useAuth();
-  const canCost = COST_ROLES.includes(auth?.role);
+  const { adminOn } = useCapabilities();
+  // An admin's powers here — an admin or a `page.admin.downtime` holder
+  // (capabilities.page_admin, the server's own test on every such door).
+  const pageAdmin = auth?.role === "admin" || adminOn("downtime");
+  const canCost = pageAdmin || COST_ROLES.includes(auth?.role);
   const view = savedView === "cost" && !canCost ? "analysis" : savedView;
   const percat = view === "percat";
   // «Xarajat» is a self-contained tab: its own filters, its own fetch, its own
@@ -142,7 +147,7 @@ export default function Downtime() {
   // «Haftalik hisobot» — the PPTX deck. Admin only, and deliberately NOT
   // driven by the filters on screen: it is a fixed weekly report about one
   // plant, so the confirm writes its whole scope out before anything is built.
-  const isAdmin = auth?.role === "admin";
+  const isAdmin = pageAdmin;
   const [deckAsk, setDeckAsk] = useState(false);
   const [deckBusy, setDeckBusy] = useState(false);
   const [deckErr, setDeckErr] = useState("");

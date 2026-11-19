@@ -26,6 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.identity import viewer_profile_key
 from app.models import (
@@ -65,12 +66,12 @@ def _who(payload: dict) -> str:
     return payload.get("full_name") or str(payload.get("sub") or "")
 
 
-def _is_admin(payload: dict) -> bool:
-    return payload.get("role") == "admin"
+def _is_admin(db: Session, payload: dict) -> bool:
+    return page_admin(db, payload, "assessment")
 
 
-def _require_admin(payload: dict) -> None:
-    if not _is_admin(payload):
+def _require_admin(db: Session, payload: dict) -> None:
+    if not _is_admin(db, payload):
         raise HTTPException(status_code=403, detail={"code": "admin_only", "message": "Only an admin can do this."})
 
 
@@ -181,8 +182,8 @@ def _has_work(db: Session, aid: int) -> bool:
 # ── meta ──────────────────────────────────────────────────────────────────────
 
 @router.get("/meta")
-def get_meta(payload: dict = Depends(PAGE)):
-    return {**rules.meta(), "is_admin": _is_admin(payload)}
+def get_meta(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    return {**rules.meta(), "is_admin": _is_admin(db, payload)}
 
 
 # ── the question bank (admins) ───────────────────────────────────────────────
@@ -199,7 +200,7 @@ def _q_dict(q: AssessmentQuestion, used: dict[int, int]) -> dict:
 def list_questions(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """The whole bank (archived included, marked) + whether the active part
     can fill a draw. Admins only — a judge never browses the bank."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     used = dict(db.query(AssessmentItem.question_id, func.count(AssessmentItem.id))
                 .filter(AssessmentItem.question_id.isnot(None))
                 .group_by(AssessmentItem.question_id).all())
@@ -222,7 +223,7 @@ def add_questions(body: dict = Body(...), db: Session = Depends(get_db), payload
     identical to an active question of the same department is skipped. An
     `answer` (the expected answer) is taken only when exactly ONE question is
     added — it could belong to no line in particular otherwise."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     dept, qtype = _valid_dept_type(body.get("department"), body.get("qtype"))
     lines = [ln.strip() for ln in str(body.get("text") or "").replace("\r\n", "\n").split("\n")]
     lines = [ln[:rules.MAX_TEXT] for ln in lines if ln]
@@ -253,7 +254,7 @@ def add_questions(body: dict = Body(...), db: Session = Depends(get_db), payload
 
 @router.put("/questions/{qid}")
 def edit_question(qid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    _require_admin(payload)
+    _require_admin(db, payload)
     q = db.query(AssessmentQuestion).filter(AssessmentQuestion.id == qid).first()
     if not q:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Question not found."})
@@ -276,7 +277,7 @@ def edit_question(qid: int, body: dict = Body(...), db: Session = Depends(get_db
 def archive_question(qid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Take a question out of the draw (or put it back). Never deleted: the
     sittings it was drawn into keep their own copy anyway."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     q = db.query(AssessmentQuestion).filter(AssessmentQuestion.id == qid).first()
     if not q:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Question not found."})
@@ -313,7 +314,7 @@ def _sample_scope(db: Session) -> tuple[list[int], list[Assessment]]:
 @router.get("/samples")
 def sample_state(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """What «Namunalarni o'chirish» would remove — said before it does."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     qids, sittings = _sample_scope(db)
     cands = {c.id: c.full_name for c in db.query(AssessmentCandidate).filter(
         AssessmentCandidate.id.in_({a.candidate_id for a in sittings})).all()} if sittings else {}
@@ -327,7 +328,7 @@ def delete_samples(db: Session = Depends(get_db), payload: dict = Depends(PAGE))
     """Remove every SAMPLE question and every sitting drawn from one (its
     scorecards and grades with it), plus a candidate left with no sitting.
     Real questions are untouched. Admins only; no undo — the page asks first."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     qids, sittings = _sample_scope(db)
     aids = [a.id for a in sittings]
     cand_ids = {a.candidate_id for a in sittings}
@@ -386,7 +387,7 @@ def search_workers(q: str = Query(default=""), limit: int = Query(default=30, ge
     apostrophes ignored), for the new-assessment form. Admins only — it is the
     door to a sitting. With fewer than 2 letters it answers nothing but the
     directory's size, so the dropdown never paints thousands of rows."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     words = [w for w in _fold_name(q).split(" ") if w]
     out = []
     if sum(len(w) for w in words) >= 2:
@@ -496,7 +497,7 @@ def list_assessments(
         q = q.filter(Assessment.status == status)
     rows = q.order_by(Assessment.id.desc()).limit(500).all()
     if not rows:
-        return {"rows": [], "is_admin": _is_admin(payload), "total": rules.TOTAL}
+        return {"rows": [], "is_admin": _is_admin(db, payload), "total": rules.TOTAL}
     ids = [a.id for a in rows]
     cands = {c.id: c for c in db.query(AssessmentCandidate).filter(
         AssessmentCandidate.id.in_({a.candidate_id for a in rows})).all()}
@@ -529,7 +530,7 @@ def list_assessments(
             "results_hidden": hidden,
             "overall": None if hidden or not j else {"passed": p, "judged": j, "pct": round(p * 100.0 / j, 1)},
         })
-    return {"rows": out, "is_admin": _is_admin(payload), "total": rules.TOTAL}
+    return {"rows": out, "is_admin": _is_admin(db, payload), "total": rules.TOTAL}
 
 
 @router.post("/assessments")
@@ -540,7 +541,7 @@ def create_assessment(body: dict = Body(...), db: Session = Depends(get_db), pay
     employee in the Verifix directory is refused (400 `pick_worker`), and one
     person is one candidate row however often they are assessed. A bank that
     cannot fill the draw refuses the whole thing (409 pool_short)."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     cid = body.get("candidate_id")
     eid = str(body.get("employee_id") or "").strip()
     if eid:
@@ -587,7 +588,7 @@ def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
     holds an unsubmitted seat — the submitted results."""
     a = _get(db, aid)
     me = _judge_key(db, payload)
-    admin = _is_admin(payload)
+    admin = _is_admin(db, payload)
     c = db.query(AssessmentCandidate).filter(AssessmentCandidate.id == a.candidate_id).first()
     items = _items(db, aid)
     evs = db.query(JudgeEvaluation).filter(JudgeEvaluation.assessment_id == aid).all()
@@ -662,7 +663,7 @@ def claim_seat(aid: int, body: dict = Body(...), db: Session = Depends(get_db), 
         _refuse(409, "seat_taken", "Another judge already holds this seat.", judge=holder.judge_name)
     # TEST MODE: an admin takes the seat as ONE MORE scorecard of theirs
     # (a per-seat key), never moving the ones already held.
-    multi = _is_admin(payload) and _is_test(db, aid)
+    multi = _is_admin(db, payload) and _is_test(db, aid)
     mine = None if multi else _pick_mine(evs, me, body.get("from"))
     if mine and mine.submitted_at:
         _refuse(409, "submitted", "Your scorecard is already submitted.")
@@ -712,7 +713,7 @@ def release_seat(aid: int, department: str, db: Session = Depends(get_db), paylo
                                           JudgeEvaluation.department == department).first()
     if not ev:
         return {"ok": True}
-    if not _is_mine(ev, _judge_key(db, payload)) and not _is_admin(payload):
+    if not _is_mine(ev, _judge_key(db, payload)) and not _is_admin(db, payload):
         _refuse(403, "not_yours", "Only the seat's own judge or an admin can free it.")
     if ev.submitted_at:
         _refuse(409, "submitted", "A submitted scorecard cannot be released.")
@@ -834,7 +835,7 @@ def submit(aid: int, body: dict = Body(...), seat: Optional[str] = Query(default
 def close_assessment(aid: int, body: dict = Body(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Close a sitting early (a judge absent) or open it again. Closed = nobody
     grades; drafts stay drafts and never count."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     a = _get(db, aid, lock=True)
     want = bool(body.get("closed", True))
     old = a.status
@@ -850,7 +851,7 @@ def close_assessment(aid: int, body: dict = Body(...), db: Session = Depends(get
 @router.post("/assessments/{aid}/redraw")
 def redraw(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Draw the 20 questions again — only while no judge has entered anything."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     a = _get(db, aid, lock=True)
     if a.status != "open":
         _refuse(409, "closed", "This assessment is closed.")
@@ -870,7 +871,7 @@ def delete_assessment(aid: int, db: Session = Depends(get_db), payload: dict = D
     except a TEST sitting (drawn from sample questions), whose grades are test
     grades: it goes at any time, scorecards and grades with it (the operator,
     2026-10-31). A candidate left with no sitting goes too."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     a = _get(db, aid, lock=True)
     test = _is_test(db, aid)
     if not test and _has_work(db, aid):

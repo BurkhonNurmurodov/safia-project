@@ -5,8 +5,8 @@ passes, the queue, the untied rows), the tie run and a pass on demand (each
 on a thread of its own — a Verifix read is longer than a request may be),
 the operator's hand ties, and the queue's approve / dismiss.
 
-ADMIN-ONLY and NOT grantable: it moves people, cells and access — the
-`permissions` / `logs` model. Every write is in the action register.
+An admin or the tab's grant (`admin.tab.verifixsync`, 2026-11-19): it moves
+people, cells and access. Every write is in the action register.
 """
 from __future__ import annotations
 
@@ -20,12 +20,14 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.models import Cell, Manager, RoleProfile, VerifixSyncItem, VerifixSyncRun, VerifixTie
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, cell_register, verifix_org, verifix_sync
 from app.services.cell_register import Refused
 from app.services.name_map import _name_tokens
 
 router = APIRouter(prefix="/api/admin/verifix-sync", tags=["verifix-sync"])
+# The «Verifix» admin page: an admin or its grant.
+_tab = require_tab("verifixsync")
 log = logging.getLogger(__name__)
 
 _job_lock = threading.Lock()
@@ -149,7 +151,7 @@ def _tie_names(t: VerifixTie, org: Optional[dict], names: dict) -> dict:
 
 
 @router.get("")
-def get_state(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_state(db: Session = Depends(get_db), _: dict = Depends(_tab)):
     # The job flag FIRST: a job that ends while this reads must not show as
     # finished beside a run list read before its record was committed.
     job = dict(_job)
@@ -207,7 +209,7 @@ def get_state(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 
 @router.get("/runs/{rid}")
-def get_run(rid: int, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_run(rid: int, db: Session = Depends(get_db), _: dict = Depends(_tab)):
     r = db.query(VerifixSyncRun).filter_by(id=rid).first()
     if r is None:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -219,7 +221,7 @@ class ModeIn(BaseModel):
 
 
 @router.put("/mode")
-def put_mode(body: ModeIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def put_mode(body: ModeIn, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     before = verifix_sync.mode(db)
     try:
         verifix_sync.set_mode(db, body.mode)
@@ -236,7 +238,7 @@ class CapsIn(BaseModel):
 
 
 @router.put("/caps")
-def put_caps(body: CapsIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def put_caps(body: CapsIn, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     import json
     from app.models import AppSetting
     clean = {k: int(v) for k, v in (body.caps or {}).items()
@@ -260,7 +262,7 @@ class RunIn(BaseModel):
 
 
 @router.post("/tie-run")
-def post_tie_run(body: RunIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def post_tie_run(body: RunIn, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     by = _who(admin)
     started = _run_bg("tie", lambda s: verifix_sync.tie_run(s, dry=body.dry, by=by,
                                                             force_read=body.force_read))
@@ -269,7 +271,7 @@ def post_tie_run(body: RunIn, db: Session = Depends(get_db), admin: dict = Depen
 
 
 @router.post("/pass")
-def post_pass(body: RunIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def post_pass(body: RunIn, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     by = _who(admin)
     started = _run_bg("pass", lambda s: verifix_sync.run_pass(s, force_read=body.force_read,
                                                               by=by, dry=body.dry))
@@ -279,7 +281,7 @@ def post_pass(body: RunIn, db: Session = Depends(get_db), admin: dict = Depends(
 
 @router.get("/search")
 def search(q: str = "", kind: str = "person", db: Session = Depends(get_db),
-           _: dict = Depends(verify_admin)):
+           _: dict = Depends(_tab)):
     """Find a Verifix person or subdivision in the stored read — what a hand
     tie picks from. Never a fuzzy SAVE: the operator chooses."""
     org, at = verifix_org.stored(db)
@@ -341,7 +343,7 @@ def _photo_now(db: Session, kind: str, our_id: int) -> Optional[str]:
 
 
 @router.post("/tie")
-def post_tie(body: TieIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def post_tie(body: TieIn, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     try:
         out = verifix_sync.tie_by_hand(db, body.kind, body.our_id, body.vfx_id, by=_who(admin),
                                        release=body.release)
@@ -365,7 +367,7 @@ class ItemIn(BaseModel):
 
 @router.post("/items/{iid}/apply")
 def post_apply(iid: int, body: ItemIn, db: Session = Depends(get_db),
-               admin: dict = Depends(verify_admin)):
+               admin: dict = Depends(_tab)):
     try:
         out = verifix_sync.apply_item(db, iid, by=_who(admin), choice=body.choice)
     except Refused as exc:
@@ -387,7 +389,7 @@ def post_apply(iid: int, body: ItemIn, db: Session = Depends(get_db),
 
 
 @router.post("/items/{iid}/dismiss")
-def post_dismiss(iid: int, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def post_dismiss(iid: int, db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     try:
         out = verifix_sync.dismiss_item(db, iid, by=_who(admin))
     except Refused as exc:

@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 from app import identity
 from app.database import get_db
 from app.models import Cell, CellOjidaniyaInterval, IdleCategorySolution, Manager
+from app.capabilities import page_admin
 from app.permissions import _oauth2, require_page
 from app.services import action_log, idle_intervals, idle_scope
 from app.services.factory_scope import empty_scope, scoped_manager_ids
@@ -112,6 +113,9 @@ READER_ROLES = ("admin", idle_scope.OWNER_ROLE, "shift-manager", "top-manager", 
 EXPECTED_ROLES = ("supervisor", idle_scope.OWNER_ROLE)
 # Who has the Tahlil tab (2026-11-16) — the frontend's twin is IdleSolutions.jsx.
 ANALYTICS_ROLES = ("admin", "top-manager", "shift-manager")
+# The grant of an admin's view and powers here (`page.admin.idle-solutions`):
+# the page, every unit and cause, Tahlil, editing anybody's solution.
+ADMIN_PAGE = "idle-solutions"
 
 
 def _state(rows) -> str:
@@ -139,7 +143,7 @@ def _reader(token: str = Depends(_oauth2), db: Session = Depends(get_db)) -> dic
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if payload.get("role") in ("top-manager", "supervisor"):
+    if payload.get("role") in ("top-manager", "supervisor") or page_admin(db, payload, ADMIN_PAGE):
         return payload
     return _downtime_page(token, db)
 
@@ -168,11 +172,14 @@ def open_to(role: Optional[str], today: Optional[date] = None) -> bool:
     return first is not None and (today or datetime.now(TZ).date()) >= first
 
 
-def _reader_only(payload: dict) -> None:
+def _reader_only(payload: dict, db: Optional[Session] = None) -> None:
     """The page's five roles: admins, category owners (their own categories,
     locked by `idle_scope`), shift-managers, top-managers and supervisors (own
     unit). Each of them reads AND writes — the four beside admins only from the
-    page's first day for their role (`open_to`)."""
+    page's first day for their role (`open_to`). A holder of the page's admin
+    grant passes like an admin (asked when the request's `db` is passed)."""
+    if db is not None and page_admin(db, payload, ADMIN_PAGE):
+        return
     role = payload.get("role")
     if role not in READER_ROLES:
         raise HTTPException(status_code=403, detail="Admin only")
@@ -218,7 +225,7 @@ def _item(r: IdleCategorySolution, viewer: Optional[str] = None, is_admin: bool 
 
 def _may_write(db: Session, payload: dict, category: str) -> bool:
     """A cause- or brigadir-wide solution: the cause's owner, and admins."""
-    if payload.get("role") == "admin":
+    if page_admin(db, payload, ADMIN_PAGE):
         return True
     viewer = identity.viewer_profile_key(db, payload)
     owner = idle_scope.owners(db).get(category)
@@ -515,8 +522,10 @@ def analysis(
     db: Session = Depends(get_db),
     payload: dict = Depends(_reader),
 ):
-    _reader_only(payload)
-    manager_id = _own_unit(payload, manager_id)
+    _reader_only(payload, db)
+    is_admin = page_admin(db, payload, ADMIN_PAGE)
+    if not is_admin:        # an admin's view reaches every unit
+        manager_id = _own_unit(payload, manager_id)
     date_from, date_to = _period(date_from, date_to)
 
     mrows, lock = _minute_rows(db, payload, date_from, date_to, shift, manager_id, factory)
@@ -527,7 +536,6 @@ def analysis(
 
     labels = idle_scope.owner_labels(db)
     viewer = identity.viewer_profile_key(db, payload)
-    is_admin = payload.get("role") == "admin"
     owner_keys = idle_scope.owners(db)
 
     sols: dict[str, list] = {}
@@ -654,8 +662,10 @@ def stops(
     not. `mine` on a stop is «this reader has written their own answer», and the
     two roles `expects_me` marks are asked for one on every stop they see.
     """
-    _reader_only(payload)
-    manager_id = _own_unit(payload, manager_id)
+    _reader_only(payload, db)
+    is_admin = page_admin(db, payload, ADMIN_PAGE)
+    if not is_admin:        # an admin's view reaches every unit
+        manager_id = _own_unit(payload, manager_id)
     d_from, d_to = _period(date_from, date_to)
 
     units = _scope_units(db, payload, shift, manager_id, factory)
@@ -666,14 +676,15 @@ def stops(
     today = _today()
     rows = _flat(db, list(names), in_view, d_from, d_to)
     # What waits on this reader — its own window, whatever period is on screen.
+    # (`read` only while the rows are cut as `waiting` cuts them: an admin's view
+    # of a brigadir holding the grant reaches units their own list does not)
     todo = waiting(db, payload, today, shift=shift, manager_id=manager_id, factory=factory,
-                   read=(d_from, d_to, rows))
+                   read=None if is_admin else (d_from, d_to, rows))
     shown = {s["id"]: s for s in rows}
     for s, _why in (todo["stops"] if todo else []):
         shown.setdefault(s["id"], s)
 
     viewer = identity.viewer_profile_key(db, payload)
-    is_admin = payload.get("role") == "admin"
     by_event: dict[int, list] = {}
     legacy = []         # the older cause- and brigadir-wide rows: no stop to sit under
     for r in _solutions(db, list(shown)):
@@ -728,7 +739,7 @@ def waiting_count(
 ):
     """The number on the «Kutish yechimlari» menu row: how many stops wait on
     this reader (`waiting`). Zeros for a reader nothing waits on by role."""
-    _reader_only(payload)
+    _reader_only(payload, db)
     w = waiting(db, payload)
     if w is None:
         return {"unanswered": 0, "overdue": 0, "total": 0}
@@ -847,11 +858,11 @@ def analytics(
     are the page's waiting minutes; a cell's and an hour's are the filed stops'
     own lengths, and the payload names them `stop_minutes`.
     """
-    _reader_only(payload)
+    _reader_only(payload, db)
     # Tahlil is the managers' (the operator, 2026-11-16: «analysis has to be
     # shown only for top managers, admins and shift managers») — brigadirs and
     # cause owners keep «Muammolar».
-    if payload.get("role") not in ANALYTICS_ROLES:
+    if payload.get("role") not in ANALYTICS_ROLES and not page_admin(db, payload, ADMIN_PAGE):
         raise HTTPException(status_code=403, detail="Analytics are open to admins and managers only")
 
     d_from, d_to = _period(date_from, date_to)
@@ -1146,9 +1157,10 @@ def _stop_in_reach(db: Session, payload: dict, body: SolutionBody) -> tuple[str,
         raise HTTPException(status_code=404, detail="stop_not_found")
 
     role = payload.get("role")
-    if role == "supervisor" and payload.get("role_id") != unit:
+    admin = page_admin(db, payload, ADMIN_PAGE)     # an admin answers any stop in reach
+    if not admin and role == "supervisor" and payload.get("role_id") != unit:
         raise HTTPException(status_code=403, detail="out_of_scope")
-    if role == idle_scope.OWNER_ROLE and ev.category not in (
+    if not admin and role == idle_scope.OWNER_ROLE and ev.category not in (
             idle_scope.viewer_categories(db, payload) or []):
         raise HTTPException(status_code=403, detail="not_category_owner")
     scoped = scoped_manager_ids(db, payload, None, [unit])
@@ -1170,7 +1182,7 @@ def add_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(_reader),
 ):
-    _reader_only(payload)
+    _reader_only(payload, db)
     if body.event_id is not None:
         category, manager_id = _stop_in_reach(db, payload, body)
     else:
@@ -1198,7 +1210,7 @@ def add_solution(
                       details=[("category", category), ("manager_id", manager_id), ("event_id", body.event_id),
                                ("status", status)]
                       + ([("due_date", due.isoformat())] if due else []))
-    return _item(row, key, payload.get("role") == "admin", today)
+    return _item(row, key, page_admin(db, payload, ADMIN_PAGE), today)
 
 
 @router.put("/{solution_id}")
@@ -1208,13 +1220,13 @@ def edit_solution(
     db: Session = Depends(get_db),
     payload: dict = Depends(_reader),
 ):
-    _reader_only(payload)
+    _reader_only(payload, db)
     row = db.query(IdleCategorySolution).filter(IdleCategorySolution.id == solution_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="not_found")
     # A solution is its author's own: they edit it, and an admin.
     key = identity.viewer_profile_key(db, payload)
-    is_admin = payload.get("role") == "admin"
+    is_admin = page_admin(db, payload, ADMIN_PAGE)
     if not (is_admin or (key and row.author_key == key)):
         raise HTTPException(status_code=403, detail="not_author")
     changes = []

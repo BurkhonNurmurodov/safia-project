@@ -2,8 +2,9 @@
 
 Every AI API key the platform holds is stored here (services/ai_keys), and
 every feature that calls an AI is told here which key and which model it runs
-on (services/ai_features). Admin-only, NOT grantable, and never from an «open
-as» tab: these doors hand out the platform's paid accounts.
+on (services/ai_features). An admin or the tab's grant (`admin.tab.aikeys`,
+2026-11-19), and never from an «open as» tab: these doors hand out the
+platform's paid accounts.
 
 A key's value never comes back — the list carries its last four characters —
 and the action register records the provider, that hint and the LENGTH.
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, ai_features, ai_keys
 
 log = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/ai", tags=["ai-keys"])
 
 
-def _admin(payload: dict = Depends(verify_admin)) -> dict:
+def _admin(payload: dict = Depends(require_tab("aikeys"))) -> dict:
     if payload.get("imp"):
         raise HTTPException(status_code=403, detail="admin_only")
     return payload

@@ -394,8 +394,8 @@ export default function CellDetails() {
   const { tl } = useTranslit();
   // «Zagruzkada hisoblanadi» is written through the register's own PUT
   // (CAP_CELLS_MANAGE) from 2026-10-04, like every other field of a cell.
-  const { can, isLoading: capLoading } = useCapabilities();
-  const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
+  const { can, adminOn, isLoading: capLoading } = useCapabilities();
+  const canEdit = !capLoading && (can(CAP.CELLS_MANAGE) || adminOn("cells"));
   const qc = useQueryClient();
   const toast = useToast();
   const { auth } = useAuth();
@@ -514,10 +514,11 @@ export default function CellDetails() {
     const p = pendOf(field);
     return p ? <PendingChip from={p.from} name={linkValue(field, p.value, p.name, t, tl)} /> : null;
   };
-  // Who may pick the «Boshqaruvchi» (backend `_may_pick_manager`): an admin or
-  // a register editor anywhere, a brigadir on their own unit's cell.
+  // Who may pick the «Boshqaruvchi» (backend `_may_pick_manager`): an admin (or
+  // the cells page's admin grant) or a register editor anywhere, a brigadir on
+  // their own unit's cell.
   const canPick = !c.archived_at && (
-    canEdit || auth?.role === "admin"
+    canEdit || auth?.role === "admin" || adminOn("cells")
     || (auth?.role === "supervisor" && c.manager_id != null && Number(auth?.role_id) === c.manager_id));
   const onSavedText = (msg) => {
     qc.invalidateQueries({ queryKey: ["cell-details", id] });

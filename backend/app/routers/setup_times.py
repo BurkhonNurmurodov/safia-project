@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.capabilities import page_cap, page_view_scope
+from app.capabilities import page_admin, page_cap, page_view_scope
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.database import get_db
 from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
@@ -75,8 +75,9 @@ class SetupTimeIn(BaseModel):
     sku: str | None = None
 
 
-def _require_admin(payload: dict) -> None:
-    if payload.get("role") != "admin":
+def _require_admin(db: Session, payload: dict) -> None:
+    """An admin, or a holder of `page.admin.setup`."""
+    if not page_admin(db, payload, PAGE):
         raise HTTPException(status_code=403, detail="Only an admin can edit setup times")
 
 
@@ -143,7 +144,7 @@ def list_setup_times(
     ]
 
     return {
-        "can_edit": payload.get("role") == "admin",
+        "can_edit": page_admin(db, payload, PAGE),
         "supervisors": sorted(
             ({"id": m.id, "name": m.name, "shift": m.shift} for m in managers.values()),
             key=lambda m: m["name"],
@@ -159,7 +160,7 @@ def create_setup_time(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("setup")),
 ):
-    _require_admin(payload)
+    _require_admin(db, payload)
     if not (body.cell or "").strip():
         raise HTTPException(status_code=422, detail="cell is required")
     mgr = None
@@ -474,7 +475,7 @@ def update_setup_time(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("setup")),
 ):
-    _require_admin(payload)
+    _require_admin(db, payload)
     r = db.query(SetupTime).filter_by(id=row_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Row not found")
@@ -521,7 +522,7 @@ def delete_setup_time(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("setup")),
 ):
-    _require_admin(payload)
+    _require_admin(db, payload)
     r = db.query(SetupTime).filter_by(id=row_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Row not found")

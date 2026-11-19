@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Lightbulb, MapPin, UserRound } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -50,9 +51,14 @@ export default function IdleSolutions() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
-  const isSupervisor = auth?.role === "supervisor"; // own unit's stops only: no shift or brigadir filter
-  // Tahlil is the managers' (2026-11-16) — the server's ANALYTICS_ROLES
-  const canAnalyse = ["admin", "top-manager", "shift-manager"].includes(auth?.role);
+  const { adminOn } = useCapabilities();
+  // own unit's stops only: no shift or brigadir filter — unless they hold the
+  // page's admin view, which the server answers for every unit
+  const isSupervisor = auth?.role === "supervisor" && !adminOn("idle-solutions");
+  // Tahlil is the managers' (2026-11-16) — the server's ANALYTICS_ROLES — and
+  // a `page.admin.idle-solutions` holder's (capabilities.page_admin)
+  const canAnalyse = ["admin", "top-manager", "shift-manager"].includes(auth?.role)
+    || adminOn("idle-solutions");
   const qc = useQueryClient();
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, shift, setShift, brigadirIds, setBrigadirIds } = useFilters();
   const fparams = useFactoryParams(params);

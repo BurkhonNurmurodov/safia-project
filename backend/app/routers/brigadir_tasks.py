@@ -110,7 +110,7 @@ def _can_manage(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
     for THIS unit", and ``covers`` is the one place that distinction lives.
     """
     role = payload.get("role")
-    if role == "admin" or tb.top_sets(payload):
+    if tb.admin(db, payload) or tb.top_sets(payload):
         return True
     if role == "shift-manager":
         return shift_scope.covers(db, payload.get("role_id"), manager_id)
@@ -129,7 +129,7 @@ def _is_assignee(payload: dict, t: LeaderTask) -> bool:
 
 def _owns_row(db: Session, payload: dict, t: LeaderTask) -> bool:
     """Task text / due date / delete: the creating PROFILE or an admin."""
-    if payload.get("role") == "admin":
+    if tb.admin(db, payload):
         return True
     return identity.owns(db, payload, t.created_by_profile, t.created_by)
 
@@ -261,7 +261,7 @@ def _manageable_units(db: Session, payload: dict) -> list[Manager]:
     create endpoint accepts can never be two different sets."""
     role = payload.get("role")
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if role == "admin" or tb.top_sets(payload):
+    if tb.admin(db, payload) or tb.top_sets(payload):
         pass
     elif role == "shift-manager":
         ids = shift_scope.unit_ids(db, payload.get("role_id"))
@@ -277,10 +277,12 @@ def _can_create_anywhere(db: Session, payload: dict) -> bool:
     return bool(_manageable_units(db, payload))
 
 
-def _may_set(payload: dict) -> bool:
-    """The roles that set a brigadir work at all: an admin, a shift manager,
-    and a top-manager from the first day on. WHICH brigadir is ``_can_manage``."""
-    return payload.get("role") in ("admin", "shift-manager") or tb.top_sets(payload)
+def _may_set(payload: dict, db: Optional[Session] = None) -> bool:
+    """The roles that set a brigadir work at all: an admin (or a holder of the
+    page's admin grant), a shift manager, and a top-manager from the first day
+    on. WHICH brigadir is ``_can_manage``."""
+    return (payload.get("role") == "shift-manager" or tb.top_sets(payload)
+            or tb.admin(db, payload))
 
 
 @router.get("/brigadirs")
@@ -293,7 +295,7 @@ def list_assignable_brigadirs(
     (``holders: 0``): a brigadir exists as an organizational post before anyone
     registers, and work set for them waits in the bell until the profile is
     claimed."""
-    if not _may_set(payload):
+    if not _may_set(payload, db):
         raise HTTPException(status_code=403, detail="Admin or shift manager only")
     return [
         {
@@ -323,7 +325,7 @@ def create_task(
     db: Session = Depends(get_db),
     payload: dict = Depends(_door),
 ):
-    if not _may_set(payload):
+    if not _may_set(payload, db):
         raise HTTPException(status_code=403, detail="Only shift managers and admins can set brigadir tasks")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
@@ -527,7 +529,8 @@ def remind_task(
     """Ask the brigadir whether an open task is done (`tb.remind`) — pressed on
     «Smena kunligi». Whoever acts from the top AND runs this unit's board."""
     t = _mine(task_id, payload, db)
-    _assert(tb.from_top(payload) and _can_manage(db, payload, t.supervisor_manager_id),
+    _assert((tb.from_top(payload) or tb.admin(db, payload))
+            and _can_manage(db, payload, t.supervisor_manager_id),
             "You can't remind about this task")
     out = _remind(db, payload, t)
     action_log.enrich(

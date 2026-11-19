@@ -4,6 +4,7 @@ import AssessmentList from "../components/assessment/AssessmentList";
 import QuestionBank from "../components/assessment/QuestionBank";
 import { useAT } from "../components/assessment/assessmentUtil";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 
 /**
@@ -18,7 +19,8 @@ import { usePersistentState } from "../hooks/usePersistentState";
 export default function Assessment() {
   const T = useAT();
   const { auth } = useAuth();
-  const isAdmin = auth?.role === "admin";
+  const { adminOn } = useCapabilities();
+  const isAdmin = auth?.role === "admin" || adminOn("assessment");
   const [tab, setTab] = usePersistentState("assessment_tab", "list");
   const view = isAdmin ? tab : "list";
 

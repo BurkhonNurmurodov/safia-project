@@ -6,8 +6,8 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 
 // «Tarkib» — the third of «Odam soni»'s three pages (/workers/composition; one
 // page's tabs until 2026-11-03, see components/workers/WorkersPage.jsx): who is
-// on the lists today. Admins only (the operator, 2026-10-23) — the route is
-// RequireAdmin and the endpoint refuses everybody else.
+// on the lists today. Its own page key `workers-composition` (2026-11-19):
+// admins by default, grantable; the endpoints ask the same page.
 //
 // The page frame is drawn by Demographics itself (WorkersPage with
 // `period={false}`): the far end of its toolbar holds the read line, the

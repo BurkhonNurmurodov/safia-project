@@ -13,6 +13,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.permissions import require_page
 from app.services import action_log, ontime, ontime_sync
@@ -57,7 +58,7 @@ def get_analysis(
     out["data_days"] = ontime.data_days(db)
     out["product_options"] = ontime.product_options(db, d0, d1)
     out["read"] = state
-    out["is_admin"] = payload.get("role") == "admin"
+    out["is_admin"] = page_admin(db, payload, "ontime")
     return out
 
 
@@ -83,7 +84,7 @@ def get_read(db: Session = Depends(get_db), _: dict = Depends(require_page("onti
 def start_read(db: Session = Depends(get_db), payload: dict = Depends(require_page("ontime"))):
     """Read the sheet now (admin). Runs on a thread of its own and answers at
     once; the page polls `GET /read` until it lands."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "ontime"):
         raise HTTPException(status_code=403, detail="admin only")
     if not ontime_sync.sheet_id(db):
         raise HTTPException(status_code=409, detail={"code": "not_configured"})

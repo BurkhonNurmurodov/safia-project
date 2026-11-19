@@ -13,6 +13,7 @@ import { useLang } from "../../context/LangContext";
 import { factoryName } from "../../context/FactoryContext";
 import { useTranslit } from "../../utils/transliterate";
 import { PAGES, ROLE_LABEL_KEYS } from "../../config/pages";
+import { capName } from "../../utils/capLabel";
 import { ADMIN_NAV, adminPage } from "../../config/adminNav";
 import { fmtDate, useCanOpenPeople } from "../people/peopleUtil";
 import { ROLE_ICON, roleHue, useNodeText } from "./orgNode";
@@ -84,14 +85,14 @@ function useAccessWords(data, P) {
     const pageScoped = (p) => caps[`page.view.${p}`]?.scoped;
     return {
       caps, pageName,
-      capName: (k) => t(`caps.${k}.label`),
+      capName: (k) => capName(t, k),
       scopeOf,
       // One page row → its chip.
       pageTag: (row) => {
         const personal = row.grant || (!row.role && row.caps.length > 0);
         const scope = row.grant && pageScoped(row.page) ? t(`admin.perms.scope.${row.grant}`) : null;
         const why = personal
-          ? [P.byGrant, ...row.caps.map((k) => t(`caps.${k}.label`))].join(" · ")
+          ? [P.byGrant, ...row.caps.map((k) => capName(t, k))].join(" · ")
           : P.byRole;
         return (
           <Tag key={row.page} tone={personal ? "grant" : undefined} icon={personal ? KeyRound : undefined} title={why}>

@@ -22,7 +22,9 @@ import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useTranslit } from "../../utils/transliterate";
-import { ROLE_LABEL_KEYS } from "../../config/pages";
+import { ROLE_LABEL_KEYS, canAccessPage } from "../../config/pages";
+import { usePageAccess } from "../../hooks/usePageAccess";
+import { useCapabilities } from "../../hooks/useCapabilities";
 import HrContactButton from "../../components/admin/HrContactButton";
 
 // Roles an existing registration may be CONVERTED to (the per-row select).
@@ -114,6 +116,9 @@ export default function UsersManagement() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { auth } = useAuth();
+  const { access } = usePageAccess();
+  const { capPages, deniedPages } = useCapabilities();
+  const tgOpen = canAccessPage(auth?.role, "tg-user", access, capPages, deniedPages);
   // ?status=pending deep-links a filter (used by the bot's notification button).
   // The last-used filter is remembered otherwise; an explicit ?status= beats it.
   const [searchParams] = useSearchParams();
@@ -256,8 +261,8 @@ export default function UsersManagement() {
   const rowMenu = (row) => {
     const { role } = row;
     return [
-      // The page behind it is admin-only; a grantee of this tab gets no dead link.
-      auth?.role === "admin" && { key: "tg", label: TG_PROFILE[lang] || TG_PROFILE.uz, icon: Send, onSelect: () => navigate(`/tg-user/${row.user.telegram_id}`) },
+      // Only for a viewer who may open the page behind it — never a dead link.
+      tgOpen && { key: "tg", label: TG_PROFILE[lang] || TG_PROFILE.uz, icon: Send, onSelect: () => navigate(`/tg-user/${row.user.telegram_id}`) },
       role.status === "rejected" && { key: "approve", label: t("admin.users.approve"), icon: Check, disabled: busy, onSelect: () => approve(row) },
       // A guest registration is not convertible: converting only re-points
       // role/role_id, which would take a CONTENDED guest profile without

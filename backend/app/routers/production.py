@@ -32,13 +32,10 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import lru_cache
 from io import BytesIO
-from typing import Annotated, Optional
+from typing import Optional
 
-import jwt
-from jwt import PyJWTError as JWTError
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
-from fastapi.security import OAuth2PasswordBearer
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import column_index_from_string, get_column_letter
@@ -47,7 +44,6 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.database import get_db
 from app.models import (
     Attendance, AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow, AttendanceUploadFile,
@@ -55,7 +51,8 @@ from app.models import (
     PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
-from app.capabilities import CAP_CATALOG_SAP, page_scope_is_all, require_cap
+from app.capabilities import (CAP_CATALOG_SAP, page_admin, page_admin_cap, page_scope_is_all,
+                              require_cap, require_page_admin, require_tab, tab_cap)
 from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
@@ -86,7 +83,6 @@ from app.xlsx_delivery import deliver_xlsx
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["production"])
-_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 PAGE = "production"
 
@@ -161,14 +157,12 @@ def _wc_style(code: str) -> tuple:
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-def _verify_admin(token: Annotated[str, Depends(_oauth2)]) -> dict:
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return payload
+# The admin panel's «production» tab (upload, catalog import, autofill, work
+# centres) — an admin or a holder of `admin.tab.production`.
+_verify_admin = require_tab("production")
+# The catalog / staffing writes the /production page itself calls: the tab's
+# holder, or a holder of the page's admin powers (`page.admin.production`).
+_catalog_admin = require_cap(tab_cap("production"), page_admin_cap("production"))
 
 
 def _shift_manager_units(payload: dict, db: Session) -> list[int]:
@@ -1266,7 +1260,7 @@ def get_dashboard(
     # (the operator: admins 2026-11-04, shift managers 2026-11-06). The snapshot
     # leaves this door for nobody else, so hiding them on the page is not the
     # only thing keeping them from the rest.
-    if payload.get("role") not in SAP_ROLES:
+    if payload.get("role") not in SAP_ROLES and not page_admin(db, payload, PAGE):
         for r in dash.get("rows") or ():
             r.pop("sap_plan_qty", None)
             r.pop("sap_actual_qty", None)
@@ -2550,7 +2544,7 @@ def _echoes_group_sum(pins: dict, people: Optional[int]) -> bool:
 def set_wc_override(
     body: WcOverrideBody,
     manager_id: Optional[int] = Query(None),
-    payload: dict = Depends(_verify_admin),
+    payload: dict = Depends(_catalog_admin),
     db: Session = Depends(get_db),
 ):
     """Pin «O. SONI» and/or «штатка» for one work center on ONE date.
@@ -2721,7 +2715,8 @@ def save_staffing(
     ever deletes a group pin they can see, and a whole-centre people pin that
     would delete a group pin they cannot see is refused rather than wiping the
     number another cell's leader typed."""
-    if payload.get("role") not in ("admin", "supervisor", "leader"):
+    if (payload.get("role") not in ("admin", "supervisor", "leader")
+            and not page_admin(db, payload, PAGE)):
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
     day = _parse_date(body.date)
     mid = _resolve_manager_id(payload, manager_id, db, day)
@@ -4450,7 +4445,7 @@ class CatalogCreateBody(BaseModel):
 
 @router.post("/admin/production/catalog")
 def admin_create_catalog(body: CatalogCreateBody,
-                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+                         _: dict = Depends(_catalog_admin), db: Session = Depends(get_db)):
     """Add a single catalog line for a brigadir. work_center is always required;
     the SAP code is not — the ABC form carries code-less lines and so does this
     catalog, but one of code / name must be there or the line identifies nothing.
@@ -4781,7 +4776,7 @@ class CatalogBulkBody(BaseModel):
 
 @router.put("/admin/production/catalog/bulk")
 def admin_bulk_update_catalog(body: CatalogBulkBody,
-                              _: dict = Depends(_verify_admin),
+                              _: dict = Depends(_catalog_admin),
                               db: Session = Depends(get_db)):
     """Set the same field on SEVERAL catalog lines at once.
 
@@ -4981,7 +4976,7 @@ def set_catalog_uom(body: CatalogUomBody,
     here, and a boundary drawn for a change that never happened would split the
     unit's history into two identical halves.
     """
-    if payload.get("role") not in UOM_ROLES:
+    if payload.get("role") not in UOM_ROLES and not page_admin(db, payload, PAGE):
         raise HTTPException(status_code=403,
                             detail="Not allowed to set the unit of measure")
     ids = list(dict.fromkeys(body.ids or []))
@@ -5068,7 +5063,7 @@ def set_catalog_container(body: CatalogContainerBody,
     same dating, the same «nothing changed freezes nothing». Like the measure,
     no figure reads a capacity — the page computes the container counts from
     it — so it moves no stored quantity."""
-    if payload.get("role") not in CONTAINER_ROLES:
+    if payload.get("role") not in CONTAINER_ROLES and not page_admin(db, payload, PAGE):
         raise HTTPException(status_code=403,
                             detail="Not allowed to set container capacities")
     if body.field not in pp_containers.CONTAINERS:
@@ -5220,7 +5215,7 @@ class CatalogArchiveBody(BaseModel):
 
 @router.post("/admin/production/catalog/archive")
 def admin_archive_catalog(body: CatalogArchiveBody,
-                          payload: dict = Depends(_verify_admin),
+                          payload: dict = Depends(_catalog_admin),
                           db: Session = Depends(get_db)):
     """Set catalog lines ASIDE, or bring them back (2026-10-24, the operator:
     «sometimes we will bring it back, and it requires rewriting — we need an
@@ -5314,7 +5309,7 @@ def admin_archive_catalog(body: CatalogArchiveBody,
 
 @router.put("/admin/production/catalog/{prod_id}")
 def admin_update_catalog(prod_id: int, body: CatalogBody,
-                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+                         _: dict = Depends(_catalog_admin), db: Session = Depends(get_db)):
     return _update_catalog_line(db, prod_id, body, _)
 
 
@@ -5448,7 +5443,7 @@ def _update_catalog_line(db: Session, prod_id: int, body: CatalogBody, _: dict) 
 
 @router.delete("/admin/production/catalog/{prod_id}")
 def admin_delete_catalog(prod_id: int,
-                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+                         _: dict = Depends(_catalog_admin), db: Session = Depends(get_db)):
     """Remove a single catalog line (SKU) FROM THE SHIFT IN PROGRESS ON
     (services/pp_catalog.py): the days before it keep the catalog they had, this
     line included. The daily plan/fact rows join on the SAP snapshot key
@@ -6368,7 +6363,7 @@ def trudoyomkost_autocall(
             "date": forecast_autocall.target_date(s).isoformat(),
             "next_run": nr.isoformat() if nr else None,
         })
-    return {**cfg, "can_edit": payload.get("role") == "admin", "shifts": shifts}
+    return {**cfg, "can_edit": page_admin(db, payload, "trudoyomkost"), "shifts": shifts}
 
 
 class AutoCallBody(BaseModel):
@@ -6379,7 +6374,7 @@ class AutoCallBody(BaseModel):
 @router.put("/api/production/trudoyomkost/autocall")
 def trudoyomkost_autocall_save(
     body: AutoCallBody,
-    _: dict = Depends(_verify_admin),
+    _: dict = Depends(require_page_admin("trudoyomkost")),
     db: Session = Depends(get_db),
 ):
     if not 1 <= body.capacity_pct <= 100:

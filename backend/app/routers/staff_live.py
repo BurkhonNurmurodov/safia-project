@@ -43,7 +43,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app import identity
 from app.capabilities import (
     CAP_ATTENDANCE_DELETE, CAP_DAY_REOPEN, CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
-    cap_scope, has_cap, page_scope_is_all, profile_unit_ids, scope_is_all,
+    cap_scope, has_cap, is_admin_or, page_admin, page_scope_is_all, profile_unit_ids,
+    scope_is_all, tab_cap,
 )
 from app.database import get_db
 from app.models import (
@@ -83,6 +84,12 @@ def _sees_all(db: Session, caller: dict) -> bool:
     """A personal page grant at "all" widens a supervisor to every unit (the
     /staff rule, `staff._staff_sees_all`); admins always pass."""
     return any(page_scope_is_all(db, caller, p) for p in ("staff", "daily"))
+
+
+def _adm(db: Session, caller: dict) -> bool:
+    """`staff._staff_admin`: an admin, or a page admin grant on /staff or /daily.
+    The doors with a dedicated grant keep asking that grant."""
+    return page_admin(db, caller, "staff")   # /daily runs on the same endpoints
 
 
 def _visible(db: Session, caller: dict) -> Optional[list[int]]:
@@ -446,10 +453,12 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
                      db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """Units a worker may move INTO on the day: every unit this page covers,
     except the sender and any unit whose day is already closed."""
-    if caller.get("role") not in ("admin", "supervisor"):
+    adm = _adm(db, caller)
+    if caller.get("role") != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = _day_of(attend_date)
-    sender = caller.get("role_id") if caller.get("role") == "supervisor" else manager_id
+    sender = (caller.get("role_id") if caller.get("role") == "supervisor"
+              and not (adm and manager_id) else manager_id)
     cells, units = verifix_live._registry(db, d)
     with_cells = {c["manager_id"] for c in cells.values() if c["manager_id"] in units}
     closed = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)}
@@ -473,7 +482,7 @@ class TaskDeleteBody(BaseModel):
 @router.post("/tasks/delete")
 def delete_task(body: TaskDeleteBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """Admin-only, the same soft removal as /staff's (it is one shared list)."""
-    if caller.get("role") != "admin":
+    if not _adm(db, caller):
         raise HTTPException(status_code=403, detail="Admin only")
     name = (body.name or "").strip()
     t = db.query(ExchangeTask).filter(ExchangeTask.name == name).first()
@@ -549,7 +558,7 @@ def get_attendance(attend_date: Optional[str] = None, manager_id: Optional[int] 
               .filter(LiveAllLeftNotice.manager_id == mid, LiveAllLeftNotice.day == day).first())
     pending = live_staff.pending_count(db, mid, day)
     unplaced = live_staff.unplaced(ud["workers"])
-    is_admin = caller.get("role") == "admin"
+    is_admin = _adm(db, caller)
     workers = ud["workers"] if is_admin else [{k: v for k, v in r.items() if k != "raw"}
                                               for r in ud["workers"]]
     formula = ctx.formula
@@ -589,7 +598,7 @@ def _scope_docs(q, caller: dict, db: Session):
     supervisor, shift ∩ plant for a shift-manager, everything for an admin, a
     top-manager (READ only — every write door checks its own rights, none of
     which a top-manager holds) or a documents grant at "all"."""
-    if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE):
+    if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE) or _adm(db, caller):
         return q
     role, rid = caller.get("role"), caller.get("role_id")
     if role == "top-manager":
@@ -646,8 +655,8 @@ def _is_creator(doc: LiveDocument, caller: dict) -> bool:
 
 
 def _may_reject(doc: LiveDocument, caller: dict, db: Session) -> bool:
-    return (_can_approve(doc, caller, db) or caller.get("role") in ("admin", "shift-manager")
-            or _is_creator(doc, caller))
+    return (_can_approve(doc, caller, db) or caller.get("role") == "shift-manager"
+            or _adm(db, caller) or _is_creator(doc, caller))
 
 
 def _history(db: Session, doc: LiveDocument, action: str, caller: dict, detail: Optional[dict] = None):
@@ -702,7 +711,7 @@ def _log_doc(doc: LiveDocument, changes: Optional[list] = None) -> dict:
 
 def _scope_deletions(caller: dict, db: Session) -> list:
     q = db.query(LiveDeletion)
-    if not scope_is_all(db, caller, CAP_REQUESTS_APPROVE):
+    if not (scope_is_all(db, caller, CAP_REQUESTS_APPROVE) or _adm(db, caller)):
         role, rid = caller.get("role"), caller.get("role_id")
         if role == "supervisor":
             q = q.filter(LiveDeletion.manager_id == rid) if rid else \
@@ -840,8 +849,9 @@ class DocCreateBody(BaseModel):
 
 
 def _resolve_unit(caller: dict, db: Session, manager_id: Optional[int]) -> tuple[int, Optional[str]]:
-    """The unit a document is filed for: a supervisor's own, else `manager_id`."""
-    if caller.get("role") == "supervisor":
+    """The unit a document is filed for: a supervisor's own, else `manager_id`
+    (a supervisor with a page admin grant too, when they name one)."""
+    if caller.get("role") == "supervisor" and not (manager_id and _adm(db, caller)):
         mid = caller.get("role_id")
         if not mid:
             raise HTTPException(status_code=400, detail="Supervisor has no linked manager")
@@ -1244,7 +1254,7 @@ def _tell_rejected(db: Session, doc: LiveDocument, caller: dict) -> None:
 
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
-    if caller.get("role") not in ("admin", "supervisor"):
+    if caller.get("role") != "supervisor" and not _adm(db, caller):
         raise HTTPException(status_code=403, detail="Not allowed to create documents")
     if body.doc_type not in DOC_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported document type")
@@ -1294,7 +1304,8 @@ def update_document(doc_id: int, body: DocUpdateBody, db: Session = Depends(get_
     doc = _doc_or_404(db, caller, doc_id, lock=True)
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft (Нет) documents can be edited")
-    if caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
+    if (caller.get("role") != "shift-manager" and not _adm(db, caller)
+            and not _is_creator(doc, caller)):
         raise HTTPException(status_code=403, detail="Not allowed to edit this document")
     if not body.employees:
         raise HTTPException(status_code=400, detail="Select at least one employee")
@@ -1393,7 +1404,8 @@ def delete_document(doc_id: int, db: Session = Depends(get_db), caller: dict = D
         _tell_rejected(db, doc, caller)
         _retire("live_document", doc_id, "rejected", _who(caller))
         return {"ok": True, "status": doc.status}
-    elif caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
+    elif (caller.get("role") != "shift-manager" and not _adm(db, caller)
+          and not _is_creator(doc, caller)):
         raise HTTPException(status_code=403, detail="Not allowed to delete this document")
     log_fields = _log_doc(doc, [("status", doc.status, None)])
     was_approved = doc.status == "approved"
@@ -1489,7 +1501,8 @@ def bulk_documents(body: DocBulkBody, db: Session = Depends(get_db), caller: dic
                 _reject(doc, caller, db)
                 rejected.append(doc)
             else:
-                if caller.get("role") not in ("admin", "shift-manager") and not _is_creator(doc, caller):
+                if (caller.get("role") != "shift-manager" and not _adm(db, caller)
+                        and not _is_creator(doc, caller)):
                     continue
                 db.query(LiveDocumentHistory).filter(LiveDocumentHistory.document_id == doc.id).delete()
                 forgotten.append(doc.id)
@@ -1740,10 +1753,11 @@ def reject_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = De
 @router.post("/requests/batch/{batch_id}/withdraw")
 def withdraw_batch(batch_id: str, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     role, rid = caller.get("role"), caller.get("role_id")
-    if role not in ("admin", "supervisor"):
+    adm = _adm(db, caller)
+    if role != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
     q = db.query(LiveDeletion).filter(_batch_filter(batch_id), LiveDeletion.status == "pending")
-    if role == "supervisor":
+    if role == "supervisor" and not adm:
         q = q.filter(LiveDeletion.manager_id == rid) if rid else \
             q.filter(LiveDeletion.supervisor_telegram_id == _tg(caller))
     reqs = q.order_by(LiveDeletion.id).with_for_update().all()
@@ -1769,12 +1783,13 @@ def _one_request(db: Session, req_id: int) -> LiveDeletion:
 @router.post("/requests/{req_id}/withdraw")
 def withdraw_request(req_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     role, rid = caller.get("role"), caller.get("role_id")
-    if role not in ("admin", "supervisor"):
+    adm = _adm(db, caller)
+    if role != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
     r = _one_request(db, req_id)
     if r.status != "pending":
         raise HTTPException(status_code=409, detail="Can only withdraw pending requests")
-    if role == "supervisor" and not ((rid and r.manager_id == rid) or r.supervisor_telegram_id == _tg(caller)):
+    if role == "supervisor" and not adm and not ((rid and r.manager_id == rid) or r.supervisor_telegram_id == _tg(caller)):
         raise HTTPException(status_code=403, detail="Not your request")
     token = r.batch_id
     r.status = "rejected"
@@ -1821,12 +1836,13 @@ def reject_request(req_id: int, db: Session = Depends(get_db), caller: dict = De
 def undo_request(req_id: int, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     """Put a deleted worker back on the unit's day (admin / shift-manager)."""
     role = caller.get("role")
-    if role not in ("admin", "shift-manager"):
+    adm = _adm(db, caller)
+    if role != "shift-manager" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
     r = _one_request(db, req_id)
     if r.status != "approved":
         raise HTTPException(status_code=409, detail="Can only undo approved requests")
-    if role == "shift-manager" and not shift_scope.covers(db, caller.get("role_id"), r.manager_id):
+    if role == "shift-manager" and not adm and not shift_scope.covers(db, caller.get("role_id"), r.manager_id):
         raise HTTPException(status_code=403, detail="Not responsible for this unit")
     r.status = "undone"
     db.commit()
@@ -1938,14 +1954,15 @@ class ApprovalBody(BaseModel):
 CLOSE_READ_MAX_MIN = 15
 
 
-def _close_unit(caller: dict, body_mid: Optional[int]) -> int:
+def _close_unit(db: Session, caller: dict, body_mid: Optional[int]) -> int:
     role = caller.get("role")
-    if role == "supervisor":
+    adm = _adm(db, caller)
+    if role == "supervisor" and not (adm and body_mid):
         mid = caller.get("role_id")
         if not mid:
             raise HTTPException(status_code=400, detail="Supervisor has no assigned manager")
         return mid
-    if role == "admin":
+    if adm:
         if not body_mid:
             raise HTTPException(status_code=400, detail="manager_id required")
         return body_mid
@@ -2060,7 +2077,7 @@ def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = 
     """The brigadir's answer for a worker with no check-out (ruling 6): the
     exit time, or «did not come»; `clear` takes it back. Only on an OPEN day,
     only for somebody the close names."""
-    mid = _close_unit(caller, body.manager_id)
+    mid = _close_unit(db, caller, body.manager_id)
     d = _day_of(body.date)
     if d is None:
         raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
@@ -2069,7 +2086,7 @@ def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = 
     row = db.query(LiveClockFix).filter(LiveClockFix.day == d, LiveClockFix.employee_id == eid).first()
     if body.action == "clear":
         if row is not None:
-            if row.manager_id != mid and caller.get("role") != "admin":
+            if row.manager_id != mid and not _adm(db, caller):
                 raise HTTPException(status_code=403, detail="Boshqa brigada kiritgan javob")
             db.delete(row)
             db.commit()
@@ -2085,7 +2102,7 @@ def clock_fix(body: ClockFixBody, db: Session = Depends(get_db), caller: dict = 
         # between the two would delete that answer on «exit» / «absent» — and the
         # answer is per person, so the other unit's CLOSED day lost the worker's
         # hours at its next re-copy. `clear` always refused this; so does replace.
-        if row.manager_id != mid and caller.get("role") != "admin":
+        if row.manager_id != mid and not _adm(db, caller):
             raise HTTPException(status_code=403, detail="Boshqa brigada kiritgan javob")
         db.delete(row)
         db.flush()
@@ -2159,7 +2176,7 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
     `CLOSE_READ_MAX_MIN` — then writes the close, `DayApproval` and the copy
     into `attendance` (`live_projection`), so the загрузка exists at once."""
     role = caller.get("role")
-    mid = _close_unit(caller, body.manager_id)
+    mid = _close_unit(db, caller, body.manager_id)
     d = _day_of(body.date)
     if d is None:
         raise HTTPException(status_code=400, detail="Sana ko'rsatilmagan")
@@ -2241,7 +2258,9 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
                               + ([("read_at", (out["read_at"] or "")[11:16])] if live else []),
                       changes=[("status", "open", "closed")])
     _notify(db, "live_day_closed", {"closer_name": _who(caller), "date": d}, units=(mid,),
-            supervisors=(mid,) if role == "admin" else (), actor=_tg(caller),
+            # closed on the brigadir's behalf → they hear about it (`staff.close_day`)
+            supervisors=() if role == "supervisor" and mid == caller.get("role_id") else (mid,),
+            actor=_tg(caller),
             subject=("live_day", f"{mid}:{d.isoformat()}"), admins_bell_only=live)
     return {"ok": True, "state": "closed" if pending else "confirmed", "manager_id": mid,
             "date": body.date, "pending_requests": pending, "rows": copied,
@@ -2252,7 +2271,8 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
 def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     if not body.manager_id:
         raise HTTPException(status_code=400, detail="manager_id required")
-    if not _cap_covers(db, caller, CAP_DAY_REOPEN, body.manager_id):
+    if not (_cap_covers(db, caller, CAP_DAY_REOPEN, body.manager_id)
+            or is_admin_or(db, caller, tab_cap("attendance"))):   # the attendance admin tab reopens too
         raise HTTPException(status_code=403, detail="Only an admin can re-open a closed day")
     d = _day_of(body.date)
     if d is None:
@@ -2285,9 +2305,9 @@ def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict =
 
 # ── cell placement (the Yacheykalar tab) ─────────────────────────────────────
 
-def _can_place(caller: dict, mid: int) -> bool:
-    return caller.get("role") == "admin" or (caller.get("role") == "supervisor"
-                                              and caller.get("role_id") == mid)
+def _can_place(db: Session, caller: dict, mid: int) -> bool:
+    return _adm(db, caller) or (caller.get("role") == "supervisor"
+                                and caller.get("role_id") == mid)
 
 
 @router.get("/cell-placement")
@@ -2340,7 +2360,7 @@ def cell_placement(attend_date: Optional[str] = None, manager_id: Optional[int] 
     return {
         "manager_id": mid, "manager_name": rd["unit"]["name"], "shift": rd["unit"]["shift"],
         "date": d.isoformat(), "day_closed": closed is not None, "cells_required": True,
-        "can_edit": closed is None and _can_place(caller, mid),
+        "can_edit": closed is None and _can_place(db, caller, mid),
         "unplaced": unplaced, "cells": cells_out,
         "totals": {"cells": len(cells_out),
                    "workers": sum(1 for r in ud["workers"] if r.get("split_of") is None),
@@ -2375,7 +2395,7 @@ def save_cell_placement(body: PlacementBody, db: Session = Depends(get_db),
                         caller: dict = Depends(_page)):
     """Write a batch of placements, splits and un-splits (`staff.save_cell_placement`)."""
     mid = _read_unit(db, caller, body.manager_id)
-    if not _can_place(caller, mid):
+    if not _can_place(db, caller, mid):
         raise HTTPException(status_code=403, detail="Only this unit's supervisor or an admin may place workers")
     d = _day_of(body.date)
     if _closed(db, mid, d):

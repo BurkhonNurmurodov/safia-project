@@ -57,7 +57,7 @@ export const ADMIN_NAV = [
   // stand, which pages they open, what was granted to them personally, and
   // the way to their «Xodim kartasi». Read-only, and first in its section: it
   // is the map of the registers under it. No capKey — it shows the whole
-  // permission system (the `permissions` model: admin-only, never grantable).
+  // permission system. Grantable as `admin.tab.orgchart` (docs/permissions.md).
   // `wide`: a canvas, so AdminPage gives it the full content width.
   { id: "orgchart",     group: "adm-people",  Icon: Network,        labelKey: "admin.tabOrgChart",     descKey: "admin.desc.orgchart", wide: true },
   { id: "users",        group: "adm-people",  Icon: Users,          labelKey: "admin.tabUsers",        descKey: "admin.desc.users" },
@@ -96,7 +96,7 @@ export const ADMIN_NAV = [
   // on every by-category surface, and the SCOPE of the «Kutish mas'uli» role.
   // No capKey: the assignment decides what a whole role may read, so handing
   // it out is handing out the ability to widen somebody's scope (the
-  // `permissions` / `logs` model — admin-only and never grantable).
+  // `permissions` / `logs` model) — grantable as `admin.tab.idleowners` since 2026-11-19.
   { id: "idleowners",   group: "adm-plant",   Icon: ShieldQuestion, labelKey: "admin.tabIdleOwners",   descKey: "admin.desc.idleowners" },
 
   // Integrations — every outside system the platform talks to.
@@ -105,40 +105,40 @@ export const ADMIN_NAV = [
   // queue of what it will not write by itself, hand ties, the pass log) and
   // the API CONNECTION (a dedicated read-only login, password sealed and never
   // shown back, and a connection test). No capKey: one moves people, cells and
-  // access, the other reads every employee's attendance — admin-only, never
-  // grantable. The id stays `verifixsync` (the sidebar count, the bot's links).
+  // access, the other reads every employee's attendance — grantable as
+  // `admin.tab.verifixsync` (2026-11-19). The id stays `verifixsync` (the sidebar count, the bot's links).
   { id: "verifixsync",  group: "adm-links",   Icon: Fingerprint,    labelKey: "admin.tabVerifix",      descKey: "admin.desc.verifixall" },
   { id: "data",         group: "adm-links",   Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   // «AI kalitlari» — EVERY AI API key, and which key + model each feature
   // runs on (the proof checker, the assistant's chat and voice, both weekly
-  // reports). No capKey: these are the platform's paid accounts — admin-only
-  // and never grantable (the `verifix` model). Keys are set nowhere else.
+  // reports). These are the platform's paid accounts —
+  // grantable as `admin.tab.aikeys` since 2026-11-19. Keys are set nowhere else.
   { id: "aikeys",       group: "adm-links",   Icon: Sparkles,       labelKey: "admin.tabAiKeys",       descKey: "admin.desc.aikeys" },
   // The Tasker («Задачник (фабрика)») API: a sealed integration token and a
   // connection test (docs/tasker.md). No capKey — the token reads every
-  // factory department's inspections, so admin-only like Verifix.
+  // factory department's inspections (grantable: `admin.tab.tasker`).
   { id: "tasker",       group: "adm-links",   Icon: ScanSearch,     labelKey: "admin.tabTasker",       descKey: "admin.desc.tasker" },
   // panel.safiabakery.uz's «Минусы» (technical audit) read with a stored
   // login — the report has no API (docs/tasker.md). No capKey: the login is a
-  // person's panel account — admin-only, never grantable.
+  // person's panel account (grantable: `admin.tab.sdpanel`).
   { id: "sdpanel",      group: "adm-links",   Icon: ClipboardX,     labelKey: "admin.tabSdPanel",      descKey: "admin.desc.sdpanel" },
   // «Trello» — the API key and the (sealed) token /trello reads boards with,
   // the boards it reads and what «done» means on each. No capKey: the token
-  // reads every board its Trello member can open — admin-only, never grantable.
+  // reads every board its Trello member can open (grantable: `admin.tab.trello`).
   { id: "trello",       group: "adm-links",   Icon: SquareKanban,   labelKey: "admin.tabTrello",       descKey: "admin.desc.trello" },
   // «Notion eslatmalari» — the Notion task list's daily Telegram reminders
   // (moved from the GitHub bot, 2026-11-02): schedule, groups, team and the
-  // bot's sealed token. No capKey: admin-only, never grantable.
+  // bot's sealed token. Grantable: `admin.tab.notiontracker`.
   { id: "notiontracker", group: "adm-links",   Icon: BellRing,       labelKey: "admin.tabNotionTracker", descKey: "admin.desc.notiontracker" },
   // «Pechlar» — which Revent ovens the factory-LAN collector reads, at which
-  // address. No capKey: the list is where the collector is sent — admin-only.
+  // address. Grantable: `admin.tab.ovens`.
   { id: "ovens",        group: "adm-links",   Icon: CookingPot,     labelKey: "admin.tabOvens",        descKey: "admin.desc.ovens" },
 
   // System — the registers and audits, the interface texts, and LAST the two
   // tools that destroy data (red; never beside a daily one).
   // Every change on the platform, by category — one register nothing writes to
   // twice: read-only and append-only. Sits with the other accountability
-  // surfaces, and carries no `capKey`, so like "permissions" it is admin-only.
+  // surfaces. Grantable: `admin.tab.logs` (with its undo).
   { id: "logs",         group: "adm-system",  Icon: ScrollText,     labelKey: "admin.tabLogs",         descKey: "admin.desc.logs" },
   // READ-ONLY audit of workers an approved → supervisor exchange left on no
   // roster (an upload wiped the receiving unit's day and nothing put them back).

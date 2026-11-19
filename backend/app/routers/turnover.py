@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.routers.admin import verify_admin
+from app.capabilities import require_page_admin
 from app.services import action_log, kept_answer, turnover
 
 router = APIRouter(prefix="/api/turnover", tags=["turnover"])
@@ -88,7 +88,7 @@ def people(
 
 @router.get("/exclusions")
 def exclusions(month: Optional[str] = Query(None), db: Session = Depends(get_db),
-               _: dict = Depends(verify_admin)):
+               _: dict = Depends(require_page_admin("leaders-kpi"))):
     """Every reason Verifix has given for a dismissal, with how many left for it
     in this month and whether it is excluded — the «Sabablar» dialog's list."""
     return turnover.reasons_seen(db, _month(month))
@@ -96,7 +96,7 @@ def exclusions(month: Optional[str] = Query(None), db: Session = Depends(get_db)
 
 @router.get("/exclusions/preview")
 def exclusions_preview(month: Optional[str] = Query(None), reasons: list[str] = Query(default=[]),
-                       db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+                       db: Session = Depends(get_db), _: dict = Depends(require_page_admin("leaders-kpi"))):
     """What the plant's rate and the cells' scores would be with this list —
     nothing is stored. A closed or saved month keeps its own list (`applies`
     false)."""
@@ -109,7 +109,7 @@ class ExclusionsIn(BaseModel):
 
 
 @router.put("/exclusions")
-def save_exclusions(body: ExclusionsIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def save_exclusions(body: ExclusionsIn, db: Session = Depends(get_db), admin: dict = Depends(require_page_admin("leaders-kpi"))):
     """Set the reasons whose leavers are not counted. It reaches the open month
     and the ones after it. A CLOSED month the dialog was opened on is closed
     again with the new list in the same save (2026-11-16: October kept counting

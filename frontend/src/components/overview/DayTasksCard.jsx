@@ -62,6 +62,7 @@ import { useToast } from "../ui/Toast";
 import TaskFormModal from "../tasks/TaskFormModal";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
+import { useCapabilities } from "../../hooks/useCapabilities";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -106,6 +107,9 @@ function ToneChip({ tone, label }) {
 
 export default function DayTasksCard({ params }) {
   const { auth } = useAuth();
+  // An admin, or the tasks page's admin grant (backend `task_board.admin`).
+  const { adminOn } = useCapabilities();
+  const tasksAdmin = auth?.role === "admin" || adminOn("tasks");
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
@@ -185,7 +189,7 @@ export default function DayTasksCard({ params }) {
   // Without an answer — still loading, or the read failed — the block is
   // drawn only for a reader known to have it (a skeleton, then the failure).
   // Anybody else gets nothing: a block that is not theirs has nothing to report.
-  if (!data && !(auth?.role === "admin" || seen)) return null;
+  if (!data && !(tasksAdmin || seen)) return null;
 
   const stateLabel = (s) => t(STATE_LABEL[s]);
   const parts = STATE_ORDER.map((s) => ({ key: s, label: stateLabel(s), color: STATE_FILL[s], value: totals?.[s] || 0 }));

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
-from app.routers.admin import verify_admin
+from app.capabilities import require_page_admin
 from app.services import action_log, category_compliance as cc, turnover
 
 router = APIRouter(prefix="/api/category-compliance", tags=["category-compliance"])
@@ -103,7 +103,7 @@ class RuleIn(BaseModel):
 
 
 @router.put("/rule")
-def put_rule(body: RuleIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def put_rule(body: RuleIn, db: Session = Depends(get_db), admin: dict = Depends(require_page_admin("leaders-kpi"))):
     """Store the override (validated whole — a bad part refuses the save with
     its reason, nothing is written) or go back to the defaults."""
     try:

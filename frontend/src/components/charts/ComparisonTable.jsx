@@ -6,6 +6,7 @@ import useGridHover from "../../hooks/useGridHover";
 import { orderedSegments, segmentBands } from "../../utils/segments";
 import { pctCell, hatchCell, pendingLegend } from "../../utils/gridExport";
 import { useAuth } from "../../context/AuthContext";
+import { useCapabilities } from "../../hooks/useCapabilities";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import FormulaModal from "../ui/FormulaModal";
@@ -392,6 +393,11 @@ function ComparisonTable({
   }), []);
 
   const isAdmin = auth?.role === "admin";
+  // The calculator is a what-if on this screen alone (nothing is saved), so a
+  // `page.admin.zagruzka` holder has it too; the band editor stays the admin's
+  // while its save (`PUT /admin/settings`) is.
+  const { adminOn } = useCapabilities();
+  const canCalc = isAdmin || adminOn("zagruzka");
   const factors = calcFactors || DEFAULT_CALC_FACTORS;
   const simple = basis === "simple";
   // ── THE two value readers. Every P and every A on this table — the cells,
@@ -967,7 +973,7 @@ function ComparisonTable({
   // admin's, the workbook and fullscreen everyone's.
   const iconButtons = (
     <>
-      {isAdmin && factorsApply && onCalcFactorsChange && (
+      {canCalc && factorsApply && onCalcFactorsChange && (
         <button
           onClick={open.calc}
           title={t("zagruzka.calcTitle")}

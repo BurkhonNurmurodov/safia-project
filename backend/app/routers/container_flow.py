@@ -16,7 +16,9 @@ docs/containers-flow.md). Two doors:
   — and writes nothing.
 - `RECV` (page key `container-receive`): a brigadir confirming what reached
   their line — only their own unit; admins any. Admin-only until granted.
-- `verify_admin`: the settings, deleting a request outright.
+- `ADMIN` (an admin or `page.admin.container-flow`): the settings, deleting
+  a request outright. That grant is an admin's whole reach on the page — every
+  door above admits it (`_or_admin`), every unit, every tab.
 - AXO's stock (2026-11-17): `GET /stock` is `ANY`'s, `POST /stock` — a count
   or an addition — is `PAGE`'s.
 - A brigadir's EXTRA request (2026-11-18): `EXT` (page key `container-extra`,
@@ -31,7 +33,7 @@ from __future__ import annotations
 
 import io
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -39,19 +41,42 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Manager
-from app.permissions import require_page
-from app.routers.admin import verify_admin
+from app.capabilities import page_admin, require_page_admin
+from app.permissions import _oauth2, require_page
 from app.services import action_log, container_flow as flow
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/container-flow", tags=["container-flow"])
 
+ADMIN_PAGE = "container-flow"
+ADMIN = require_page_admin(ADMIN_PAGE)
+
+
+def _or_admin(*pages: str):
+    """`require_page(*pages)`, also passing a holder of the page's admin grant —
+    the logistics / receipt / extra doors sit on page keys of their own, and an
+    admin's reach on this page spans them all."""
+    gate = require_page(*pages)
+
+    def _dep(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db)):
+        try:
+            return gate(token, db)
+        except HTTPException as denied:
+            if denied.status_code != 403:
+                raise
+            try:
+                return ADMIN(token, db)
+            except HTTPException:
+                raise denied from None
+    return _dep
+
+
 PAGE = require_page("container-flow")
-LOGI = require_page("container-logistics")
+LOGI = _or_admin("container-logistics")
 ANY = require_page("container-flow", "container-logistics", "container-watch")
-RECV = require_page("container-receive")
-RECW = require_page("container-receive", "container-watch")
-EXT = require_page("container-extra")
+RECV = _or_admin("container-receive")
+RECW = _or_admin("container-receive", "container-watch")
+EXT = _or_admin("container-extra")
 EXTR = require_page("container-extra", "container-flow", "container-logistics", "container-watch")
 WHO = require_page("container-flow", "container-logistics", "container-receive", "container-watch",
                    "container-extra")
@@ -61,7 +86,7 @@ def _roles(db: Session, payload: dict) -> dict:
     """What the viewer is on this page — the page's tabs and buttons follow it."""
     from app.capabilities import capability_pages, caller_denied_pages
     from app.permissions import get_page_access, role_can_access
-    if payload.get("role") == "admin":
+    if page_admin(db, payload, ADMIN_PAGE):
         return {"admin": True, "axo": True, "logistics": True, "receive": True, "watch": True,
                 "extra": True, "unit": None}
     access, caps, denied = get_page_access(db), capability_pages(db, payload), caller_denied_pages(db, payload)
@@ -119,7 +144,7 @@ class SettingsBody(BaseModel):
 
 @router.put("/settings")
 def put_settings(body: SettingsBody, db: Session = Depends(get_db),
-                 payload: dict = Depends(verify_admin)):
+                 payload: dict = Depends(ADMIN)):
     was = flow.settings(db)
     out = flow.save_settings(db, body.notify, body.notify_brigadirs, body.notify_axo,
                              body.notify_managers, body.notify_extra)
@@ -393,7 +418,7 @@ def post_assign(request_id: int, body: AssignBody, db: Session = Depends(get_db)
     try:
         r = flow.assign_request(db, request_id, [p.model_dump() for p in body.parts], body.reason,
                                 body.comment, _actor(payload), _me(db, payload),
-                                payload.get("role") == "admin")
+                                page_admin(db, payload, ADMIN_PAGE))
         db.commit()
     except flow.FlowError as e:
         db.rollback()
@@ -418,7 +443,7 @@ def post_cancel(request_id: int, body: NoteBody, db: Session = Depends(get_db),
 
 
 @router.delete("/requests/{request_id}")
-def delete_request(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+def delete_request(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(ADMIN)):
     """Admins only: the request and its split, gone — any state."""
     try:
         r = flow.delete_request(db, request_id)
@@ -463,7 +488,7 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
 def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(RECW)):
     """The day's split requests per brigadir: a brigadir sees their own unit,
     everybody else (admins, the managers watching) every unit."""
-    mine = _my_unit(payload) if payload.get("role") != "admin" else None
+    mine = None if page_admin(db, payload, ADMIN_PAGE) else _my_unit(payload)
     return {"day": day.isoformat(), "unit": mine, "receipts": flow.receipts_of(db, day, mine)}
 
 
@@ -481,7 +506,8 @@ def _extra_out(db: Session, e) -> dict:
 def get_extras(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(EXTR)):
     """The day's asks: a brigadir reads their own unit's, AXO, logistics, the
     managers watching and admins every unit's."""
-    mine = _my_unit(payload) if payload.get("role") == "supervisor" else None
+    mine = (_my_unit(payload) if payload.get("role") == "supervisor"
+            and not page_admin(db, payload, ADMIN_PAGE) else None)
     return {"day": day.isoformat(), "unit": mine, "extras": flow.extras_of(db, day, mine)}
 
 
@@ -496,8 +522,9 @@ class ExtraBody(BaseModel):
 
 @router.post("/extras")
 def post_extra(body: ExtraBody, db: Session = Depends(get_db), payload: dict = Depends(EXT)):
-    admin = payload.get("role") == "admin"
-    mid = body.manager_id if admin else _my_unit(payload)
+    admin = page_admin(db, payload, ADMIN_PAGE)
+    # an admin names the unit; a grantee who is a brigadir may leave it to theirs
+    mid = (body.manager_id or _my_unit(payload)) if admin else _my_unit(payload)
     if mid is None:
         raise HTTPException(status_code=409, detail="unit")
     try:
@@ -507,14 +534,14 @@ def post_extra(body: ExtraBody, db: Session = Depends(get_db), payload: dict = D
     except flow.FlowError as ex:
         db.rollback()
         raise HTTPException(status_code=409, detail=ex.code)
-    if not admin:
+    if payload.get("role") != "admin":
         flow.extra_later("new", e.id)       # an admin's own (test) ask never reaches AXO
     return _extra_out(db, e)
 
 
 @router.post("/extras/{extra_id}/cancel")
 def post_extra_cancel(extra_id: int, db: Session = Depends(get_db), payload: dict = Depends(EXT)):
-    admin = payload.get("role") == "admin"
+    admin = page_admin(db, payload, ADMIN_PAGE)
     mid = None if admin else _my_unit(payload)
     if not admin and mid is None:
         raise HTTPException(status_code=409, detail="unit")
@@ -575,7 +602,7 @@ class ReceiveBody(BaseModel):
 def post_receive(request_id: int, body: ReceiveBody, db: Session = Depends(get_db),
                  payload: dict = Depends(RECV)):
     """A brigadir confirms what reached their line; an admin may for any unit."""
-    if payload.get("role") != "admin" and _my_unit(payload) != body.manager_id:
+    if not page_admin(db, payload, ADMIN_PAGE) and _my_unit(payload) != body.manager_id:
         raise HTTPException(status_code=409, detail="not_yours")
     try:
         r = flow.receive(db, request_id, body.manager_id, body.counts, body.reason, body.comment,

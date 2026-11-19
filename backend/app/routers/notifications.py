@@ -9,6 +9,7 @@ from typing import Annotated, Optional
 import jwt
 from jwt import PyJWTError as JWTError
 
+from app.capabilities import require_tab
 from app.config import settings
 from app.database import get_db
 from app.identity import viewer_profile_key
@@ -39,11 +40,9 @@ def _decode_token(token: str | None) -> dict | None:
         return None
 
 
-def _require_admin(token: Annotated[str | None, Depends(_oauth2)]):
-    payload = _decode_token(token)
-    if not payload or payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    return payload
+# A free-form notice to everyone has no page of its own; it is a broadcast, so
+# an admin or the «Xabarnoma» tab's grant.
+_require_admin = require_tab("broadcast")
 
 
 class NotificationCreate(BaseModel):
@@ -136,7 +135,8 @@ def create_notification(
     admin=Depends(_require_admin),
     db: Session = Depends(get_db),
 ):
-    """Admin-only — create a broadcast or targeted notification."""
+    """Admin or the broadcast tab's grant — create a broadcast or targeted
+    notification."""
     n = Notification(
         title=body.title,
         body=body.body,

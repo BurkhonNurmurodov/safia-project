@@ -1291,14 +1291,14 @@ class PageKeyTest(unittest.TestCase):
 
     def test_axo_doors_and_admin_doors(self):
         """AXO's steps and the reads take the page key; the settings write and
-        deleting a request stay admin-only; the batches' doors are gone."""
+        deleting a request take the page's admin grant (admins, and
+        `page.admin.container-flow` since 2026-11-19); the batches' doors are gone."""
         from app.routers import container_flow as r
-        from app.routers.admin import verify_admin
         guard = {}
         for route in r.router.routes:
             deps = [d.call for d in route.dependant.dependencies]
             guard[(next(iter(route.methods)), route.path)] = (
-                "admin" if verify_admin in deps else "axo" if r.PAGE in deps
+                "admin" if r.ADMIN in deps else "axo" if r.PAGE in deps
                 else "logistics" if r.LOGI in deps else "any" if r.ANY in deps
                 else "receive" if r.RECV in deps else "receive+watch" if r.RECW in deps
                 else "extra" if r.EXT in deps else "extra+read" if r.EXTR in deps

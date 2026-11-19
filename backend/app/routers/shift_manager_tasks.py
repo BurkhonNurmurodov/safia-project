@@ -53,11 +53,11 @@ _snippet = tb.snippet
 
 # ── rights ────────────────────────────────────────────────────────────────────
 
-def can_manage(payload: dict) -> bool:
+def can_manage(payload: dict, db: Optional[Session] = None) -> bool:
     """May the caller RUN a shift manager's tasks — set them, flame them, close
-    one on the assignee's behalf? The tier above: an admin, and a top-manager
-    from the first day on."""
-    return payload.get("role") == "admin" or tb.top_sets(payload)
+    one on the assignee's behalf? The tier above: an admin (or a holder of the
+    page's admin grant), and a top-manager from the first day on."""
+    return tb.admin(db, payload) or tb.top_sets(payload)
 
 
 def is_assignee(payload: dict, t: LeaderTask) -> bool:
@@ -71,7 +71,7 @@ def is_assignee(payload: dict, t: LeaderTask) -> bool:
 
 
 def _owns_row(db: Session, payload: dict, t: LeaderTask) -> bool:
-    if payload.get("role") == "admin":
+    if tb.admin(db, payload):
         return True
     return identity.owns(db, payload, t.created_by_profile, t.created_by)
 
@@ -80,7 +80,7 @@ def can_read(db: Session, payload: dict, t: LeaderTask) -> bool:
     """The row's readers: whoever governs it, the assignee, and a reader the
     TASK page was opened to whole (a "see all" grant, or a role toggled onto it
     that is neither a shift manager nor below one)."""
-    if can_manage(payload) or is_assignee(payload, t):
+    if can_manage(payload, db) or is_assignee(payload, t):
         return True
     if page_scope_is_all(db, payload, PAGE):
         return True
@@ -90,7 +90,7 @@ def can_read(db: Session, payload: dict, t: LeaderTask) -> bool:
 
 def _serialize(t: LeaderTask, comment_count: int, payload: dict, db: Session,
                *, live: Optional[RoleProfile] = None) -> dict:
-    manage = can_manage(payload)
+    manage = can_manage(payload, db)
     mine = is_assignee(payload, t)
     options = tb.status_choices(finisher=manage, mover=manage or mine,
                                 from_top=True, current=t.status)
@@ -165,7 +165,7 @@ def list_assignable_managers(
     """Create-form picker source: one entry per shift-manager PROFILE — per
     person. Unclaimed profiles are listed too (``holders: 0``): work set for
     them waits in the bell until the profile is claimed."""
-    _assert(can_manage(payload), "Admin or top manager only")
+    _assert(can_manage(payload, db), "Admin or top manager only")
     rows = (db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
             .order_by(RoleProfile.name, RoleProfile.id).all())
     return [
@@ -196,7 +196,7 @@ def create_task(
     db: Session = Depends(get_db),
     payload: dict = Depends(_door),
 ):
-    _assert(can_manage(payload), "Only top managers and admins can set shift-manager tasks")
+    _assert(can_manage(payload, db), "Only top managers and admins can set shift-manager tasks")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
     prof = _profile(db, body.profile_id)
@@ -313,7 +313,7 @@ def set_status(
     if body.status not in tb.VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     t = _mine(task_id, payload, db)
-    manage = can_manage(payload)
+    manage = can_manage(payload, db)
     allowed = tb.status_choices(finisher=manage, mover=manage or is_assignee(payload, t),
                                 from_top=True, current=t.status)
     _assert(body.status in allowed,
@@ -364,7 +364,7 @@ def set_priority(
     t = _mine(task_id, payload, db)
     # Never the assignee: what is urgent is the statement of whoever set the
     # work, exactly as on the two tiers below.
-    _assert(can_manage(payload), "Only a top manager or admin can change urgency")
+    _assert(can_manage(payload, db), "Only a top manager or admin can change urgency")
 
     was = tb.is_urgent(t)
     now = bool(body.urgent)
@@ -411,7 +411,7 @@ def add_task_comment(
 ):
     text, uploads = tb.parsed_comment(parsed)
     t = _mine(task_id, payload, db)
-    _assert(can_manage(payload) or is_assignee(payload, t),
+    _assert(can_manage(payload, db) or is_assignee(payload, t),
             "You can't comment on this task")
     sub = int(payload["sub"])
     c, files = tb.add_comment(db, payload, t, text, uploads)

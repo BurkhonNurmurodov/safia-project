@@ -58,6 +58,7 @@ from sqlalchemy import (DateTime, Float, Text, and_, case, cast, false, func,
                         not_, or_, text, type_coerce)
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
@@ -1390,7 +1391,7 @@ def get_diag(
     internal key and where (never its value), plus one live knock on the API —
     the platform has no shell, so this is the only way to tell «wrong file»
     from «unparseable line» from «their server rejects our key»."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     out = arc_client.diagnostics()
     out["pending_details"] = detail_pending(db)

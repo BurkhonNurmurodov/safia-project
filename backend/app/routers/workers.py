@@ -5,7 +5,7 @@ from collections import namedtuple
 from functools import lru_cache
 from datetime import date, datetime, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, and_, case
 
@@ -1070,12 +1070,10 @@ def get_demographics(
     factory: Optional[int] = Query(default=None),
     scope: str = Query(default="all"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("workers")),
+    # «Tarkib»'s own page (2026-11-19): admins by default, grantable — the
+    # lock is the page, the URL is reachable without the menu.
+    payload: dict = Depends(require_page("workers-composition")),
 ):
-    # Admins only (the operator, 2026-10-23) — the page hides the tab for
-    # everybody else, and this is the lock: the URL is reachable without it.
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admins only")
     from app.services import verifix, verifix_live, workforce
     data, at, err, err_at = workforce.stored(db)
     cfg = verifix.config(db)
@@ -1106,10 +1104,9 @@ def get_demographics(
 
 
 @router.post("/workers/demographics/refresh")
-def refresh_demographics(payload: dict = Depends(require_page("workers"))):
-    """An admin's «Verifix'dan yangilash»: the read on a thread of its own."""
+def refresh_demographics(payload: dict = Depends(require_page("workers-composition"))):
+    """«Verifix'dan yangilash» on «Tarkib» — whoever may open the page (admins
+    by default): the read on a thread of its own."""
     from app.services import workforce
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admins only")
     started = workforce.start_read(f"admin:{payload.get('full_name') or payload.get('sub') or ''}"[:120])
     return {"started": started, "running": workforce.running()}

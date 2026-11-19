@@ -80,6 +80,9 @@ def lock(db: Session, caller: Optional[dict], manager_id: Optional[int], day: Op
     the refusal name. Only a supervisor is ever locked."""
     if (caller or {}).get("role") != "supervisor" or not manager_id or day is None:
         return None
+    from app.capabilities import page_admin   # an admin is never locked, nor is «Davomat — admin»
+    if page_admin(db, caller, "staff"):
+        return None
     unit = db.query(Manager).filter(Manager.id == manager_id).first()
     if not unit:
         return None

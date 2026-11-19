@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.capabilities import CAP_FACTORIES_MANAGE, require_cap
+from app.capabilities import CAP_FACTORIES_MANAGE, is_admin_or, require_cap
 from app.database import get_db
 from app.models import AppSetting, Factory, Manager, RoleProfile
 from app.security import require_auth
@@ -104,7 +104,7 @@ def get_factories(db: Session = Depends(get_db), payload: dict = Depends(require
         # locked viewer: «All» would show them plants they may not read.
         "all_tab": all_tab_enabled(db) and locked is None,
         "locked_factory_id": locked,
-        "can_manage": payload.get("role") == "admin",
+        "can_manage": is_admin_or(db, payload, CAP_FACTORIES_MANAGE),
     }
 
 

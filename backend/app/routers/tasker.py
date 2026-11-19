@@ -1,7 +1,8 @@
 """The Tasker connection card — `/panel/tasker`.
 
 Three doors over ``app.services.tasker``: read what is stored, store it, run
-the connection test. ADMIN-ONLY and not grantable, like the Verifix card: the
+the connection test. An admin or the tab's grant (`admin.tab.tasker`; the
+«/panel» doors `admin.tab.sdpanel`, 2026-11-19), like the Verifix card: the
 token reads every factory department's inspections.
 
 The GET shows the stored token to the admin (the operator's call, 2026-11-12 —
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.routers.verifix import _who
 from app.services import action_log, sd_panel, tasker
 
@@ -31,7 +32,7 @@ def _state(db: Session) -> dict:
 
 
 @router.get("")
-def get_tasker(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_tasker(db: Session = Depends(get_db), _: dict = Depends(require_tab("tasker"))):
     return _state(db)
 
 
@@ -44,7 +45,7 @@ class TaskerIn(BaseModel):
 
 @router.put("")
 def save_tasker(body: TaskerIn, db: Session = Depends(get_db),
-                admin: dict = Depends(verify_admin)):
+                admin: dict = Depends(require_tab("tasker"))):
     try:
         changed = tasker.save(db, base=body.base, token=(body.token or "").strip() or None,
                               clear_token=body.clear_token)
@@ -70,7 +71,7 @@ def save_tasker(body: TaskerIn, db: Session = Depends(get_db),
 
 
 @router.post("/test")
-def test_tasker(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def test_tasker(db: Session = Depends(get_db), admin: dict = Depends(require_tab("tasker"))):
     result = tasker.run_test(db, actor=_who(admin))
     steps = {s["key"]: s for s in result.get("steps", [])}
     details = [("verdict", result.get("verdict"))]
@@ -84,8 +85,8 @@ def test_tasker(db: Session = Depends(get_db), admin: dict = Depends(verify_admi
 
 # ── panel.safiabakery.uz — the technical audit's «Минусы» (services/sd_panel.py) ──
 # The same «Задачник (фабрика)», read from its web panel with a login: that
-# report has no API. Admin-only like the token above; the GET shows the stored
-# password to the admin (the 2026-11-12 ruling), the register only its length.
+# report has no API. An admin or the «sdpanel» tab's grant; the GET shows the
+# stored password to them (the 2026-11-12 ruling), the register only its length.
 
 _PANEL = {"target_kind": "setting", "target_id": "sdpanel", "target_name": "panel.safiabakery.uz"}
 
@@ -95,7 +96,7 @@ def _panel_state(db: Session) -> dict:
 
 
 @router.get("/panel")
-def get_panel(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_panel(db: Session = Depends(get_db), _: dict = Depends(require_tab("sdpanel"))):
     return _panel_state(db)
 
 
@@ -108,7 +109,7 @@ class PanelIn(BaseModel):
 
 @router.put("/panel")
 def save_panel(body: PanelIn, db: Session = Depends(get_db),
-               admin: dict = Depends(verify_admin)):
+               admin: dict = Depends(require_tab("sdpanel"))):
     changed = sd_panel.save(db, user=body.user, password=body.password or None,
                             clear_password=body.clear_password)
     details = list(changed.items())  # the password as its LENGTH
@@ -118,7 +119,7 @@ def save_panel(body: PanelIn, db: Session = Depends(get_db),
 
 
 @router.post("/panel/fetch")
-def fetch_panel(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def fetch_panel(db: Session = Depends(get_db), admin: dict = Depends(require_tab("sdpanel"))):
     res = sd_panel.fetch(db, actor=_who(admin))
     action_log.enrich(**_PANEL, details=[("rows", len(res["rows"]))] if res["ok"]
                       else [("error", res["code"])])

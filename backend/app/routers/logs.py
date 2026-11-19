@@ -22,8 +22,9 @@ selecting «Attendance» would show «Attendance 88» beside «Identity 0» and 
 as "nothing happened in Identity today", which is false. Same rule for the
 action facet.
 
-Admin-only, deliberately, and not grantable: this register says who reopened
-whose day, who deleted a profile and who revealed a browser password. It is also
+Admin-only by default and, since 2026-11-19, grantable as the «Jurnal» tab
+(`admin.tab.logs`): this register says who reopened whose day, who deleted a
+profile and who revealed a browser password, so grant it knowingly. It is also
 strictly read-only — there is no delete or purge endpoint anywhere, because an
 audit trail with an erase button is not one.
 """
@@ -43,11 +44,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ActionLog
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, action_undo
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/logs", tags=["logs"])
+# The «Jurnal» admin page: an admin or its grant (undo included).
+_tab = require_tab("logs")
 
 log = logging.getLogger(__name__)
 
@@ -253,7 +256,7 @@ def list_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """One page of the register, newest first."""
     base = f.apply(db.query(ActionLog))
@@ -279,7 +282,7 @@ def list_logs(
 def summary(
     f: _F = Depends(_filters),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """The category rail's counts and the four stat tiles.
 
@@ -330,7 +333,7 @@ def summary(
 def facets(
     f: _F = Depends(_filters),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """The people, units and action keys present in the current window.
 
@@ -393,7 +396,7 @@ def facets(
 
 
 @router.get("/{log_id}")
-def one(log_id: int, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def one(log_id: int, db: Session = Depends(get_db), _: dict = Depends(_tab)):
     """A single row — for a deep link out of a notification or another page."""
     r = db.query(ActionLog).filter_by(id=log_id).first()
     if not r:
@@ -407,7 +410,7 @@ def one(log_id: int, db: Session = Depends(get_db), _: dict = Depends(verify_adm
 
 @router.post("/{log_id}/undo")
 def undo(log_id: int, db: Session = Depends(get_db),
-         caller: dict = Depends(verify_admin)):
+         caller: dict = Depends(_tab)):
     """Reverse one recorded action.
 
     Nothing is deleted or edited here — not the register (append-only, always)
@@ -416,9 +419,9 @@ def undo(log_id: int, db: Session = Depends(get_db),
     ``app/services/action_undo.py`` is the definition of which actions can be
     reached this way and, for every one that cannot, why.
 
-    Admin-only like the rest of this router and deliberately not grantable: the
-    reach of this one endpoint is the union of everything it can reverse, so a
-    capability for it would be a capability for all of them at once.
+    Gated like the rest of this router — an admin or the «Jurnal» tab's grant
+    (2026-11-19: everything is grantable). Its reach is the union of everything
+    it can reverse, so that grant is a capability for all of them at once.
     """
     r = db.query(ActionLog).filter_by(id=log_id).first()
     if not r:
@@ -492,7 +495,7 @@ def export_xlsx(
     body: ExportBody,
     f: _F = Depends(_filters),
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """Excel of the register AS FILTERED on screen.
 

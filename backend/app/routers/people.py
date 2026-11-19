@@ -23,7 +23,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.capabilities import page_scope_is_all
+from app.capabilities import page_admin, page_scope_is_all
 from app.database import get_db
 from app.identity import viewer_leader_profile_ids, viewer_profile_key
 from app.models import Cell, EmployeeHonour, Manager
@@ -414,10 +414,10 @@ def _kpi_peek(pids: list[int], today: date) -> Optional[dict]:
                       "rank": r.get("rank")} for r in best[2]]}
 
 
-def _rights(payload: dict, cell: Optional[dict]) -> dict:
+def _rights(db: Session, payload: dict, cell: Optional[dict]) -> dict:
     role = payload.get("role")
     own_brigadir = role == "supervisor" and cell is not None and cell.get("manager_id") == payload.get("role_id")
-    can = role == "admin" or own_brigadir
+    can = own_brigadir or page_admin(db, payload, "people")
     return {"honours": can}
 
 
@@ -462,7 +462,7 @@ def card(eid: str,
         "leadership": lead,
     }
     out = {"hero": hero, "period": {"from": a.isoformat(), "to": b.isoformat()},
-           "tiles": _tiles(f, a, b), "rights": _rights(payload, cell), "tab": tab,
+           "tiles": _tiles(f, a, b), "rights": _rights(db, payload, cell), "tab": tab,
            "honour_kinds": list(people.HONOUR_KINDS)}
 
     moves_by_day: dict = {}
@@ -545,7 +545,7 @@ def add_honour(eid: str, body: dict = Body(...), db: Session = Depends(get_db),
     """Add an honour — an admin, or the person's own brigadir."""
     eid = str(eid)
     _dirx, p, cell = _person(db, payload, eid)
-    if not _rights(payload, cell)["honours"]:
+    if not _rights(db, payload, cell)["honours"]:
         _refuse(403, "not_allowed", "Only an admin or this person's brigadir can add an honour.")
     title = people.clean_text(body.get("title"), people.TITLE_MAX)
     kind = str(body.get("kind") or "")
@@ -575,7 +575,7 @@ def remove_honour(eid: str, hid: int, db: Session = Depends(get_db),
                   payload: dict = Depends(PAGE)):
     eid = str(eid)
     _dirx, p, cell = _person(db, payload, eid)
-    if not _rights(payload, cell)["honours"]:
+    if not _rights(db, payload, cell)["honours"]:
         _refuse(403, "not_allowed", "Only an admin or this person's brigadir can remove an honour.")
     h = db.query(EmployeeHonour).filter(EmployeeHonour.id == hid,
                                         EmployeeHonour.employee_id == eid).first()

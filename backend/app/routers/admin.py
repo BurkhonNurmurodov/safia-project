@@ -19,11 +19,13 @@ from sqlalchemy.orm import Session
 from app import identity
 from app.capability_alerts import alert_grant_use, tv
 from app.capabilities import (
-    CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
+    CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_EXAM_MANAGE, CAP_PAGE_PREFIX,
+    CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
     CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, DENIABLE_KEYS, MODE_DENY,
     SCOPES, UNGRANTABLE_ROLES,
-    apply_caps, apply_profile_perms, cap_scope, caller_denied_pages,
-    capability_pages, profile_unit_ids, require_cap,
+    apply_caps, apply_profile_perms, cap_scope, caller_caps, caller_denied_pages,
+    capability_pages, capability_tabs, is_admin_or, page_admin_cap,
+    profile_unit_ids, require_cap, require_tab, tab_cap,
 )
 from app.config import settings
 from app.database import get_db
@@ -39,8 +41,11 @@ from app.services.verifix_parser import parse_verifix_file
 from app.services.sheets_sync import (
     sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
 )
-from app.permissions import get_page_access, set_page_access, role_can_access, PAGE_KEYS, TOGGLEABLE_ROLES
+from app.permissions import (
+    get_page_access, set_page_access, role_can_access, require_page, PAGE_KEYS, TOGGLEABLE_ROLES,
+)
 from app.routers.auth import VALID_ROLES
+from app.security import require_auth
 from app.upload_guard import check_dump_name, validate_db_dump, validate_spreadsheet
 
 log = logging.getLogger(__name__)
@@ -64,8 +69,8 @@ def verify_refresh_access(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
 ):
-    """Sheet re-sync is admin-only, except the leaders sheet: anyone who can open
-    the Leaders page may refresh it (the refresh button is shown to every such
+    """Sheet re-sync is admin-only (or the «data» tab's grant), except the
+    leaders sheet: anyone who can open the Leaders page may refresh it (the refresh button is shown to every such
     profile), since they re-sync from the page and each still only reads their
     own scoped rows afterwards."""
     try:
@@ -73,7 +78,7 @@ def verify_refresh_access(
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     role = payload.get("role")
-    if role == "admin":
+    if is_admin_or(db, payload, tab_cap("data")):
         return payload
     if name == "leaders" and role_can_access(role, ["leaders"], get_page_access(db),
                                              capability_pages(db, payload),
@@ -86,7 +91,7 @@ def verify_refresh_access(
 @router.post("/upload")
 def upload_verifix(
     files: list[UploadFile] = File(...),
-    admin_payload: dict = Depends(verify_admin),
+    admin_payload: dict = Depends(require_tab("attendance")),
     db: Session = Depends(get_db),
 ):
     results = []
@@ -272,12 +277,12 @@ def delete_attendance(
 
 
 @router.get("/sheet-sources")
-def get_sheet_sources(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_sheet_sources(db: Session = Depends(get_db), _: dict = Depends(require_tab("data"))):
     return db.query(SheetSource).all()
 
 
 @router.get("/service-account")
-def get_service_account(_: dict = Depends(verify_admin)):
+def get_service_account(_: dict = Depends(require_tab("data"))):
     """The Google service account email that source sheets must be shared with."""
     from app.services.sheets_reader import get_service_account_email
     return {"email": get_service_account_email()}
@@ -288,7 +293,7 @@ def update_sheet_source(
     name: str,
     payload: dict,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("data")),
 ):
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
     old_id = src.sheet_id if src else None
@@ -429,18 +434,49 @@ def _log_value(key: str, value):
     return value
 
 
+# The grants whose editor reads and writes settings (the /zagruzka and /ontime
+# band editors, the exam's pass mark) — each limited to its own keys below.
+_SETTINGS_EDITORS = (page_admin_cap("zagruzka"), page_admin_cap("ontime"), page_admin_cap("shift-daily"),
+                     CAP_EXAM_MANAGE)
+
+
+def _setting_keys_for(db: Session, caller: dict) -> Optional[set[str]]:
+    """The keys the caller may read and write here: None (every key) for an
+    admin; a grantee only the keys of the editor their grant opens. Every
+    other key (the integrations' tokens and addresses among them) stays a real
+    admin's: this one door covers the whole settings table."""
+    if caller.get("role") == "admin":
+        return None
+    from app.routers.settings import STATUS_BANDS_KEY, ZAGRUZKA_BANDS
+    from app.services.exam import SETTING_BADGE, SETTING_PASS_MARK
+    by_cap = {
+        page_admin_cap("zagruzka"): {key for fields in ZAGRUZKA_BANDS.values()
+                                     for key, _d in fields.values()},
+        page_admin_cap("ontime"):   {STATUS_BANDS_KEY},
+        page_admin_cap("shift-daily"): {STATUS_BANDS_KEY},   # «Smena hisoboti»'s editor
+        CAP_EXAM_MANAGE:            {SETTING_PASS_MARK, SETTING_BADGE},
+    }
+    held = caller_caps(db, caller)
+    return set().union(*(keys for cap, keys in by_cap.items() if cap in held))
+
+
 @router.get("/settings")
-def get_settings(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_settings(db: Session = Depends(get_db),
+                 caller: dict = Depends(require_cap(*_SETTINGS_EDITORS))):
+    keys = _setting_keys_for(db, caller)
     rows = db.query(AppSetting).all()
-    return {r.key: r.value for r in rows}
+    return {r.key: r.value for r in rows if keys is None or r.key in keys}
 
 
 @router.put("/settings")
 def update_settings(
     payload: dict,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    caller: dict = Depends(require_cap(*_SETTINGS_EDITORS)),
 ):
+    keys = _setting_keys_for(db, caller)
+    if keys is not None and any(key not in keys for key in payload):
+        raise HTTPException(status_code=403, detail="Admin access required")
     changed = []
     for key, value in payload.items():
         row = db.query(AppSetting).filter(AppSetting.key == key).first()
@@ -467,13 +503,14 @@ def update_settings(
 # ── HR contact for job seekers (docs/registration.md) ─────────────────────────
 
 @router.get("/hr-contact")
-def get_hr_contact(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_hr_contact(db: Session = Depends(get_db), _: dict = Depends(require_cap(CAP_USERS_MANAGE))):
     from app.services import hr_contact
     return {"contact": hr_contact.get(db)}
 
 
 @router.put("/hr-contact")
-def put_hr_contact(payload: dict, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def put_hr_contact(payload: dict, db: Session = Depends(get_db),
+                   _: dict = Depends(require_cap(CAP_USERS_MANAGE))):
     """Save where job seekers are sent, then rewrite the bot's Telegram
     description to name it. A failed Telegram call never undoes the save —
     `bot_synced: false` tells the panel to say so."""
@@ -540,15 +577,21 @@ def list_users(
 
 
 @router.get("/nav-badges")
-def nav_badges(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def nav_badges(db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
     """The admin sidebar's counts, keyed by admin page id — registrations
     waiting on «Foydalanuvchilar» and Verifix suggestions waiting on «Verifix
     sinxron». Two COUNTs: /admin/users and /api/admin/verifix-sync return whole
-    registers and are far too heavy to poll."""
-    return {
-        "users": db.query(TelegramUserRole).filter(TelegramUserRole.status == "pending").count(),
-        "verifixsync": db.query(VerifixSyncItem).filter(VerifixSyncItem.status == "open").count(),
-    }
+    registers and are far too heavy to poll. A grantee gets the counts of the
+    admin pages they may open, and nothing without one."""
+    tabs = None if payload.get("role") == "admin" else set(capability_tabs(db, payload))
+    if tabs is not None and not tabs:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    out = {}
+    if tabs is None or "users" in tabs:
+        out["users"] = db.query(TelegramUserRole).filter(TelegramUserRole.status == "pending").count()
+    if tabs is None or "verifixsync" in tabs:
+        out["verifixsync"] = db.query(VerifixSyncItem).filter(VerifixSyncItem.status == "open").count()
+    return out
 
 
 class RoleUpdatePayload(BaseModel):
@@ -934,7 +977,7 @@ def delete_user(
 # ── Page access matrix ────────────────────────────────────────────────────────
 
 @router.get("/page-access")
-def admin_get_page_access(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def admin_get_page_access(db: Session = Depends(get_db), _: dict = Depends(require_tab("orgchart"))):
     return {
         "pages":            get_page_access(db),
         "page_keys":        PAGE_KEYS,
@@ -950,7 +993,7 @@ class PageAccessPayload(BaseModel):
 def admin_update_page_access(
     payload: PageAccessPayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("orgchart")),
 ):
     before = get_page_access(db)
     pages = set_page_access(db, payload.pages)
@@ -973,8 +1016,9 @@ def admin_update_page_access(
 # ── «Ilovalar tuzilmasi» — the launcher's apps, menu tabs and screens ─────────
 # Arranged on the org chart's «Ilovalar» view (services/nav_layout.py). The
 # layout is READ with the page-access answer (`settings.page_access_payload`),
-# so there is no GET here. `verify_admin`: it moves every launcher role's
-# pages, and it sits on the page that shows the whole permission system.
+# so there is no GET here. The org chart's tab (admin or its grant): it moves
+# every launcher role's pages, and it sits on the page that shows the whole
+# permission system.
 
 class NavLayoutPayload(BaseModel):
     layout: Optional[dict] = None    # None → back to the coded default
@@ -984,7 +1028,7 @@ class NavLayoutPayload(BaseModel):
 def admin_set_nav_layout(
     payload: NavLayoutPayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("orgchart")),
 ):
     from app.services import nav_layout
     before = nav_layout.get(db)
@@ -1004,13 +1048,20 @@ def admin_set_nav_layout(
 
 
 # ── Per-profile capabilities ──────────────────────────────────────────────────
-# The per-person half of the permission system (see app/capabilities.py). Always
-# `verify_admin`, never `require_cap`: the power to hand out powers is
-# deliberately absent from the catalog, so a grantee can never widen their own
-# access or a colleague's.
+# The per-person half of the permission system (see app/capabilities.py). The
+# power to hand out powers is grantable since 2026-11-19 (the operator: every
+# page and function, the Permissions tab included): `admin.tab.permissions`
+# opens all of it, so its holder can widen their own access or a colleague's —
+# grant it as you would make an admin. The org chart's «Ilovalar» view writes
+# personal PAGE entries through the same door, so `admin.tab.orgchart` writes
+# `page.view.*` entries there and nothing else. ADMIN identities stay out of reach
+# either way: they are absent from the tree and already hold everything.
+_CAPS_EDITORS = (tab_cap("permissions"), tab_cap("orgchart"))
+
 
 @router.get("/capabilities")
-def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def admin_list_capabilities(db: Session = Depends(get_db),
+                            _: dict = Depends(require_tab("permissions"))):
     """The catalog plus every entry, as a role ▸ profile ▸ user tree.
 
     ONE tree serves both targets and the tab chooses which leaves it shows.
@@ -1102,7 +1153,7 @@ class CapabilitiesPayload(BaseModel):
 def admin_set_capabilities(
     payload: CapabilitiesPayload,
     db: Session = Depends(get_db),
-    admin_payload: dict = Depends(verify_admin),
+    admin_payload: dict = Depends(require_cap(*_CAPS_EDITORS)),
 ):
     """Apply one permission DIFF to any mix of Telegram accounts and PROFILES.
 
@@ -1139,6 +1190,12 @@ def admin_set_capabilities(
 
     if any(":" not in key for key in payload.profiles):
         raise HTTPException(status_code=400, detail="Invalid profile key")
+
+    # An org-chart grantee edits who opens a PAGE, nothing else in the catalog.
+    if not is_admin_or(db, admin_payload, tab_cap("permissions")) and any(
+            not k.startswith(CAP_PAGE_PREFIX)
+            for k in list(payload.grants) + payload.revokes + payload.denies):
+        raise HTTPException(status_code=403, detail="Admin access required")
 
     actor_name = admin_payload.get("full_name")
     actor_id = int(admin_payload["sub"])
@@ -1180,7 +1237,7 @@ class CopyCapabilitiesPayload(BaseModel):
 def admin_copy_capabilities(
     payload: CopyCapabilitiesPayload,
     db: Session = Depends(get_db),
-    admin_payload: dict = Depends(verify_admin),
+    admin_payload: dict = Depends(require_tab("permissions")),
 ):
     """MIRROR one target's entries onto others — "make these people like X".
 
@@ -1295,11 +1352,11 @@ def admin_copy_capabilities(
 
 # ── «Tashkiliy tuzilma» — the org chart ───────────────────────────────────────
 # Read-only: every profile with its place in the plant, its logins and what
-# each may open. `verify_admin`, like the two registers it reads — it shows the
+# each may open. The org chart's tab (admin or its grant) — it shows the
 # whole permission system, so it is never a capability.
 
 @router.get("/org-chart")
-def admin_org_chart(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def admin_org_chart(db: Session = Depends(get_db), _: dict = Depends(require_tab("orgchart"))):
     from app.services import org_chart
     return org_chart.build(db)
 
@@ -1309,7 +1366,7 @@ def admin_org_chart_usage(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("orgchart")),
 ):
     """How much each screen was used in [date_from, date_to] (Tashkent days,
     the last 30 by default) — the «Ilovalar» view's heat. Per screen path:
@@ -1348,7 +1405,7 @@ def admin_org_chart_usage(
 def admin_capability_audit(
     limit: int = 200,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("permissions")),
 ):
     """Newest-first grant/revoke history. Survives the grant itself: a revoked
     capability deletes its UserCapability row but never its audit trail.
@@ -1399,12 +1456,12 @@ def admin_capability_uses(
     offset: int = 0,
     lang: str = "uz",
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_tab("permissions")),
 ):
     """Admin «Action history» tab: the persistent log of granted-capability
     USES — capability_alerts writes one row per warned action, so this list and
-    the warning DMs always agree. verify_admin like the Permissions tab:
-    oversight of delegated powers stays a real admin's job. Rows arrive
+    the warning DMs always agree. Gated like the Permissions tab (admin or its
+    grant). Rows arrive
     pre-rendered for ``lang`` through the same 4-lang table as the DMs."""
     from app.capability_alerts import render_use
     limit = max(1, min(int(limit or 50), 200))
@@ -1484,13 +1541,13 @@ def _tg_file_meta(file_id: str) -> dict:
 
 
 @router.get("/tg-file")
-def admin_tg_file_info(file_id: str, _: dict = Depends(verify_admin)):
+def admin_tg_file_info(file_id: str, _: dict = Depends(require_page("tg-user"))):
     """Resolve a file_id to metadata (no bytes) so the panel knows what to render."""
     return _tg_file_meta(file_id.strip())
 
 
 @router.get("/tg-file/raw")
-def admin_tg_file_raw(file_id: str, _: dict = Depends(verify_admin)):
+def admin_tg_file_raw(file_id: str, _: dict = Depends(require_page("tg-user"))):
     """Stream the file itself. Fetched as a blob by the panel (the JWT rides on
     the Authorization header, so this can't be a plain <img src>)."""
     meta = _tg_file_meta(file_id.strip())
@@ -1565,7 +1622,7 @@ def _gift_tile(g: dict) -> dict:
 
 @router.get("/tg-profile/{telegram_id}")
 def admin_tg_profile(telegram_id: int, db: Session = Depends(get_db),
-                     _: dict = Depends(verify_admin)):
+                     _: dict = Depends(require_page("tg-user"))):
     if not settings.telegram_bot_token:
         raise HTTPException(status_code=503, detail="Bot token not configured")
     chat = _tg_call("getChat", chat_id=telegram_id)
@@ -1613,9 +1670,10 @@ def admin_tg_profile(telegram_id: int, db: Session = Depends(get_db),
 # ── Full database dump → Telegram DM ──────────────────────────────────────────
 #
 # ahost has no pg_dump binary and no psql, so the only way to get the database
-# off it is from inside the app. Admin-only and deliberately NOT capability-
-# grantable: the file is every phone number, name and stored secret in one
-# place, so it stays a real admin's action (see app/db_dump.py).
+# off it is from inside the app. Admin-only by default and, since 2026-11-19,
+# grantable as the «Backup» tab (`admin.tab.dbdump`, the operator asked and
+# answered): the file is every phone number, name and stored secret in one
+# place, so that grant is all of it (see app/db_dump.py).
 
 # Bot API caps sendDocument at 50 MB; leave headroom for the multipart envelope.
 _TG_DOC_LIMIT = 45 * 1024 * 1024
@@ -1727,7 +1785,7 @@ class DbDumpBody(BaseModel):
 
 
 @router.get("/db-dump/inventory")
-def admin_db_dump_inventory(_: dict = Depends(verify_admin)):
+def admin_db_dump_inventory(_: dict = Depends(require_tab("dbdump"))):
     """What the dump would contain — estimated rows and on-disk size per table."""
     from app import db_dump
 
@@ -1739,7 +1797,7 @@ def admin_db_dump_inventory(_: dict = Depends(verify_admin)):
 def admin_db_dump(
     body: DbDumpBody,
     background: BackgroundTasks,
-    caller: dict = Depends(verify_admin),
+    caller: dict = Depends(require_tab("dbdump")),
 ):
     """Dump the whole database and DM it to the caller as a .sql.gz file."""
     tg_id = int(caller["sub"])
@@ -1792,7 +1850,7 @@ def _run_db_restore(tg_id: int, path: str, gzipped: bool) -> None:
 async def admin_db_restore(
     background: BackgroundTasks,
     files: List[UploadFile] = File(...),
-    caller: dict = Depends(verify_admin),
+    caller: dict = Depends(require_tab("dbdump")),
 ):
     """Restore an uploaded dump into this database, replacing its contents.
 

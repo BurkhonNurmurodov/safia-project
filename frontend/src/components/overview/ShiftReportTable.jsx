@@ -310,7 +310,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   const { tl } = useTranslit();
   const { factory, locked } = useFactory();
   const { access } = usePageAccess();
-  const { capPages, deniedPages } = useCapabilities();
+  const { capPages, deniedPages, capTabs, adminOn } = useCapabilities();
   const [sort, setSort] = usePersistentState("overview_sr_sort", DEFAULT_SORT);
 
   // The page's scope, plus the shift-day its stepper picked (2026-11-06): that
@@ -386,6 +386,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
   // the URLs are `utils/scopeLinks.js`, so a link and the page reading it share
   // one spelling of every param.
   const isAdmin = auth?.role === "admin";
+  // The status-band editor: admins and «Smena kunligi — admin» (PUT /admin/settings, status_bands only).
+  const bandsEditor = isAdmin || adminOn("shift-daily");
   const may = (key) => canAccessPage(auth?.role, key, access, capPages, deniedPages);
   const canProd = may("production");
   const canQuality = may("quality");
@@ -398,7 +400,8 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
 
   const productionTarget = (cell, r, date) => {
     if (cell?.reason === "not_configured") {
-      return isAdmin ? { to: "/panel/production", page: t("admin.tabProduction") } : null;
+      return isAdmin || capTabs.includes("production")
+        ? { to: "/panel/production", page: t("admin.tabProduction") } : null;
     }
     if (!canProd) return null;
     const tab = cell?.reason === "no_people" ? "people" : undefined;
@@ -1034,7 +1037,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
     ));
   }
 
-  const right =(rows.length > 0 || isAdmin) && (
+  const right =(rows.length > 0 || bandsEditor) && (
     <div className="flex items-center gap-2 flex-wrap justify-end">
       {missing > 0 && (
         <span
@@ -1053,7 +1056,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
       {/* Where the colours are decided, for the one person who may decide
           them. The endpoint behind it is admin-only too — this button is the
           way in, never the lock. */}
-      {isAdmin && (
+      {bandsEditor && (
         <Button
           variant="ghost"
           size="sm"
@@ -1169,7 +1172,7 @@ export default function ShiftReportTable({ shift = null, date = null, pageReady 
         <tbody>{body}</tbody>
       </TableCard>
 
-      {isAdmin && (
+      {bandsEditor && (
         <StatusBandsModal open={bandsOpen} onClose={() => setBandsOpen(false)} bands={bands} />
       )}
 

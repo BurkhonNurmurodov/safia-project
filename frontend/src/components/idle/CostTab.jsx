@@ -18,7 +18,6 @@ import { useFactory, useFactoryParams } from "../../context/FactoryContext";
 import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
-import { useAuth } from "../../context/AuthContext";
 import { exportXlsx } from "../../utils/exportXlsx";
 import { shortPerson } from "../../utils/personName";
 import api from "../../utils/api";
@@ -54,8 +53,6 @@ export default function CostTab() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { factory } = useFactory();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
   const { show, node: toastNode } = useToast();
   // The house i18n convention: whole sentences carrying {placeholders}, filled
   // by the caller. There is no params argument on `t`.
@@ -405,7 +402,7 @@ export default function CostTab() {
         </Button>
         {/* Editing the rate is admin-only; the ⚙ is hidden for everyone else,
             and the endpoint refuses them too. */}
-        {isAdmin && (
+        {data?.can_edit_rates && (
           <Button
             size="lg" variant="secondary"
             icon={<Settings2 size={14} />}

@@ -91,12 +91,14 @@ THE RULES, in one place:
    are already factory-wide for anyone who can open them and are stored at
    ``all``.
 
-5. **No escalation.** Two things are deliberately absent from the catalog and
-   can never be granted: this permission system itself (only a real admin opens
-   the Permissions tab) and any authority over ADMIN profiles — a grantee with
-   ``admin.users.manage`` / ``admin.profiles.manage`` cannot create, rename,
-   delete or assign an admin identity, so they can never promote themselves.
-   The page × role Access matrix is likewise not a capability.
+5. **Everything is grantable** (the operator, 2026-11-19, replacing «no
+   escalation»): every page, every admin-panel page — this Permissions tab,
+   the org chart's role ticks and «Backup» included — and every admin power
+   inside a page (``admin.tab.*``, ``page.admin.*`` below). A holder of
+   ``admin.tab.permissions`` can therefore hand out anything, themselves
+   included; that was asked and answered. What stays is the ADMIN IDENTITY:
+   only a real admin creates, renames, deletes or assigns an admin profile, so
+   a grant never turns its holder into an admin.
 """
 from typing import Annotated, Optional
 
@@ -157,6 +159,53 @@ CAP_PAGE_PREFIX = "page.view."
 def page_cap(page: str) -> str:
     """``page.view.<page>`` — the capability id granting sight of one page."""
     return f"{CAP_PAGE_PREFIX}{page}"
+
+
+# EVERYTHING is grantable (the operator, 2026-11-19: «every single
+# functionality and page can be granted on that page and listed» — the
+# Permissions tab and «Backup» included, asked and answered). Two generated
+# families close the gap the hand-listed actions above left:
+#
+#   · ``admin.tab.<id>`` — one per admin-panel page (`config/adminNav.js`
+#     ADMIN_NAV ids) no capability above already opens. It opens that page
+#     and every endpoint it calls. Labelled from the page's own nav label.
+#   · ``page.admin.<page>`` — «everything an admin does on this page»: the
+#     admin-only buttons, switches and the admin's whole-plant view on a page
+#     whose sight is granted separately. Ask :func:`page_admin`. /leaders keeps
+#     its older twin, `leaders.admin`.
+CAP_TAB_PREFIX = "admin.tab."
+CAP_PAGE_ADMIN_PREFIX = "page.admin."
+
+
+def tab_cap(tab: str) -> str:
+    """``admin.tab.<id>`` — the capability opening one admin-panel page."""
+    return f"{CAP_TAB_PREFIX}{tab}"
+
+
+def page_admin_cap(page: str) -> str:
+    """``page.admin.<page>`` — an admin's powers on one page."""
+    return f"{CAP_PAGE_ADMIN_PREFIX}{page}"
+
+
+# Admin-panel pages with no capability of their own above (users, profiles,
+# cleanup, shifttimes, factories, exam and the three leader pages have one).
+# In ADMIN_NAV order.
+ADMIN_TABS = (
+    "attendance", "production", "broadcast", "orgchart", "permissions",
+    "idleowners", "verifixsync", "data", "aikeys", "tasker", "sdpanel",
+    "trello", "notiontracker", "ovens", "logs", "lostworkers", "translations",
+    "dbdump",
+)
+
+# Pages with admin-only powers inside them. `idle-solutions` is no page key
+# (its route opens per role, `open_to`), but its admin view is grantable too.
+ADMIN_PAGES = (
+    "zagruzka", "downtime", "staff", "shift-daily", "production", "trudoyomkost",
+    "cells", "concerns", "tasks", "setup",
+    "idle-cell", "arc", "live", "ontime", "kelish", "leaders-kpi",
+    "education", "assessment", "people", "api",
+    "container-flow", "idle-solutions",
+)
 
 
 # The pages whose data actually narrows to the viewer — the only ones where
@@ -240,6 +289,17 @@ CAPABILITIES = [
     {"key": page_cap(p), "group": "pages", "pages": [p], "tab": None,
      "scoped": p in SCOPED_PAGES, "page": p}
     for p in PAGE_KEYS
+] + [
+    # `admin_tab` / `admin_page` name what the Permissions tab labels the row
+    # by — the admin page's or the page's own nav label, no caps.* strings.
+    {"key": tab_cap(t), "group": "admintabs", "pages": [], "tab": t,
+     "scoped": False, "page": None, "admin_tab": t}
+    for t in ADMIN_TABS
+] + [
+    {"key": page_admin_cap(p), "group": "pageadmin",
+     "pages": [p] if p in PAGE_KEYS else [], "tab": None,
+     "scoped": False, "page": None, "admin_page": p}
+    for p in ADMIN_PAGES
 ]
 
 # Capabilities whose stored scope is meaningless — normalised to "all" on save
@@ -249,7 +309,8 @@ UNSCOPED_CAPABILITIES = frozenset(c["key"] for c in CAPABILITIES if not c["scope
 CAPABILITY_KEYS = [c["key"] for c in CAPABILITIES]
 # Pages first: opening a page is the coarse decision an admin makes before
 # handing out the actions inside it.
-CAPABILITY_GROUPS = ["pages", "requests", "attendance", "leaders", "production", "identity"]
+CAPABILITY_GROUPS = ["pages", "pageadmin", "requests", "attendance", "leaders", "production",
+                     "identity", "admintabs"]
 
 SCOPES = ("own", "all")
 DEFAULT_SCOPE = "own"
@@ -458,7 +519,8 @@ def scope_is_all(db: Session, payload: dict, capability: str) -> bool:
 # Action capabilities whose holder reads a page WHOLE, as an admin does: an
 # admin's reach over a page's actions is meaningless over a narrowed view of
 # its rows. ``page_view_scope`` / ``page_scopes`` answer "all" for them.
-_READS_PAGE_WHOLE = {CAP_LEADERS_ADMIN: "leaders", CAP_CATALOG_SAP: "production"}
+_READS_PAGE_WHOLE = {CAP_LEADERS_ADMIN: "leaders", CAP_CATALOG_SAP: "production",
+                     **{page_admin_cap(p): p for p in ADMIN_PAGES}}
 
 
 def page_view_scope(db: Session, payload: dict, page: str) -> Optional[str]:
@@ -540,6 +602,43 @@ def leaders_admin(db: Session, payload: Optional[dict]) -> bool:
     if payload.get("role") == "admin":
         return True
     return CAP_LEADERS_ADMIN in caller_caps(db, payload)
+
+
+def is_admin_or(db: Session, payload: Optional[dict], *capabilities: str) -> bool:
+    """True for an admin or a holder of ANY of ``capabilities`` — the inline
+    twin of :func:`require_cap`, for a check inside a handler («can_edit»,
+    «admin sees every unit»). Never re-spell it as ``role == "admin"``: that is
+    how a grant silently stops reaching one door."""
+    if not payload:
+        return False
+    if payload.get("role") == "admin":
+        return True
+    held = caller_caps(db, payload)
+    return any(c in held for c in capabilities)
+
+
+def page_admin(db: Session, payload: Optional[dict], page: str) -> bool:
+    """May the caller do on ``page`` what an admin does there? Admins, holders
+    of ``page.admin.<page>`` — and on /leaders `leaders.admin`."""
+    if page == "leaders":
+        return leaders_admin(db, payload)
+    return is_admin_or(db, payload, page_admin_cap(page))
+
+
+def require_tab(tab: str):
+    """Dependency: admin OR ``admin.tab.<tab>`` — the guard of every endpoint
+    an admin-panel page in :data:`ADMIN_TABS` calls."""
+    return require_cap(tab_cap(tab))
+
+
+def require_page_admin(page: str):
+    """Dependency: :func:`page_admin` as a guard."""
+    def _dep(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db)):
+        payload = _decode(token)
+        if not page_admin(db, payload, page):
+            raise HTTPException(status_code=403, detail="Admin access required")
+        return payload
+    return _dep
 
 
 def profile_holder_ids(db: Session, keys) -> set[int]:

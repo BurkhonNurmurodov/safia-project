@@ -4,6 +4,7 @@ import { KeyRound, Plus, Copy, Check, BookOpen, Download, Trash2 } from "lucide-
 import api, { detailToText } from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { copyText } from "../utils/copyText";
 import { exportXlsx } from "../utils/exportXlsx";
 import Layout from "../components/layout/Layout";
@@ -31,7 +32,8 @@ const errOf = (e, t) => detailToText(e?.response?.data?.detail) || t("apiAccess.
 
 export default function ApiAccess() {
   const { t, lang } = useLang();
-  const admin = useAuth()?.auth?.role === "admin";
+  const { adminOn } = useCapabilities();
+  const admin = useAuth()?.auth?.role === "admin" || adminOn("api");
   const qc = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState(null);       // {name, days} while the create dialog is open

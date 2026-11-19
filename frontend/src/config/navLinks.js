@@ -34,24 +34,24 @@ export const ALL_LINKS = [
   { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2, group: "prod" },
   { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy, group: "lab" },
   // Admin-only gamification & rewards design preview («Safia Honors») — demo
-  // data only, no page-access key (the adminOnly pilot pattern).
-  { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal, group: "lab" },
+  // data only. Page key `gamification` (admin-only by default, grantable).
+  { to: "/gamification", page: "gamification", key: "nav.gamification", icon: Medal, group: "lab" },
   // «Maqsadlar» — goal board test screen: per-profile demo data, no page-access
-  // key (the same adminOnly pilot pattern as /gamification).
-  { to: "/targets", adminOnly: true, key: "nav.targets", icon: Goal, group: "lab" },
+  // key `targets` (admin-only by default, grantable).
+  { to: "/targets", page: "targets", key: "nav.targets", icon: Goal, group: "lab" },
   // «Odam soni» — its three tabs are three pages since 2026-11-03 (the
   // operator), one row each in the order the tabs had. «Tarkib» is admins only
   // (its endpoint refuses everybody else), so it carries no page key.
   { to: "/workers/attendance",  page: "workers", key: "nav.workersAttendance",  icon: Users,          group: "people" },
   { to: "/workers/movements",   page: "workers", key: "nav.workersMovements",   icon: ArrowLeftRight, group: "people" },
-  { to: "/workers/composition", adminOnly: true, key: "nav.workersComposition", icon: Contact,        group: "people" },
+  { to: "/workers/composition", page: "workers-composition", key: "nav.workersComposition", icon: Contact,        group: "people" },
   // «Hujjatlar tarixi» — the HR documents' odd histories (revived, stale,
   // flapped). In the admin app until 2026-11-16; admin-only, read-only.
-  { to: "/doc-audit",           adminOnly: true, key: "admin.tabDocAudit",    icon: FileClock,      group: "people" },
+  { to: "/doc-audit",           page: "doc-audit", key: "admin.tabDocAudit",    icon: FileClock,      group: "people" },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
   // Which waiting cause hurts most, who answers for it, and what they wrote they will do.
   // admins, plus each role from its own first day (config/idleSolutions.js)
-  { to: "/idle-solutions", adminOnly: true, roles: idleSolutionsRoles(), key: "nav.idleSolutions", icon: Lightbulb, group: "prod" },
+  { to: "/idle-solutions", adminOnly: true, roles: idleSolutionsRoles(), cap: "page.admin.idle-solutions", key: "nav.idleSolutions", icon: Lightbulb, group: "prod" },
   // «Ojidaniya kiritish» — the leaders' entry form for the same minutes the
   // /downtime page reads, so it sits beside it in Production, not in the lab.
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell",   icon: Timer, group: "prod" },
@@ -137,10 +137,10 @@ export const ALL_LINKS = [
   { to: "/people", page: "people", key: "nav.people", icon: Contact, group: "lab" },
   // «Trello tahlili» — a Trello board's analytics, read through Trello's API
   // (services/trello.py). ADMINS ONLY, and not grantable: no page key.
-  { to: "/trello", adminOnly: true, key: "nav.trello", icon: SquareKanban, group: "lab" },
+  { to: "/trello", page: "trello", key: "nav.trello", icon: SquareKanban, group: "lab" },
   // «Audit jadvali» — the public.audit table (written outside this codebase),
   // read-only (routers/audit_table.py). ADMINS ONLY, and not grantable.
-  { to: "/audit", adminOnly: true, key: "nav.audit", icon: ScrollText, group: "lab" },
+  { to: "/audit", page: "audit", key: "nav.audit", icon: ScrollText, group: "lab" },
   // «Pechlar» — the Revent ovens: live board, bakes, utilisation, alarms and
   // door (services/revent_analytics.py). Admin-only until opened on the Access
   // tab. On the launcher it is the first page of the «Avtomatika» app
@@ -161,14 +161,14 @@ export const ALL_LINKS = [
   // «Verifix (test)» — what Verifix's API returns, one page per kind of data
   // (2026-10-03). Admin-only, no page keys: every page reads every employee
   // Verifix holds.
-  { to: "/verifix/api", adminOnly: true, key: "nav.vfx.api", icon: Network, group: "verifix" },
-  { to: "/verifix/employees", adminOnly: true, key: "nav.vfx.employees", icon: IdCard, group: "verifix" },
-  { to: "/verifix/jobs", adminOnly: true, key: "nav.vfx.jobs", icon: Briefcase, group: "verifix" },
-  { to: "/verifix/timesheet", adminOnly: true, key: "nav.vfx.timesheet", icon: CalendarRange, group: "verifix" },
-  { to: "/verifix/hr", adminOnly: true, key: "nav.vfx.hr", icon: ArrowRightLeft, group: "verifix" },
-  { to: "/verifix/timebooks", adminOnly: true, key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
-  { to: "/verifix/shifts", adminOnly: true, key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
-  { to: "/verifix/dictionaries", adminOnly: true, key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
+  { to: "/verifix/api", page: "verifix-test", key: "nav.vfx.api", icon: Network, group: "verifix" },
+  { to: "/verifix/employees", page: "verifix-test", key: "nav.vfx.employees", icon: IdCard, group: "verifix" },
+  { to: "/verifix/jobs", page: "verifix-test", key: "nav.vfx.jobs", icon: Briefcase, group: "verifix" },
+  { to: "/verifix/timesheet", page: "verifix-test", key: "nav.vfx.timesheet", icon: CalendarRange, group: "verifix" },
+  { to: "/verifix/hr", page: "verifix-test", key: "nav.vfx.hr", icon: ArrowRightLeft, group: "verifix" },
+  { to: "/verifix/timebooks", page: "verifix-test", key: "nav.vfx.timebooks", icon: BookOpenCheck, group: "verifix" },
+  { to: "/verifix/shifts", page: "verifix-test", key: "nav.vfx.shifts", icon: CalendarClock, group: "verifix" },
+  { to: "/verifix/dictionaries", page: "verifix-test", key: "nav.vfx.dictionaries", icon: BookMarked, group: "verifix" },
   // «Ta'lim» — video lessons published to profiles. First entry in its own
   // group: training is neither production data nor a register, and the group is
   // where the rest of it (courses, tests) will land.

@@ -53,7 +53,7 @@ from app.models import (
     Attendance, AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow,
     AttendanceUploadFile, Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, verifix, verifix_attendance, wc_group
 from app.services.day_state import day_state
 from app.services.kpi_calculator import is_direct_role
@@ -62,6 +62,8 @@ from app.services.name_map import supervisor_match
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/attendance-batch", tags=["attendance-batch"])
+# Every route is the «Davomat» admin page's: an admin or its grant.
+_tab = require_tab("attendance")
 
 # Newest N dates offered by the picker — one row per worker per day, so an
 # unbounded DISTINCT only ever gets longer (mirrors cell_attendance.DATE_LIMIT).
@@ -665,7 +667,7 @@ def _legacy_payload(db: Session, d: date_t) -> dict:
 # ── read ──────────────────────────────────────────────────────────────────────
 
 @router.get("/dates")
-def list_dates(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def list_dates(db: Session = Depends(get_db), _: dict = Depends(_tab)):
     """Days the tab can open, newest first: every uploaded batch plus every day
     that already has attendance from the older per-supervisor path."""
     out: dict = {}
@@ -685,7 +687,7 @@ def list_dates(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 
 @router.get("/managers")
-def list_managers(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def list_managers(db: Session = Depends(get_db), _: dict = Depends(_tab)):
     """Every active supervisor — the drag/move targets, including units that
     carry no cell in the current file (so a cell can be routed to them)."""
     rows = (
@@ -701,7 +703,7 @@ def list_managers(db: Session = Depends(get_db), _: dict = Depends(verify_admin)
 def get_day(
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     d = _parse_date(date)
     batch = _batch_for(db, d)
@@ -820,7 +822,7 @@ def _merge_file(db: Session, batch: AttendanceBatch, upload: AttendanceUploadFil
 def verifix_pick(
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """What the «Verifix'dan olish» tree offers for the day: the cells counted in
     the загрузка, nested by plant → shift → brigadir, and when the day last took
@@ -852,7 +854,7 @@ class VerifixBody(BaseModel):
 def read_verifix(
     body: VerifixBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """READ the day from Verifix for the picked cells and MERGE it into the
     day's batch exactly as an uploaded export was merged (`_merge_file`): the
@@ -970,7 +972,7 @@ def remove_upload(
     upload_id: int,
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Pull one file back out of the day, leaving every other file's cells alone.
 
@@ -1084,7 +1086,7 @@ def remove_upload(
 def discard(
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Throw away the WHOLE day — every file, every adjustment. Attendance that
     was already saved goes too (for supervisors whose day is still open). Use the
@@ -1134,7 +1136,7 @@ class MappingBody(BaseModel):
 def update_cells(
     body: MappingBody,
     db: Session = Depends(get_db),
-    admin: dict = Depends(verify_admin),
+    admin: dict = Depends(_tab),
 ):
     """Apply tick / move decisions for the day. A TICK always writes itself into
     `cells.att_included`, so every FUTURE day starts from the last decision
@@ -1309,7 +1311,7 @@ def _owner_of(batch: AttendanceBatch, code: Optional[str]) -> Optional[int]:
 def add_row(
     body: RowBody,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Hand-add a worker the export missed (a forgotten punch, a late entry).
     Manual rows survive any later re-upload of their cell."""
@@ -1359,7 +1361,7 @@ def edit_row(
     row_id: int,
     body: RowBody,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     d = _parse_write_date(body.date)
     batch = _batch_for(db, d)
@@ -1418,7 +1420,7 @@ def revert_row(
     row_id: int,
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Drop the admin's edit and take the newer file's values for this worker.
     Only offered on rows where a later upload actually disagreed."""
@@ -1460,7 +1462,7 @@ def delete_row(
     row_id: int,
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     d = _parse_write_date(date)
     batch = _batch_for(db, d)
@@ -1491,7 +1493,7 @@ def delete_cell_day(
     date: str = Query(...),
     verifix_code: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Drop every worker row of one cell for this day, and the cell with them."""
     d = _parse_write_date(date)
@@ -1531,7 +1533,7 @@ def delete_supervisor_day(
     date: str = Query(...),
     manager_id: int = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Wipe one supervisor's whole day: their attendance plus everything that
     hangs off it, plus every cell routed to them in this batch. Mirrors the
@@ -1597,7 +1599,7 @@ def delete_supervisor_day(
 def save_preview(
     date: str = Query(...),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """Exactly what Save is about to do, per supervisor: rows to write, rows it
     will overwrite, and who is skipped because their day is closed.
@@ -1673,7 +1675,7 @@ class SaveBody(BaseModel):
 def save(
     body: SaveBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """Commit the day's pending changes: project them into `attendance` for every
     CHANGED supervisor whose day is still open, then notify exactly those.

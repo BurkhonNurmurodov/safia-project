@@ -12,8 +12,9 @@ Three routers over ``services/revent_ovens.py`` (what is kept) and
 - ``/api/ovens`` — the page, gated on the ``ovens`` page key (admin-only until
   the operator opens it on the Access tab).
 - ``/api/admin/ovens`` — the register: which ovens exist, at which LAN
-  address. ADMIN-ONLY and not grantable: the address list is where the
-  collector is sent, so it is limited to private LAN addresses.
+  address. An admin or the tab's grant (`admin.tab.ovens`, 2026-11-19): the
+  address list is where the collector is sent, so it is limited to private
+  LAN addresses.
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ReventOven, ReventOvenLog
 from app.permissions import require_page
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, android_release, oven_firmware, ops_door, revent_analytics, revent_ovens
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,8 @@ log = logging.getLogger(__name__)
 collector_router = APIRouter(prefix="/api/ovens/collector", tags=["ovens"])
 router = APIRouter(prefix="/api/ovens", tags=["ovens"])
 admin_router = APIRouter(prefix="/api/admin/ovens", tags=["ovens"])
+# The ovens' admin register: an admin or the «Pechlar» tab's grant.
+_tab = require_tab("ovens")
 
 KEY_HEADER = "x-oven-key"
 
@@ -393,19 +396,19 @@ class OvenIn(BaseModel):
 
 
 @admin_router.get("")
-def register(db: Session = Depends(get_db), _a=Depends(verify_admin)):
+def register(db: Session = Depends(get_db), _a=Depends(_tab)):
     return _register(db)
 
 
 @admin_router.get("/devices")
-def devices(db: Session = Depends(get_db), _a=Depends(verify_admin)):
+def devices(db: Session = Depends(get_db), _a=Depends(_tab)):
     """The collector devices and when IMS last heard from each — the page's
     «Tekshirish» asks this until the device answers or its wait runs out."""
     return revent_ovens.devices(db)
 
 
 @admin_router.post("")
-def add_oven(body: OvenIn, db: Session = Depends(get_db), a=Depends(verify_admin)):
+def add_oven(body: OvenIn, db: Session = Depends(get_db), a=Depends(_tab)):
     name = (body.name or "").strip()
     if not name:
         raise _refuse("name_required", "Give the oven a name.", 400)
@@ -422,7 +425,7 @@ def add_oven(body: OvenIn, db: Session = Depends(get_db), a=Depends(verify_admin
 
 
 @admin_router.put("/{oven_id}")
-def edit_oven(oven_id: int, body: OvenIn, db: Session = Depends(get_db), _a=Depends(verify_admin)):
+def edit_oven(oven_id: int, body: OvenIn, db: Session = Depends(get_db), _a=Depends(_tab)):
     o = db.get(ReventOven, oven_id)
     if o is None:
         raise _refuse("no_oven", "No such oven.", 404)
@@ -449,7 +452,7 @@ def edit_oven(oven_id: int, body: OvenIn, db: Session = Depends(get_db), _a=Depe
 
 
 @admin_router.delete("/{oven_id}")
-def delete_oven(oven_id: int, db: Session = Depends(get_db), _a=Depends(verify_admin)):
+def delete_oven(oven_id: int, db: Session = Depends(get_db), _a=Depends(_tab)):
     """Only an oven nothing was ever collected from. One with history is
     switched off instead — its logs are the record."""
     o = db.get(ReventOven, oven_id)

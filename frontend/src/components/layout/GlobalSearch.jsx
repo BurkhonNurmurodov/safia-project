@@ -77,7 +77,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const { tl } = useTranslit();
   const { auth } = useAuth();
   const { access } = usePageAccess();
-  const { capPages, capTabs, deniedPages } = useCapabilities();
+  const { capPages, capTabs, deniedPages, can: capCan } = useCapabilities();
   // Asks first while the page holds unsaved edits (LeaveGuard).
   const navigate = useGuardedNavigate();
   const wide = !useIsMobile(1280);
@@ -109,7 +109,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const pageItems = useMemo(() => {
     const groupLabel = Object.fromEntries(NAV_GROUPS.filter((g) => g.labelKey).map((g) => [g.id, t(g.labelKey)]));
     return ALL_LINKS
-      .filter((l) => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role)) : can(l.page)))
+      .filter((l) => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role) || (!!l.cap && capCan(l.cap))) : can(l.page)))
       .map((l) => {
         const label = t(l.key);
         // A launcher's «/» is the app launcher; the overview is at /overview.

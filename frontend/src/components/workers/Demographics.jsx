@@ -15,7 +15,6 @@ import { SplitBar, SplitLegend } from "../ui/Meter";
 import { RankedList } from "../ui/AnalysisBoard";
 import { SkeletonChart } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
-import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { convertFromUz, useTranslit } from "../../utils/transliterate";
 import { useChartTheme } from "../../hooks/useChartTheme";
@@ -69,8 +68,6 @@ export default function Demographics({ params, ready, scope, setScope }) {
   const { lang, t } = useLang();
   const T = TXT[lang] || TXT.uz;
   const { tl, tx } = useTranslit();
-  const { auth } = useAuth();
-  const isAdmin = auth?.role === "admin";
   const toast = useToast();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
@@ -275,7 +272,7 @@ export default function Demographics({ params, ready, scope, setScope }) {
           <Tooltip text={T.privacy} />
         </span>
       )}
-      {isAdmin && read?.configured && (
+      {read?.configured && (
         <Button size="lg" variant="secondary" onClick={refresh} loading={starting || !!read?.running}
           title={T.refresh} aria-label={T.refresh}>
           <RefreshCw size={15} />

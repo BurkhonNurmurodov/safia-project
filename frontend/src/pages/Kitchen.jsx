@@ -9,6 +9,7 @@ import Button from "../components/ui/Button";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 import { TXT, fill } from "./kitchenText";
@@ -117,7 +118,9 @@ export default function Kitchen() {
   const T = TXT[lang] || TXT.uz;
   const { tx } = useTranslit();
   const navigate = useNavigate();
-  const isAdmin = useAuth()?.auth?.role === "admin";
+  const { capTabs } = useCapabilities();
+  // The button opens the «Verifix» admin tab — offered to whoever may open it.
+  const isAdmin = useAuth()?.auth?.role === "admin" || capTabs.includes("verifixsync");
 
   const q = useQuery({
     queryKey: ["kitchen-now"],

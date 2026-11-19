@@ -147,7 +147,7 @@ def _get_visible_task(task_id: int, payload: dict, db: Session) -> LeaderTask:
 
 def _can_edit_core(db: Session, payload: dict, t: LeaderTask) -> bool:
     """Task text / due date / delete: the creating PROFILE or an admin."""
-    if payload.get("role") == "admin":
+    if tb.admin(db, payload):
         return True
     return identity.owns(db, payload, t.created_by_profile, t.created_by)
 
@@ -157,18 +157,21 @@ def _assert_can_edit_core(db: Session, payload: dict, t: LeaderTask):
         raise HTTPException(status_code=403, detail="Only the task's creator or an admin can do this")
 
 
-def _may_set(payload: dict) -> bool:
-    """The roles that set a leader work at all: an admin, a brigadir (their own
-    leaders), and a shift- or top-manager from the first day on. WHICH leader a
-    brigadir may pick is checked where the task is created."""
-    return payload.get("role") in ("admin", "supervisor") or tb.from_top(payload)
+def _may_set(payload: dict, db: Optional[Session] = None) -> bool:
+    """The roles that set a leader work at all: an admin (or a holder of the
+    page's admin grant), a brigadir (their own leaders), and a shift- or
+    top-manager from the first day on. WHICH leader a brigadir may pick is
+    checked where the task is created."""
+    return (payload.get("role") == "supervisor" or tb.from_top(payload)
+            or tb.admin(db, payload))
 
 
-def _governs_from_top(payload: dict, t: LeaderTask) -> bool:
-    """A manager's hand over a leader's task: the caller acts from the top AND
-    the task itself was set from the top. Never over a task the unit's own
-    brigadir set — that one a manager only reads."""
-    return tb.from_top(payload) and tb.set_from_above(t)
+def _governs_from_top(payload: dict, t: LeaderTask, db: Optional[Session] = None) -> bool:
+    """A manager's hand over a leader's task: the caller acts from the top (or
+    holds the page's admin grant) AND the task itself was set from the top.
+    Never over a task the unit's own brigadir set — that one a manager only
+    reads."""
+    return (tb.from_top(payload) or tb.admin(db, payload)) and tb.set_from_above(t)
 
 
 def _status_choices(db: Session, payload: dict, t: LeaderTask) -> list[str]:
@@ -179,8 +182,8 @@ def _status_choices(db: Session, payload: dict, t: LeaderTask) -> list[str]:
     (an admin included) marks it done or reopens it — the leader and their
     brigadir move it between «to do» and «doing» (the operator, 2026-11-15). A
     task the brigadir set keeps the old rule: every mover sets any status."""
-    governs = _governs_from_top(payload, t)
-    mover = (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
+    governs = _governs_from_top(payload, t, db)
+    mover = (tb.admin(db, payload) or _is_unit_supervisor(payload, t)
              or _is_owning_leader(db, payload, t) or governs)
     from_top = tb.set_from_above(t)
     return tb.status_choices(finisher=governs or (mover and not from_top), mover=mover,
@@ -197,19 +200,19 @@ def _assert_can_set_status(db: Session, payload: dict, t: LeaderTask, target: st
                 if allowed else "You can't change this task's status"))
 
 
-def _assert_can_reorder(payload: dict, t: LeaderTask):
+def _assert_can_reorder(db: Session, payload: dict, t: LeaderTask):
     """The flame: admin, the unit's supervisor, a manager over a task set from
     the top (never the leader — what is urgent is the person who set the work's
     statement, not the assignee's)."""
-    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
-            or _governs_from_top(payload, t)):
+    if (tb.admin(db, payload) or _is_unit_supervisor(payload, t)
+            or _governs_from_top(payload, t, db)):
         return
     raise HTTPException(status_code=403, detail="Only a supervisor or admin can change urgency")
 
 
 def _assert_can_comment(db: Session, payload: dict, t: LeaderTask):
-    if (payload.get("role") == "admin" or _is_unit_supervisor(payload, t)
-            or _is_owning_leader(db, payload, t) or _governs_from_top(payload, t)):
+    if (tb.admin(db, payload) or _is_unit_supervisor(payload, t)
+            or _is_owning_leader(db, payload, t) or _governs_from_top(payload, t, db)):
         return
     raise HTTPException(status_code=403, detail="You can't comment on this task")
 
@@ -277,7 +280,7 @@ def list_tasks(
 
     return {
         "role": role,
-        "can_create": role in ("admin", "supervisor"),
+        "can_create": role == "supervisor" or tb.admin(db, payload),
         "data": [_row(r) for r in rows],
     }
 
@@ -318,7 +321,7 @@ def board(
     ``/api/brigadir-tasks``.
     """
     role = payload.get("role")
-    is_admin = role == "admin"
+    is_admin = tb.admin(db, payload)
     sees_all = is_admin or page_scope_is_all(db, payload, "tasks")
     q = db.query(LeaderTask)
     if not sees_all:
@@ -377,7 +380,7 @@ def board(
     # A top-manager governs the two tiers below them from the first day on.
     top = tb.top_sets(payload)
     # …and a manager keeps a hand over a LEADER's task set from the top.
-    acts_from_top = tb.from_top(payload)
+    acts_from_top = tb.from_top(payload) or is_admin
     own_sm = payload.get("role_id") if role == "shift-manager" else None
     try:
         sub = int(payload.get("sub"))
@@ -468,9 +471,9 @@ def board(
 
     return {
         "role": role,
-        "can_create_leader": _may_set(payload),
+        "can_create_leader": _may_set(payload, db),
         "can_create_brigadir": _bt._can_create_anywhere(db, payload),
-        "can_create_manager": _smt.can_manage(payload),
+        "can_create_manager": _smt.can_manage(payload, db),
         "data": [_row(r) for r in rows],
     }
 
@@ -506,7 +509,7 @@ def day_tasks(
     block is about people at work.
     """
     role = payload.get("role")
-    is_admin = role == "admin"
+    is_admin = tb.admin(db, payload)
     if not (is_admin or (role in ("top-manager", "shift-manager") and tb.is_open())):
         return {"show": False}
     # The first day may come with no deploy on it: the first reader of the day
@@ -563,7 +566,7 @@ def day_tasks(
     door = page_allowed(db, payload, _bt.PAGE, _bt.DAY_PAGE)
     task_page = is_admin or page_allowed(db, payload, "tasks")
     top = tb.top_sets(payload)
-    acts_from_top = tb.from_top(payload)
+    acts_from_top = tb.from_top(payload) or is_admin
     managed = (set(shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True))
                if role == "shift-manager" else set())
 
@@ -671,10 +674,12 @@ def list_assignable_leaders(
     in the bell until the profile is claimed.
     """
     role = payload.get("role")
-    if not _may_set(payload):
+    if not _may_set(payload, db):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
+    # A brigadir picks their own leaders — unless they hold the page's admin grant.
+    pinned = role == "supervisor" and not tb.admin(db, payload)
     profiles = identity.list_leader_profiles(
-        db, payload.get("role_id") if role == "supervisor" else None
+        db, payload.get("role_id") if pinned else None
     )
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     return [
@@ -712,7 +717,7 @@ def create_task(
     payload: dict = Depends(require_page("tasks")),
 ):
     role = payload.get("role")
-    if not _may_set(payload):
+    if not _may_set(payload, db):
         raise HTTPException(status_code=403, detail="Only supervisors and admins can create tasks")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
@@ -736,7 +741,8 @@ def create_task(
     ).first()
     if not prof:
         raise HTTPException(status_code=404, detail="Leader not found")
-    if role == "supervisor" and prof.manager_id != payload.get("role_id"):
+    if (role == "supervisor" and prof.manager_id != payload.get("role_id")
+            and not tb.admin(db, payload)):
         raise HTTPException(status_code=403, detail="You can only assign tasks to your own leaders")
 
     mgr = db.query(Manager).filter(Manager.id == prof.manager_id).first()
@@ -923,7 +929,7 @@ def remind_task(
     (`_governs_from_top`); the unit's own brigadir asks their leader on the
     board, in the thread."""
     t = _get_visible_task(task_id, payload, db)
-    if not _governs_from_top(payload, t):
+    if not _governs_from_top(payload, t, db):
         raise HTTPException(status_code=403, detail="You can't remind about this task")
     try:
         out = tb.remind(db, payload, t)
@@ -966,7 +972,7 @@ def set_priority(
     payload: dict = Depends(require_page("tasks")),
 ):
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_reorder(payload, t)
+    _assert_can_reorder(db, payload, t)
 
     was = tb.is_urgent(t)
     now = body.flag()

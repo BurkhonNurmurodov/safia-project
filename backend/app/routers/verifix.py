@@ -1,9 +1,9 @@
 """The Verifix connection card — the «Ulanish» tab of `/panel/verifixsync`.
 
 Three doors over ``app.services.verifix``: read what is stored, store it, and
-run the connection test. ADMIN-ONLY and not grantable — the card holds the
-login the platform will read every employee's attendance with, so handing it
-to a grantee would hand out that reach (the `permissions` / `logs` model).
+run the connection test. An admin or the «Verifix» tab's grant
+(`admin.tab.verifixsync`, 2026-11-19) — the card holds the login the platform
+reads every employee's attendance with, so that grant hands out that reach.
 
 The password goes in and never comes out: the GET says only whether one is
 stored and whether it still opens, the PUT keeps it on a blank field, and the
@@ -18,10 +18,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, verifix, verifix_parity
 
 router = APIRouter(prefix="/api/admin/verifix", tags=["verifix"])
+# The connection — a tab of the «Verifix» admin page: an admin or its grant.
+_tab = require_tab("verifixsync")
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ def _state(db: Session) -> dict:
 
 
 @router.get("")
-def get_verifix(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_verifix(db: Session = Depends(get_db), _: dict = Depends(_tab)):
     return _state(db)
 
 
@@ -64,7 +66,7 @@ class VerifixIn(BaseModel):
 
 @router.put("")
 def save_verifix(body: VerifixIn, db: Session = Depends(get_db),
-                 admin: dict = Depends(verify_admin)):
+                 admin: dict = Depends(_tab)):
     try:
         changed = verifix.save(
             db,
@@ -98,7 +100,7 @@ def save_verifix(body: VerifixIn, db: Session = Depends(get_db),
 
 
 @router.post("/test")
-def test_verifix(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def test_verifix(db: Session = Depends(get_db), admin: dict = Depends(_tab)):
     result = verifix.run_test(db, actor=_who(admin))
     steps = {s["key"]: s for s in result.get("steps", [])}
     details = [("verdict", result.get("verdict"))]
@@ -120,7 +122,7 @@ class ParityIn(BaseModel):
 
 @router.post("/parity")
 def parity_verifix(body: ParityIn, db: Session = Depends(get_db),
-                   admin: dict = Depends(verify_admin)):
+                   admin: dict = Depends(_tab)):
     """Verifix against the uploaded Excel for a few past days — read-only on
     both sides; see ``services/verifix_parity``."""
     d0, d1 = body.date_from, body.date_to

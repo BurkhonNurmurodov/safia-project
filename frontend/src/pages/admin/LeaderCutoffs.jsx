@@ -46,9 +46,8 @@ import { useToast } from "../../components/ui/Toast";
  *     collection layers are untouched; only whether a number enters an average
  *     changes. Lifting restores every affected day at once, because nothing was
  *     ever written onto one.
- *   * **It is not grantable.** No `capKey` on the ADMIN_NAV entry, so
- *     `capTabs.includes(capKey ?? id)` can never admit a grantee — the
- *     `permissions` / `logs` / `ltdaily` / `ltexclude` model. It moves a
+ *   * **Admins and «Lider nazorati — admin» only** (`leaders.admin`, whose tab
+ *     list names `ltexclude`). It moves a
  *     leader's score and their brigadir's.
  *
  * The source is the leader ROSTER served beside `/api/leaders` — one row per

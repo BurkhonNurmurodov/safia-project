@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import HrDocument, HrDocumentHistory, Manager
-from app.routers.admin import verify_admin
+from app.permissions import require_page
 
 router = APIRouter(prefix="/api/admin/doc-audit", tags=["doc-audit"])
 
@@ -63,7 +63,7 @@ def audit(
     date_from: Optional[str] = Query(None, alias="from"),
     date_to:   Optional[str] = Query(None, alias="to"),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_page("doc-audit")),
 ):
     """Every HR document in the window whose history carries a flag.
 

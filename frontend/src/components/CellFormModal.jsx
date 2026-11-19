@@ -10,6 +10,7 @@ import SegmentedToggle from "./ui/SegmentedToggle";
 import LangTextInput from "./ui/LangTextInput";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 import { cellMoveRefusal, cellMoveRefusalText } from "../utils/cellMoveRefusal";
@@ -83,6 +84,10 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
   const { tl, tx } = useTranslit();
   const { auth } = useAuth();
   const isAdmin = auth?.role === "admin";
+  // «KPI hisoblanadi»: an admin, or the cells page's admin grant (backend
+  // page_admin "cells").
+  const { adminOn } = useCapabilities();
+  const kpiAdmin = isAdmin || adminOn("cells");
   const navigate = useNavigate();
   const isEdit = mode === "edit" && !!item;
 
@@ -256,7 +261,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       in_load: inLoad,
       one_process: !!form.one_process,
     };
-    if (isAdmin) body.kpi = !!form.kpi;
+    if (kpiAdmin) body.kpi = !!form.kpi;
     if (!ruLocked) body.name_workshop_ru = form.name_workshop_ru || "";
     // `owner_id` is never sent («Egasi» is Verifix's). A new cell takes its
     // brigadir at once and starts with no «Boshqaruvchi»; an existing one sends
@@ -469,7 +474,7 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           ]}
         />
       </FormField>
-      {isAdmin && (
+      {kpiAdmin && (
         <FormField label={t("cellPage.kpi")} hint={t("cellPage.kpiHint")}>
           <SegmentedToggle
             fill

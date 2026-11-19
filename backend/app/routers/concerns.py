@@ -67,7 +67,7 @@ from app.models import (
     Admin, Cell, ConcernEscalation, Factory, LeaderConcern, LeaderConcernComment,
     Manager, RoleProfile, TelegramUserRole,
 )
-from app.capabilities import page_cap, page_scope_is_all
+from app.capabilities import page_admin, page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.services import (action_log, cell_archive, concerns_deck, concerns_narrative, report_week,
@@ -108,6 +108,20 @@ LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 
 # Roles that pick a leader when creating (everyone but the leader themself).
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
+# The roles with a step of their own in the chain — each files a new concern
+# to the step above it (_resolve_target), grant or no grant.
+CHAIN_CREATORS = ("leader", "supervisor", "shift-manager")
+
+
+def _files_as_admin(db: Session, payload: dict) -> bool:
+    """Files a new concern the way an admin does — picking the level, with the
+    admin's pickers: an admin, or a holder of the page's admin grant whose own
+    role has no step of its own in the chain (a top-manager, …). A brigadir or
+    a shift manager holding the grant still files through their own step."""
+    role = payload.get("role")
+    return role == "admin" or (role not in CHAIN_CREATORS
+                               and page_admin(db, payload, "concerns"))
+
 
 # The longest deadline a receiver may give themselves. Wide enough for any real
 # job, and a bound that keeps `deadline_from + days` inside a date — the old
@@ -433,7 +447,7 @@ def _serialize(
         out["can_edit"] = manage
         out["can_set_status"] = set_status
         out["can_resolve"] = set_status                       # kept for the status dropdown
-        out["can_delete"] = ctx["role"] == "admin" or (_is_owner(ctx, c) and not is_leader)
+        out["can_delete"] = ctx["admin"] or (_is_owner(ctx, c) and not is_leader)
         # Up: whoever manages the row — a leader only while they hold it, never
         # on a concern that already sits above them.
         out["can_escalate"] = (
@@ -568,6 +582,8 @@ def _viewer_ctx(db: Session, payload: dict) -> dict:
     role = payload.get("role")
     ctx = {
         "role": role,
+        # An admin's hand over every row — an admin or the page's admin grant.
+        "admin": page_admin(db, payload, "concerns"),
         "role_id": payload.get("role_id"),
         "role_ref": payload.get("role_ref"),
         "own_profile_id": None,
@@ -632,7 +648,7 @@ def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
     Admin manages everything; a leader may edit only their own still-open row;
     top-managers manage only what's assigned to them."""
     role = ctx["role"]
-    if role == "admin":
+    if ctx["admin"]:
         return True
     if role == "leader":
         return _is_owner(ctx, c) and c.status != "done"
@@ -651,7 +667,7 @@ def _can_set_status(ctx: dict, c: LeaderConcern) -> bool:
     the status between To do / Doing / Done. A leader's hold ends the moment
     they mark it done — same rule as _can_edit, so the dropdown never offers a
     reopen the PUT would then reject; reopening is the supervisor's call."""
-    if ctx["role"] == "admin":
+    if ctx["admin"]:
         return True
     if not _is_responsible(ctx, c):
         return False
@@ -712,7 +728,12 @@ def _creator_identity(db: Session, payload: dict):
         if a and a.profile_id:
             prof = db.query(RoleProfile).filter_by(id=a.profile_id, role="admin").first()
     else:
-        return None, None, payload.get("full_name")
+        # A grantee filing as an admin (_files_as_admin) stays THEMSELVES —
+        # their own profile, never the admin's.
+        _, pid = identity.parse_profile_key(identity.viewer_profile_key(db, payload))
+        prof = db.query(RoleProfile).filter_by(id=pid, role=role).first() if pid else None
+        if not prof:
+            return None, None, payload.get("full_name")
     return role, (prof.id if prof else None), (prof.name if prof else payload.get("full_name"))
 
 
@@ -807,7 +828,7 @@ def _resolve_target(payload: dict, body: ConcernIn, db: Session) -> dict:
         )
         return tgt
 
-    if role == "admin":
+    if _files_as_admin(db, payload):
         if body.level == "shift-manager":
             prof = _shift_manager_profile(db, body.shift_manager_profile_id)
             if not prof:
@@ -878,8 +899,9 @@ def list_concerns(
     additionally narrow to one leader via ``leader_ref``; optional status +
     free-text filters."""
     role = payload.get("role")
+    files_admin = _files_as_admin(db, payload)
     query = _scope_query(db.query(LeaderConcern), payload, db)
-    if role == "admin" and leader_ref:
+    if page_admin(db, payload, "concerns") and leader_ref:
         query = query.filter(LeaderConcern.leader_role_ref == leader_ref)
 
     # Factory narrowing rides ON TOP of the caller's own scope, never instead of
@@ -919,7 +941,7 @@ def list_concerns(
         ]
 
     picker = (
-        "supervisor_leader" if role in ("admin", "shift-manager")
+        "supervisor_leader" if role == "shift-manager" or files_admin
         else "leader" if role == "supervisor"
         else None
     )
@@ -952,7 +974,7 @@ def list_concerns(
     return _RegisterJSON({
         "role": role,
         "picker": picker,
-        "read_only": role == "top-manager",
+        "read_only": role == "top-manager" and not files_admin,
         "can_pick_leader": picker is not None,
         **({"facets": facets, "from": from_.isoformat()} if from_ is not None else {}),
         "data": [
@@ -971,7 +993,7 @@ def list_supervisor_units(
     """Supervisor step of the create cascade: active units for admins, the
     units a shift-manager covers (their shift, in their plant) for them."""
     role = payload.get("role")
-    if role not in ("admin", "shift-manager"):
+    if role != "shift-manager" and not _files_as_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     q = db.query(Manager).filter(Manager.archived.is_(False))
     if role == "shift-manager":
@@ -1032,7 +1054,7 @@ def list_leader_profiles(
     the caller's scope (claimed or not), with its unit for client-side
     cascading. Archived units are excluded."""
     role = payload.get("role")
-    if role not in PICKER_ROLES:
+    if role not in PICKER_ROLES and not _files_as_admin(db, payload):
         raise HTTPException(status_code=403, detail="No leader picker for this role")
 
     q = db.query(RoleProfile).filter(RoleProfile.role == "leader")
@@ -1071,7 +1093,7 @@ def list_top_manager_profiles(
     """Target list for the shift-manager → top-management uplift step: every
     pre-created top-manager profile (claimed or not — the bell row queues on an
     unclaimed profile and is inherited on registration)."""
-    if payload.get("role") not in ("admin", "shift-manager"):
+    if payload.get("role") != "shift-manager" and not _files_as_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     claimed = {
         r.role_id
@@ -1093,7 +1115,7 @@ def list_shift_manager_profiles(
     or an admin seeding). Supervisors are pinned to their own shift; admins see
     every shift-manager and may narrow with ?shift."""
     role = payload.get("role")
-    if role not in ("admin", "supervisor"):
+    if role != "supervisor" and not _files_as_admin(db, payload):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     q = db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
     if role == "supervisor":
@@ -1124,7 +1146,7 @@ def list_cell_codes(
     (with an 'add new' option on the client). Picker roles pass the leader;
     leaders get their own. Always scope-filtered."""
     query = _scope_query(db.query(LeaderConcern.cell_code), payload, db)
-    if payload.get("role") in PICKER_ROLES:
+    if payload.get("role") in PICKER_ROLES or _files_as_admin(db, payload):
         if leader_profile_id:
             query = query.filter(LeaderConcern.leader_profile_id == leader_profile_id)
         elif leader_ref:
@@ -1368,7 +1390,7 @@ def get_deck_window(
     (`services/report_week`) and a JavaScript copy of it would be a second
     spelling that drifts: the confirm would name one week and the file carry
     another. Admin-only like the export it describes."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "concerns"):
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
     win = _deck_window(date_from, date_to)
     return {
@@ -1400,7 +1422,7 @@ def export_concerns_deck(
     """The weekly Concerns report as a PowerPoint deck. Admin only — the file
     carries every unit's concerns and their texts. A browser session downloads
     it; inside Telegram it lands in the caller's chat."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "concerns"):
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
 
     win = _deck_window(body.date_from, body.date_to)
@@ -2325,7 +2347,7 @@ def delete_concern(
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
     # Deleting would be a resolve loophole for leaders — supervisor and above only.
-    if payload.get("role") == "leader":
+    if payload.get("role") == "leader" and not page_admin(db, payload, "concerns"):
         raise HTTPException(status_code=403, detail="Leaders cannot delete concerns")
     _assert_can_edit(payload, c, db)
     # What is being destroyed, read before the row becomes unreadable.

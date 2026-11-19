@@ -34,6 +34,7 @@ import {
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
@@ -537,10 +538,18 @@ export default function Concerns() {
   // shift-manager, shift-manager → top-manager; admins pick the level. Only the
   // responsible holder at a concern's current level may change its status.
   const role = auth?.role;
-  const isAdmin = role === "admin";
+  const { adminOn } = useCapabilities();
+  // An admin's powers here (the weekly deck, every row): an admin or the
+  // page's admin grant (backend page_admin "concerns").
+  const pageAdmin = role === "admin" || adminOn("concerns");
+  // Files a NEW concern the way an admin does (picks the level): an admin, or
+  // a grantee whose own role has no step in the chain — the backend's
+  // `_files_as_admin`. A brigadir or shift manager holding the grant still
+  // files through their own step.
+  const isAdmin = role === "admin" || (adminOn("concerns") && !["leader", "supervisor", "shift-manager"].includes(role));
   const isSupervisor = role === "supervisor";
   const isShiftManager = role === "shift-manager";
-  const readOnly = role === "top-manager";
+  const readOnly = role === "top-manager" && !isAdmin;
   // Where a NEW concern this viewer creates lands: each role raises it to the
   // step above them; admins choose between shift-manager and top-manager.
   const createLevel = isAdmin ? null : isSupervisor ? "shift-manager" : isShiftManager ? "top-manager" : "supervisor";
@@ -612,7 +621,7 @@ export default function Concerns() {
   const [fSups, setFSups] = usePersistentState("concerns_sup_sel", []);    // [] = all | [String(manager_id)]
   const [fCells, setFCells] = usePersistentState("concerns_cell_sel", []); // [] = all | [cell_code]
   // A shift-manager reaches every shift and plant since 2026-11-04.
-  const canFilterShift = role === "admin" || role === "top-manager" || role === "shift-manager";
+  const canFilterShift = pageAdmin || role === "top-manager" || role === "shift-manager";
   const canFilterSup = canFilterShift;
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
@@ -2166,7 +2175,7 @@ export default function Concerns() {
   const { data: deckWin } = useQuery({
     queryKey: ["concerns-deck-window", startDate, endDate],
     queryFn: () => api.get("/api/concerns/deck-window", { params: { date_from: startDate, date_to: endDate } }).then((r) => r.data),
-    enabled: isAdmin,
+    enabled: pageAdmin,
     staleTime: 30 * 60 * 1000,
   });
 
@@ -2816,7 +2825,7 @@ export default function Concerns() {
             It is NOT filtered by the toolbar beside it, so it never fires
             without its confirm: «Excel» and this button produce reports about
             different periods and scopes, and only the dialog says so. */}
-        {isAdmin && (
+        {pageAdmin && (
           <Button
             size="lg"
             variant="secondary"

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.capabilities import page_admin
 from app.permissions import require_page
 from app.models import (Cell, CellOjidaniyaInterval, DowntimeData, Factory, Manager,
                         RoleProfile)
@@ -593,9 +594,9 @@ def _attach_solutions(db: Session, payload: dict, detail: dict) -> None:
            for cell in cells_ for iv in cell.get("intervals") or []]
     for iv in ivs:
         iv["solutions"] = []
-    is_admin = payload.get("role") == "admin"
+    is_admin = page_admin(db, payload, "idle-solutions")
     ids = [iv["id"] for iv in ivs if iv.get("id") is not None]
-    if not ids or not ims.open_to(payload.get("role")):
+    if not ids or not (is_admin or ims.open_to(payload.get("role"))):
         return
     rows = (db.query(IdleCategorySolution)
             .filter(_in_ids(IdleCategorySolution.event_id, ids))
@@ -1216,7 +1217,8 @@ def _deck_events(db: Session, managers: list[Manager],
 
 
 @router.get("/downtime/deck-window")
-def get_deck_window(payload: dict = Depends(require_page("downtime", "daily"))):
+def get_deck_window(payload: dict = Depends(require_page("downtime", "daily")),
+                    db: Session = Depends(get_db)):
     """Which week the deck button is about to build, and for which plant.
 
     A label, but served rather than computed in the browser: the window is a
@@ -1225,7 +1227,7 @@ def get_deck_window(payload: dict = Depends(require_page("downtime", "daily"))):
     the file carried another. Admin-only like the export it describes, so the
     button cannot even learn the scope it is not allowed to produce.
     """
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "downtime"):
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
     win = report_week.window()
     return {
@@ -1376,7 +1378,7 @@ def export_downtime_deck(
     both shifts, every supervisor, all categories, the stopped half as the
     headline with the not-stopped half named beside it.
     """
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "downtime"):
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
 
     if body.date_from and body.date_to:
@@ -1456,8 +1458,8 @@ _COST_MAX_DAYS = 400
 COST_ROLES = ("admin", "shift-manager")
 
 
-def _require_cost_viewer(payload: dict) -> None:
-    if payload.get("role") not in COST_ROLES:
+def _require_cost_viewer(db: Session, payload: dict) -> None:
+    if payload.get("role") not in COST_ROLES and not page_admin(db, payload, "downtime"):
         raise HTTPException(status_code=403, detail="cost_forbidden")
 
 
@@ -1539,7 +1541,7 @@ def get_downtime_cost(
     — a wait the cell worked through cost nothing, so there is no second half of
     this measure to switch to.
     """
-    _require_cost_viewer(payload)
+    _require_cost_viewer(db, payload)
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, shift, manager_id)
     # The reader's category picks INTERSECTED with whatever they are locked to.
@@ -1565,7 +1567,7 @@ def get_downtime_cost(
     # cascade the client drives off it — is not shortened by its own pick.
     out = ojidaniya_cost.narrow(out, cell_id)
     out["rates"] = periods
-    out["can_edit_rates"] = payload.get("role") == "admin"
+    out["can_edit_rates"] = page_admin(db, payload, "downtime")
     # WHO answers for each category. A map keyed by category, resolved here and
     # never sent from a browser: a name is a statement about a person.
     out["owners"] = idle_scope.owner_labels(db)
@@ -1590,7 +1592,7 @@ def get_downtime_cost_entries(
     `manager_id` is a query parameter, so the scope is re-decided here: a viewer
     who cannot see the unit in the table cannot read its events either.
     """
-    _require_cost_viewer(payload)
+    _require_cost_viewer(db, payload)
     date_from, date_to = _cost_window(date_from, date_to)
     ids = _cost_scope(db, payload, factory, None, [manager_id])
     if manager_id not in ids:
@@ -1625,9 +1627,9 @@ def get_wage_rates(
     """Readable by everyone who can open the tab — the rate is derivable from
     any priced row anyway, so hiding it would only make the figures
     unexplainable. Writing is a different decision; see below."""
-    _require_cost_viewer(payload)
+    _require_cost_viewer(db, payload)
     return {"periods": wage_rate.load(db),
-            "can_edit": payload.get("role") == "admin"}
+            "can_edit": page_admin(db, payload, "downtime")}
 
 
 @router.put("/downtime/wage-rates")
@@ -1645,7 +1647,7 @@ def put_wage_rates(
     once — a row-at-a-time API would leave the table holding a gap that
     `wage_rate.resolve` would answer through.
     """
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "downtime"):
         raise HTTPException(status_code=403, detail="Faqat administratorlar uchun")
     before = wage_rate.load(db)
     try:
@@ -1700,7 +1702,7 @@ def export_downtime_cost(
     through the same `ojidaniya_cost.build` the screen reads, so the file can
     never state a number the tab it was pressed on does not.
     """
-    _require_cost_viewer(payload)
+    _require_cost_viewer(db, payload)
     try:
         d1, d2 = date.fromisoformat(body.date_from), date.fromisoformat(body.date_to)
     except ValueError:

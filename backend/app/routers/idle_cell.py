@@ -63,7 +63,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Cell, CellOjidaniya, CellOjidaniyaInterval, Manager, RoleProfile
 from app.capabilities import (
-    CAP_IDLE_APPROVE, cap_scope, page_cap, page_scope_is_all, profile_unit_ids,
+    CAP_IDLE_APPROVE, cap_scope, page_admin, page_cap, page_scope_is_all, profile_unit_ids,
 )
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
@@ -227,7 +227,7 @@ def _decider(db: Session, payload: dict) -> dict:
     a query: a payload answering forty cells would otherwise pay for them forty
     times over."""
     role = payload.get("role")
-    ctx = {"role": role, "all": role in ("admin", "top-manager"),
+    ctx = {"role": role, "all": role in ("admin", "top-manager") or page_admin(db, payload, PAGE),
            "own_units": set(), "granted_units": set()}
     if ctx["all"]:
         return ctx
@@ -564,7 +564,7 @@ def day_summary(
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
     role = payload.get("role")
-    if role not in ("admin", "top-manager"):
+    if role not in ("admin", "top-manager") and not page_admin(db, payload, PAGE):
         if role != "supervisor":
             raise HTTPException(status_code=403, detail="Not allowed")
         units = profile_unit_ids(db, identity.viewer_profile_key(db, payload)) or []

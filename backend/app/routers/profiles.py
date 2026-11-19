@@ -47,7 +47,8 @@ from sqlalchemy.orm import Session
 from app import web_auth
 from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import (
-    CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, caller_caps, page_cap, require_cap,
+    CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE, caller_caps, page_admin,
+    page_admin_cap, page_cap, require_cap, tab_cap,
 )
 from app.config import settings
 from app.database import get_db
@@ -558,7 +559,8 @@ def _manager_has_data(db: Session, manager_id: int) -> bool:
 
 @router.get("/admin/list")
 def admin_list_profiles(db: Session = Depends(get_db),
-                        _: dict = Depends(require_cap(CAP_PROFILES_MANAGE, CAP_CELLS_MANAGE))):
+                        _: dict = Depends(require_cap(CAP_PROFILES_MANAGE, CAP_CELLS_MANAGE, page_admin_cap("cells"),
+                                                CAP_USERS_MANAGE, tab_cap("verifixsync")))):
     users = _user_info(db)
 
     def binding(r: TelegramUserRole) -> dict:
@@ -1174,7 +1176,8 @@ def _cells_viewer_unit(db: Session, caller: dict) -> tuple[bool, Optional[int]]:
     if caller.get("role") != "supervisor":
         return False, None
     held = caller_caps(db, caller)
-    if CAP_CELLS_MANAGE in held or held.get(page_cap("cells")) == "all":
+    if (CAP_CELLS_MANAGE in held or held.get(page_cap("cells")) == "all"
+            or page_admin(db, caller, "cells")):
         return False, None
     try:
         return True, int(caller.get("role_id"))
@@ -1609,13 +1612,13 @@ def admin_export_cells(request: Request, body: CellsExportBody, db: Session = De
 
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
-                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
     code = latin_code(" ".join((payload.verifix_code or "").split())) or ""
     if not code:
         raise HTTPException(status_code=400, detail="Verifix code is required")
     if db.query(Cell).filter_by(verifix_code=code).first():
         raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
-    if payload.kpi is False and caller.get("role") != "admin":
+    if payload.kpi is False and not page_admin(db, caller, "cells"):
         raise HTTPException(status_code=403, detail="Only an admin may take a cell out of the KPI")
     row = Cell(verifix_code=code)
     _apply_cell_fields(db, row, payload,
@@ -1650,12 +1653,12 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
 
 @router.put("/admin/cells/{cid}")
 def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_db),
-                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
     if (payload.kpi is not None and bool(payload.kpi) != (row.kpi is not False)
-            and caller.get("role") != "admin"):
+            and not page_admin(db, caller, "cells")):
         raise HTTPException(status_code=403, detail="Only an admin may change whether a cell counts in the KPI")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
@@ -1734,7 +1737,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
 
 def _may_pick_all(db: Session, caller: dict) -> bool:
     from app.capabilities import has_cap
-    return caller.get("role") == "admin" or has_cap(db, caller, CAP_CELLS_MANAGE)
+    return page_admin(db, caller, "cells") or has_cap(db, caller, CAP_CELLS_MANAGE)
 
 
 def _may_pick_manager(db: Session, caller: dict, cell: Cell) -> bool:
@@ -1829,7 +1832,7 @@ class CellArchiveBody(BaseModel):
 
 @router.post("/admin/cells/{cid}/archive")
 def admin_archive_cell(cid: int, body: CellArchiveBody, db: Session = Depends(get_db),
-                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
     """Archive (close) a cell, or bring it back. Records WHEN and WHO and
     nothing else: every figure and every record the cell carries is left
     exactly as it is — the alternative, DELETE, cascades its ojidaniya
@@ -1866,7 +1869,7 @@ def admin_archive_cell(cid: int, body: CellArchiveBody, db: Session = Depends(ge
 
 @router.delete("/admin/cells/{cid}")
 def admin_delete_cell(cid: int, db: Session = Depends(get_db),
-                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")

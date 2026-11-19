@@ -395,18 +395,14 @@ function AuthGate({ children }) {
 }
 
 /** Admin plus the named roles (a read-only page the server also narrows). */
-function RequireRoles({ roles, children }) {
+function RequireRoles({ roles, cap, children }) {
   const { auth } = useAuth();
-  if (!roles.includes(auth?.role)) return <Navigate to="/" replace />;
-  return children;
-}
-
-/** Strictly admin-only. Used by pages that are not part of the capability
- *  catalog (e.g. /gamification) — a grant must never widen those. */
-function RequireAdmin({ children }) {
-  const { auth } = useAuth();
-  if (auth?.role !== "admin") return <Navigate to="/" replace />;
-  return children;
+  const { can, isLoading } = useCapabilities();
+  if (roles.includes(auth?.role)) return children;
+  // `cap` — a personal grant that opens the page past its roles.
+  if (cap && isLoading) return <PageLoader where="caps" />;
+  if (cap && can(cap)) return children;
+  return <Navigate to="/" replace />;
 }
 
 /**
@@ -416,6 +412,17 @@ function RequireAdmin({ children }) {
  * backend enforces every write regardless; this only spares a denied visitor a
  * page of buttons that would all 403.
  */
+/** An admin-panel page's audience outside /panel: admins and the grantees of
+ *  the capability that opens tab `tab` (capability_tabs on the server). */
+function RequireTab({ tab, children }) {
+  const { auth } = useAuth();
+  const { capTabs, isLoading } = useCapabilities();
+  if (auth?.role === "admin") return children;
+  if (isLoading) return <PageLoader where="caps" />;
+  if (capTabs.includes(tab)) return children;
+  return <Navigate to="/" replace />;
+}
+
 function RequireProfilesManage({ children }) {
   const { auth } = useAuth();
   const { capTabs, isLoading } = useCapabilities();
@@ -634,14 +641,14 @@ function AppWithLang() {
             <Route path="/workers" element={<WorkersRedirect />} />
             <Route path="/workers/attendance" element={<AuthGate><RequirePage page="workers"><WorkersAttendance /></RequirePage></AuthGate>} />
             <Route path="/workers/movements" element={<AuthGate><RequirePage page="workers"><WorkersMovements /></RequirePage></AuthGate>} />
-            <Route path="/workers/composition" element={<AuthGate><RequireAdmin><WorkersComposition /></RequireAdmin></AuthGate>} />
-            <Route path="/doc-audit" element={<AuthGate><RequireAdmin><DocAudit /></RequireAdmin></AuthGate>} />
+            <Route path="/workers/composition" element={<AuthGate><RequirePage page="workers-composition"><WorkersComposition /></RequirePage></AuthGate>} />
+            <Route path="/doc-audit" element={<AuthGate><RequirePage page="doc-audit"><DocAudit /></RequirePage></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
             {/* «Trello tahlili» — ADMINS ONLY, not grantable (no page key). */}
-            <Route path="/trello" element={<AuthGate><RequireAdmin><TrelloAnalytics /></RequireAdmin></AuthGate>} />
+            <Route path="/trello" element={<AuthGate><RequirePage page="trello"><TrelloAnalytics /></RequirePage></AuthGate>} />
             {/* «Audit jadvali» — ADMINS ONLY, not grantable (no page key). */}
-            <Route path="/audit" element={<AuthGate><RequireAdmin><AuditTable /></RequireAdmin></AuthGate>} />
+            <Route path="/audit" element={<AuthGate><RequirePage page="audit"><AuditTable /></RequirePage></AuthGate>} />
             {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
@@ -658,7 +665,7 @@ function AppWithLang() {
             <Route path="/people" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/people/:employeeId" element={<AuthGate><RequirePage page="people"><People /></RequirePage></AuthGate>} />
             <Route path="/downtime" element={<AuthGate><RequirePage page="downtime"><Downtime /></RequirePage></AuthGate>} />
-            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", ...idleSolutionsRoles()]}><IdleSolutions /></RequireRoles></AuthGate>} />
+            <Route path="/idle-solutions" element={<AuthGate><RequireRoles roles={["admin", ...idleSolutionsRoles()]} cap="page.admin.idle-solutions"><IdleSolutions /></RequireRoles></AuthGate>} />
             <Route path="/staff" element={<AuthGate><RequirePage page="staff"><Staff /></RequirePage></AuthGate>} />
             <Route path="/daily" element={<AuthGate><RequirePage page="daily"><Daily /></RequirePage></AuthGate>} />
             <Route path="/shift-daily" element={<AuthGate><RequirePage page="shift-daily"><ShiftDaily /></RequirePage></AuthGate>} />
@@ -697,7 +704,7 @@ function AppWithLang() {
                 own capability/admin guard. */}
             <Route path="/cells/:id" element={<AuthGate><CellDetails /></AuthGate>} />
             {/* a registrant's Telegram profile — the bot's «Profilni ko'rish» button (docs/registration.md) */}
-            <Route path="/tg-user/:tid" element={<AuthGate><RequireAdmin><TgProfile /></RequireAdmin></AuthGate>} />
+            <Route path="/tg-user/:tid" element={<AuthGate><RequirePage page="tg-user"><TgProfile /></RequirePage></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/notion-tasks" element={<AuthGate><RequirePage page="notion-tasks"><NotionTasks /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
@@ -735,28 +742,28 @@ function AppWithLang() {
             {/* «Imtihon» — the dashboard exam a leader sits; a supervisor reads their unit. */}
             <Route path="/exam" element={<AuthGate><RequirePage page="exam"><Exam /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
-            <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
+            <Route path="/gamification" element={<AuthGate><RequirePage page="gamification"><Gamification /></RequirePage></AuthGate>} />
             {/* «Maqsadlar» — goal board test screen, admin-only (no page-access key); goals live per profile in ui-prefs. */}
-            <Route path="/targets" element={<AuthGate><RequireAdmin><Targets /></RequireAdmin></AuthGate>} />
-            <Route path="/targets/:id" element={<AuthGate><RequireAdmin><TargetGoal /></RequireAdmin></AuthGate>} />
+            <Route path="/targets" element={<AuthGate><RequirePage page="targets"><Targets /></RequirePage></AuthGate>} />
+            <Route path="/targets/:id" element={<AuthGate><RequirePage page="targets"><TargetGoal /></RequirePage></AuthGate>} />
             {/* «Verifix to'g'irlash · Jonli» was retired on 2026-10-06 once /staff read
                 live days itself. Its links (Telegram cards, bell rows) carry
                 ?tab=&unit=&date=, which /staff reads, so the redirect keeps them. */}
             <Route path="/staff-live" element={<StaffLiveRedirect />} />
             <Route path="/verifix" element={<Navigate to="/verifix/api" replace />} />
-            <Route path="/verifix/api" element={<AuthGate><RequireAdmin><VfxApiMap /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/employees" element={<AuthGate><RequireAdmin><VfxEmployees /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/jobs" element={<AuthGate><RequireAdmin><VfxJobs /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/timesheet" element={<AuthGate><RequireAdmin><VfxTimesheet /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/hr" element={<AuthGate><RequireAdmin><VfxHrMoves /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/timebooks" element={<AuthGate><RequireAdmin><VfxTimebooks /></RequireAdmin></AuthGate>} />
-            <Route path="/verifix/shifts" element={<AuthGate><RequireAdmin><VfxShifts /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/api" element={<AuthGate><RequirePage page="verifix-test"><VfxApiMap /></RequirePage></AuthGate>} />
+            <Route path="/verifix/employees" element={<AuthGate><RequirePage page="verifix-test"><VfxEmployees /></RequirePage></AuthGate>} />
+            <Route path="/verifix/jobs" element={<AuthGate><RequirePage page="verifix-test"><VfxJobs /></RequirePage></AuthGate>} />
+            <Route path="/verifix/timesheet" element={<AuthGate><RequirePage page="verifix-test"><VfxTimesheet /></RequirePage></AuthGate>} />
+            <Route path="/verifix/hr" element={<AuthGate><RequirePage page="verifix-test"><VfxHrMoves /></RequirePage></AuthGate>} />
+            <Route path="/verifix/timebooks" element={<AuthGate><RequirePage page="verifix-test"><VfxTimebooks /></RequirePage></AuthGate>} />
+            <Route path="/verifix/shifts" element={<AuthGate><RequirePage page="verifix-test"><VfxShifts /></RequirePage></AuthGate>} />
             {/* Removed pages land on the map: «Ish haqi» (wages are off, 2026-10-03) and seven
                 more on 2026-10-04 — their methods stay readable on the map's raw viewer. */}
             {["payroll", "structure", "marks", "onsite", "devices", "requests", "absences", "incidents"].map((p) => (
               <Route key={p} path={`/verifix/${p}`} element={<Navigate to="/verifix/api" replace />} />
             ))}
-            <Route path="/verifix/dictionaries" element={<AuthGate><RequireAdmin><VfxDictionaries /></RequireAdmin></AuthGate>} />
+            <Route path="/verifix/dictionaries" element={<AuthGate><RequirePage page="verifix-test"><VfxDictionaries /></RequirePage></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access
                 gate: it is identity, not a data page. */}
             <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />
@@ -791,12 +798,11 @@ function AppWithLang() {
                 the only chrome on the platform nobody could use. */}
             <Route path="/proof/camera" element={<AuthGate><ProofCamera /></AuthGate>} />
             {/* One broadcast's record — where every history row lands, and where
-                a completed send hands off to watching it. RequireAdmin matches
-                the backend: every /api/broadcast read is verify_admin, so a
-                capability grantee would only get a page of 403s. */}
+                a completed send hands off to watching it. RequireTab matches
+                the backend: every /api/broadcast read asks admin.tab.broadcast. */}
             <Route
               path="/broadcast/:id"
-              element={<AuthGate><RequireAdmin><BroadcastRecord /></RequireAdmin></AuthGate>}
+              element={<AuthGate><RequireTab tab="broadcast"><BroadcastRecord /></RequireTab></AuthGate>}
             />
             <Route path="/admin" element={<Navigate to="/panel" replace />} />
             {/* Catch-all. Must stay LAST — it matches whatever nothing above

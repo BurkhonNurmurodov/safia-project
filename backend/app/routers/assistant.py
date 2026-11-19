@@ -24,6 +24,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.capabilities import is_admin_or, tab_cap
 from app.database import get_db
 from app.identity import viewer_profile_key
 from app.models import AssistantFile, AssistantMessage, AssistantRun, AssistantThread
@@ -106,7 +107,7 @@ def me(request: Request, db: Session = Depends(get_db), payload: dict = Depends(
         "configured": ai.available(),
         "voice": ai.voice_available(),
         "model": ai.model_now(),
-        "can_configure": payload.get("role") == "admin" and not payload.get("imp"),
+        "can_configure": is_admin_or(db, payload, tab_cap("aikeys")) and not payload.get("imp"),  # it opens /panel/aikeys
         "impersonated": bool(payload.get("imp")),
         "web": bool(payload.get("web")),
     }
@@ -420,14 +421,14 @@ async def transcribe(request: Request, audio: UploadFile = File(...), lang: str 
 # `GET /settings` stays for a tab still open on an older bundle; the key door
 # (`PUT /settings`) is gone with the card that used it.
 
-def _admin_only(payload: dict) -> None:
-    if payload.get("role") != "admin" or payload.get("imp"):
+def _admin_only(db: Session, payload: dict) -> None:
+    if not is_admin_or(db, payload, tab_cap("aikeys")) or payload.get("imp"):
         raise HTTPException(status_code=403, detail="admin_only")
 
 
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
-    _admin_only(payload)
+    _admin_only(db, payload)
     a = ai.current()
     v = ai.voice_current()
     start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)

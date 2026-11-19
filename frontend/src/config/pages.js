@@ -74,6 +74,16 @@ export const PAGES = [
   { key: "arc", route: "/arc", labelKey: "nav.arc" },
   { key: "education", route: "/education", labelKey: "nav.education" },
   { key: "exam", route: "/exam", labelKey: "nav.exam" },
+  // Admin-only pages that became grantable on 2026-11-19 (backend
+  // permissions.PAGE_KEYS): admin-only by default, opened per person.
+  { key: "workers-composition", route: "/workers/composition", labelKey: "nav.workersComposition" },
+  { key: "doc-audit", route: "/doc-audit", labelKey: "admin.tabDocAudit" },
+  { key: "trello", route: "/trello", labelKey: "nav.trello" },
+  { key: "audit", route: "/audit", labelKey: "nav.audit" },
+  { key: "tg-user", route: "/tg-user", labelKey: "nav.tgUser", noLanding: true },  // needs an id: never a landing page
+  { key: "gamification", route: "/gamification", labelKey: "nav.gamification" },
+  { key: "targets", route: "/targets", labelKey: "nav.targets" },
+  { key: "verifix-test", route: "/verifix/api", labelKey: "nav.verifixTest" },
   // «Yordamchi» — last on purpose: never anybody's landing page.
   { key: "assistant", route: "/assistant", labelKey: "nav.assistant" },
 ];
@@ -209,7 +219,7 @@ export function canAccessPage(role, pageKey, access, capPages, deniedPages) {
 // Returns the route of the first page this role may access, or null if none.
 export function firstAccessibleRoute(role, access, capPages, deniedPages) {
   for (const p of PAGES) {
-    if (canAccessPage(role, p.key, access, capPages, deniedPages)) return p.route;
+    if (!p.noLanding && canAccessPage(role, p.key, access, capPages, deniedPages)) return p.route;
   }
   return null;
 }

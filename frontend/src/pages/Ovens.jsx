@@ -16,6 +16,7 @@ import OvenDay from "../components/ovens/OvenDay";
 import OvenInfo from "../components/ovens/OvenInfo";
 import { useOT, fill, stamp } from "../components/ovens/ovensUtil";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import api from "../utils/api";
 
@@ -42,7 +43,9 @@ const addDays = (iso, n) => {
 export default function Ovens() {
   const T = useOT();
   const navigate = useNavigate();
-  const isAdmin = useAuth()?.auth?.role === "admin";
+  const { capTabs } = useCapabilities();
+  // Who may open the register the empty state points to.
+  const isAdmin = useAuth()?.auth?.role === "admin" || capTabs.includes("ovens");
   const [params, setParams] = useSearchParams();
   const tab = TABS.includes(params.get("tab")) ? params.get("tab") : "live";
   const setTab = (t) => setParams((p) => { const n = new URLSearchParams(p); n.set("tab", t); return n; }, { replace: true });

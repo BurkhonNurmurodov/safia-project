@@ -38,6 +38,7 @@ from sqlalchemy import (Boolean, DateTime, Float, Integer, String, Text, and_,
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, aliased
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.models import ArcLegacyRequest, ArcLegacySyncMeta, ArcRequest
 from app.permissions import require_page
@@ -1271,7 +1272,7 @@ def post_probe(
     (services/arc_legacy_discovery.py) and adopt the widest set. ADMIN-ONLY: it is a
     burst of calls against a third-party system and it CHANGES what every
     later sync sends."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     if not arc_legacy_client.configured():
         raise HTTPException(status_code=400, detail=NOT_CONFIGURED_MSG)
@@ -1302,7 +1303,7 @@ def get_probe(
 ):
     """The last measurement, unchanged — what the API declares it accepts,
     what each parameter did to the total, and which set the walk now sends."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     meta = db.query(ArcLegacySyncMeta).filter_by(id=1).first()
     return {
@@ -1327,7 +1328,7 @@ def get_fields(
     anything new?» (services/arc_legacy_discovery.field_census). ADMIN-ONLY,
     like the rest of the API panel: it shows sample values of fields nobody
     has reviewed."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     try:
         return arc_legacy_discovery.field_census(db)
@@ -1338,11 +1339,11 @@ def get_fields(
 
 
 @router.get("/diag")
-def get_diag(payload: dict = Depends(require_page(PAGE))):
+def get_diag(db: Session = Depends(get_db), payload: dict = Depends(require_page(PAGE))):
     """Why «not connected»? ADMIN-ONLY. Reports which env NAMES the process
     finds and where (never a value) — the platform has no shell, so this is the
     only way to tell «wrong file» from «unparseable line» from «blank value»."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     return arc_legacy_client.diagnostics()
 
@@ -1355,7 +1356,7 @@ def get_spec(
     """The ARC API's own openapi document — ADMIN-ONLY (narrower than the
     page): reference material about a third-party system, not ticket data.
     Served from the stored copy; fetched live once when none is stored yet."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "arc"):
         raise HTTPException(status_code=403, detail="Admin only")
     meta = db.query(ArcLegacySyncMeta).filter_by(id=1).first()
     if meta and meta.spec is not None:

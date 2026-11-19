@@ -29,8 +29,8 @@ from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import (
     CAP_ATTENDANCE_DELETE, CAP_ATTENDANCE_EDIT, CAP_CLEANUP, CAP_DAY_REOPEN,
     CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
-    cap_scope, capability_pages, caller_denied_pages, has_cap, page_scope_is_all,
-    profile_unit_ids, scope_is_all,
+    cap_scope, capability_pages, caller_denied_pages, has_cap, is_admin_or, page_admin,
+    page_scope_is_all, profile_unit_ids, scope_is_all, tab_cap,
 )
 from app.config import settings
 from app.database import get_db
@@ -3231,13 +3231,14 @@ def get_deleted_workers(
     """
     role    = caller.get("role")
     role_id = caller.get("role_id")
+    adm     = _staff_admin(db, caller)
 
-    if role == "admin":
-        pass  # manager_id is an optional filter; None → all managers
-    elif role == "supervisor":
+    if role == "supervisor" and not (adm and manager_id):
         manager_id = role_id
         if not manager_id:
             raise HTTPException(status_code=400, detail="Supervisor has no linked manager")
+    elif adm:
+        pass  # manager_id is an optional filter; None → all managers
     else:
         raise HTTPException(status_code=403, detail="Not allowed")
 
@@ -3355,7 +3356,9 @@ def pending_count(caller=Depends(_require_staff), db: Session = Depends(get_db))
 
     q = db.query(EditRequest).filter(EditRequest.status == "pending")
 
-    if role == "supervisor":
+    if _staff_admin(db, caller):
+        pass   # every unit's, as an admin's
+    elif role == "supervisor":
         # The unit IS the supervisor profile (managers.id), so scoping by it
         # counts everything the PERSON filed — from any of their logins — and
         # nothing from the other units a multi-role user also supervises.
@@ -3384,7 +3387,9 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
 
     q = db.query(EditRequest)
 
-    if role == "supervisor":
+    if _staff_admin(db, caller):
+        pass   # every unit's, as an admin's
+    elif role == "supervisor":
         # Everything filed for the unit — the unit IS this person's profile, so
         # a co-holder's requests are this person's requests. (Previously each
         # account saw only what it had personally filed, so the other holder's
@@ -3558,7 +3563,8 @@ def withdraw_request(req_id: int, caller=Depends(_require_staff), db: Session = 
     """Supervisor withdraws their own pending deletion request before it is confirmed."""
     role  = caller.get("role")
     tg_id = int(caller["sub"])
-    if role not in ("admin", "supervisor"):
+    adm   = _staff_admin(db, caller)
+    if role != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
 
     req = db.query(EditRequest).filter_by(id=req_id).first()
@@ -3570,7 +3576,7 @@ def withdraw_request(req_id: int, caller=Depends(_require_staff), db: Session = 
     # A supervisor may withdraw anything filed for their own unit: the unit IS
     # their profile, so a co-holder's request is this same person's request.
     # Comparing accounts here 403'd two people who run one unit together.
-    if role == "supervisor" and not (
+    if role == "supervisor" and not adm and not (
         (caller.get("role_id") and req.manager_id == caller["role_id"])
         or req.supervisor_telegram_id == tg_id
     ):
@@ -3610,8 +3616,9 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
     role   = caller.get("role")
     tg_id  = int(caller["sub"])
     undoer = caller.get("full_name", "")
+    adm    = _staff_admin(db, caller)
 
-    if role not in ("admin", "shift-manager"):
+    if role != "shift-manager" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
 
     req = db.query(EditRequest).filter_by(id=req_id).first()
@@ -3621,7 +3628,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
         raise HTTPException(status_code=409, detail="Can only undo approved requests")
 
     # Shift-manager: verify they're responsible for this unit (shift AND plant)
-    if role == "shift-manager":
+    if role == "shift-manager" and not adm:
         sm_slot = caller.get("role_id")
         if not sm_slot:
             raise HTTPException(status_code=403, detail="No shift assigned")
@@ -3828,7 +3835,10 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
 
     Bulk batches are always deletions (created by bulk_delete_attendance), so
     an approval deletes the attendance row exactly like the old endpoint did."""
-    if caller.get("role") not in ("admin", "shift-manager"):
+    # Who may decide: `_process_request`'s rule — admin, shift-manager or a
+    # ``staff.requests.approve`` grantee, the grantee within its scope below.
+    granted = has_cap(db, caller, CAP_REQUESTS_APPROVE)
+    if caller.get("role") not in ("admin", "shift-manager") and not granted:
         raise HTTPException(status_code=403, detail="Not authorised")
 
     q = db.query(EditRequest).filter(
@@ -3840,6 +3850,11 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
     reqs = q.all()
     if not reqs:
         raise HTTPException(status_code=404, detail="No pending requests found in batch")
+    if (granted and caller.get("role") not in ("admin", "shift-manager")
+            and not scope_is_all(db, caller, CAP_REQUESTS_APPROVE)):
+        units = _caller_unit_ids(caller, db)
+        if units is not None and any(r.manager_id not in units for r in reqs):
+            raise HTTPException(status_code=403, detail="Not authorised")
 
     processor_name  = caller.get("full_name", "")
     processor_tg_id = int(caller["sub"])
@@ -3877,6 +3892,9 @@ def _process_batch(batch_token: str, action: str, caller: dict, db: Session, ids
                   + (f" +{len(b_names) - 10}" if len(b_names) > 10 else ""))],
         changes=[("status", "pending", action)],
     )
+    # The grant-use warning `_process_request` sends (native roles filtered inside).
+    alert_grant_use(db, caller, CAP_REQUESTS_APPROVE, f"request.{action}",
+                    details=[("count", len(reqs))])
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("edit_batch", str(batch_token), action, processor_name)
@@ -3923,14 +3941,15 @@ def withdraw_batch(
     role    = caller.get("role")
     role_id = caller.get("role_id")
     tg_id   = int(caller["sub"])
-    if role not in ("admin", "supervisor"):
+    adm     = _staff_admin(db, caller)
+    if role != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Not authorised")
 
     q = db.query(EditRequest).filter(
         _batch_id_filter(batch_id),
         EditRequest.status   == "pending",
     )
-    if role == "supervisor":
+    if role == "supervisor" and not adm:
         # Scope to the unit (= the profile), not the login, so a batch filed by
         # the other holder of this brigadir profile can still be withdrawn.
         q = q.filter(EditRequest.manager_id == role_id) if role_id else \
@@ -4021,7 +4040,7 @@ def _scope_deletion_requests(caller, db: Session):
     )
     # An "all"-scoped grant means admin reach: the queue this person was given
     # is the whole factory's, so lift the role filters entirely.
-    if scope_is_all(db, caller, CAP_REQUESTS_APPROVE):
+    if scope_is_all(db, caller, CAP_REQUESTS_APPROVE) or _staff_admin(db, caller):
         return q.order_by(EditRequest.date.desc()).all()
     if role == "supervisor":
         if role_id:
@@ -4071,7 +4090,7 @@ def _scope_documents(q, caller, db: Session):
 
     # An "all"-scoped grant means admin reach — the transfer queue this person
     # handles is every unit's, not just their own.
-    if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE):
+    if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE) or _staff_admin(db, caller):
         return q
     if role == "supervisor":
         if not role_id:
@@ -4978,9 +4997,11 @@ def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool 
 
 
 def _resolve_manager(caller, db: Session, manager_id: Optional[int]):
-    """Determine which manager (unit) a document belongs to + its display name."""
+    """Determine which manager (unit) a document belongs to + its display name.
+    A supervisor files for their own unit — unless a page admin grant lets
+    them act for the unit they asked for, as an admin does."""
     role = caller.get("role")
-    if role == "supervisor":
+    if role == "supervisor" and not (manager_id and _staff_admin(db, caller)):
         mid = caller.get("role_id")
         if not mid:
             raise HTTPException(status_code=400, detail="Supervisor has no linked manager")
@@ -5006,10 +5027,12 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
     codes so the sender could pick a destination cell; the receiving supervisor
     places the worker themselves now (/staff «Yacheykalar»), so the sender is no
     longer asked to guess inside another unit."""
-    if caller.get("role") not in ("admin", "supervisor"):
+    adm = _staff_admin(db, caller)
+    if caller.get("role") != "supervisor" and not adm:
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = date.fromisoformat(attend_date)
-    sender_id = caller.get("role_id") if caller.get("role") == "supervisor" else manager_id
+    sender_id = (caller.get("role_id") if caller.get("role") == "supervisor"
+                 and not (adm and manager_id) else manager_id)
     closed = {
         c.manager_id for c in db.query(DayApproval).filter(DayApproval.date == d).all()
     }
@@ -5043,7 +5066,7 @@ def _ensure_exchange_task(db: Session, name: Optional[str], caller: dict) -> Non
     t = db.query(ExchangeTask).filter(ExchangeTask.name == n).first()
     if t is not None and t.active:
         return
-    if caller.get("role") != "admin":
+    if not _staff_admin(db, caller):
         raise HTTPException(status_code=403, detail="Only an admin can add a new task")
     if t is None:
         db.add(ExchangeTask(name=n, active=True, created_by_telegram_id=int(caller["sub"])))
@@ -5076,7 +5099,7 @@ def delete_exchange_task(body: TaskDeleteBody, caller=Depends(_require_staff), d
     """Admin-only soft removal of a task from the shared picker. The row is kept
     (active=False) so existing exchange documents that reference the name keep
     resolving — it simply stops being offered for new exchanges."""
-    if caller.get("role") != "admin":
+    if not _staff_admin(db, caller):
         raise HTTPException(status_code=403, detail="Admin only")
     name = (body.name or "").strip()
     if not name:
@@ -5263,7 +5286,7 @@ def _build_role_payload(db: Session, manager_id: int, d: date, new_role: str, em
 
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    if caller.get("role") not in ("admin", "supervisor"):
+    if caller.get("role") != "supervisor" and not _staff_admin(db, caller):
         raise HTTPException(status_code=403, detail="Not allowed to create documents")
     if body.doc_type not in ("role_change", "people_exchange"):
         raise HTTPException(status_code=400, detail="Unsupported document type")
@@ -5446,7 +5469,8 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft (Нет) documents can be edited")
     is_creator = _is_doc_creator(doc, caller)
-    if caller.get("role") not in ("admin", "shift-manager") and not is_creator:
+    if (caller.get("role") != "shift-manager" and not _staff_admin(db, caller)
+            and not is_creator):
         raise HTTPException(status_code=403, detail="Not allowed to edit this document")
     if not body.employees:
         raise HTTPException(status_code=400, detail="Select at least one employee")
@@ -5645,7 +5669,7 @@ def _may_reject_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     admin/shift-manager (who could always delete the draft), or its creator
     (rejecting your own draft = withdrawing it)."""
     return (_can_approve_doc(doc, caller, db)
-            or caller.get("role") in ("admin", "shift-manager")
+            or caller.get("role") == "shift-manager" or _staff_admin(db, caller)
             or _is_doc_creator(doc, caller))
 
 
@@ -5781,7 +5805,8 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         except Exception:
             pass
         return {"ok": True, "status": doc.status}
-    elif caller.get("role") not in ("admin", "shift-manager") and not is_creator:
+    elif (caller.get("role") != "shift-manager" and not _staff_admin(db, caller)
+          and not is_creator):
         raise HTTPException(status_code=403, detail="Not allowed to delete this document")
 
     log = _doc_log_fields(doc, [("status", doc.status, None)])
@@ -5812,6 +5837,7 @@ class DocBulkBody(BaseModel):
 def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     docs = _scope_documents(_real_docs(db), caller, db) \
         .filter(HrDocument.id.in_(body.ids)).all()
+    adm = _staff_admin(db, caller)
 
     done = 0
     resolved: list[tuple[int, str]] = []   # (doc_id, outcome) for admin-message cross-edit
@@ -5902,7 +5928,8 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
                 _reject_document(doc, caller, db)
                 resolved.append((doc.id, "rejected"))
             else:  # rejected — permanent cleanup of the record
-                if caller.get("role") not in ("admin", "shift-manager") and not is_creator:
+                if (caller.get("role") != "shift-manager" and not adm
+                        and not is_creator):
                     continue
                 db.delete(doc)
         else:
@@ -5967,6 +5994,15 @@ def _staff_sees_all(db: Session, caller) -> bool:
     was handed doesn't change what that sentence promises."""
     return (page_scope_is_all(db, caller, "staff")
             or page_scope_is_all(db, caller, "daily"))
+
+
+def _staff_admin(db: Session, caller) -> bool:
+    """An admin, or a holder of «everything an admin does» on /staff or /daily
+    (``page.admin.*``, 2026-11-19). Either page counts, as in `_staff_sees_all`:
+    both call these endpoints. The doors with a dedicated grant of their own
+    (attendance edit/delete, day reopen, documents / requests approve) keep
+    asking THAT grant, not this one."""
+    return page_admin(db, caller, "staff")   # /daily runs on the same endpoints
 
 
 def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
@@ -6464,7 +6500,7 @@ def cell_placement(attend_date: str, manager_id: Optional[int] = None,
         # the day entirely. Without this the tab would alarm about a block that
         # does not exist on any historical day an admin steps back to.
         "cells_required": d >= CELLS_REQUIRED_FROM,
-        "can_edit":     closed is None and _can_edit_placement(caller, manager_id),
+        "can_edit":     closed is None and _can_edit_placement(db, caller, manager_id),
         "unplaced":     unplaced,
         "cells":        cells_out,
         "totals": {
@@ -6489,15 +6525,14 @@ def _cell_leader_name(db: Session, c: Cell) -> Optional[str]:
     return p.name if p else None
 
 
-def _can_edit_placement(caller: dict, manager_id: int) -> bool:
+def _can_edit_placement(db: Session, caller: dict, manager_id: int) -> bool:
     """Who may WRITE a placement. Reading follows the page's ordinary scope, but
     writing is the unit's own business: a supervisor widened by a page grant can
     BROWSE another unit and must not rearrange its people — the same rule
     `canCreateHere` already applies to documents on this page."""
-    role = caller.get("role")
-    if role == "admin":
+    if _staff_admin(db, caller):
         return True
-    if role == "supervisor":
+    if caller.get("role") == "supervisor":
         return caller.get("role_id") == manager_id
     return False
 
@@ -6531,7 +6566,7 @@ def save_cell_placement(body: PlacementBody, caller=Depends(_require_staff),
         raise HTTPException(status_code=400, detail="manager_id required")
     if not _can_touch_manager(db, caller, manager_id):
         raise HTTPException(status_code=403, detail="Not allowed for this manager")
-    if not _can_edit_placement(caller, manager_id):
+    if not _can_edit_placement(db, caller, manager_id):
         raise HTTPException(status_code=403, detail="Only this unit's supervisor or an admin may place workers")
     try:
         d = date.fromisoformat(body.date)
@@ -6747,11 +6782,12 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
     for the date is processed (the day becomes 'confirmed').
     """
     role = caller.get("role")
-    if role == "supervisor":
+    adm = _staff_admin(db, caller)
+    if role == "supervisor" and not (adm and body.manager_id):
         manager_id = caller.get("role_id")
         if not manager_id:
             raise HTTPException(status_code=400, detail="Supervisor has no assigned manager")
-    elif role == "admin":
+    elif adm:
         manager_id = body.manager_id
         if not manager_id:
             raise HTTPException(status_code=400, detail="manager_id required")
@@ -6815,7 +6851,8 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
         {"closer_name": closer_name, "date": body.date},
         ntype="info",
         actor_tg_id=int(caller["sub"]),
-        include_supervisor=(role == "admin"),
+        # closed on the brigadir's behalf → they hear about it
+        include_supervisor=not (role == "supervisor" and manager_id == caller.get("role_id")),
         subject=("unit_day", f"{manager_id}:{str(body.date)[:10]}"),
     )
     db.commit()
@@ -6836,10 +6873,13 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
 
 
 @router.post("/approvals/reopen")
-def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
+def reopen_day(body: ApprovalBody, caller=Depends(_get_caller), db: Session = Depends(get_db)):
+    # `_get_caller`, not `_require_staff`: the check below IS the door (a reopen
+    # grant implies /staff), and the attendance admin tab reopens through here.
     if not body.manager_id:
         raise HTTPException(status_code=400, detail="manager_id required")
-    if not _cap_covers_unit(caller, db, CAP_DAY_REOPEN, body.manager_id):
+    if not (_cap_covers_unit(caller, db, CAP_DAY_REOPEN, body.manager_id)
+            or is_admin_or(db, caller, tab_cap("attendance"))):
         raise HTTPException(status_code=403, detail="Only an admin can re-open a closed day")
     try:
         d = date.fromisoformat(body.date)

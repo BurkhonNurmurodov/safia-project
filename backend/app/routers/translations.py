@@ -7,6 +7,7 @@ from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.capabilities import require_tab
 from app.config import settings
 from app.database import get_db
 from app.models import Attendance, Language, Manager, Translation
@@ -28,10 +29,8 @@ def _caller(token: Annotated[str, Depends(_oauth2)]):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def _require_admin(caller=Depends(_caller)):
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    return caller
+# The «Tarjimalar» admin page's doors: an admin or its grant.
+_require_admin = require_tab("translations")
 
 
 # ── Public: languages + overrides (consumed by the runtime LangContext) ─────────

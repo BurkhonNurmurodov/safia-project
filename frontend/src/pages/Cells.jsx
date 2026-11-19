@@ -343,10 +343,10 @@ function CellCard({ c, name, tl, t, menu, onOpen, issue }) {
 export default function Cells() {
   const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
-  const { can, isLoading: capLoading } = useCapabilities();
+  const { can, adminOn, isLoading: capLoading } = useCapabilities();
   // Default to read-only while the grant query is in flight so a slow response
   // never briefly exposes edit controls. Admins hold the whole catalog.
-  const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
+  const canEdit = !capLoading && (can(CAP.CELLS_MANAGE) || adminOn("cells"));
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();

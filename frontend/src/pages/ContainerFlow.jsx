@@ -57,7 +57,7 @@ export default function ContainerFlow() {
   const [tabParam, tabDone] = useOpenParam("tab");
   const [rcv, rcvDone] = useOpenParam("rcv");
   useEffect(() => { if (tabParam) { setTab(tabParam); tabDone(); } }, [tabParam, setTab, tabDone]);
-  const isAdmin = useAuth()?.auth?.role === "admin";
+  const roleAdmin = useAuth()?.auth?.role === "admin";
   const [picked, setPicked] = useState(null);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -74,6 +74,9 @@ export default function ContainerFlow() {
     queryKey: ["cflow-settings"],
     queryFn: () => api.get("/api/container-flow/settings").then((r) => r.data),
   });
+  // An admin, or a holder of `page.admin.container-flow` — the server says so
+  // (`_roles`), since a grant is not in the token.
+  const isAdmin = roleAdmin || !!settings.data?.admin;
   const roles = {
     admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics,
     receive: isAdmin || !!settings.data?.receive, watch: isAdmin || !!settings.data?.watch,

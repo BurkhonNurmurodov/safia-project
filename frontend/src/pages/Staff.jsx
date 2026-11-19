@@ -315,6 +315,15 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
 
 const fillT = (s, p = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => (p[k] ?? ""));
 
+// An admin, or a holder of a page admin grant on Xodimlar or Kunlik — the
+// browser twin of `staff._staff_admin` (either page: both call one set of
+// endpoints). The doors with a grant of their own (approving documents and
+// requests, re-opening a day, deleting rows) keep asking that grant instead.
+function useStaffAdmin(role) {
+  const { adminOn } = useCapabilities();
+  return role === "admin" || adminOn("staff");
+}
+
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
 export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preSelected, replaceBatchId, onClose, onDeleted }) {
@@ -545,6 +554,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
   const [isCollapsed, setIsCollapsed]   = usePersistentState(S.pk("staff_workers_table_collapsed"), false);
   const qc = useQueryClient();
   const { auth: tableAuth } = useAuth();
+  const staffAdmin = useStaffAdmin(tableAuth?.role);
   // Below `sm` the day reads as a list (StaffPhoneList) and the column filters
   // move into the «Filtrlar» sheet; from `sm` up the table is exactly as it was.
   const isPhone = useIsMobile();
@@ -919,11 +929,11 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor,
   // /staff on a LIVE day: the day could not be named, or Verifix could not be
   // read — say which, with the way to ask again, never a skeleton that never ends.
   if (S.live && dayError) return (
-    <LiveDayState data={{ error: "day", message: dayError }} onRetry={onDayRetry} isAdmin={tableAuth?.role === "admin"} />
+    <LiveDayState data={{ error: "day", message: dayError }} onRetry={onDayRetry} isAdmin={staffAdmin} />
   );
   if (S.live && (data?.error || attError)) return (
     <LiveDayState data={data?.error ? data : { error: "unreachable", message: attError?.message }}
-      onRetry={refreshNow} retrying={refresh.isPending} isAdmin={tableAuth?.role === "admin"} />
+      onRetry={refreshNow} retrying={refresh.isPending} isAdmin={staffAdmin} />
   );
 
   // Guard covers: (a) query fetching, (b) the one render where enabled just
@@ -1629,7 +1639,8 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
             );
           })}
 
-          {/* Delete workers */}
+          {/* Delete workers — only for someone whose delete goes somewhere */}
+          {onDeleteSelected && (
           <button
             type="button"
             role="menuitem"
@@ -1643,6 +1654,7 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
             <Trash2 size={13} aria-hidden="true" />
             {t("staff.deleteWorkers")}
           </button>
+          )}
           {disabled && disabledHint && (
             <p className="px-3 pt-1 pb-2 text-xs border-t" style={{ color: "var(--text-3)", borderColor: "var(--border)" }}>{disabledHint}</p>
           )}
@@ -1721,7 +1733,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
   const isEdit  = !!editDoc;
   const date    = isEdit ? editDoc.date       : selectedDate;
   const mgrId   = isEdit ? editDoc.manager_id : managerId;
-  const isAdmin = role === "admin";
+  const isAdmin = useStaffAdmin(role);
 
   const [query, setQuery]       = useState("");
   const [newRole, setNewRole]   = useState(isEdit ? (editDoc.new_role || "") : "");
@@ -1965,7 +1977,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const isEdit  = !!editDoc;
   const date    = isEdit ? editDoc.date       : selectedDate;
   const mgrId   = isEdit ? editDoc.manager_id : managerId;
-  const isAdmin = role === "admin";
+  const isAdmin = useStaffAdmin(role);
 
   const [query, setQuery]       = useState("");
   const [target, setTarget]     = useState("");     // "sup:<id>" | "task:<name>" | "__new__"
@@ -3324,6 +3336,9 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const qc = useQueryClient();
   const { can, canAll } = useCapabilities();
   const isManager = role === "admin" || role === "shift-manager";
+  // A page admin grant: every unit's register, and the draft powers an admin
+  // has (edit, reject, erase a refused one) — never the approving itself.
+  const staffAdmin = useStaffAdmin(role);
   // Personal grants sit ALONGSIDE the role rules, never instead of them. The
   // two queues are granted separately: deletion rows are edit_requests,
   // everything else is an hr_document. Rows a grantee may not touch are already
@@ -3338,7 +3353,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   // "own"-scoped grantee sees a single unit, so the column would be one value
   // repeated down the page. A top-manager reads every unit's requests (and
   // decides none of them), so the column is theirs too.
-  const crossUnit = isManager || role === "top-manager"
+  const crossUnit = isManager || role === "top-manager" || staffAdmin
     || canAll(CAP.DOCUMENTS_APPROVE) || canAll(CAP.REQUESTS_APPROVE);
 
   const [selected, setSelected]     = useState(() => new Set());
@@ -3560,20 +3575,22 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
       // Un-posting reverses an approval, so a deletion batch has none: the rows
       // it approved are off the day and no batch endpoint puts them back.
       canCancel:  !isDeletion && canApproveDoc && st === "approved",
+      // Editing a deletion batch re-files it for the editor's OWN unit, so a
+      // supervisor who sees every unit (a page admin grant) edits only theirs.
       canEdit:    isDeletion
-        ? (isCreatorRole && hasPending)
+        ? (isCreatorRole && hasPending && doc.manager_id === myManagerId)
         : isExchange
-          ? (st === "pending" && (canApproveDoc || isCreator))
-          : (st === "pending" && (canManageDocs || isCreatorRole)),
+          ? (st === "pending" && (canApproveDoc || isCreator || staffAdmin))
+          : (st === "pending" && (canManageDocs || isCreatorRole || staffAdmin)),
       canReject:  isDeletion
         ? ((isCreatorRole || canManageReqs) && hasPending)
-        : st === "pending"
-          && (isExchange ? (canApproveDoc || canManageDocs || isCreator) : (canManageDocs || isCreatorRole)),
+        : st === "pending" && (staffAdmin
+          || (isExchange ? (canApproveDoc || canManageDocs || isCreator) : (canManageDocs || isCreatorRole))),
       canDelete:  isDeletion
         ? false
         : st === "approved"
           ? (isExchange ? canApproveDoc : canManageDocs)
-          : st === "rejected" && (canManageDocs || isCreator),
+          : st === "rejected" && (canManageDocs || isCreator || staffAdmin),
     };
   }
 
@@ -4605,11 +4622,13 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const isAdmin = role === "admin";
+  // Closing any unit's day: an admin or a page admin grant.
+  const staffAdmin = useStaffAdmin(role);
   // Re-opening a closed day is grantable; picking somebody else's unit needs
   // the wider "all" scope, since an own-scoped grantee only has their own.
   const { can, canAll } = useCapabilities();
   const canReopen = isAdmin || can(CAP.DAY_REOPEN);
-  const crossUnit = isAdmin || canAll(CAP.DAY_REOPEN);
+  const crossUnit = staffAdmin || canAll(CAP.DAY_REOPEN);
 
   const [selManagerId, setSelManagerId] = usePersistentState(S.pk("staff_approvals_manager_id"), null);
   const effManagerId = crossUnit ? selManagerId : auth?.role_id;
@@ -4687,7 +4706,7 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
 
   function onDayClick(iso, status) {
     if (!effManagerId || iso > todayIso) return;
-    if (status === "open" && (role === "supervisor" || isAdmin)) {
+    if (status === "open" && (role === "supervisor" || staffAdmin)) {
       // Closing is final for the supervisor — confirm first
       setAskErr(""); setAsk({ kind: "close", iso });
     } else if ((status === "closed" || status === "confirmed") && canReopen) {
@@ -4754,7 +4773,7 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
               const status = info?.status || "empty";
               const future = iso > todayIso;
               const clickable = !future && (
-                (status === "open" && (role === "supervisor" || isAdmin)) ||
+                (status === "open" && (role === "supervisor" || staffAdmin)) ||
                 ((status === "closed" || status === "confirmed") && canReopen)
               );
               const title = (status === "confirmed" || status === "closed")
@@ -4804,7 +4823,7 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
           <CloseDayIdleNote managerId={effManagerId} date={ask.iso} />
           {isLiveDay(ask.iso) && (
             <LiveCloseCheck managerId={effManagerId} date={ask.iso}
-              canFix={role === "admin" || role === "supervisor"} />
+              canFix={staffAdmin || role === "supervisor"} />
           )}
         </>) : t(isLiveDay(ask?.iso) ? "staffClose.reopenConfirm" : "staff.apprReopenConfirm")}
         confirmDisabled={ask?.kind === "close" && isLiveDay(ask?.iso) && liveCheck.data?.closable !== true}
@@ -4894,6 +4913,9 @@ export default function Staff() {
   // viewer: the supervisor picker appears and their unit stops being a pin.
   // It widens READING only — creating documents stays their own unit's job.
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
+  // A page admin grant does what an admin does here: files and places for the
+  // unit on screen, closes its day, withdraws or edits anybody's drafts.
+  const staffAdmin = useStaffAdmin(role);
 
   // Before the persisted state below: a link writes it first.
   useUrlScope(readStaffLink);
@@ -5174,13 +5196,13 @@ export default function Staff() {
   }
 
   const showWorkersTab      = true;
-  const showApprovalsTab    = role === "admin" || role === "supervisor";
+  const showApprovalsTab    = staffAdmin || role === "supervisor";
   // A shift-manager already reads every unit on their shift, so hiding the
   // placement tab from them would be inconsistent with the rest of the page.
   // WRITING it is a narrower question and the backend answers it per unit
   // (`_can_edit_placement`) — the tab is read-only for anyone but the unit's
   // own supervisor and an admin.
-  const showCellsTab        = role === "admin" || role === "supervisor" || role === "shift-manager";
+  const showCellsTab        = staffAdmin || role === "supervisor" || role === "shift-manager";
   // A restored tab from another profile's session must not strand a role that
   // can't see it — `staff_tab` is a bare localStorage string and the browser
   // profile wallet lets several profiles share one browser, so this is reachable
@@ -5190,12 +5212,12 @@ export default function Staff() {
   const tab = tabHidden
     ? (role === "shift-manager" ? "requests" : "workers")
     : rawTab;
-  const canCreate           = role === "admin" || role === "supervisor";
+  const canCreate           = staffAdmin || role === "supervisor";
   // …but a widened supervisor browsing ANOTHER unit is only reading it: the
   // backend files every supervisor document against their own unit, so the
   // create menu would produce a document for the wrong brigade. Hide it there.
   const canCreateHere       = canCreate
-    && (role !== "supervisor" || supervisorManagerId === auth?.role_id);
+    && (role !== "supervisor" || staffAdmin || supervisorManagerId === auth?.role_id);
 
   // No new documents once the day is closed — supervisors check their own day,
   // admins the selected supervisor's (backend ignores manager_id for supervisors)
@@ -5209,10 +5231,10 @@ export default function Staff() {
   const dayClosed = !!dayInfo && dayInfo.state !== "open";
 
   // Role Change needs a date (and, for admin, a supervisor) before it can start
-  const createDisabled = !selectedDate || (role === "admin" && !selectedManagerId) || dayClosed;
+  const createDisabled = !selectedDate || (staffAdmin && !supervisorManagerId) || dayClosed;
   const createHint     = dayClosed
     ? t("staff.dayClosedHint")
-    : role === "admin"
+    : staffAdmin
       ? t("staff.createHintAdmin")
       : t("staff.createHint");
 
@@ -5319,7 +5341,12 @@ export default function Staff() {
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
                 disabledHint={createHint}
-                onDeleteSelected={() => setShowDeleteModal(selectedDate)}
+                // A delete grant deletes, a supervisor files requests for their
+                // OWN unit; a page admin grant alone does neither (that door
+                // asks its own grant).
+                onDeleteSelected={canDeleteRowsDirectly
+                  || (role === "supervisor" && supervisorManagerId === auth?.role_id)
+                  ? () => setShowDeleteModal(selectedDate) : undefined}
                 role={role}
               />
             )}
@@ -5409,7 +5436,7 @@ export default function Staff() {
             <CellPlacementPanel
               managerId={supervisorManagerId}
               selectedDate={selectedDate}
-              canEdit={role === "admin" || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
+              canEdit={staffAdmin || (role === "supervisor" && supervisorManagerId === auth?.role_id)}
             />
           </StaffApiProvider>
         </div>

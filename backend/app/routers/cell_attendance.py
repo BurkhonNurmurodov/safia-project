@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Cell, CellAttendance, Manager, RoleProfile
-from app.capabilities import page_scope_is_all, profile_unit_ids
+from app.capabilities import page_admin, page_scope_is_all, profile_unit_ids
 from app.permissions import require_page
 from app import identity
 from app.services import action_log
@@ -206,7 +206,7 @@ def save_load_registry(
     """Persist the ticks. The caller sends only what it CHANGED
     (``{"changes": [{"cell_id": 12, "in_load": true}, …]}``), so two admins
     editing different cells don't overwrite each other."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, CONFIG_PAGE):
         raise HTTPException(status_code=403, detail="Admins only")
 
     changes = body.get("changes")

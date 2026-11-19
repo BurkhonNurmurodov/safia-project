@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra", "workers-composition", "doc-audit", "trello", "audit", "tg-user", "gamification", "targets", "verifix-test"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -257,6 +257,17 @@ DEFAULT_PAGE_ACCESS = {
     # that role nothing it could not already do by hand. A tab an admin opened
     # AS somebody else also gets it — the way to test it inside their rights.
     "assistant": [],
+    # Pages that were admin-only with no page key until 2026-11-19 («every
+    # single page can be granted»): still admin-only by default, opened for one
+    # person on the Permissions tab or for a role on the org chart.
+    "workers-composition": [],   # «Tarkib» /workers/composition
+    "doc-audit": [],             # «Hujjatlar tarixi» /doc-audit
+    "trello": [],                # Trello analytics /trello
+    "audit": [],                 # the audit table /audit
+    "tg-user": [],               # a Telegram account's profile /tg-user/:tid
+    "gamification": [],          # /gamification
+    "targets": [],               # the goal board /targets
+    "verifix-test": [],          # the «Verifix (test)» pages /verifix/*
 }
 
 

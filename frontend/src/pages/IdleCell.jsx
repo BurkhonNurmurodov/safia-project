@@ -656,7 +656,7 @@ export default function IdleCell() {
   const { tl } = useTranslit();
   const { auth } = useAuth();
   const { on: examOn } = useExam();
-  const { seesAllOn } = useCapabilities();
+  const { seesAllOn, adminOn, isLoading: capsLoading } = useCapabilities();
   // The page opened beyond admins on 2026-08-21 — one supervisor and their
   // leaders, by per-profile `page.view.idle-cell` grants. Their scope is
   // decided server-side by `_scoped_cells` and re-decided on every write, so
@@ -709,9 +709,11 @@ export default function IdleCell() {
   // whole shift before somebody has used it on a floor. A persisted tab is
   // dropped for anybody else, or a viewer who is later un-admined would open
   // the page onto a tab that no longer exists.
-  const isAdmin = auth?.role === "admin";
+  // …or a `page.admin.idle-cell` holder (capabilities.page_admin).
+  const isAdmin = auth?.role === "admin" || adminOn("idle-cell");
   const isLive = tab === "live" && isAdmin;
-  useEffect(() => { if (tab === "live" && !isAdmin) setTab("ojidaniya"); }, [tab, isAdmin, setTab]);
+  useEffect(() => { if (tab === "live" && !isAdmin && !capsLoading) setTab("ojidaniya"); },
+    [tab, isAdmin, capsLoading, setTab]);
   // The unsent count rides on the tab label: a record still on this device is
   // the one thing about this feature a reader must not have to open a tab to
   // discover.

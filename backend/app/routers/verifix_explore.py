@@ -1,12 +1,13 @@
-"""«Verifix (test)» — the doors over ``app.services.verifix_explore`` (admin-only).
+"""«Verifix (test)» — the doors over ``app.services.verifix_explore``.
 
 Every endpoint is a READ: of Verifix, through the login on the admin «Verifix»
 card, and never of anything a person changes here — which is why none of them
 is a POST and none lands in the action register. The one thing written is the
 probe cache (`verifix_probes`), a copy of what a method answered.
 
-ADMIN-ONLY, checked on every endpoint: the pages show every employee Verifix
-holds, their photos and their marks.
+Page key ``verifix-test`` on every endpoint (admin-only by default, grantable
+since 2026-11-19): the pages show every employee Verifix holds, their photos
+and their marks.
 
 Errors are answers the page can word: 409 ``not_configured`` (no login on the
 card), 424 ``{code, message, status}`` when Verifix refused or failed (never a
@@ -22,10 +23,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin import verify_admin
+from app.permissions import require_page
 from app.services import verifix, verifix_explore as vx, verifix_registers as vr
 
 router = APIRouter(prefix="/api/verifix-test", tags=["verifix-test"])
+_page = require_page("verifix-test")
 
 log = logging.getLogger(__name__)
 
@@ -56,19 +58,19 @@ def _run(fn, *args, **kwargs):
 
 
 @router.get("/meta")
-def vx_meta(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_meta(db: Session = Depends(get_db), _: dict = Depends(_page)):
     return vx.meta(db)
 
 
 @router.get("/methods")
-def vx_methods(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_methods(db: Session = Depends(get_db), _: dict = Depends(_page)):
     return vx.methods(db)
 
 
 @router.get("/methods/rows")
 def vx_method_rows(key: str, params: Optional[str] = None, cursor: Optional[str] = None,
                    limit: Optional[int] = None, db: Session = Depends(get_db),
-                   admin: dict = Depends(verify_admin)):
+                   admin: dict = Depends(_page)):
     given = None
     if params:
         try:
@@ -82,30 +84,30 @@ def vx_method_rows(key: str, params: Optional[str] = None, cursor: Optional[str]
 
 @router.get("/employees")
 def vx_employees(status: str = "W", force: bool = False, db: Session = Depends(get_db),
-                 _: dict = Depends(verify_admin)):
+                 _: dict = Depends(_page)):
     return _run(vx.employees, db, status, force)
 
 
 @router.get("/employees/{employee_id}")
 def vx_person(employee_id: str, force: bool = False, db: Session = Depends(get_db),
-              _: dict = Depends(verify_admin)):
+              _: dict = Depends(_page)):
     return _run(vx.person, db, employee_id, force)
 
 
 @router.get("/jobs")
-def vx_jobs(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_jobs(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(_page)):
     return _run(vx.jobs, db, force)
 
 
 @router.get("/schedules/{schedule_id}/days")
 def vx_schedule_days(schedule_id: str, year: Optional[int] = None, db: Session = Depends(get_db),
-                     _: dict = Depends(verify_admin)):
+                     _: dict = Depends(_page)):
     return _run(vx.schedule_days, db, schedule_id, year)
 
 
 @router.get("/cell-hours")
 def vx_cell_hours(begin: date, end: date, force: bool = False, db: Session = Depends(get_db),
-                  _: dict = Depends(verify_admin)):
+                  _: dict = Depends(_page)):
     """People and hours per Verifix cell over a period — read in the background
     (`services/verifix_cell_hours.py`); ask again until it is in."""
     from app.services import verifix_cell_hours
@@ -114,7 +116,7 @@ def vx_cell_hours(begin: date, end: date, force: bool = False, db: Session = Dep
 
 @router.get("/timesheet")
 def vx_timesheet(day: Optional[date] = None, force: bool = False, db: Session = Depends(get_db),
-                 _: dict = Depends(verify_admin)):
+                 _: dict = Depends(_page)):
     from app.services.verifix_live import now_local
     return _run(vx.timesheet, db, day or now_local().date(), force)
 
@@ -125,34 +127,34 @@ def vx_timesheet(day: Optional[date] = None, force: bool = False, db: Session = 
 
 @router.get("/hr")
 def vx_hr(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
-          db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+          db: Session = Depends(get_db), _: dict = Depends(_page)):
     return _run(vr.hr_moves, db, begin, end, force)
 
 
 @router.get("/timebooks")
-def vx_timebooks(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_timebooks(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(_page)):
     return _run(vr.timebooks, db, force)
 
 
 @router.get("/timebooks/{timebook_id}")
 def vx_timebook(timebook_id: str, force: bool = False, db: Session = Depends(get_db),
-                _: dict = Depends(verify_admin)):
+                _: dict = Depends(_page)):
     return _run(vr.timebook, db, timebook_id, force)
 
 
 @router.get("/shifts")
 def vx_shifts(begin: Optional[date] = None, end: Optional[date] = None, force: bool = False,
-              db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+              db: Session = Depends(get_db), _: dict = Depends(_page)):
     return _run(vr.shifts, db, begin, end, force)
 
 
 @router.get("/dictionaries")
-def vx_dictionaries(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_dictionaries(force: bool = False, db: Session = Depends(get_db), _: dict = Depends(_page)):
     return _run(vr.dictionaries, db, force)
 
 
 @router.get("/photo/{sha}")
-def vx_photo(sha: str, size: int = 96, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def vx_photo(sha: str, size: int = 96, db: Session = Depends(get_db), _: dict = Depends(_page)):
     body = _run(vx.photo, db, sha, size)
     return Response(content=body, media_type="image/jpeg",
                     headers={"Cache-Control": "private, max-age=86400"})

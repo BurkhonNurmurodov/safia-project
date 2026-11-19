@@ -59,6 +59,12 @@ export function useCapabilities() {
      * as false — the narrow view — so a slow response never briefly widens one.
      */
     seesAllOn: (pageKey) => pageScopes[pageKey] === "all",
+    /**
+     * May this person do on `pageKey` what an admin does there (backend
+     * capabilities.page_admin)? Admins hold the whole catalog, so true for
+     * them once loaded — ask `isAdmin || adminOn(page)` to skip the wait.
+     */
+    adminOn: (pageKey) => caps[pageKey === "leaders" ? "leaders.admin" : pageAdminCap(pageKey)] != null,
     isLoading,
   };
 }
@@ -88,3 +94,8 @@ export const CAP = {
 // Page-view grants are generated per page rather than listed, exactly as on the
 // backend — `page.view.<pageKey>` for every key in config/pages.js PAGES.
 export const pageCap = (pageKey) => `page.view.${pageKey}`;
+
+// The two generated families of 2026-11-19 (backend capabilities.py): an
+// admin-panel page, and an admin's powers on one page.
+export const tabCap = (tab) => `admin.tab.${tab}`;
+export const pageAdminCap = (pageKey) => `page.admin.${pageKey}`;

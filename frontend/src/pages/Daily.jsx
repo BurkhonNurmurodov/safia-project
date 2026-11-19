@@ -147,7 +147,10 @@ function SupervisorDaily() {
   const isSupervisor = role === "supervisor";
   const isAdmin      = role === "admin";
   // Personal grants, additive to the role rules above.
-  const { can, seesAllOn } = useCapabilities();
+  const { can, seesAllOn, adminOn } = useCapabilities();
+  // Closing any unit's day on its brigadir's behalf: an admin, or a page admin
+  // grant on Kunlik / Xodimlar (`staff._staff_admin` — both pages, one door).
+  const canCloseAny = isAdmin || adminOn("staff");   // «Davomat — admin» covers /daily too
   // A supervisor normally sees only their own unit's day and gets no picker.
   // A personal page grant at "all" on Kunlik / Xodimlar (both pages read the
   // same endpoints, so either counts) lifts exactly that pin: they may browse
@@ -369,7 +372,7 @@ function SupervisorDaily() {
                 style={{ background: "#f59e0b22", color: "#d97706", border: "1px solid #f59e0b55" }}>
                 <Clock size={12} /> {t("daily.dayOpen")}
               </span>
-              {isAdmin && (
+              {canCloseAny && (
                 <button
                   onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
                   disabled={closeMut.isPending}
@@ -422,7 +425,7 @@ function SupervisorDaily() {
               {ownDay ? t("daily.closeWarnText") : t("daily.adminOpenBannerSub")}
             </div>
           </div>
-          {(ownDay || isAdmin) && (
+          {(ownDay || canCloseAny) && (
             <button
               onClick={() => { setCloseErr(""); setShowCloseModal(true); }}
               disabled={closeMut.isPending || !!closeLock}

@@ -3893,9 +3893,9 @@ export default function Leaders() {
                   admin comes to work on the reviewer itself. Deliberately not
                   in the register toolbar beside «Tekshirish»: a wipe has no
                   business one tap away from the button people press daily.
-                  A real admin's alone: «Lider nazorati — admin» does not reach
-                  it (the endpoint stays `verify_admin`). */}
-              {auth?.role === "admin" && (
+                  «Lider nazorati — admin» reaches it too since 2026-11-19
+                  (everything is grantable). */}
+              {isAdmin && (
                 <AiClearHistory floor={aiData?.floor}
                   defaultFloor={aiData?.defaultFloor} />
               )}

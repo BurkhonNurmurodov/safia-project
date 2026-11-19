@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import identity
+from app.capabilities import page_admin
 from app.database import get_db
 from app.models import ApiToken
 from app.permissions import require_page
@@ -39,7 +40,7 @@ def list_tokens(payload: dict = Depends(require_page(api_tokens.PAGE)), db: Sess
     """The caller's own tokens; an admin sees everybody's. Revoked ones are gone."""
     tid, key = _mine(db, payload)
     q = db.query(ApiToken).filter(ApiToken.revoked_at.is_(None))
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, "api"):
         q = q.filter(ApiToken.owner_tid == tid, ApiToken.owner_key == key)
     return {"tokens": [_row(r, tid, key) for r in q.order_by(ApiToken.created_at.desc()).all()],
             "base_url": ext_api_manual.BASE_URL, "days": list(api_tokens.DAYS)}
@@ -75,7 +76,7 @@ def revoke_token(token_id: int, payload: dict = Depends(require_page(api_tokens.
     tid, key = _mine(db, payload)
     row = db.get(ApiToken, token_id)
     if row is None or row.revoked_at is not None or not (
-            payload.get("role") == "admin" or (row.owner_tid == tid and row.owner_key == key)):
+            page_admin(db, payload, "api") or (row.owner_tid == tid and row.owner_key == key)):
         raise HTTPException(status_code=404, detail={"code": "no_token", "message": "No such token."})
     row.revoked_at = api_tokens._now()
     db.commit()

@@ -71,12 +71,12 @@ export default function LeadersKpi() {
   const TF = TXT_F[lang] || TXT_F.uz;
   const { tl, tx } = useTranslit();
   const { auth } = useAuth();
-  const isAdmin = auth?.role === "admin";
+  const { capPages, deniedPages, adminOn } = useCapabilities();
+  const isAdmin = auth?.role === "admin" || adminOn("leaders-kpi");
   const toast = useToast();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { access } = usePageAccess();
-  const { capPages, deniedPages } = useCapabilities();
   const mayConcerns = canAccessPage(auth?.role, "concerns", access, capPages, deniedPages);
 
   const [tab, setTab] = usePersistentState("lkpi.tab", "board");

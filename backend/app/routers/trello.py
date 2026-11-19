@@ -4,13 +4,14 @@
 Two routers over ``services/trello.py`` (the client, the stored snapshot, the
 15-minute read) and ``services/trello_analytics.py`` (the figures):
 
-- ``/api/admin/trello`` — ADMIN-ONLY and not grantable: the API key and the
+- ``/api/admin/trello`` — an admin or the tab's grant (`admin.tab.trello`,
+  2026-11-19): the API key and the
   sealed token (they read every board their Trello member may open), the
   boards the platform reads and each board's two settings. The token goes in
   and never comes out; the register records only that it changed.
-- ``/api/trello`` — the page: ADMINS ONLY, like the card (the operator,
-  2026-11-01: «only visible to admin»). There is no ``trello`` page key, so
-  no Access-tab tick or personal grant can open it to anybody else.
+- ``/api/trello`` — the page, page key ``trello`` (admin-only by default,
+  grantable since 2026-11-19). «Read now» stays the card's: an admin or
+  `admin.tab.trello`.
 """
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ from sqlalchemy.orm import Session, defer
 
 from app.database import get_db
 from app.models import TrelloBoard
-from app.routers.admin import verify_admin
+from app.capabilities import is_admin_or, require_tab, tab_cap
+from app.permissions import require_page
 from app.services import action_log, trello, trello_analytics
 
 log = logging.getLogger(__name__)
@@ -86,7 +88,7 @@ def _err(exc: trello.TrelloError, status: int = 424):
 # ── the connection card (admin) ──────────────────────────────────────────────
 
 @admin_router.get("")
-def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_config(db: Session = Depends(get_db), _: dict = Depends(require_tab("trello"))):
     return _state(db)
 
 
@@ -98,7 +100,7 @@ class ConfigIn(BaseModel):
 
 
 @admin_router.put("")
-def save_config(body: ConfigIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def save_config(body: ConfigIn, db: Session = Depends(get_db), admin: dict = Depends(require_tab("trello"))):
     try:
         changed = trello.save(db, key=body.key, token=(body.token or "").strip() or None,
                               clear_token=body.clear_token)
@@ -121,7 +123,7 @@ def save_config(body: ConfigIn, db: Session = Depends(get_db), admin: dict = Dep
 
 
 @admin_router.post("/test")
-def test_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def test_config(db: Session = Depends(get_db), _: dict = Depends(require_tab("trello"))):
     result = trello.run_test(db)
     action_log.enrich(target_kind="setting", target_id="trello", target_name="Trello",
                       details=[("ok", result.get("ok")), ("error", result.get("error"))])
@@ -133,7 +135,7 @@ class BoardIn(BaseModel):
 
 
 @admin_router.post("/boards")
-def add_board(body: BoardIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+def add_board(body: BoardIn, db: Session = Depends(get_db), admin: dict = Depends(require_tab("trello"))):
     """Add a board by its link (or its invite link), read it at once."""
     if db.query(func.count(TrelloBoard.id)).scalar() >= trello.MAX_BOARDS:
         raise HTTPException(status_code=400, detail={"code": "too_many"})
@@ -163,7 +165,7 @@ class BoardSetIn(BaseModel):
 
 @admin_router.put("/boards/{board_id}")
 def set_board(board_id: str, body: BoardSetIn, db: Session = Depends(get_db),
-              _: dict = Depends(verify_admin)):
+              _: dict = Depends(require_tab("trello"))):
     row = db.get(TrelloBoard, board_id)
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "no_board"})
@@ -184,7 +186,7 @@ def set_board(board_id: str, body: BoardSetIn, db: Session = Depends(get_db),
 
 
 @admin_router.delete("/boards/{board_id}")
-def remove_board(board_id: str, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def remove_board(board_id: str, db: Session = Depends(get_db), _: dict = Depends(require_tab("trello"))):
     """Stop reading a board. Only its stored copy goes; nothing in Trello."""
     row = db.get(TrelloBoard, board_id)
     if row is None:
@@ -214,12 +216,12 @@ def get_analysis(
     label: List[str] = Query(default=[]),
     lst: List[str] = Query(default=[], alias="list"),
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(require_page("trello")),
 ):
     """One board, whole: the workflow snapshot, the oldest open cards and the
     flow over the period. With no board named, the first one."""
     rows = _boards(db, light=True)
-    out = {"read": _read_state(db, rows), "is_admin": payload.get("role") == "admin", "board": None}
+    out = {"read": _read_state(db, rows), "is_admin": is_admin_or(db, payload, tab_cap("trello")), "board": None}
     row = next((r for r in rows if r.id == board), None) or (rows[0] if rows else None)
     if row is None:
         return out
@@ -231,12 +233,12 @@ def get_analysis(
 
 
 @router.get("/read")
-def get_read(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def get_read(db: Session = Depends(get_db), _: dict = Depends(require_page("trello"))):
     return _read_state(db, _boards(db, light=True))
 
 
 @router.post("/read")
-def start_read(db: Session = Depends(get_db), payload: dict = Depends(verify_admin)):
+def start_read(db: Session = Depends(get_db), payload: dict = Depends(require_tab("trello"))):
     """Read every board now. Answers at once; the page polls `GET /read`."""
     if not trello.configured(db):
         raise HTTPException(status_code=409, detail={"code": "not_configured"})

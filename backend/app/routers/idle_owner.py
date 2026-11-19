@@ -8,10 +8,9 @@ then withdrawn (2026-09-10, the operator's call) — narrowing the pages people
 already know beat teaching them a second one. What is left here is the one
 thing those pages cannot carry: the assignment itself.
 
-**Admin-only and NOT grantable.** No capability exists for it, so
-`capTabs.includes(capKey ?? id)` can never admit a grantee — the `permissions`
-/ `logs` / `ltdaily` model. The assignment decides what a whole ROLE may read,
-so handing it out is handing out the ability to widen somebody's scope.
+**An admin or the tab's grant** (`admin.tab.idleowners`, 2026-11-19 — the
+operator: everything is grantable). The assignment decides what a whole ROLE
+may read, so that grant is the ability to widen somebody's scope.
 
 The prefix stays `/api/idle-owner` even though only the admin half remains: it
 names the SUBJECT (who owns a category), not a page, and the admin destination
@@ -24,30 +23,38 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import identity
+from app.capabilities import is_admin_or, tab_cap
 from app.database import get_db
 from app.models import Manager, RoleProfile
-from app.permissions import require_page
+from app.permissions import page_allowed
+from app.security import require_auth
 from app.services import action_log, idle_scope
 
 router = APIRouter(prefix="/api/idle-owner", tags=["idle-owner"])
 
 
-def _verify_admin(payload: dict) -> None:
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+def _may_edit(db: Session, payload: dict) -> bool:
+    return is_admin_or(db, payload, tab_cap("idleowners"))
+
+
+def _reader(db: Session = Depends(get_db), payload: dict = Depends(require_auth)) -> dict:
+    """The two ojidaniya pages read the register; the tab's grantee edits it."""
+    if not (page_allowed(db, payload, "downtime", "idle-cell") or _may_edit(db, payload)):
+        raise HTTPException(status_code=403, detail="You don't have access to this page")
+    return payload
 
 
 @router.get("/admin/owners")
 def list_owners(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime", "idle-cell")),
+    payload: dict = Depends(_reader),
 ):
     """Every category and the person answerable for it, plus the profiles an
     admin may assign.
 
     Readable by anyone who can open the page — a name printed beside a category
     on four surfaces is not a secret, and hiding the register would only make
-    those names unexplainable. WRITING is admin-only; see below.
+    those names unexplainable. WRITING is the tab's (an admin or its grant).
     """
     labels = idle_scope.owner_labels(db)
     assigned = idle_scope.owners(db)
@@ -75,7 +82,7 @@ def list_owners(
         .order_by(Manager.name).all()]
 
     return {"rows": rows, "people": people,
-            "can_edit": payload.get("role") == "admin"}
+            "can_edit": _may_edit(db, payload)}
 
 
 class OwnerAssignBody(BaseModel):
@@ -90,7 +97,7 @@ def put_owners(
     request: Request,
     body: OwnerAssignBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("downtime", "idle-cell")),
+    payload: dict = Depends(_reader),
 ):
     """Assign or clear the owner of one or more categories.
 
@@ -98,7 +105,8 @@ def put_owners(
     reachable without the UI, and this is what decides which register a whole
     role may read.
     """
-    _verify_admin(payload)
+    if not _may_edit(db, payload):
+        raise HTTPException(status_code=403, detail="Admin only")
 
     actor = None
     try:

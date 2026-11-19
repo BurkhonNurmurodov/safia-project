@@ -9,8 +9,8 @@ Three routers:
   tab; everybody who can open it sees every task.
 - ``/api/admin/notion-tracker`` — the admin tab «Notion eslatmalari»: the
   reminders' schedule, team and groups, the bot token (sealed, it goes in and
-  never comes out), the status, and «Preview to my Telegram». ADMIN-ONLY and
-  not grantable, and refused from an «open as» tab.
+  never comes out), the status, and «Preview to my Telegram». An admin or the
+  tab's grant (`admin.tab.notiontracker`), and refused from an «open as» tab.
 - ``/bot/notion-webhook`` — @Safia_Tracker_agent's updates (its secret token
   checked first), answered on the bot's own thread.
 """
@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.permissions import require_page
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services import action_log, notion_tracker as nt
 
 log = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ admin_router = APIRouter(prefix="/api/admin/notion-tracker", tags=["notion-tasks
 hook_router = APIRouter(tags=["notion-tasks"])
 
 
-def _admin(payload: dict = Depends(verify_admin)) -> dict:
+def _admin(payload: dict = Depends(require_tab("notiontracker"))) -> dict:
     if payload.get("imp"):
         raise HTTPException(status_code=403, detail="admin_only")
     return payload

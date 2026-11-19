@@ -48,9 +48,8 @@ import { useToast } from "../../components/ui/Toast";
  *     collection layers are untouched; only whether the number enters an
  *     average changes. Lifting an exclusion puts the day back at the score it
  *     always had.
- *   * **It is not grantable.** No `capKey` on the ADMIN_NAV entry, so
- *     `capTabs.includes(capKey ?? id)` can never admit a grantee — the
- *     `permissions` / `logs` / `ltdaily` model. It moves a leader's score and a
+ *   * **Admins and «Lider nazorati — admin» only** (`leaders.admin`, whose tab
+ *     list names `ltexclude`). It moves a leader's score and a
  *     brigadir's, and that authority is the same one that opens a late day.
  *
  * The SELECTION is the scope, not the filter (the `Factories` / `ShiftTimes`

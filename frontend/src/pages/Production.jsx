@@ -1617,7 +1617,10 @@ const readLinkScope = (q) => {
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
-  const { seesAllOn, can } = useCapabilities();
+  const { seesAllOn, can, adminOn, capTabs } = useCapabilities();
+  // An admin's powers on this page — an admin, or a holder of
+  // `page.admin.production` (capabilities.page_admin).
+  const prodAdmin = auth?.role === "admin" || adminOn("production");
   // Subscribes this page to the admin's bands (see the import's note).
   useStatusBands();
   const { t, lang } = useLang();
@@ -1641,7 +1644,7 @@ export default function Production() {
   // word means one thing on this page. Deliberately NOT `cellPinned` — that one
   // now also gates the efficiency pin, and two rules on one predicate is how
   // widening a role's reach silently hands it a tab nobody meant to give it.
-  const canSeeRaw = auth?.role === "admin";
+  const canSeeRaw = prodAdmin;
   // The pick is PERSISTED, so anyone who chose фаза before this rule — or whose
   // role changed since — would land on a tab that no longer exists beside a
   // panel nothing renders. Fall back to the dashboard instead.
@@ -1777,15 +1780,17 @@ export default function Production() {
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
   // only — supervisors keep the read-only cells and just edit Факт/ПЛАН. Which
   // DAYS may show the controls is decided below, off the dashboard.
-  const canEditCatalogRole = auth?.role === "admin";
+  // Its doors (`/admin/production/catalog…`) also admit the admin panel's
+  // «production» tab holder (production._catalog_admin), so the page does too.
+  const canEditCatalogRole = prodAdmin || capTabs.includes("production");
   // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
-  const canEditStaffingRole = auth?.role === "admin";
+  const canEditStaffingRole = prodAdmin || capTabs.includes("production");
   // The «Odamlar soni» tab is the brigadir's own entry point for the same pins —
   // they type the day's real headcount there, so supervisors edit it too. A
   // LEADER edits it as well (2026-09-02), for their own cells only: the backend
   // pins their write to the same cell scope that pins their read, and the
   // unit-wide efficiency box stays theirs to look at, not to move.
-  const canEditPeopleRole = ["admin", "supervisor", "leader"].includes(auth?.role);
+  const canEditPeopleRole = prodAdmin || ["admin", "supervisor", "leader"].includes(auth?.role);
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self", cellPick ?? "all"],
@@ -1906,7 +1911,7 @@ export default function Production() {
   // their own (`routers/production.add_catalog_line` / `set_catalog_sap_code`)
   // that the server decides again. Everything else about a line stays the
   // admin's. An admin keeps the full form; `sapGrant` is only ever the narrowed one.
-  const sapGrant = auth?.role !== "admin" && can(CAP.CATALOG_SAP);
+  const sapGrant = !canEditCatalogRole && can(CAP.CATALOG_SAP);
   const canAddLine = (canEditCatalogRole || sapGrant) && catalogEditable && !isPlaceholderData;
   const canEditSap = sapGrant && catalogEditable && !isPlaceholderData;
   // Who may open a row's action strip: the admin (edit / archive / delete) or
@@ -1927,7 +1932,7 @@ export default function Production() {
   // CLOSED to everybody but admins on 2026-11-17 (the operator: «close unit of
   // measurement for all except for admins») — supervisors and shift-managers
   // read the column, the backend's `UOM_ROLES` refuses their write.
-  const canEditUomRole = auth?.role === "admin";
+  const canEditUomRole = prodAdmin;
   const canEditUom = canEditUomRole && catalogEditable && !isPlaceholderData
     && uomOpts.length > 0;
   // The checkbox column, the row-pick model and the sticky bar below the table
@@ -1936,7 +1941,7 @@ export default function Production() {
   const canPickRows = canEditCatalog || canEditUom;
   // Container capacities keep their own audience (`CONTAINER_ROLES`), no
   // longer the measure's since the measure became admin-only.
-  const canEditCaps = CONTAINER_ROLES.includes(auth?.role) && catalogEditable && !isPlaceholderData;
+  const canEditCaps = (prodAdmin || CONTAINER_ROLES.includes(auth?.role)) && catalogEditable && !isPlaceholderData;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
     ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
@@ -1963,11 +1968,11 @@ export default function Production() {
   // Which columns start hidden depends on the role — see `defaultHidden`. Same
   // spelling as `canSeeRaw` / `canEditCatalog` above, so one word means one
   // thing on this page.
-  const isAdmin = auth?.role === "admin";
+  const isAdmin = prodAdmin;
   // May this viewer see the «SAP» columns and the two cards (`SAP_ROLES`)?
-  const sapRole = SAP_ROLES.includes(auth?.role);
+  const sapRole = prodAdmin || SAP_ROLES.includes(auth?.role);
   // …and the container columns (`CONTAINER_ROLES`)?
-  const containerRole = CONTAINER_ROLES.includes(auth?.role);
+  const containerRole = prodAdmin || CONTAINER_ROLES.includes(auth?.role);
   // Does the unit on screen carry any group at all — a centre that lists groups,
   // or a line with a letter? Read off the dashboard, so the «Guruh» column and
   // the group controls appear the day a letter lands and not a moment before.
@@ -2472,7 +2477,7 @@ export default function Production() {
   // «Soatlik» (hourly containers) is offered to HOURLY_ROLES only (admins and
   // shift managers, the operator 2026-11-12); anyone else who had saved
   // "hourly" reads «Yuklama».
-  const showHourly = HOURLY_ROLES.includes(auth?.role);
+  const showHourly = prodAdmin || HOURLY_ROLES.includes(auth?.role);
   const [teamsViewSaved, setTeamsView] = usePersistentState("production_teams_view", "load");
   const teamsView = !showHourly && teamsViewSaved === "hourly" ? "load" : teamsViewSaved;
   const teamContainers = useMemo(() => {

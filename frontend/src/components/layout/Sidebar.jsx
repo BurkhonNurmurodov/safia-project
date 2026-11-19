@@ -55,7 +55,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
-  const { capPages, capTabs, deniedPages } = useCapabilities();
+  const { capPages, capTabs, deniedPages, can: capCan } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
 
   const BADGE_ROLES = ["admin", "shift-manager"];
@@ -69,12 +69,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   });
   const pendingCount = pendingData?.count ?? 0;
 
-  // The admin app's own queues (registrations, Verifix suggestions) — admins
-  // only; a capability grantee's sidebar shows no count.
+  // The admin app's own queues (registrations, Verifix suggestions) — admins,
+  // and a grantee of an admin page (the server answers only their pages' counts).
   const { data: adminBadges } = useQuery({
     queryKey: ["admin-nav-badges"],
     queryFn: () => api.get("/admin/nav-badges").then(r => r.data),
-    enabled: isAdmin,
+    enabled: isAdmin || capTabs.length > 0,
     refetchInterval: 60_000,
   });
 
@@ -132,7 +132,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     ? appLinks
     : [
       ...ALL_LINKS
-        .filter(l => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role)) : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
+        .filter(l => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role) || (!!l.cap && capCan(l.cap))) : canAccessPage(auth?.role, l.page, access, capPages, deniedPages)))
         // A launcher's «/» is the launcher, so its overview answers at /overview.
         .map(l => (launcher ? { ...l, to: adminPath(l.to) } : l)),
       ...adminRows,

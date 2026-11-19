@@ -58,12 +58,14 @@ from app.database import get_db
 from app.models import (
     Attendance, AttendanceBatch, AttendanceBatchRow, HrDocument, Manager,
 )
-from app.routers.admin import verify_admin
+from app.capabilities import require_tab
 from app.services.day_state import day_state
 from app.services import action_log, attendance_reconcile
 from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/admin/exchange-audit", tags=["exchange-audit"])
+# The «Yo'qolgan xodimlar» admin page: an admin or its grant.
+_tab = require_tab("lostworkers")
 
 log = logging.getLogger(__name__)
 
@@ -296,7 +298,7 @@ def audit(
     date_from: Optional[str] = Query(None, alias="from"),
     date_to:   Optional[str] = Query(None, alias="to"),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """The report the «Yo'qolgan xodimlar» tab renders."""
     return _collect(db, date_from, date_to)
@@ -307,7 +309,7 @@ def reconcile(
     date_from: Optional[str] = Query(None, alias="from"),
     date_to:   Optional[str] = Query(None, alias="to"),
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(_tab),
 ):
     """The GENERAL check: everyone the uploaded file says worked, against
     everyone the platform can still show — for every date in the range.
@@ -393,7 +395,7 @@ def export_xlsx(
     request: Request,
     body: AuditExportBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """Excel of the lost-worker report as filtered on the page. A browser
     session downloads it; inside Telegram it lands in the caller's private
@@ -679,7 +681,7 @@ class RepairBody(BaseModel):
 def repair(
     body: RepairBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """Re-insert the named lost workers on their exchange's destination unit.
 
@@ -824,7 +826,7 @@ class ReconcileRepairBody(BaseModel):
 def reconcile_repair(
     body: ReconcileRepairBody,
     db: Session = Depends(get_db),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """Re-insert the named lost workers exactly where a projection would put
     them — the unit the day's batch routes their cell to, with that cell.

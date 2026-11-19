@@ -39,7 +39,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import identity
-from app.capabilities import page_scope_is_all, profile_unit_ids
+from app.capabilities import page_admin, page_scope_is_all, profile_unit_ids
 from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
 from app.permissions import require_page
@@ -57,10 +57,10 @@ _REMOVE_MAX = 200
 def _viewer(db: Session, payload: dict) -> dict:
     """The caller's reach, resolved ONCE per request."""
     role = payload.get("role")
-    ctx = {"role": role, "read_all": False, "edit_all": False,
+    ctx = {"role": role, "read_all": False, "edit_all": False, "admin": False,
            "units": set(), "edit_units": set(), "leaders": set()}
-    if role == "admin":
-        ctx["read_all"] = ctx["edit_all"] = True
+    if page_admin(db, payload, PAGE):
+        ctx["read_all"] = ctx["edit_all"] = ctx["admin"] = True
         return ctx
     if role == "top-manager" or page_scope_is_all(db, payload, PAGE):
         ctx["read_all"] = True
@@ -331,7 +331,7 @@ def get_week(
         "can_edit": x["can_edit"],
         "can_roster": x["can_roster"],
         "kind": kind,
-        "can_set_kind": x["ctx"]["role"] == "admin",
+        "can_set_kind": x["ctx"]["admin"],
         "next_check": next_check,
         "days": out_days,
         "rows": rows,
@@ -550,7 +550,7 @@ def put_kind(body: KindIn, db: Session = Depends(get_db),
     """Pin the list task #11 judges for this cell — ADMIN only (the operator,
     2026-10-05: «shown, and an admin can edit it»). Null unpins it: the cell
     then passes on either list (2026-10-17)."""
-    if payload.get("role") != "admin":
+    if not page_admin(db, payload, PAGE):
         _refuse(403, "read_only")
     x = _cell(db, payload, body.cell_id)
     kind = body.kind or None

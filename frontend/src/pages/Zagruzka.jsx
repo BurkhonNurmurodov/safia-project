@@ -20,6 +20,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { listChartDays } from "../utils/chartRange";
 import { useFilters } from "../context/FilterContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useFactorySection } from "../components/ui/FactorySelect";
@@ -427,9 +428,10 @@ export default function Zagruzka() {
   // unit, else the plant's units on the picked shift (the heatmap drops only
   // the ones with no data at all in the period).
   const { auth } = useAuth();
-  // The band editors are the admin's; nobody else is offered the button, and
-  // the write behind it (`PUT /admin/settings`) refuses anybody else anyway.
-  const isAdmin = auth?.role === "admin";
+  // The band editors are the admin's and «Zagruzka — admin»'s; the write behind
+  // them (`PUT /admin/settings`) admits exactly those, for the band keys only.
+  const { adminOn } = useCapabilities();
+  const isAdmin = auth?.role === "admin" || adminOn("zagruzka");
   const bandEditors = useMemo(() => (isAdmin
     ? Object.fromEntries(["full", "full90", "simple", "load", "fulfil", "eff"]
         .map((k) => [k, () => setBandsFor(k)]))

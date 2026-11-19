@@ -45,6 +45,7 @@ import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import LegacyApiPanel from "../components/arc/LegacyApiPanel";
 import ArcAnalysis from "../components/arc/ArcAnalysis";
 import { useArcFiles, ArcFilesBody, ArcGallery, arcSingle } from "../components/arc/ArcAttachments";
@@ -245,7 +246,8 @@ export default function Arc() {
   const [sort, setSort] = usePersistentState("arcl_sort", { key: "created_at", dir: "desc" });
   const [openId, setOpenId] = useState(null);
   const [apiOpen, setApiOpen] = useState(false);
-  const isAdmin = useAuth()?.auth?.role === "admin";
+  const { adminOn } = useCapabilities();
+  const isAdmin = useAuth()?.auth?.role === "admin" || adminOn("arc");
 
   // ── meta (options + sync state) ───────────────────────────────────────────
   const metaQ = useQuery({

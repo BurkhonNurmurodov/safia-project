@@ -111,6 +111,21 @@ def is_open(today: Optional[date] = None) -> bool:
     return OPEN_FROM is not None and (today or datetime.now(TZ).date()) >= OPEN_FROM
 
 
+def admin(db: Optional[Session], payload: dict) -> bool:
+    """May the caller do on the task boards what an admin does there — an
+    admin, or a holder of ``page.admin.tasks`` (`capabilities.page_admin`).
+    The three task routers' ONE spelling of «admin» as a POWER; WHO set a task
+    (`from_top`, `set_from_above`, `profile_ref`) stays the role's. Cheap per
+    row: the grant reads are memoised per session (`session_memo`).
+    ``db=None`` (a unit test's call) reads no grants."""
+    if payload.get("role") == "admin":
+        return True
+    if db is None:
+        return False
+    from app.capabilities import page_admin
+    return page_admin(db, payload, "tasks")
+
+
 def top_sets(payload: dict) -> bool:
     """May this caller set and govern tasks AS A TOP-MANAGER — a top-manager,
     from the first day on. The tier above, one level up from a shift manager."""

@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_admin
 from app.database import get_db
 from app.identity import profile_display_name, viewer_profile_key
 from app.models import (
@@ -171,12 +172,12 @@ def _clean_description(raw: Optional[str]) -> str:
     return sanitize_telegram_html(s)[0]
 
 
-def _is_admin(payload: dict) -> bool:
-    return payload.get("role") == "admin"
+def _is_admin(db: Session, payload: dict) -> bool:
+    return page_admin(db, payload, "education")
 
 
-def _require_admin(payload: dict) -> None:
-    if not _is_admin(payload):
+def _require_admin(db: Session, payload: dict) -> None:
+    if not _is_admin(db, payload):
         raise HTTPException(status_code=403, detail="admin_only")
 
 
@@ -283,7 +284,7 @@ def list_lessons(db: Session = Depends(get_db),
     """The viewer's own lessons, newest first. An admin gets every lesson (the
     register they publish from), everyone else exactly what is addressed to
     their active profile."""
-    admin = _is_admin(payload)
+    admin = _is_admin(db, payload)
     viewer = viewer_profile_key(db, payload)
 
     mine = _visible_ids(db, viewer)
@@ -359,7 +360,7 @@ def mark_seen(lesson_id: int, db: Session = Depends(get_db),
     viewer = viewer_profile_key(db, payload)
     if not viewer:
         return {"ok": True}
-    if not _is_admin(payload) and lesson.id not in _visible_ids(db, viewer):
+    if not _is_admin(db, payload) and lesson.id not in _visible_ids(db, viewer):
         raise HTTPException(status_code=403, detail="not_your_lesson")
     row = db.query(EducationLessonView).filter(
         EducationLessonView.lesson_id == lesson_id,
@@ -377,7 +378,7 @@ def recipients(db: Session = Depends(get_db),
     from — the SAME structure the broadcast picker is built on, so the two
     pickers can never disagree about who exists. Reused rather than re-spelled:
     a second org walk is a second answer to "who works here"."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     from app.routers.broadcast import _profile_holders
 
     blocks = _profile_holders(db)
@@ -400,11 +401,12 @@ def recipients(db: Session = Depends(get_db),
 
 
 @router.post("/resolve")
-def resolve(body: ResolveIn, payload: dict = Depends(require_page(PAGE))):
+def resolve(body: ResolveIn, db: Session = Depends(get_db),
+            payload: dict = Depends(require_page(PAGE))):
     """Parse a pasted link for the wizard's live preview. The SAME parser the
     writers use, asked over the wire, so the preview and the stored lesson can
     never be two different readings of one URL."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     try:
         info = education_video.parse(body.url)
         # The probe is what makes the preview worth having: it is the only
@@ -520,7 +522,7 @@ def _notify_targets(db: Session, lesson: EducationLesson, keys: list[str]) -> in
 @router.post("/lessons")
 def create_lesson(body: LessonIn, db: Session = Depends(get_db),
                   payload: dict = Depends(require_page(PAGE))):
-    _require_admin(payload)
+    _require_admin(db, payload)
     try:
         media = education_video.parse(body.url)
     except education_video.BadVideoUrl:
@@ -566,7 +568,7 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     Only the profiles ADDED by this edit are notified. Re-announcing a lesson to
     the people who already had it — every time a typo in the title is fixed —
     is how a notification channel stops being read."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     lesson = _load(db, lesson_id)
     try:
         media = education_video.parse(body.url)
@@ -617,7 +619,7 @@ def archive_lesson(lesson_id: int, db: Session = Depends(get_db),
                    payload: dict = Depends(require_page(PAGE))):
     """Retire a lesson. SOFT — the views recorded against it are the record of
     who was taught what, so the row stays and only stops being served."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     lesson = _load(db, lesson_id)
     lesson.archived = True
     lesson.updated_at = datetime.now(timezone.utc)
@@ -629,7 +631,7 @@ def archive_lesson(lesson_id: int, db: Session = Depends(get_db),
 @router.post("/lessons/{lesson_id}/restore")
 def restore_lesson(lesson_id: int, db: Session = Depends(get_db),
                    payload: dict = Depends(require_page(PAGE))):
-    _require_admin(payload)
+    _require_admin(db, payload)
     lesson = _load(db, lesson_id)
     lesson.archived = False
     lesson.updated_at = datetime.now(timezone.utc)
@@ -670,7 +672,7 @@ def record_progress(body: ProgressIn, db: Session = Depends(get_db),
     if not viewer:
         return {"ok": True, "pct": 0.0, "complete": False}
     assigned = lesson.id in _visible_ids(db, viewer)
-    if not assigned and not _is_admin(payload):
+    if not assigned and not _is_admin(db, payload):
         raise HTTPException(status_code=403, detail="not_your_lesson")
 
     now = datetime.now(timezone.utc)
@@ -775,7 +777,7 @@ def lesson_media(lesson_id: int, db: Session = Depends(get_db),
     """
     lesson = _load(db, lesson_id)
     viewer = viewer_profile_key(db, payload)
-    if not _is_admin(payload) and (
+    if not _is_admin(db, payload) and (
             not viewer or lesson.id not in _visible_ids(db, viewer)):
         raise HTTPException(status_code=403, detail="not_your_lesson")
     if lesson.provider != "loom":
@@ -932,7 +934,7 @@ def watch_report(lesson_id: Optional[int] = None, db: Session = Depends(get_db),
     which is nobody else's business. Checked here and not merely by hiding the
     tab, because the endpoint is reachable without the UI.
     """
-    _require_admin(payload)
+    _require_admin(db, payload)
     return _report(db, lesson_id)
 
 
@@ -952,7 +954,7 @@ def watch_report_xlsx(body: ReportExportIn, request: Request,
     lessons, every person against every lesson, and the people who have not
     finished. Delivered by `xlsx_delivery`, so a browser downloads it and
     Telegram gets a DM."""
-    _require_admin(payload)
+    _require_admin(db, payload)
     from app.services import education_export
     data = _report(db, body.lesson_id)
     wb = education_export.build_workbook(data, body.labels or {})

@@ -38,7 +38,8 @@ from app.models import (
     TelegramUser, TelegramUserRole,
 )
 from pydantic import BaseModel
-from app.routers.admin import oauth2_scheme, verify_admin
+from app.capabilities import account_cap_scope, caller_caps, require_tab, tab_cap
+from app.routers.admin import oauth2_scheme
 from app.scheduler import schedule_at, schedule_interval, unschedule
 from app.services import action_log
 from app.upload_guard import validate_broadcast_media
@@ -46,11 +47,14 @@ from app.upload_guard import validate_broadcast_media
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/broadcast", tags=["broadcast"])
+# The «Xabarnoma» admin page: an admin or its grant.
+_tab = require_tab("broadcast")
 
 
 def verify_broadcast_admin(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
     """Authorize by ADMIN MEMBERSHIP (admins table) of the token's subject,
-    not by the active-role claim like ``verify_admin``. The /broadcast mini-app
+    not by the active-role claim like ``verify_admin`` — or by the «Xabarnoma»
+    tab's grant (`admin.tab.broadcast`). The /broadcast mini-app
     is opened straight from the bot, where the admin's active profile may be a
     non-admin role — but they're still an admin and may broadcast. Used by the
     recipient tree and the draft-send endpoint."""
@@ -60,7 +64,12 @@ def verify_broadcast_admin(token: Annotated[str, Depends(oauth2_scheme)]) -> dic
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     sub = int(payload.get("sub", 0) or 0)
     with SessionLocal() as db:
-        if not db.query(Admin).filter_by(telegram_id=sub).first():
+        # Like the membership, the grant counts whichever profile is active —
+        # on a Telegram-proven session (a password one proves one profile only).
+        cap = tab_cap("broadcast")
+        if not (db.query(Admin).filter_by(telegram_id=sub).first()
+                or cap in caller_caps(db, payload)
+                or (not payload.get("web") and account_cap_scope(db, sub, cap))):
             raise HTTPException(status_code=403, detail="Admin access required")
     return payload
 
@@ -1166,7 +1175,7 @@ async def send_broadcast(
     pin: bool = Form(False),
     file: UploadFile | None = File(None),
     media_files: list[UploadFile] | None = File(None),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1370,7 +1379,7 @@ async def test_broadcast(
     pin: bool = Form(False),
     file: UploadFile | None = File(None),
     media_files: list[UploadFile] | None = File(None),
-    payload: dict = Depends(verify_admin),
+    payload: dict = Depends(_tab),
 ):
     """DM the composed message to the composer, and to nobody else.
 
@@ -1469,7 +1478,7 @@ def _retryable(r: Broadcast) -> bool:
 
 @router.post("/{bid}/retry")
 def retry_broadcast(bid: int, db: Session = Depends(get_db),
-                    _: dict = Depends(verify_admin)):
+                    _: dict = Depends(_tab)):
     """Re-send only to the recipients whose DM failed. The failed subset is
     rebuilt by matching failed_names back against the resolved recipient list
     (names are counted, so duplicate names claim one recipient each); the row
@@ -1527,7 +1536,7 @@ def retry_broadcast(bid: int, db: Session = Depends(get_db),
 
 @router.post("/{bid}/cancel")
 def cancel_scheduled_broadcast(bid: int, db: Session = Depends(get_db),
-                               _: dict = Depends(verify_admin)):
+                               _: dict = Depends(_tab)):
     """Call off a broadcast that has not fired yet.
 
     Guarded on 'scheduled', so this loses cleanly against a send that started a
@@ -1564,7 +1573,7 @@ def cancel_scheduled_broadcast(bid: int, db: Session = Depends(get_db),
 
 
 @router.get("/history")
-def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(_tab)):
     rows = db.query(Broadcast).order_by(Broadcast.id.desc()).limit(50).all()
     # Finalize rows orphaned by a mid-send process restart so the UI never
     # shows an eternal spinner. Rows with a persisted recipient list are
@@ -1842,7 +1851,7 @@ def delete_custom_emoji(emoji_row_id: int, db: Session = Depends(get_db),
 
 @router.get("/{bid}")
 def broadcast_record(bid: int, db: Session = Depends(get_db),
-                     _: dict = Depends(verify_admin)):
+                     _: dict = Depends(_tab)):
     """One broadcast plus its per-recipient delivery list — the payload behind
     /broadcast/:id, which replaces the old history modal.
 

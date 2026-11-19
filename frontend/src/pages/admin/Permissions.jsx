@@ -2,8 +2,9 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
-  LayoutGrid, Ban, Briefcase, Copy, UserCheck, Factory,
+  LayoutGrid, Ban, Briefcase, Copy, UserCheck, Factory, Wrench, ShieldCheck,
 } from "lucide-react";
+import { capName, capHint } from "../../utils/capLabel";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { useLang } from "../../context/LangContext";
@@ -76,9 +77,10 @@ import CopyPermsModal from "./CopyPermsModal";
  * position it is the one that matters — "this job does not see /staff" has to
  * survive the person filling it changing.
  *
- * Two deliberate omissions, enforced server-side too: this tab is itself never
- * grantable (handing out powers stays a real admin's job), and admin profiles
- * never appear in the tree — they already hold everything.
+ * EVERYTHING is listed and grantable (2026-11-19, docs/permissions.md): every
+ * page, every admin power on a page («Sahifalardagi admin huquqlari») and every
+ * admin-panel page — this tab and «Backup» included, the operator's call.
+ * Admin profiles never appear in the tree — they already hold everything.
  */
 
 // Group → the icon shown on its chip. Mirrors CAPABILITY_GROUPS in
@@ -90,6 +92,8 @@ const GROUP_ICONS = {
   production: Factory,
   identity:   UserCog,
   pages:      LayoutGrid,
+  pageadmin:  ShieldCheck,
+  admintabs:  Wrench,
 };
 
 // One fixed hue per group, matching the no-emoji soft-tint-chip convention.
@@ -100,6 +104,8 @@ const GROUP_TINTS = {
   production: "#eab308",
   identity:   "#a855f7",
   pages:      "#f97316",
+  pageadmin:  "#ec4899",
+  admintabs:  "#64748b",
 };
 
 // pageKey → its nav label key. Page-view capabilities are labelled from the
@@ -264,7 +270,8 @@ export default function Permissions() {
    *  chiqarish» so the audit log never shows a bare page name next to actions. */
   function capLabel(key) {
     const meta = capabilities.find((c) => c.key === key);
-    if (!meta?.page) return t(`caps.${key}.label`);
+    if (meta?.admin_tab) return `${t("admin.perms.group.admintabs")} · ${capName(t, key)}`;
+    if (!meta?.page) return capName(t, key);
     return `${t("admin.perms.group.pages")} · ${t(PAGE_LABEL_KEYS[meta.page] ?? `nav.${meta.page}`)}`;
   }
 
@@ -706,9 +713,7 @@ export default function Permissions() {
                                 className="min-w-0 flex-1 text-left"
                               >
                                 <span className="block text-sm" style={{ color: "var(--text-1)" }}>
-                                  {c.page
-                                    ? t(PAGE_LABEL_KEYS[c.page] ?? `nav.${c.page}`)
-                                    : t(`caps.${c.key}.label`)}
+                                  {capName(t, c.key)}
                                 </span>
                                 <span
                                   className="block text-[11px]"
@@ -719,7 +724,7 @@ export default function Permissions() {
                                     : c.page
                                       ? t(c.scoped ? "admin.perms.pageHintScoped"
                                                    : "admin.perms.pageHint")
-                                      : t(`caps.${c.key}.hint`)}
+                                      : capHint(t, c.key)}
                                 </span>
                               </button>
                               {/* Identity capabilities have no unit dimension to

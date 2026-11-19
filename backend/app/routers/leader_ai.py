@@ -10,7 +10,8 @@ the verdict strip inside each task card. This started as an admin-only pilot;
 once a flag began costing points automatically, hiding the verdict from the
 two people it costs was the wrong default. Everything that queues, re-checks,
 resolves or configures is an admin's — or «Lider nazorati — admin»'s
-(`_LEADERS_ADMIN`); purging the history stays behind `verify_admin`.
+(`_LEADERS_ADMIN`), purging the history included (2026-11-19: everything
+is grantable).
 
 Verdicts are read in three shapes:
 
@@ -54,7 +55,6 @@ from app.models import (
 )
 from app.permissions import require_page
 from app.capabilities import CAP_LEADERS_ADMIN, leaders_admin, require_cap
-from app.routers.admin import verify_admin
 from app.services import (action_log, ai_review, gemini, leader_ai, leader_rule_eras, leader_shift,
                           leader_tasks, one_process)
 from app.services.name_map import (
@@ -63,8 +63,8 @@ from app.services.name_map import (
 
 router = APIRouter(prefix="/api/leader-ai", tags=["leader-ai"])
 # Acting on the reviewer: an admin, or «Lider nazorati — admin»
-# (`capabilities.leaders_admin`, 2026-10-29). `history/clear` alone stays
-# `verify_admin` — it deletes verdicts and is never grantable.
+# (`capabilities.leaders_admin`, 2026-10-29) — `history/clear` too since
+# 2026-11-19 (the operator: every admin function is grantable).
 _LEADERS_ADMIN = require_cap(CAP_LEADERS_ADMIN)
 log = logging.getLogger(__name__)
 
@@ -2343,7 +2343,7 @@ class ClearIn(BaseModel):
 
 @router.post("/history/clear")
 def clear_history(body: ClearIn, db: Session = Depends(get_db),
-                  admin: dict = Depends(verify_admin)):
+                  admin: dict = Depends(_LEADERS_ADMIN)):
     """Delete AI verdicts and set where review starts again.
 
     **Why this is a button and not a migration.** The reviewer's criteria get
@@ -2361,10 +2361,9 @@ def clear_history(body: ClearIn, db: Session = Depends(get_db),
 
     Two protections, both deliberate:
 
-    * **Admin-only, never grantable.** `verify_admin` tests the JWT role
-      itself, so this sits outside the per-profile capability system exactly
-      like the DB restore does. Everything else on this router is already
-      admin-only; this is the one that cannot be widened later by a grant.
+    * **Admins and «Lider nazorati — admin» only.** It was `verify_admin`,
+      never grantable, until 2026-11-19, when the operator ruled every admin
+      function grantable.
     * **Resolved rows survive by default.** A resolution is a person's ruling,
       and the calibration stats measure human-vs-machine agreement over
       precisely those rows. Taking them needs `include_resolved`.

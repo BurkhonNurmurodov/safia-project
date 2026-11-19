@@ -24,6 +24,8 @@ import useStatusBands from "../hooks/useStatusBands";
 import { useTranslit } from "../utils/transliterate";
 import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
+import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 
 const NO_LIST = [];
 
@@ -45,6 +47,8 @@ export default function Ontime() {
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
+  const { auth } = useAuth();
+  const { capTabs } = useCapabilities();
   const bands = useStatusBands();   // the on-time band paints every figure here
 
   const [tab, setTab] = usePersistentState("ontime_tab", "overview");
@@ -233,7 +237,9 @@ export default function Ontime() {
     ["days", T.tabDays],
   ];
   const marked = useMemo(() => new Set(data?.data_days || NO_LIST), [data?.data_days]);
-  const isAdmin = !!data?.is_admin;
+  const isAdmin = !!data?.is_admin;           // an admin's powers on /ontime, by role or grant
+  // The sources live on the «data» admin tab, which /ontime's grant does not open.
+  const maySources = auth?.role === "admin" || capTabs.includes("data");
   const notConfigured = data && !read?.configured;
   const neverRead = data && read?.configured && !ok;
   const empty = data && ok && !(data.totals?.demand > 0);
@@ -311,8 +317,8 @@ export default function Ontime() {
         </div>
       ) : notConfigured ? (
         <EmptyState icon={Database} title={T.notConfiguredTitle}
-          message={isAdmin ? T.notConfiguredAdmin : T.notConfiguredUser} showUploadLink={false}
-          action={isAdmin ? <Button size="sm" variant="secondary" onClick={() => navigate("/panel/data")}>{T.openSources}</Button> : null} />
+          message={maySources ? T.notConfiguredAdmin : T.notConfiguredUser} showUploadLink={false}
+          action={maySources ? <Button size="sm" variant="secondary" onClick={() => navigate("/panel/data")}>{T.openSources}</Button> : null} />
       ) : neverRead ? (
         <EmptyState icon={Database} title={running ? T.readRunning : T.neverReadTitle} message={T.neverReadMsg} showUploadLink={false}
           action={isAdmin && !running ? <Button size="sm" variant="secondary" onClick={startRead}><RefreshCw size={12} /> {T.readNow}</Button> : null} />
