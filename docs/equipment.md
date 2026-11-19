@@ -17,3 +17,10 @@ admins plus whoever is granted it on the Access tab; `RequirePage` on the route,
 - **«Holati» is the sheet's grade letter a · b · c.** Its meaning was not
   stated, so it is shown neutral (never a traffic light) and the form offers
   those three; widen `STATUSES` in the router and `GRADES` on the page together.
+- **«№» and «Mas'ul shaxs» (2026-11-19)**: «№» opens the table — the row's
+  place in the list as it is sorted and filtered now (1…N, running on across
+  pages), not stored and not sortable. «Mas'ul shaxs» («Responsible person»)
+  is a NEW stored free-text column (`equipment.responsible`, added by
+  `startup.add_equipment_responsible_column`), blank on the 319 seeded rows,
+  beside the three «Mas'ul …» columns; it is searched, sorted and edited like
+  them.

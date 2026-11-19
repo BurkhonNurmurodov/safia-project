@@ -33,6 +33,7 @@ class EquipmentIn(BaseModel):
     brigadir: str = Field("", max_length=120)
     leader: str = Field("", max_length=120)
     cell_code: str = Field("", max_length=40)
+    responsible: str = Field("", max_length=120)
 
     @field_validator("*", mode="before")
     @classmethod

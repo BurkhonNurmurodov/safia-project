@@ -254,6 +254,8 @@ try:
     # cells.kpi is on the ORM model: add it before any step reads Cell.
     from app.startup import add_cell_kpi_column
     add_cell_kpi_column()
+    from app.startup import add_equipment_responsible_column
+    add_equipment_responsible_column()
     migrate_cells_leaders_columns()
     # Every feature that calls an AI gets the key + model it ran on before the
     # per-feature «AI kalitlari» tab (once; services/ai_features.seed).

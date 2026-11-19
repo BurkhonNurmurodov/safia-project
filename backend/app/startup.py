@@ -11478,6 +11478,21 @@ def backdate_dispatch_cells_october() -> None:
         db.close()
 
 
+def add_equipment_responsible_column() -> None:
+    """2026-11-19: ``equipment.responsible`` — «Mas'ul shaxs», a free-text
+    column of the «Uskunalar» register. Blank on every existing row. Pure DDL,
+    idempotent; the DB default covers an old worker inserting without it."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE equipment ADD COLUMN IF NOT EXISTS responsible VARCHAR(120) NOT NULL DEFAULT ''"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] equipment responsible column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_cell_kpi_column() -> None:
     """2026-11-16: ``cells.kpi`` — «KPI hisoblanadi». TRUE for every existing
     cell; HR's list is switched off once by `kpi_off_cells_nov16`. Pure DDL,

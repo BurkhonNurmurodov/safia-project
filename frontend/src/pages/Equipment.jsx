@@ -25,7 +25,8 @@ import { useET, fill } from "./equipmentText";
 
 const PAGE_SIZE = 50;
 const NUM = new Intl.NumberFormat("ru-RU");
-const EMPTY = { name_real: "", name_doc: "", serial: "", status: "", inv_code: "", department: "", brigadir: "", leader: "", cell_code: "" };
+const EMPTY = { name_real: "", name_doc: "", serial: "", status: "", inv_code: "", department: "", brigadir: "", leader: "", cell_code: "", responsible: "" };
+const COLS = 12;   // № + 10 data columns + the ⋮
 const FIELD_KEYS = Object.keys(EMPTY);
 const GRADES = ["a", "b", "c"];
 const inputCls = "w-full rounded-xl px-3 py-2 text-sm outline-none";
@@ -120,17 +121,18 @@ export default function Equipment() {
   let tbody;
   if (listQ.isPending) {
     tbody = Array.from({ length: 10 }).map((_, i) => (
-      <tr key={i}>{Array.from({ length: 10 }).map((__, j) => <td key={j} className="px-3 py-2"><SkeletonBlock className="h-3 w-20" /></td>)}</tr>
+      <tr key={i}>{Array.from({ length: COLS }).map((__, j) => <td key={j} className="px-3 py-2"><SkeletonBlock className="h-3 w-20" /></td>)}</tr>
     ));
   } else if (!pageRows.length) {
-    tbody = <tr><td colSpan={10} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>
+    tbody = <tr><td colSpan={COLS} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>
       {filtered ? <span className="inline-flex items-center gap-2">{T.none}
         <button type="button" className="underline" style={{ color: "var(--brand-text)" }} onClick={clearAll}>{T.clearAll}</button>
       </span> : T.empty}
     </td></tr>;
   } else {
-    tbody = pageRows.map((r) => (
+    tbody = pageRows.map((r, i) => (
       <tr key={r.id}>
+        <td className="px-3 py-2 tabular-nums text-right w-12" style={{ color: "var(--text-3)" }}>{(at - 1) * PAGE_SIZE + i + 1}</td>
         <td className="px-3 py-2 font-medium">{txt(r.name_real, 240)}</td>
         <td className="px-3 py-2">{txt(r.name_doc, 240)}</td>
         <td className="px-3 py-2 tabular-nums">{txt(r.serial, 160)}</td>
@@ -144,6 +146,7 @@ export default function Equipment() {
         <td className="px-3 py-2">{txt(r.brigadir, 180)}</td>
         <td className="px-3 py-2">{txt(r.leader, 180)}</td>
         <td className="px-3 py-2 tabular-nums">{txt(r.cell_code, 100)}</td>
+        <td className="px-3 py-2">{txt(r.responsible, 180)}</td>
         <td className="px-1 py-1 w-12">
           <ActionMenu label={fill(T.actions, { name: nameOf(r) })} items={[
             { key: "edit", label: T.edit, icon: Pencil, onSelect: () => openEdit(r) },
@@ -178,6 +181,7 @@ export default function Equipment() {
           >
             <thead>
               <tr>
+                <Th label={T.colNo} align="right" cls="w-12" />
                 <Th label={T.colReal} k="name_real" sort={sort} onSort={onSort} />
                 <Th label={T.colDoc} k="name_doc" sort={sort} onSort={onSort} />
                 <Th label={T.colSerial} k="serial" sort={sort} onSort={onSort} />
@@ -187,6 +191,7 @@ export default function Equipment() {
                 <Th label={T.colBrig} k="brigadir" sort={sort} onSort={onSort} />
                 <Th label={T.colLeader} k="leader" sort={sort} onSort={onSort} />
                 <Th label={T.colCell} k="cell_code" sort={sort} onSort={onSort} />
+                <Th label={T.colResp} k="responsible" sort={sort} onSort={onSort} />
                 <Th label="" />
               </tr>
             </thead>
@@ -236,6 +241,9 @@ export default function Equipment() {
             </FormField>
             <FormField label={T.colCell}>
               <input className={inputCls} style={inputStyle} value={form.cell_code} onChange={set("cell_code")} maxLength={40} />
+            </FormField>
+            <FormField label={T.colResp}>
+              <input className={inputCls} style={inputStyle} value={form.responsible} onChange={set("responsible")} maxLength={120} />
             </FormField>
           </div>
         </Modal>

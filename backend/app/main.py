@@ -269,6 +269,9 @@ async def lifespan(app: FastAPI):
     # cells.kpi is on the ORM model: add it before any step reads Cell.
     from app.startup import add_cell_kpi_column
     run(add_cell_kpi_column)
+    # equipment.responsible is on the ORM model: add it before /equipment reads it.
+    from app.startup import add_equipment_responsible_column
+    run(add_equipment_responsible_column)
     run(migrate_cells_leaders_columns)
     # The proof reviewer's single sealed Gemini key becomes a row of the
     # saved-key store (services/ai_review), once.
