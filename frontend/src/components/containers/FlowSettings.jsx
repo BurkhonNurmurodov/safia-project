@@ -3,6 +3,8 @@
 // the hours can see (a line with no hour adds nothing to their limit).
 // The enrolled units and the top-up threshold belonged to the automatic
 // batches, removed on 2026-11-18 (docs/containers-flow.md).
+// «Jo'natish jadvali» (2026-11-19) heads the tab: AXO keeps it too, and sees
+// it alone — the switches and the readiness check stay the admins'.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BellRing, ListChecks } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -11,8 +13,9 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { Chip, fmt, errText } from "./flowUtil";
+import { SendAreasCard } from "./FlowSending";
 
-export default function FlowSettings({ t, toast, day, data, loading, onSaved }) {
+export default function FlowSettings({ t, toast, day, data, loading, onSaved, isAdmin = false }) {
   const { tl } = useTranslit();
   // every switch is saved on the tap; `which` is its field
   const notify = useMutation({
@@ -31,10 +34,13 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
     queryKey: ["cflow-readiness", day],
     queryFn: () => api.get("/api/container-flow/readiness", { params: { day } }).then((r) => r.data.units),
     staleTime: 5 * 60_000,
+    enabled: isAdmin,
   });
 
   return (
     <div className="flex flex-col gap-4">
+      <SendAreasCard t={t} toast={toast} canEdit={isAdmin || !!data?.axo} />
+      {isAdmin && <>
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={BellRing} title={t("cflow.set.notifyTitle")} subtitle={t("cflow.set.notifySub")} size="lg" />
         <div className="px-5 pb-5 flex flex-col gap-3">
@@ -91,6 +97,7 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved }) 
           })}
         </tbody>
       </TableCard>
+      </>}
     </div>
   );
 }

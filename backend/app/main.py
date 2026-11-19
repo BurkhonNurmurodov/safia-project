@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
         add_leader_ended_on,
         add_container_request_seen,
         add_container_receipt_columns,
+        add_container_send_columns,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -256,6 +257,7 @@ async def lifespan(app: FastAPI):
     run(add_leader_ended_on)
     run(add_container_request_seen)
     run(add_container_receipt_columns)
+    run(add_container_send_columns)
     run(add_last_seen_column)
     run(add_tg_name_column)
     run(add_edit_requests_batch_id)
@@ -314,6 +316,8 @@ async def lifespan(app: FastAPI):
     later(davron_container_logistics)
     from app.startup import davron_no_idle_time
     later(davron_no_idle_time)          # after it: no ojidaniya for him
+    from app.startup import seed_container_send_areas
+    later(seed_container_send_areas)
     from app.startup import container_flow_notify_on, containers_tv_managers
     later(container_flow_notify_on)
     later(containers_tv_managers)

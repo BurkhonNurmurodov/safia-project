@@ -1239,6 +1239,139 @@ class FlowTest(unittest.TestCase):
             self.assertIsNone(s["today"]["ahead"])                                 # said, not guessed …
             self.assertEqual(s["now"]["yellow"], 100)                              # … and the rest stands
 
+    # ── «Jo'natish» — the dispatch areas (2026-11-19) ──────────────────────
+    def _areas(self):
+        self.db.execute(flow.text("DELETE FROM container_send_areas"))
+        self.db.commit()
+        self.assertEqual(flow.seed_send_areas(self.db), 6)
+        self.db.commit()
+        self.assertEqual(flow.seed_send_areas(self.db), 0)          # only into an empty schedule
+        return {(a.name, a.shift): a for a in flow.send_areas(self.db)}
+
+    def test_send_schedule_spreads_the_shift_over_its_rounds(self):
+        areas = self._areas()
+        night = flow.area_hours(areas[("Сдоба Слойка Мясной", 2)])
+        self.assertEqual(sorted(night), [20, 21, 22, 24, 25, 26, 27, 28, 29])   # past midnight: the production day
+        self.assertEqual(night[20], {"send": 889, "lid": 889})
+        self.assertEqual(sum(e["send"] for e in night.values()), 8000)         # the hours add up to the shift
+        day = flow.area_hours(areas[("Бургер", 1)])
+        self.assertEqual(sorted(day), [6, 7, 8, 9, 10, 11, 12, 13, 14])
+        self.assertEqual([day[h]["send"] for h in (6, 7, 8)], [334, 333, 333])
+        self.assertEqual(sum(e["lid"] for e in day.values()), 3000)
+        # kept on the page: checked, changed, archived
+        for bad in (dict(name=" ", shift=1, send=1, lid=1, rounds=[["06:00", "09:00"]]),
+                    dict(name="X", shift=3, send=1, lid=1, rounds=[["06:00", "09:00"]]),
+                    dict(name="X", shift=1, send=0, lid=0, rounds=[["06:00", "09:00"]]),
+                    dict(name="X", shift=1, send=1, lid=1, rounds=[]),
+                    dict(name="X", shift=1, send=1, lid=1, rounds=[["25:00", "09:00"]])):
+            with self.assertRaises(flow.FlowError, msg=bad):
+                flow.save_area(self.db, None, actor="a", **bad)
+        a = flow.save_area(self.db, None, "Tort", 1, 90, 0, [["08:00", "11:00"]], "Dilafruz")
+        self.assertEqual(flow.area_hours(a), {8: {"send": 30}, 9: {"send": 30}, 10: {"send": 30}})
+        flow.remove_area(self.db, a.id, "Dilafruz")
+        self.db.commit()
+        self.assertNotIn(a.id, [x.id for x in flow.send_areas(self.db)])
+        with self.assertRaises(flow.FlowError):
+            flow.create_request(self.db, DAY, 8, "*", {"send": 1}, "", "axo", "guest:1", area_id=a.id)
+
+    def test_area_request_is_delivered_and_counted_together(self):
+        nk = self._stock()
+        areas = self._areas()
+        burger = areas[("Бургер", 1)]
+        self.db.execute(flow.text("DELETE FROM container_requests WHERE day = :d"), {"d": DAY})
+        self.db.commit()
+        with mock.patch.object(flow, "plant_hours", return_value={}):
+            self._count(self.at(5))
+            # «Tayyor»: every area hour of the day still ahead, named by its area
+            items = flow.prepared_send(self.db, DAY, self.at(5))
+            self.assertIn((6, burger.id, {"send": 334, "lid": 334}),
+                          [(i["hour"], i["area_id"], i["counts"]) for i in items])
+            # a request FOR the area: only its two types; the crates are another request's
+            r = flow.create_request(self.db, DAY, 6, nk, {"send": 334, "lid": 334, "yellow": 5}, "", "axo",
+                                    "guest:1", area_id=burger.id)
+            self.db.commit()
+            self.assertEqual((r.lines, r.area_name), ({"send": 334, "lid": 334}, "Бургер"))
+            self.assertNotIn((6, burger.id), [(i["hour"], i["area_id"]) for i in flow.prepared_send(self.db, DAY, self.at(5))])
+            with self.assertRaises(flow.FlowError):
+                flow.create_request(self.db, DAY, 6, nk, {"yellow": 5}, "", "axo", "guest:1", area_id=burger.id)
+            # waiting: promised in the stock, not gone
+            t = flow.stock(self.db, DAY, DAY, self.at(5, 30))
+            self.assertEqual((t["now"]["send"], t["today"]["reserved"]["send"]), (0, 334))
+            # delivered, not split: fewer needs a reason; never more than asked
+            with self.assertRaises(flow.FlowError):
+                flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"send": 1}}], None, None, "n", nk, False)
+            with self.assertRaises(flow.FlowError):
+                flow.deliver_request(self.db, r.id, {"send": 400}, None, None, "n", nk, False)
+            with self.assertRaises(flow.FlowError):
+                flow.deliver_request(self.db, r.id, {"send": 300, "lid": 334}, None, None, "n", nk, False)
+            self.db.rollback()
+            d = flow.deliver_request(self.db, r.id, {"send": 300, "lid": 334}, "short", None, "Nuriddin", nk, False)
+            d.assigned_at = self.at(5, 40)
+            self.db.commit()
+            row = next(x for x in flow.requests_of(self.db, DAY) if x["id"] == r.id)
+            self.assertEqual((row["status"], row["area"], row["given"], row["parts"], row["receipt"]),
+                             ("assigned", "Бургер", {"send": 300, "lid": 334}, [], None))
+            # inside, split as ever — and the stock subtracts BOTH, apart
+            self._split(nk, 7, {"yellow": 20}, self.at(5, 50))
+            s = flow.stock(self.db, DAY, DAY, self.at(6))
+            self.assertEqual((s["now"]["yellow"], s["now"]["send"], s["now"]["lid"]), (80, -300, -334))
+            self.assertEqual((s["today"]["given"]["yellow"], s["today"]["sent"]["send"]), (20, 300))
+            day_row, = s["days"]
+            self.assertEqual((day_row["given"]["send"], day_row["sent"]["send"], day_row["sent"]["yellow"]), (0, 300, 0))
+            # a count that leaves the dispatch types out keeps their book figure
+            self._count(self.at(6, 30))
+            self.assertEqual(flow.stock(self.db, DAY, DAY, self.at(7))["now"]["send"], -300)
+            flow.record_stock(self.db, "count", {**{k: 100 for k in flow.KEYS}, "send": 5000, "lid": 5000},
+                              "", "Dilafruz", "guest:1", self.at(7))
+            self.db.commit()
+            self.assertEqual(flow.stock(self.db, DAY, DAY, self.at(8))["now"]["send"], 5000)
+            # «Hisobot» / «Tahlil»: one total, split into the brigadirs' and the areas'
+            rep = flow.requests_report(self.db, DAY, DAY)["summary"]
+            self.assertEqual((rep["given"], rep["in_given"], rep["send_given"], rep["send_requests"]),
+                             (654, 20, 634, 1))
+            self.assertEqual(flow.sending_report(self.db, DAY, DAY)["days"], 0)     # before the schedule existed
+            with mock.patch.object(flow, "SEND_FROM", DAY):
+                an = flow.analytics(self.db, DAY, DAY)
+            self.assertEqual({t["ctype"]: t["given"] for t in an["types"]}, {"yellow": 20, "send": 300, "lid": 334})
+            b = next(a for a in an["sending"]["areas"] if a["area_id"] == burger.id)
+            self.assertEqual((b["need"], b["asked"], b["given"]),
+                             ({"send": 3000, "lid": 3000}, {"send": 334, "lid": 334}, {"send": 300, "lid": 334}))
+            self.assertEqual(an["sending"]["total"]["given"], {"send": 300, "lid": 334})
+            # the message names the area
+            self.assertIn("Бургер", flow._tg_body(r, "new", "ru"))
+            self.assertIn("Krishka 334", flow.counts_text(r.lines))
+
+    def test_area_request_edit_keeps_its_kind(self):
+        nk = self._stock()
+        areas = self._areas()
+        a, b = areas[("Бургер", 1)], areas[("Сдоба Фасовка", 1)]
+        r = flow.create_request(self.db, DAY, 9, nk, {"send": 100}, "", "axo", "guest:1", area_id=a.id)
+        self.db.commit()
+        r, changes, _ = flow.edit_request(self.db, r.id, 9, nk, {"send": 120, "lid": 120}, "", area_id=b.id)
+        self.db.commit()
+        self.assertEqual((r.area_id, r.area_name, r.lines), (b.id, "Сдоба Фасовка", {"send": 120, "lid": 120}))
+        self.assertIn("area", [c[0] for c in changes])
+        with self.assertRaises(flow.FlowError):           # crates never ride on an area's request
+            flow.edit_request(self.db, r.id, 9, nk, {"yellow": 5}, "")
+        self.db.rollback()
+        inside = flow.create_request(self.db, DAY, 9, nk, {"yellow": 5}, "", "axo", "guest:1")
+        self.db.commit()
+        inside, _c, _k = flow.edit_request(self.db, inside.id, 9, nk, {"yellow": 6}, "", area_id=a.id)
+        self.assertIsNone(inside.area_id)                  # a brigadirs' request stays theirs
+        with self.assertRaises(flow.FlowError):
+            flow.deliver_request(self.db, inside.id, {"send": 1}, None, None, "n", nk, False)
+        self.db.rollback()
+        # several at once: one per area and hour
+        rs = flow.create_requests(self.db, DAY, nk, [{"hour": 10, "counts": {"send": 5}, "area_id": a.id},
+                                                     {"hour": 10, "counts": {"send": 5}, "area_id": b.id},
+                                                     {"hour": 10, "counts": {"yellow": 5}}], "", "axo", "guest:1")
+        self.assertEqual([x.area_id for x in rs], [a.id, b.id, None])
+        with self.assertRaises(flow.FlowError):
+            flow.create_requests(self.db, DAY, nk, [{"hour": 11, "counts": {"send": 5}, "area_id": a.id},
+                                                    {"hour": 11, "counts": {"send": 5}, "area_id": a.id}],
+                                 "", "axo", "guest:1")
+        self.db.rollback()
+
     def test_stock_record_is_checked(self):
         self._stock()
         for kind, counts in (("count", {"yellow": 5}),                             # a count names every type

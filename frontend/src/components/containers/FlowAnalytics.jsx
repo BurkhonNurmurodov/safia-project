@@ -28,8 +28,9 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { TONE_HEX, GREEN, AMBER, RED, vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip } from "./flowUtil";
+import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip, isSend } from "./flowUtil";
 import FlowStock from "./FlowStock";
+import { SendingTable, TogetherCard } from "./FlowSending";
 import { ExtrasAnalytics } from "./FlowExtras";
 
 const CHART_H = 260;
@@ -112,6 +113,9 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
             </KPICard>
           </div>
 
+          {/* the brigadirs' and the dispatch areas' as ONE total, split in two (2026-11-19) */}
+          <TogetherCard t={t} s={s} loading={loading} />
+
           <SpeedCard t={t} s={s} loading={loading} mins={mins} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -125,6 +129,8 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
           </div>
 
           <NeedGotTable t={t} tl={tl} rows={a?.need_vs_got} loading={loading} period={`${from}|${to}`} />
+
+          <SendingTable t={t} x={a?.sending} loading={loading} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <ChartCard className="lg:col-span-2" icon={Clock} title={t("cflow.an.hours")} subtitle={t("cflow.an.hoursSub")} loading={loading}>
@@ -308,7 +314,9 @@ function TypeBars({ t, rows }) {
     chart: { type: "bar" },
     colors: STAGES.map((k) => STAGE_COLORS[k]),
     plotOptions: { bar: { horizontal: true, barHeight: "68%", borderRadius: 2, borderRadiusApplication: "end" } },
-    xaxis: { categories: rows.map((r) => t(`cflow.ct.${r.ctype}`)), labels: { formatter: (v) => fmt(Math.round(v)) } },
+    // a dispatch type by its full name — «Jo'natish konteyneri», never a bare «Konteyner»
+    xaxis: { categories: rows.map((r) => t(isSend(r.ctype) ? `production.cont.${r.ctype}` : `cflow.ct.${r.ctype}`)),
+      labels: { formatter: (v) => fmt(Math.round(v)) } },
     yaxis: { labels: { formatter: (v) => v } },
     grid: { xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
     tooltip: { shared: true, intersect: false },

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Wand2,
+  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Truck, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -24,6 +24,7 @@ import ConfirmDialog from "../ui/ConfirmDialog";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import CountStepper from "../ui/CountStepper";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import ActionMenu from "../ui/ActionMenu";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -35,6 +36,7 @@ import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
   refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
+  ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
@@ -52,6 +54,12 @@ export const isFresh = (r, me, logi = false) => r.status === "requested" && !r.s
 
 function StateChip({ r, t }) {
   if (r.status === "requested" && r.overdue) return <Chip tone="bad" icon={AlertTriangle}>{t("cflow.st.overdue")}</Chip>;
+  // a dispatch area's request is DELIVERED, whole or short — nobody confirms it (2026-11-19)
+  if (r.status === "assigned" && r.area_id != null) {
+    return r.short_reason
+      ? <Chip tone="warn" icon={AlertTriangle} title={t(`cflow.reason.${r.short_reason}`)}>{t("cflow.snd.st.short")}</Chip>
+      : <Chip tone="ok" icon={Truck}>{t("cflow.snd.st.done")}</Chip>;
+  }
   if (r.status === "assigned" && r.receipt?.confirmed) {
     const { units, confirmed, short } = r.receipt;
     if (short) return <Chip tone="bad" icon={AlertTriangle} title={t("cflow.rcv.shortHint")}>{t("cflow.rcv.st.short")}</Chip>;
@@ -99,8 +107,19 @@ function PartLine({ p, t, tl }) {
   );
 }
 
+// A dispatch area's request: the area, and what was delivered there.
+function AreaLine({ r, t, tx }) {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <Truck size={13} className="shrink-0" aria-label={t("cflow.snd.icon")} style={{ color: TYPE_COLORS.send }} />
+      <span style={{ color: "var(--text-1)" }}>{tx(r.area) || "—"}</span>
+      {r.given && <span>: {countsText(t, r.given)}</span>}
+    </span>
+  );
+}
+
 export function RequestsTab({ t, day, roles, toast, onNew }) {
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const now = useNow();
   const qc = useQueryClient();
   const q = useQuery({
@@ -110,6 +129,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
     ...LIVE_LIST,
   });
   const [assign, setAssign] = useState(null);
+  const [deliver, setDeliver] = useState(null);
   const [cancel, setCancel] = useState(null);
   const [editing, setEditing] = useState(null);
   // a brigadir's EXTRA asks (2026-11-18): AXO approves or rejects them under the requests
@@ -136,7 +156,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
   const cancelBlocked = (r) => r.status === "assigned" && (r.receipt?.confirmed ?? 0) > 0;
   // Opening the split is «opening» the request: its «new» mark goes.
   const openAssign = (r) => {
-    setAssign(r);
+    if (r.area_id != null) setDeliver(r); else setAssign(r);
     if (isFresh(r, me, logi)) api.post(`/api/container-flow/seen/${r.id}`).then(() => q.refetch()).catch(() => {});
   };
   const menu = (r) => [
@@ -159,7 +179,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       {roles.axo && <Button icon={<Plus size={14} />} onClick={() => onNew()}>{t("cflow.req.new")}</Button>}
     </span>
   );
-  const ctx = { t, tl, now, me, logi, mayAssign, openAssign, menu };
+  const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, menu };
 
   return (
     <div className="flex flex-col gap-4">
@@ -191,7 +211,8 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
             <tr>
               <Th label={t("cflow.hour")} />
               <Th label={t("cflow.req.to")} />
-              {KEYS.map((k) => <Th key={k} label={t(`cflow.ct.${k}`)} hint={t(`production.cont.${k}`)} align="right" />)}
+              {ALL_KEYS.map((k) => <Th key={k} label={t(`cflow.ct.${k}`)} icon={isSend(k) ? Truck : undefined}
+                hint={isSend(k) ? `${t(`production.cont.${k}`)} — ${t("cflow.snd.icon")}` : t(`production.cont.${k}`)} align="right" />)}
               <Th label={t("cflow.status")} align="center" />
               <Th label={t("cflow.req.units")} />
               <Th label={t("cflow.due")} hint={t("cflow.req.dueHint")} />
@@ -200,9 +221,9 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
           </thead>
           <tbody>
             {q.isLoading ? Array.from({ length: 4 }).map((_, i) => (
-              <tr key={i}><td colSpan={KEYS.length + 6} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
+              <tr key={i}><td colSpan={ALL_KEYS.length + 6} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
             )) : !list.length ? (
-              <tr><td colSpan={KEYS.length + 6} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{empty}</td></tr>
+              <tr><td colSpan={ALL_KEYS.length + 6} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{empty}</td></tr>
             ) : list.map((r) => <RequestRow key={r.id} r={r} {...ctx} />)}
           </tbody>
         </TableCard>
@@ -231,6 +252,15 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
             // sent to everybody and somebody else split it first: the dialog has nothing left to do
             fail(e);
             if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setAssign(null);
+            refreshFlow(qc);
+          }} />
+      )}
+      {deliver && (
+        <DeliverModal t={t} r={deliver} onClose={() => setDeliver(null)}
+          onDone={() => { setDeliver(null); done(t("cflow.snd.delivered")); }}
+          onFail={(e) => {
+            fail(e);
+            if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setDeliver(null);
             refreshFlow(qc);
           }} />
       )}
@@ -266,7 +296,9 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
 // made, split or cancelled never moves the list under it.
 function DayStatus({ t, list, loading }) {
   const live = list.filter((r) => r.status !== "cancelled");
-  const arrived = (r) => r.status === "assigned" && r.receipt && r.receipt.confirmed === r.receipt.units && r.receipt.units > 0;
+  // a dispatch area's request has arrived once it is delivered — nobody confirms it
+  const arrived = (r) => r.status === "assigned" && (r.area_id != null
+    || (r.receipt && r.receipt.confirmed === r.receipt.units && r.receipt.units > 0));
   const n = {
     arrived: live.filter(arrived).length,
     split: live.filter((r) => r.status === "assigned" && !arrived(r)).length,
@@ -282,7 +314,8 @@ function DayStatus({ t, list, loading }) {
     { key: "cancelled", label: t("cflow.day.cancelled"), value: n.cancelled, color: "#94a3b8" },
   ];
   const asked = live.reduce((s, r) => s + sum(r.lines), 0);
-  const given = live.reduce((s, r) => s + r.parts.reduce((x, p) => x + sum(p.counts), 0), 0);
+  const given = live.reduce((s, r) => s + (r.area_id != null ? sum(r.given)
+    : r.parts.reduce((x, p) => x + sum(p.counts), 0)), 0);
   const got = live.reduce((s, r) => s + r.parts.reduce((x, p) => x + sum(p.received), 0), 0);
   const stages = [["asked", asked], ["given", given], ["received", got]];
   return (
@@ -307,12 +340,14 @@ function DayStatus({ t, list, loading }) {
   );
 }
 
-function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
+function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
   const fresh = isFresh(r, me, logi);
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
-  const given = {};
+  const area = r.area_id != null;
+  const given = area ? { ...(r.given ?? {}) } : {};
   for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
-  const title = r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`).join(" · ");
+  const title = area ? [tx(r.area), r.given && countsText(t, r.given)].filter(Boolean).join(": ")
+    : r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`).join(" · ");
   return (
     <tr className={`text-sm ${fresh ? "font-semibold" : ""}`}
       style={fresh ? { background: "color-mix(in srgb, var(--brand) 17%, transparent)" } : undefined}>
@@ -324,7 +359,7 @@ function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
           {!addressee && <SeenMark r={r} t={t} now={now} />}
         </span>
       </td>
-      {KEYS.map((k) => {
+      {ALL_KEYS.map((k) => {
         const ask = r.lines[k];
         if (ask == null) return <td key={k} className="px-3 py-2 text-right" style={{ color: "var(--text-4)" }}>—</td>;
         const short = r.status === "assigned" && (given[k] ?? 0) < ask;
@@ -346,6 +381,7 @@ function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
       <td className="px-3 py-2 whitespace-nowrap max-w-[380px] truncate font-normal" style={{ color: "var(--text-2)" }}
         title={title || r.cancel_note || undefined}>
         {r.status === "cancelled" ? <span style={{ color: "var(--text-3)" }}>{r.cancel_note}</span>
+          : area ? <AreaLine r={r} t={t} tx={tx} />
           : r.parts.length ? r.parts.map((p, i) => (
             <span key={p.manager_id}>
               {i > 0 && <span className="px-1.5" style={{ color: "var(--text-4)" }}>·</span>}
@@ -360,7 +396,9 @@ function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
       <td className="px-3 py-[2px]">
         <span className="flex items-center justify-end gap-1 min-w-[140px] min-h-[32px]">
           {mayAssign(r) && (
-            <Button size="sm" tint={!fresh} icon={<Split size={13} />} onClick={() => openAssign(r)}>{t("cflow.req.assign")}</Button>
+            <Button size="sm" tint={!fresh} icon={area ? <Truck size={13} /> : <Split size={13} />} onClick={() => openAssign(r)}>
+              {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
+            </Button>
           )}
           <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={menu(r)} />
         </span>
@@ -369,8 +407,9 @@ function RequestRow({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
   );
 }
 
-function RequestCard({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
+function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
   const fresh = isFresh(r, me, logi);
+  const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const items = menu(r).filter(Boolean);
   return (
@@ -398,6 +437,11 @@ function RequestCard({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
         </div>
 
         <CountPills counts={r.lines} t={t} />
+        {area && (
+          <div className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
+            <AreaLine r={{ ...r, given: null }} t={t} tx={tx} />
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
           {addressee
@@ -409,6 +453,11 @@ function RequestCard({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
           <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.note}</p>
         )}
 
+        {area && r.status === "assigned" && r.given && (
+          <p className="text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
+            {t("cflow.snd.gave").replace("{x}", countsText(t, r.given))}
+          </p>
+        )}
         {r.status === "assigned" && r.parts.length > 0 && (
           <ul className="flex flex-col gap-1 text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
             {r.parts.map((p) => <li key={p.manager_id} className="min-w-0 truncate"><PartLine p={p} t={t} tl={tl} /></li>)}
@@ -420,8 +469,8 @@ function RequestCard({ r, t, tl, now, me, logi, mayAssign, openAssign, menu }) {
       </div>
       {mayAssign(r) && (
         <div className="px-3.5 pb-3.5">
-          <Button size="lg" className="w-full" tint={!fresh} icon={<Split size={15} />} onClick={() => openAssign(r)}>
-            {t("cflow.req.assign")}
+          <Button size="lg" className="w-full" tint={!fresh} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
+            {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
           </Button>
         </div>
       )}
@@ -447,8 +496,8 @@ const LEGEND = ["done", "open", "soon", "missed"];
 
 function DayStrip({ t, day, list, loading, now, onPick }) {
   const need = useQuery({
-    queryKey: ["cflow-hour-need", day],
-    queryFn: () => api.get("/api/container-flow/hour-need", { params: { day } }).then((r) => r.data.hours),
+    queryKey: ["cflow-hour-need2", day],
+    queryFn: () => api.get("/api/container-flow/hour-need", { params: { day } }).then((r) => r.data),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
   });
@@ -458,7 +507,11 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
       if (!by.has(h)) by.set(h, { hour: h, need: 0, asked: 0, open: 0, overdue: false });
       return by.get(h);
     };
-    for (const [h, c] of Object.entries(need.data ?? {})) at(Number(h)).need = sum(c);
+    // the brigadirs' hours and the dispatch areas' (2026-11-19) — together
+    for (const [h, c] of Object.entries(need.data?.hours ?? {})) at(Number(h)).need += sum(c);
+    for (const hm of Object.values(need.data?.send ?? {})) {
+      for (const [h, c] of Object.entries(hm)) at(Number(h)).need += sum(c);
+    }
     for (const r of list) {
       if (r.status === "cancelled") continue;
       const e = at(r.hour);
@@ -555,38 +608,58 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
 // request — its hour, counts, addressee and note — saved in place (`PUT`).
 // A brigadir's approved extra keeps its hour and never goes past what the
 // brigadir asked (the server's rule too).
+// «Jo'natishga» (2026-11-19): the same request FOR a dispatch area — its
+// container and lid, filled from «Jo'natish jadvali» for the area and hour;
+// the logistics person delivers it there. An edit keeps the request's kind.
 export function NewRequestModal({ t, day, initialHour = null, edit = null, onClose, onDone, onFail }) {
+  const { tx } = useTranslit();
   // to every logistics person at once by default (2026-11-18) — or one of them
   const pick = useLogisticsPick(edit?.logistics_key ?? null);
   const { to } = pick;
   const extraCap = edit?.extra?.lines ?? null;
+  const [kind, setKind] = useState(() => (edit?.area_id != null ? "send" : "in"));
+  const send = kind === "send";
+  const keys = send ? SEND_KEYS : KEYS;
+  const areasQ = useSendAreas();
+  const areas = areasQ.data?.areas ?? [];
+  const [area, setArea] = useState(() => edit?.area_id ?? null);
+  const areaOpts = areas.map((a) => ({ value: a.id, label: `${tx(a.name)} · ${shiftName(t, a.shift)}` }));
+  // an edited request's area stays pickable even if it left the schedule since
+  if (edit?.area_id != null && !areaOpts.some((o) => o.value === edit.area_id)) {
+    areaOpts.unshift({ value: edit.area_id, label: tx(edit.area) || "—" });
+  }
   const [hour, setHour] = useState(() => edit?.hour ?? initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
   const [counts, setCounts] = useState(() => (edit ? { ...edit.lines } : {}));
-  // The hour's figure from the «Konteynerlar» page fills the counts whenever
-  // an hour is picked (the operator, 2026-11-14: «the number of containers
-  // should appear by default, then if it is incorrect they will correct it by
-  // hand»). A refetch never overwrites what was typed — only a new hour does.
+  // The hour's figure fills the counts whenever an hour (and, for a dispatch
+  // area, an area) is picked — «Konteynerlar» for the brigadirs (the operator,
+  // 2026-11-14: «the number of containers should appear by default, then if
+  // it is incorrect they will correct it by hand»), «Jo'natish jadvali» for an
+  // area. A refetch never overwrites what was typed — only a new slot does.
   const need = useQuery({
-    queryKey: ["cflow-hour-need", day],
-    queryFn: () => api.get("/api/container-flow/hour-need", { params: { day } }).then((r) => r.data.hours),
+    queryKey: ["cflow-hour-need2", day],
+    queryFn: () => api.get("/api/container-flow/hour-need", { params: { day } }).then((r) => r.data),
     staleTime: 60_000,
   });
-  const hourNeed = need.data?.[String(hour)] ?? null;
-  // editing: the request's own counts stand until another hour is picked
-  const [filledFor, setFilledFor] = useState(edit ? edit.hour : null);
+  const needOf = (d) => (send ? (area != null ? d?.send?.[String(area)]?.[String(hour)] : null) : d?.hours?.[String(hour)]) ?? null;
+  const hourNeed = needOf(need.data);
+  const slot = `${kind}:${send ? area : ""}:${hour}`;
+  // editing: the request's own counts stand until another slot is picked
+  const [filledFor, setFilledFor] = useState(edit ? `${edit.area_id != null ? "send" : "in"}:${edit.area_id ?? ""}:${edit.hour}` : null);
   useEffect(() => {
-    if (!need.data || filledFor === hour) return;
-    setFilledFor(hour);
-    setCounts(Object.fromEntries(KEYS.map((k) => [k, need.data[String(hour)]?.[k] ?? null])));
-  }, [need.data, hour, filledFor]);
-  const changed = hourNeed != null && KEYS.some((k) => (counts[k] ?? 0) !== (hourNeed[k] ?? 0));
+    if (!need.data || filledFor === slot || (send && area == null)) return;
+    setFilledFor(slot);
+    const src = needOf(need.data);
+    setCounts(Object.fromEntries(keys.map((k) => [k, src?.[k] ?? null])));
+  }, [need.data, slot, filledFor]);      // eslint-disable-line react-hooks/exhaustive-deps
+  const changed = hourNeed != null && keys.some((k) => (counts[k] ?? 0) !== (hourNeed[k] ?? 0));
   const [note, setNote] = useState(() => edit?.note ?? "");
-  const any = KEYS.some((k) => counts[k] > 0);
+  const any = keys.some((k) => counts[k] > 0);
   const m = useMutation({
     mutationFn: () => {
       const body = {
         hour, logistics_key: to, note,
-        counts: Object.fromEntries(KEYS.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
+        counts: Object.fromEntries(keys.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
+        ...(send ? { area_id: area } : {}),
       };
       return edit ? api.put(`/api/container-flow/requests/${edit.id}`, body)
         : api.post("/api/container-flow/requests", { day, ...body });
@@ -594,33 +667,53 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
     onSuccess: (...a) => { if (!edit) pick.remember(); onDone(...a); },
     onError: onFail,
   });
+  const needLine = need.isLoading ? t("cflow.req.needLoading")
+    : send ? (area == null ? t("cflow.req.pickArea")
+      : hourNeed ? t(changed ? "cflow.req.sendEdited" : "cflow.req.sendFilled").replace("{span}", span(hour))
+      : t("cflow.req.sendNone").replace("{span}", span(hour)))
+    : hourNeed ? t(changed ? "cflow.req.needEdited" : "cflow.req.needFilled").replace("{span}", span(hour))
+    : t("cflow.req.needNone").replace("{span}", span(hour));
   return (
     <Modal onClose={onClose} title={t(edit ? "cflow.req.editTitle" : "cflow.req.new")}
-      subtitle={edit ? `${span(edit.hour)} · ${countsText(t, edit.lines)}` : t("cflow.req.newSub")} maxWidth="max-w-xl"
+      subtitle={edit ? [span(edit.hour), edit.area_id != null && tx(edit.area), countsText(t, edit.lines)].filter(Boolean).join(" · ")
+        : t("cflow.req.newSub")} maxWidth="max-w-xl"
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button loading={m.isPending} disabled={!to || !any} onClick={() => m.mutate()}>
+          <Button loading={m.isPending} disabled={!to || !any || (send && area == null)} onClick={() => m.mutate()}>
             {t(edit ? "cflow.req.editSave" : "cflow.req.send")}
           </Button>
         </>
       )}>
+      {/* one column with a gap: the figure's line sits between the fields, never over their labels */}
+      <div className="flex flex-col gap-3">
+      {!edit && (
+        <SegmentedToggle fill value={kind} onChange={setKind} options={[
+          { value: "in", label: t("cflow.req.kind.in") },
+          { value: "send", label: <span className="inline-flex items-center gap-1.5"><Truck size={14} />{t("cflow.req.kind.send")}</span> },
+        ]} />
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <LogisticsField t={t} pick={pick} />
         <FormField label={t("cflow.req.forHour")} required
-          hint={extraCap ? t("cflow.req.extraHour") : t("cflow.req.forHourHint")}>
+          hint={extraCap ? t("cflow.req.extraHour") : t(send ? "cflow.req.forHourHintSend" : "cflow.req.forHourHint")}>
           <StyledSelect value={hour} onChange={setHour} disabled={!!extraCap}
             options={Array.from({ length: 32 }, (_, h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
         </FormField>
+        {send && (
+          <div className="sm:col-span-2">
+            <FormField label={t("cflow.req.area")} required
+              hint={!areasQ.isLoading && !areas.length ? t("cflow.req.noAreas") : t("cflow.req.areaHint")}>
+              <StyledSelect value={area} onChange={setArea} placeholder={t("cflow.pick")} disabled={!areaOpts.length}
+                options={areaOpts} />
+            </FormField>
+          </div>
+        )}
       </div>
-      <p className="text-[11px] -mb-1 min-h-[16px]" style={{ color: "var(--text-3)" }}>
-        {need.isLoading ? t("cflow.req.needLoading")
-          : hourNeed ? t(changed ? "cflow.req.needEdited" : "cflow.req.needFilled").replace("{span}", span(hour))
-          : t("cflow.req.needNone").replace("{span}", span(hour))}
-      </p>
+      <p className="text-[11px] min-h-[16px]" style={{ color: "var(--text-3)" }}>{needLine}</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {KEYS.map((k) => (
-          <FormField key={k} label={t(`production.cont.${k}`)}
+        {keys.map((k) => (
+          <FormField key={k} label={<TypeName t={t} k={k} long />}
             hint={extraCap ? t("cflow.ex.askedN").replace("{n}", extraCap[k] ?? 0)
               : hourNeed && (counts[k] ?? 0) !== (hourNeed[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", hourNeed[k] ?? 0) : undefined}>
             <CountStepper min={0} max={extraCap ? (extraCap[k] ?? 0) : undefined} value={counts[k] ?? null} placeholder="0"
@@ -631,6 +724,53 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
       <FormField label={t("cflow.comment")}>
         <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className={fieldCls} style={fieldStyle} />
       </FormField>
+      </div>
+    </Modal>
+  );
+}
+
+// Logistics: a dispatch area's request taken there (2026-11-19) — what was
+// delivered, per type, starting from what was asked; fewer needs a reason.
+// Nobody confirms it: the packaging leaves with the product.
+function DeliverModal({ t, r, onClose, onDone, onFail }) {
+  const { tx } = useTranslit();
+  const types = SEND_KEYS.filter((k) => r.lines[k] != null);
+  const [counts, setCounts] = useState(() => ({ ...r.lines }));
+  const [reason, setReason] = useState(null);
+  const [comment, setComment] = useState("");
+  const any = types.some((k) => (counts[k] ?? 0) > 0);
+  const short = any && types.some((k) => (counts[k] ?? 0) < r.lines[k]);
+  const m = useMutation({
+    mutationFn: () => api.post(`/api/container-flow/requests/${r.id}/deliver`, {
+      counts: Object.fromEntries(types.map((k) => [k, counts[k] ?? 0])),
+      ...(short ? { reason, comment } : {}),
+    }),
+    onSuccess: onDone, onError: onFail,
+  });
+  return (
+    <Modal onClose={onClose} title={t("cflow.snd.title")} subtitle={`${tx(r.area) || "—"} · ${span(r.hour)}`}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button icon={<Truck size={14} />} loading={m.isPending} disabled={!any || (short && !reasonOk(reason, comment))}
+            onClick={() => m.mutate()}>
+            {t("cflow.snd.save")}
+          </Button>
+        </>
+      )}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.snd.hint")}</p>
+        <div className="grid grid-cols-2 gap-3">
+          {types.map((k) => (
+            <FormField key={k} label={<TypeName t={t} k={k} long />}
+              hint={t("cflow.snd.askedN").replace("{n}", fmt(r.lines[k]))}>
+              <CountStepper min={0} max={r.lines[k]} value={counts[k] ?? null} placeholder="0"
+                onChange={(n) => setCounts((c) => ({ ...c, [k]: n ?? 0 }))} />
+            </FormField>
+          ))}
+        </div>
+        {short && <ReasonFields {...{ reason, setReason, comment, setComment, t }} />}
+      </div>
     </Modal>
   );
 }
@@ -839,20 +979,26 @@ function CancelModal({ t, r, onClose, onDone, onFail }) {
 // default — picks the logistics person once and sends them in one go. The
 // addressee gets ONE message for the lot. An hour whose counts need changing
 // is unticked here and made with «Yangi so'rov».
+// A dispatch area's hour (2026-11-19) is its own item — one per area and hour,
+// named by its area beside a truck.
+const itemKey = (h) => `${h.hour}:${h.area_id ?? ""}`;
+
 export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
+  const { tx } = useTranslit();
   const pick = useLogisticsPick();
   const { to } = pick;
-  const [off, setOff] = useState(() => new Set());      // the hours left out
-  const picked = hours.filter((h) => !off.has(h.hour));
+  const [off, setOff] = useState(() => new Set());      // the items left out
+  const picked = hours.filter((h) => !off.has(itemKey(h)));
   const total = picked.reduce((s, h) => s + sum(h.counts), 0);
-  const toggle = (hour) => setOff((cur) => {
+  const toggle = (key) => setOff((cur) => {
     const next = new Set(cur);
-    if (next.has(hour)) next.delete(hour); else next.add(hour);
+    if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
   const m = useMutation({
     mutationFn: () => api.post("/api/container-flow/requests/bulk", {
-      day, logistics_key: to, items: picked.map((h) => ({ hour: h.hour, counts: h.counts })),
+      day, logistics_key: to,
+      items: picked.map((h) => ({ hour: h.hour, counts: h.counts, ...(h.area_id != null ? { area_id: h.area_id } : {}) })),
     }),
     onSuccess: () => { pick.remember(); onDone(picked.length); },
     onError: onFail,
@@ -877,22 +1023,25 @@ export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
               <span className="flex-1">{t("cflow.prep.picked").replace("{n}", picked.length).replace("{of}", hours.length)}</span>
               <span className="tabular-nums">{t("cflow.prep.total").replace("{n}", fmt(total))}</span>
               <Button size="sm" variant="ghost"
-                onClick={() => setOff(off.size ? new Set() : new Set(hours.map((h) => h.hour)))}>
+                onClick={() => setOff(off.size ? new Set() : new Set(hours.map(itemKey)))}>
                 {t(off.size ? "cflow.prep.all" : "cflow.prep.noneBtn")}
               </Button>
             </div>
             <ul className="max-h-[46vh] overflow-y-auto">
               {hours.map((h) => {
-                const on = !off.has(h.hour);
+                const key = itemKey(h);
+                const on = !off.has(key);
+                const what = [h.area_id != null && tx(h.area), countsText(t, h.counts)].filter(Boolean).join(" · ");
                 return (
-                  <li key={h.hour} style={{ borderTop: "1px solid var(--border)" }}>
+                  <li key={key} style={{ borderTop: "1px solid var(--border)" }}>
                     <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer text-sm"
                       style={{ opacity: on ? 1 : 0.55 }}>
-                      <input type="checkbox" checked={on} onChange={() => toggle(h.hour)} data-no-draft
+                      <input type="checkbox" checked={on} onChange={() => toggle(key)} data-no-draft
                         className="w-4 h-4 shrink-0" style={{ accentColor: "var(--brand)" }} />
                       <span className="w-[104px] shrink-0 tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{span(h.hour)}</span>
-                      <span className="flex-1 min-w-0 truncate" style={{ color: "var(--text-2)" }} title={countsText(t, h.counts)}>
-                        {countsText(t, h.counts)}
+                      <span className="flex-1 min-w-0 truncate inline-flex items-center gap-1.5" style={{ color: "var(--text-2)" }} title={what}>
+                        {h.area_id != null && <Truck size={13} className="shrink-0" aria-label={t("cflow.snd.icon")} style={{ color: TYPE_COLORS.send }} />}
+                        <span className="truncate">{what}</span>
                       </span>
                       <span className="shrink-0 text-xs tabular-nums whitespace-nowrap"
                         style={{ color: h.late ? "var(--status-bad)" : "var(--text-3)" }}

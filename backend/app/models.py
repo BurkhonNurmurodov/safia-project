@@ -6141,6 +6141,16 @@ class ContainerRequest(Base):
     # When «still not split at its deadline» was told to AXO / the shift
     # managers (2026-11-17, `container_flow.alert_overdue`). NULL = not told.
     overdue_alerted_at = Column(DateTime(timezone=True), nullable=True)
+    # A request FOR a dispatch area («Jo'natish», 2026-11-19, the operator:
+    # «sending containers are not like the inside containers, but we have to
+    # add them together»): the area of `ContainerSendArea` it is for (its name
+    # kept as it was, so a renamed or removed area still reads), and what the
+    # logistics person DELIVERED there {ctype: n} — such a request has no
+    # brigadir parts and nobody confirms it; `given` is what left AXO. NULL on
+    # every request to the brigadirs.
+    area_id   = Column(Integer, nullable=True, index=True)
+    area_name = Column(String, nullable=True)
+    given     = Column(JSONB, nullable=True)
 
 
 class ContainerRequestPart(Base):
@@ -6218,6 +6228,30 @@ class ContainerStockMove(Base):
     note    = Column(Text, nullable=True)
     by_name = Column(String, nullable=True)
     by_key  = Column(String, nullable=True)
+
+
+class ContainerSendArea(Base):
+    """A dispatch area («Jo'natish jadvali», 2026-11-19): where finished goods
+    are packed for sending, and the containers + lids it needs a shift —
+    packaging that LEAVES with the product and never comes back, so it is
+    counted apart from the reusable crates (types `send` · `lid`). The shift's
+    figure is used in `rounds` (3-hour packing rounds, [["20:00", "23:00"], …]),
+    each round's share spread over its three hours (`container_flow
+    .area_hours`). Seeded once from the operator's workbook
+    (`startup.seed_container_send_areas`), kept on «Sozlamalar» by AXO and the
+    admins; a removed area is `archived`, its requests keep their name."""
+    __tablename__ = "container_send_areas"
+
+    id         = Column(Integer, primary_key=True)
+    name       = Column(String, nullable=False)
+    shift      = Column(Integer, nullable=False, default=1)        # 1 day · 2 night
+    send       = Column(Integer, nullable=False, default=0)        # containers a shift
+    lid        = Column(Integer, nullable=False, default=0)        # lids a shift
+    rounds     = Column(JSONB, nullable=False)
+    position   = Column(Integer, nullable=False, default=0)
+    archived   = Column(Boolean, nullable=False, default=False, server_default="false")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_by = Column(String, nullable=True)
 
 
 class Equipment(Base):

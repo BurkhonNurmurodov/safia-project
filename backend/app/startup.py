@@ -2151,6 +2151,17 @@ def add_container_receipt_columns() -> None:
         "container receipt columns")
 
 
+def add_container_send_columns() -> None:
+    """2026-11-19: a request FOR a dispatch area — `container_requests.area_id`,
+    `area_name` and `given` (what logistics delivered there). NULL on every
+    request to the brigadirs. Pure DDL, idempotent, no flag; every ORM read of
+    a request selects them."""
+    _ensure_columns((("container_requests", (("area_id", "INTEGER"), ("area_name", "VARCHAR"),
+                                             ("given", "JSONB")),
+                      ("ix_container_requests_area_id", "area_id")),),
+                    "container send columns")
+
+
 UNBIND_ENDED_FLAG = "oneshot:unbind_ended_leaders_nov13"
 # The operator, 2026-11-13 («Yes, remove both»): the two leaders Verifix
 # dismissed before a dismissal took access away, who still held a Telegram link.
@@ -10942,6 +10953,30 @@ def davron_container_logistics() -> None:
         db.rollback()
         print(f"[startup] Davron logistics failed: {exc}")
         _dm_report("fail", "Davron Kuldimirodov · «Konteyner berish» (logistika) berilmadi", error=exc)
+    finally:
+        db.close()
+
+
+# ── 19 Nov: «Jo'natish jadvali» seeded from the workbook (docs/containers-flow.md)
+# The operator sent «Отправка контейнер крышка соат бўйича день ва ночь смена»:
+# six dispatch areas, their containers and lids a shift, three packing rounds.
+# Written once into the empty schedule; AXO and the admins keep it from there.
+CONTAINER_SEND_SEED_FLAG = "oneshot:container_send_areas_seed_nov19"
+
+
+def seed_container_send_areas() -> None:
+    from app.services import container_flow as flow
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_SEND_SEED_FLAG).first():
+            return
+        n = flow.seed_send_areas(db)
+        db.add(AppSetting(key=CONTAINER_SEND_SEED_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] container send areas: {n} seeded")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container send areas seed failed: {exc}")
     finally:
         db.close()
 

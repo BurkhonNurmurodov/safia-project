@@ -611,6 +611,109 @@ AXO STATES it, and the platform keeps it from there.
   request asks for more than the shelf holds), a Telegram alert when a type
   will not cover the day, returns recorded by anybody but AXO.
 
+### «Jo'natish» — containers and lids for the dispatch areas (2026-11-19)
+
+The operator: «everything here is inside the factory; the new thing is
+sending — the sending containers are not like the inside containers, but we
+have to add them together». He attached the workbook «Отправка_контейнер_крышка
+_соат_боича_день_ва_ночт_смена.xlsx». In it, each dispatch area (where finished
+goods are packed to be sent out) needs N containers and N lids a shift, packed
+in three 3-hour rounds:
+
+| Shift | Area | Per shift | Rounds | Per hour |
+|---|---|---|---|---|
+| night | Сдоба Слойка Мясной | 8000 | 20:00, 00:00, 03:30 | 889 |
+| night | Марьям | 1500 | 20:00, 00:00, 03:30 | 167 |
+| night | Пирог печенья | 1500 | 20:00, 00:00, 03:30 | 167 |
+| day | Бургер | 3000 | 06:00, 09:00, 12:30 | 334 |
+| day | Сдоба Фасовка | 1500 | 06:00, 09:00, 12:30 | 167 |
+| day | Пирог печенья | 500 | 06:00, 09:00, 12:30 | 56 |
+
+He settled four questions:
+- **The types are new.** They are not one of the five crates. «Add this, but
+  add a little icon so we know it is for sending.»
+- **They go through logistics.** AXO asks, a logistics person takes the
+  containers there.
+- **The schedule is editable on the page.**
+- **One total plus a split.** Asked and given count inside and dispatch
+  together, with the split shown under the total; no destination is recorded
+  and no return is tracked.
+
+- **Two types of their own** — `send` («Jo'natish konteyneri») and `lid`
+  («Jo'natish krishkasi»), `container_flow.SEND_KEYS`. They sit beside the
+  crates (`KEYS`); `ALL_KEYS` is both.
+  - Wherever a type is named on the page it carries a small truck
+    (`flowUtil.TypeName`; the hue is `TYPE_COLORS` purple / pink).
+  - In a sentence (`countsText`, Telegram) the dispatch types use the full
+    name, so a bare «Konteyner» never reads as a crate.
+  - A brigadir's limit, «Kerak va olingan», «Qabul» and the extras know
+    nothing of them: those are the crates' business.
+- **«Jo'natish jadvali»** — `ContainerSendArea` (`container_send_areas`, from
+  `create_all`).
+  - Each area stores a name, a shift (1 day · 2 night), a shift's `send` and
+    `lid`, and its `rounds` [["20:00", "23:00"], …].
+  - It sits FIRST on «Sozlamalar», which now opens to AXO too; the Telegram
+    switches and the readiness check stay the admins'.
+  - AXO and the admins add, change and remove areas (`/send-areas`, `PAGE`;
+    read by `ANY`). Removing archives the area; its requests keep the name
+    (`area_name`).
+  - Seeded once from the workbook (`startup.seed_container_send_areas`, flag
+    `oneshot:container_send_areas_seed_nov19`, only into an empty table).
+- **An area's hours** (`area_hours`):
+  - The shift's figure is spread over the rounds, and each round's over the
+    `SEND_ROUND_HOURS` = 3 clock hours from the hour its start falls in. Both
+    spreads are largest-remainder (`share_out`), so the hours add up to the
+    shift exactly: 8000 → 2667 · 2667 · 2666 → 889 an hour.
+  - A round starting earlier on the clock than the one before is past
+    midnight, so its hours count from 24 (the production day): night = hours
+    20–22 and 24–29.
+  - The ends of a round only document it: 06:00–08:30 is still three hours.
+- **A request FOR an area** — `container_requests.area_id` / `area_name` /
+  `given` (`add_container_send_columns`); NULL on every brigadir request.
+  - «Yangi so'rov» has a «Brigadirlarga · Jo'natishga» switch. «Jo'natishga»
+    picks an area, and the counts fill from the schedule for that area and
+    hour.
+  - An area request carries only the two dispatch types (and a crate request
+    only crates); an edit keeps the kind and may change the area.
+  - «Tayyor so'rovlar» lists the areas' hours too (`prepared_send`, served as
+    `send` beside `hours`, so an older tab keeps reading what it did): one
+    item per area and hour, named by the area beside a truck. The bulk send
+    takes an `area_id` per item.
+  - Telegram names the area («🚚 Jo'natish: …») and asks logistics to take it
+    there.
+- **Delivered, not split.** Logistics presses «Yetkazish» and states what
+  reached the area (`deliver_request`, `POST /requests/{id}/deliver`, `LOGI`):
+  - Never more than asked; fewer needs a reason.
+  - On a request «to everybody», the first person to deliver takes it.
+  - Nobody confirms it (the packaging leaves with the product).
+  - `split` refuses an area request (`area_split`); `deliver` refuses a crate
+    request (`not_area`).
+  - A short delivery tells AXO like a short split.
+  - On the row: the area and what was delivered sit in the «Brigadirlar»
+    column, with «Yetkazildi» or «Kam yetkazildi».
+- **Added together.**
+  - **Stock** (`stock`): the two types have tiles of their own, a truck on
+    each, and count into «Jami». A delivery leaves the shelf at its time
+    (`_stock_out` kind `send`), and its own column «Jo'natishga» sits beside
+    «Brigadirlarga».
+  - **Counts:** a count NAMES every crate. The dispatch types may be left
+    out, and a type left out keeps its book figure, so a tab from before
+    still counts.
+  - **«Bugun yana ketadi»** includes the areas' hours ahead.
+  - **«Hisobot» / «Tahlil»:** `asked` / `given` are both sides together, and
+    `in_*` / `send_*` are the split (`requests_report`). The day table shows
+    «Jami berilgan → Brigadirlarga · Jo'natishga». The «Brigadirlarga va
+    jo'natishga — birga» card shows each total with its split bar.
+  - **«Jo'natish» table** (`sending_report`): per area, needed by the
+    schedule, asked, delivered, and %. «Needed» is the shift figure for every
+    day of the period from `SEND_FROM` = 2026-11-19 up to today. Days before
+    the schedule existed need nothing, so they never read as 0% delivered.
+  - **Excel:** the requests sheet gains the split columns, and a «Jo'natish»
+    sheet is added.
+  - **The hour strip** counts the areas' need into each hour.
+- Not built: a destination (shop / branch) on a delivery, and returns of
+  dispatch containers — the operator: «no need».
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

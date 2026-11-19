@@ -2,7 +2,7 @@
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock } from "lucide-react";
+import { Clock, Truck } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
@@ -12,6 +12,12 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
+// «Jo'natish» (2026-11-19): a dispatch area's container and lid — packaging
+// that leaves with the product, so they are types of their own, always shown
+// with a truck (`TypeName`), and added into every total.
+export const SEND_KEYS = ["send", "lid"];
+export const ALL_KEYS = [...KEYS, ...SEND_KEYS];
+export const isSend = (k) => SEND_KEYS.includes(k);
 export const REASONS = ["short", "damaged", "wrong_type", "other"];
 
 export const span = (h) => `${hourLabel(h)}:00–${hourLabel(h + 1)}:00`;
@@ -116,13 +122,27 @@ export function DueText({ iso, now, t, live = true }) {
   );
 }
 
+// A container type's name — with a small truck when it is a dispatch type
+// (the operator: «add a little icon to know that it is for sending»). `long`
+// is the full name a form field carries.
+export function TypeName({ t, k, long = false }) {
+  const name = t(long ? `production.cont.${k}` : `cflow.ct.${k}`);
+  if (!isSend(k)) return name;
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap" title={t("cflow.snd.icon")}>
+      <Truck size={12} className="shrink-0" aria-hidden style={{ color: TYPE_COLORS[k] }} />
+      {name}
+    </span>
+  );
+}
+
 // «30 to'rtburchak, 8 chelak» — a set of counts as words.
-export const countsText = (t, counts) => KEYS.filter((k) => counts?.[k])
-  .map((k) => `${counts[k]} ${t(`cflow.ct.${k}`).toLowerCase()}`).join(", ");
+export const countsText = (t, counts) => ALL_KEYS.filter((k) => counts?.[k])
+  .map((k) => `${counts[k]} ${t(isSend(k) ? `production.cont.${k}` : `cflow.ct.${k}`).toLowerCase()}`).join(", ");
 
 // The same counts as pills — on a card, where there is room to read them.
 export function CountPills({ counts, t, of }) {
-  const keys = KEYS.filter((k) => counts?.[k] != null && (counts[k] || of?.[k]));
+  const keys = ALL_KEYS.filter((k) => counts?.[k] != null && (counts[k] || of?.[k]));
   return (
     <span className="flex flex-wrap gap-1.5">
       {keys.map((k) => {
@@ -133,7 +153,7 @@ export function CountPills({ counts, t, of }) {
             <b className="tabular-nums text-[13px]" style={{ color: short ? "var(--status-bad)" : "var(--text-1)" }}>
               {fmt(counts[k])}{of ? <span style={{ color: "var(--text-3)", fontWeight: 500 }}> / {fmt(of[k])}</span> : null}
             </b>
-            {t(`cflow.ct.${k}`)}
+            <TypeName t={t} k={k} />
           </span>
         );
       })}
@@ -146,7 +166,10 @@ export function CountPills({ counts, t, of }) {
 // The three stages of a request's containers: asked → split → received.
 export const STAGE_COLORS = { asked: "#3b82f6", given: "#a855f7", received: "#22c55e" };
 // A container type wears its own colour wherever a chart splits by type.
-export const TYPE_COLORS = { yellow: "#eab308", round: "#f97316", grey: "#94a3b8", bucket: "#3b82f6", box: "#14b8a6" };
+export const TYPE_COLORS = {
+  yellow: "#eab308", round: "#f97316", grey: "#94a3b8", bucket: "#3b82f6", box: "#14b8a6",
+  send: "#a855f7", lid: "#ec4899",
+};
 
 // The on-time band for a WHOLE percent (58, not 0.58 — `statusBands` judges
 // fractions): "ok" | "warn" | "bad" | null.
@@ -226,3 +249,15 @@ export function LogisticsField({ t, pick }) {
 
 // The addressee as words: a name, or «every logistics person» while nobody took it.
 export const toName = (t, tl, r) => (r.logistics_key === ALL_KEY ? t("cflow.req.toAll") : tl(r.logistics_name) || "—");
+
+// ── «Jo'natish jadvali» — the dispatch areas (2026-11-19) ───────────────────
+// The schedule, one read for the form, «Sozlamalar» and the table names.
+export function useSendAreas(enabled = true) {
+  return useQuery({
+    queryKey: ["cflow-send-areas"],
+    queryFn: () => api.get("/api/container-flow/send-areas").then((r) => r.data),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+export const shiftName = (t, s) => (s ? t(`cflow.sa.shift.${s}`) : "—");

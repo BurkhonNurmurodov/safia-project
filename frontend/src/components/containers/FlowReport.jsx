@@ -2,7 +2,9 @@
 // logistics split them, what the brigadirs confirmed — day by day, and the
 // Excel (docs/containers-flow.md). Every figure is the server's
 // (`flow.requests_report`). The automatic batches' half of it went with
-// «Partiyalar» on 2026-11-18.
+// «Partiyalar» on 2026-11-18. From 2026-11-19 «given» is the brigadirs' and
+// the dispatch areas' together, split in its next two columns, and the
+// dispatch areas have a table (and an Excel sheet) of their own.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, FileSpreadsheet, Gauge, PackageCheck, Timer } from "lucide-react";
@@ -14,11 +16,12 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { tashkentNow } from "../production/HourlyContainers";
 import { exportXlsx } from "../../utils/exportXlsx";
 import api from "../../utils/api";
-import { fmt, errText, durText, onTimeTone } from "./flowUtil";
+import { fmt, errText, durText, onTimeTone, ALL_KEYS } from "./flowUtil";
+import { SendingTable, TogetherCard } from "./FlowSending";
 
 const toDMY = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 // The requests' per-day table (the same columns the Excel's «Requests» sheet carries).
-const RQ_COLS = ["requests", "asked", "given", "received", "missing", "late", "overdue", "short"];
+const RQ_COLS = ["requests", "asked", "given", "in_given", "send_given", "received", "missing", "late", "overdue", "short"];
 const RQ_BAD = new Set(["missing", "late", "overdue", "short"]);
 const rqVal = (d, c) => (c === "missing" ? d.sent_confirmed - d.received : d[c]);
 
@@ -41,8 +44,12 @@ export default function FlowReport({ t, toast }) {
         body: {
           date_from: from, date_to: to,
           headers: { total: t("production.cont.total"),
-            rq_day: t("cflow.rep.day"), ...Object.fromEntries(RQ_COLS.map((c) => [`rq_${c}`, t(`cflow.rq.col.${c}`)])) },
-          types: Object.fromEntries(["yellow", "round", "grey", "bucket", "box"].map((k) => [k, t(`production.cont.${k}`)])),
+            rq_day: t("cflow.rep.day"), ...Object.fromEntries(RQ_COLS.map((c) => [`rq_${c}`, t(`cflow.rq.col.${c}`)])),
+            // the «Jo'natish» sheet
+            snd_sheet: t("cflow.snd.tableTitle"), snd_area: t("cflow.sa.col.area"), snd_shift: t("cflow.sa.col.shift"),
+            snd_need: t("cflow.snd.col.need"), snd_asked: t("cflow.snd.col.asked"), snd_given: t("cflow.snd.col.given"),
+            snd_pct: t("cflow.snd.col.pct"), shift_1: t("cflow.sa.shift.1"), shift_2: t("cflow.sa.shift.2") },
+          types: Object.fromEntries(ALL_KEYS.map((k) => [k, t(`production.cont.${k}`)])),
         },
         fallbackName: "containers.xlsx",
       });
@@ -65,6 +72,8 @@ export default function FlowReport({ t, toast }) {
       </div>
 
       <RequestsReport t={t} loading={q.isLoading} rq={rq} />
+      <TogetherCard t={t} s={rs} loading={q.isLoading} />
+      <SendingTable t={t} x={q.data?.sending} loading={q.isLoading} />
     </div>
   );
 }

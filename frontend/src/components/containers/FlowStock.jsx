@@ -7,6 +7,10 @@
 // (`flow.stock`). The tiles say what is on the shelf NOW and whether it
 // covers what today still takes; the table is the period day by day:
 // opening → given → returned → correction → closing.
+// «Jo'natish» (2026-11-19): the dispatch areas' container and lid are on the
+// shelf too — their own tiles (with a truck), counted into «Jami», and what
+// logistics delivered to an area is its own column, «Jo'natishga», beside what
+// went to the brigadirs.
 // Read by everybody the page is open to; written by AXO (and admins).
 // docs/containers-flow.md.
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +28,9 @@ import { SplitBar } from "../ui/Meter";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, fmt, hhmm, errText, countsText, Chip, TYPE_COLORS, fieldCls, fieldStyle, refreshFlow, LIVE_LIST } from "./flowUtil";
+import {
+  ALL_KEYS as KEYS, fmt, hhmm, errText, countsText, Chip, TYPE_COLORS, fieldCls, fieldStyle, refreshFlow, LIVE_LIST, TypeName,
+} from "./flowUtil";
 
 const REFRESH_MS = 60_000;
 const PAGE = 30;
@@ -92,14 +98,14 @@ export default function FlowStock({ t, from, to, canEdit, toast }) {
           {q.isError ? (
             <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, q.error)} />
           ) : loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
               {KEYS.concat("all").map((k) => <SkeletonBlock key={k} className="h-[118px] w-full rounded-xl" />)}
             </div>
           ) : !counted ? (
             <EmptyState showUploadLink={false} icon={Boxes} title={t("cflow.stock.none")}
               message={t(canEdit ? "cflow.stock.noneMsg" : "cflow.stock.noneWatch")} />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
               {tiles.map((x) => <StockTile key={x.key} x={x} t={t} />)}
             </div>
           )}
@@ -134,7 +140,7 @@ function StockTile({ x, t }) {
       <div className="flex items-center gap-1.5 min-w-0">
         <span aria-hidden className="w-2 h-2 rounded-[2px] shrink-0" style={{ background: all ? "var(--text-3)" : TYPE_COLORS[x.key] }} />
         <span className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: "var(--text-3)" }}>
-          {all ? t("cflow.stock.total") : t(`cflow.ct.${x.key}`)}
+          {all ? t("cflow.stock.total") : <TypeName t={t} k={x.key} />}
         </span>
       </div>
       <div className="text-[22px] font-semibold tabular-nums leading-tight"
@@ -169,7 +175,7 @@ function StockTable({ t, tl, s, period }) {
       {v == null ? "—" : fmt(v)}
     </td>
   );
-  const COLS = view === "days" ? 6 : 5;
+  const COLS = view === "days" ? 7 : 5;
   return (
     <div className="flex flex-col gap-2">
       <TableCard icon={CalendarDays} title={t("cflow.stock.moves")} subtitle={t("cflow.stock.movesSub")} headSize="lg" maxHeight="520px"
@@ -181,7 +187,7 @@ function StockTable({ t, tl, s, period }) {
             {/* always drawn: switching the view must not move the table under it */}
             <span className={view === "days" ? "min-w-0" : "min-w-0 invisible"} aria-hidden={view !== "days"}>
               <SegmentedToggle size="sm" value={type} onChange={setType}
-                options={[["all", t("cflow.stock.total")], ...KEYS.map((k) => [k, t(`cflow.ct.${k}`)])]} />
+                options={[["all", t("cflow.stock.total")], ...KEYS.map((k) => [k, <TypeName key={k} t={t} k={k} />])]} />
             </span>
           </div>
         )}>
@@ -191,6 +197,7 @@ function StockTable({ t, tl, s, period }) {
               <Th label={t("cflow.rep.day")} />
               <Th label={t("cflow.stock.col.open")} align="right" hint={t("cflow.stock.hint.open")} />
               <Th label={t("cflow.stock.col.given")} align="right" hint={t("cflow.stock.hint.given")} />
+              <Th label={t("cflow.stock.col.sent")} align="right" hint={t("cflow.stock.hint.sent")} />
               <Th label={t("cflow.stock.col.returned")} align="right" hint={t("cflow.stock.hint.returned")} />
               <Th label={t("cflow.stock.col.adjust")} align="right" hint={t("cflow.stock.hint.adjust")} />
               <Th label={t("cflow.stock.col.close")} align="right" hint={t("cflow.stock.hint.close")} />
@@ -218,6 +225,7 @@ function StockTable({ t, tl, s, period }) {
                 <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{dm(r.day)}</td>
                 {num(pick(r.open, type))}
                 {num(pick(r.given, type))}
+                {num(pick(r.sent, type))}
                 {num(pick(r.returned, type), { tone: pick(r.returned, type) ? "var(--status-ok)" : undefined })}
                 <td className="px-3 py-2 text-right tabular-nums"
                   title={r.counted ? t("cflow.stock.hint.counted") : undefined}
@@ -279,7 +287,7 @@ function StockModal({ t, kind, now, toast, onClose, onDone }) {
       )}>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {KEYS.map((k) => (
-          <FormField key={k} label={t(`production.cont.${k}`)} required={count}
+          <FormField key={k} label={<TypeName t={t} k={k} long />} required={count}
             hint={count && now ? t("cflow.stock.m.book").replace("{n}", fmt(now[k] ?? 0)) : undefined}>
             <CountStepper min={0} max={STOCK_MAX} value={counts[k]} placeholder="0"
               onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />

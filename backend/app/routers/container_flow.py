@@ -24,6 +24,10 @@ docs/containers-flow.md). Two doors:
 - A brigadir's EXTRA request (2026-11-18): `EXT` (page key `container-extra`,
   admin-only until the operator opens it) asks and withdraws — a brigadir for
   their own unit only; AXO (`PAGE`) approves or rejects; `EXTR` reads.
+- «Jo'natish» (2026-11-19): the dispatch areas' schedule (`/send-areas`) is
+  read by `ANY` and kept by AXO and the admins (`PAGE`); a request FOR an area
+  (`area_id`) is made like any other, and the logistics person DELIVERS it
+  (`/requests/{id}/deliver`, `LOGI`) instead of splitting it.
 
 The messages: a new / cancelled request to its logistics person
 (`flow.notify_later`), and a split request to each of its brigadirs with
@@ -171,7 +175,8 @@ def _span(d_from: date, d_to: date) -> None:
 def get_report(date_from: date = Query(...), date_to: date = Query(...),
                db: Session = Depends(get_db), payload: dict = Depends(ANY)):
     _span(date_from, date_to)
-    return {"requests": flow.requests_report(db, date_from, date_to)}
+    return {"requests": flow.requests_report(db, date_from, date_to),
+            "sending": flow.sending_report(db, date_from, date_to)}
 
 
 @router.get("/analytics")
@@ -232,7 +237,9 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     _span(body.date_from, body.date_to)
     # one row per day, as the page's table
     rq = flow.requests_report(db, body.date_from, body.date_to)
-    rcols = ["day", "requests", "asked", "given", "received", "missing", "late", "overdue", "short"]
+    # `given` is both sides together, then the brigadirs' and the dispatch areas' (2026-11-19)
+    rcols = ["day", "requests", "asked", "given", "in_given", "send_given", "received", "missing", "late",
+             "overdue", "short"]
     wb = Workbook()
     ws2 = wb.active
     ws2.title = "Requests"
@@ -240,16 +247,38 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     for c in ws2[1]:
         c.font = Font(bold=True)
     for d in rq["days"]:
-        ws2.append([d["day"], d["requests"], d["asked"], d["given"], d["received"],
-                    d["sent_confirmed"] - d["received"], d["late"], d["overdue"], d["short"]])
+        ws2.append([d["day"], d["requests"], d["asked"], d["given"], d["in_given"], d["send_given"],
+                    d["received"], d["sent_confirmed"] - d["received"], d["late"], d["overdue"], d["short"]])
     sm = rq["summary"]
-    ws2.append([body.headers.get("total", "Total"), sm["requests"], sm["asked"], sm["given"], sm["received"],
-                sm["missing"], sm["late"], sm["overdue"], sm["short"]])
+    ws2.append([body.headers.get("total", "Total"), sm["requests"], sm["asked"], sm["given"], sm["in_given"],
+                sm["send_given"], sm["received"], sm["missing"], sm["late"], sm["overdue"], sm["short"]])
     for c in ws2[ws2.max_row]:
         c.font = Font(bold=True)
-    for i, w in enumerate([12, 10, 12, 12, 12, 12, 10, 12, 10]):
+    for i, w in enumerate([12, 10, 12, 12, 14, 14, 12, 12, 10, 12, 10]):
         ws2.column_dimensions[chr(65 + i)].width = w
     ws2.freeze_panes = "A2"
+    # «Jo'natish»: per dispatch area — the schedule's need, asked, delivered
+    snd = flow.sending_report(db, body.date_from, body.date_to)
+    ws3 = wb.create_sheet(body.headers.get("snd_sheet", "Sending")[:31])
+    tn = lambda k: body.types.get(k, k)                                        # noqa: E731
+    hdr = lambda k: body.headers.get(f"snd_{k}", k)                            # noqa: E731
+    ws3.append([hdr("area"), hdr("shift")]
+               + [f"{hdr(f)} · {tn(k)}" for f in ("need", "asked", "given") for k in flow.SEND_KEYS]
+               + [hdr("pct")])
+    for c in ws3[1]:
+        c.font = Font(bold=True)
+    for a in snd["areas"]:
+        ws3.append([a["area"], body.headers.get(f"shift_{a['shift']}", a["shift"] or "")]
+                   + [a[f][k] for f in ("need", "asked", "given") for k in flow.SEND_KEYS]
+                   + [a["pct"]])
+    tot = snd["total"]
+    ws3.append([body.headers.get("total", "Total"), ""]
+               + [tot[f][k] for f in ("need", "asked", "given") for k in flow.SEND_KEYS] + [tot["pct"]])
+    for c in ws3[ws3.max_row]:
+        c.font = Font(bold=True)
+    for i, w in enumerate([26, 10, 14, 14, 14, 14, 14, 14, 8]):
+        ws3.column_dimensions[chr(65 + i)].width = w
+    ws3.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
     return deliver_xlsx(request, payload, f"containers-{body.date_from}_{body.date_to}.xlsx", buf.getvalue())
@@ -284,9 +313,74 @@ def post_seen(request_id: int, db: Session = Depends(get_db), payload: dict = De
 def get_hour_need(day: date = Query(...), db: Session = Depends(get_db),
                   payload: dict = Depends(ANY)):
     """The plant's containers per hour on `day` — the «Konteynerlar» page's
-    figures — so a new request starts from the hour's number."""
+    figures — so a new request starts from the hour's number; `send` is each
+    dispatch area's hours by «Jo'natish jadvali» (2026-11-19)."""
     hours = flow.plant_hours(db, day)
-    return {"day": day.isoformat(), "hours": {str(h): c for h, c in sorted(hours.items())}}
+    send = {str(aid): {str(h): c for h, c in sorted(hm.items())} for aid, hm in flow.send_hours(db).items()}
+    return {"day": day.isoformat(), "hours": {str(h): c for h, c in sorted(hours.items())}, "send": send}
+
+
+# ── «Jo'natish jadvali» — the dispatch areas (2026-11-19) ───────────────────
+
+@router.get("/send-areas")
+def get_send_areas(db: Session = Depends(get_db), payload: dict = Depends(ANY)):
+    """The dispatch areas on the schedule, each with its hours."""
+    return {"areas": [flow.area_out(a) for a in flow.send_areas(db)], "round_hours": flow.SEND_ROUND_HOURS}
+
+
+class AreaBody(BaseModel):
+    name: str
+    shift: int
+    send: int = 0
+    lid: int = 0
+    rounds: List[List[str]]
+
+
+def _area_log(a, changes=None) -> None:
+    action_log.enrich(target_kind="container_send_area", target_id=a.id, target_name=a.name,
+                      details=[("shift", a.shift), ("send", a.send), ("lid", a.lid),
+                               ("rounds", " · ".join(f"{x[0]}–{x[1]}" for x in a.rounds or []))],
+                      **({"changes": changes} if changes else {}))
+
+
+@router.post("/send-areas")
+def post_send_area(body: AreaBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    try:
+        a = flow.save_area(db, None, body.name, body.shift, body.send, body.lid, body.rounds, _actor(payload))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    _area_log(a)
+    return flow.area_out(a)
+
+
+@router.put("/send-areas/{area_id}")
+def put_send_area(area_id: int, body: AreaBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    try:
+        a = flow._area(db, area_id)
+        was = (a.name, a.shift, a.send, a.lid, " · ".join(f"{x[0]}–{x[1]}" for x in a.rounds or []))
+        a = flow.save_area(db, area_id, body.name, body.shift, body.send, body.lid, body.rounds, _actor(payload))
+        now_ = (a.name, a.shift, a.send, a.lid, " · ".join(f"{x[0]}–{x[1]}" for x in a.rounds or []))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    _area_log(a, [(f, o, n) for f, o, n in zip(("name", "shift", "send", "lid", "rounds"), was, now_) if o != n])
+    return flow.area_out(a)
+
+
+@router.delete("/send-areas/{area_id}")
+def delete_send_area(area_id: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Off the schedule — archived; its requests keep their name and figures."""
+    try:
+        a = flow.remove_area(db, area_id, _actor(payload))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    _area_log(a)
+    return {"ok": True}
 
 
 @router.get("/logistics")
@@ -308,13 +402,15 @@ class RequestBody(BaseModel):
     logistics_key: str
     counts: Dict[str, int]
     note: str = ""
+    area_id: Optional[int] = None     # a dispatch area's request (2026-11-19)
 
 
 def _req_out(db: Session, r, day: date) -> dict:
     out = next((x for x in flow.requests_of(db, day) if x["id"] == r.id), {"id": r.id})
     action_log.enrich(target_kind="container_request", target_id=r.id, day=day,
                       target_name=r.logistics_name,
-                      details=[("hour", f"{r.hour % 24:02d}:00"), ("status", r.status)])
+                      details=[("hour", f"{r.hour % 24:02d}:00"), ("status", r.status)]
+                      + ([("area", r.area_name)] if r.area_id is not None else []))
     return out
 
 
@@ -322,7 +418,7 @@ def _req_out(db: Session, r, day: date) -> dict:
 def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     try:
         r = flow.create_request(db, body.day, body.hour, body.logistics_key, body.counts, body.note,
-                                _actor(payload), _me(db, payload))
+                                _actor(payload), _me(db, payload), area_id=body.area_id)
         db.commit()
     except flow.FlowError as e:
         db.rollback()
@@ -336,6 +432,7 @@ class EditBody(BaseModel):
     logistics_key: str
     counts: Dict[str, int]
     note: str = ""
+    area_id: Optional[int] = None     # a dispatch area's request may move to another area
 
 
 @router.put("/requests/{request_id}")
@@ -344,7 +441,8 @@ def put_request(request_id: int, body: EditBody, db: Session = Depends(get_db), 
     goes to, the note. Whoever it reaches is told: the same people «changed»,
     a new addressee «new», the one it left «moved»."""
     try:
-        r, changes, old_key = flow.edit_request(db, request_id, body.hour, body.logistics_key, body.counts, body.note)
+        r, changes, old_key = flow.edit_request(db, request_id, body.hour, body.logistics_key, body.counts,
+                                                body.note, area_id=body.area_id)
         new_key, rid, day = r.logistics_key, r.id, r.day
         gone = [k for k in flow.addressees(db, old_key) if k not in flow.addressees(db, new_key)]
         db.commit()
@@ -365,13 +463,16 @@ def put_request(request_id: int, body: EditBody, db: Session = Depends(get_db), 
 @router.get("/requests/prepared")
 def get_prepared(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """The day's hours still ahead with what each needs on «Konteynerlar» less
-    what was already asked — AXO sends the picked ones in one go."""
-    return {"day": day.isoformat(), "hours": flow.prepared(db, day)}
+    what was already asked — AXO sends the picked ones in one go. `send`: the
+    dispatch areas' hours the same way (2026-11-19 — apart, so an older tab
+    keeps reading `hours` as it did)."""
+    return {"day": day.isoformat(), "hours": flow.prepared(db, day), "send": flow.prepared_send(db, day)}
 
 
 class BulkItem(BaseModel):
     hour: int
     counts: Dict[str, int]
+    area_id: Optional[int] = None
 
 
 class BulkBody(BaseModel):
@@ -425,6 +526,27 @@ def post_assign(request_id: int, body: AssignBody, db: Session = Depends(get_db)
         raise HTTPException(status_code=409, detail=e.code)
     flow.notify_split_later(r.id)
     flow.alert_later("short_split", r.id)        # tells AXO only when the split fell short
+    return _req_out(db, r, r.day)
+
+
+class DeliverBody(BaseModel):
+    counts: Dict[str, int]
+    reason: Optional[str] = None
+    comment: Optional[str] = None
+
+
+@router.post("/requests/{request_id}/deliver")
+def post_deliver(request_id: int, body: DeliverBody, db: Session = Depends(get_db),
+                 payload: dict = Depends(LOGI)):
+    """The logistics person delivered a dispatch area's request (2026-11-19)."""
+    try:
+        r = flow.deliver_request(db, request_id, body.counts, body.reason, body.comment, _actor(payload),
+                                 _me(db, payload), page_admin(db, payload, ADMIN_PAGE))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    flow.alert_later("short_split", r.id)        # tells AXO only when fewer were delivered
     return _req_out(db, r, r.day)
 
 

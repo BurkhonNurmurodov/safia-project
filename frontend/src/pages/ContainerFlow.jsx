@@ -43,6 +43,8 @@ const REFRESH_MS = 60_000;
 const TABS = ["requests", "receive", "analytics", "report", "settings"];
 const tabsFor = (r) => TABS.filter((k) => r.admin
   || ((k === "requests" || k === "analytics" || k === "report") && (r.axo || r.logistics || r.watch))
+  // «Sozlamalar» also holds «Jo'natish jadvali», which AXO keeps (2026-11-19)
+  || (k === "settings" && r.axo)
   // «Qabul» also holds a brigadir's EXTRA request (`container-extra`, 2026-11-18)
   || (k === "receive" && (r.receive || r.watch || r.extra)));
 const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
@@ -101,15 +103,17 @@ export default function ContainerFlow() {
   const badgeN = freshN + askedN;
   const badgeTitle = [freshN ? t("cflow.req.freshCount").replace("{n}", freshN) : null,
     askedN ? t("cflow.ex.badge").replace("{n}", askedN) : null].filter(Boolean).join(" · ");
-  // AXO: the hours still ahead that need containers and have no request yet
+  // AXO: the hours still ahead that need containers and have no request yet —
+  // the brigadirs' and, from 2026-11-19, the dispatch areas' (`send`)
   const prep = useQuery({
-    queryKey: ["cflow-prepared", day],
-    queryFn: () => api.get("/api/container-flow/requests/prepared", { params: { day } }).then((r) => r.data.hours),
+    queryKey: ["cflow-prepared2", day],
+    queryFn: () => api.get("/api/container-flow/requests/prepared", { params: { day } }).then((r) => r.data),
     refetchInterval: REFRESH_MS,
     enabled: roles.axo,
     ...LIVE_LIST,
   });
-  const prepHours = prep.data ?? [];
+  const prepHours = [...(prep.data?.hours ?? []), ...(prep.data?.send ?? [])]
+    .sort((a, b) => a.hour - b.hour || (a.area_id != null) - (b.area_id != null));
   const [prepOpen, setPrepOpen] = useState(false);
   // a tab remembered from before «Partiyalar» was removed falls back to the first
   const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
@@ -166,7 +170,7 @@ export default function ContainerFlow() {
         )
         : tab === "analytics" ? <FlowAnalytics t={t} canStock={roles.axo} toast={toast} />
         : tab === "report" ? <FlowReport t={t} toast={toast} />
-        : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading}
+        : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading} isAdmin={roles.admin}
             onSaved={() => qc.invalidateQueries({ queryKey: ["cflow-settings"] })} />}
 
       {newOpen && (
