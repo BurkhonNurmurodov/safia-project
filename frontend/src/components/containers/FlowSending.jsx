@@ -206,40 +206,40 @@ function AreaModal({ t, area, onClose, onDone, onFail }) {
   );
 }
 
-// ── «Jo'natish joylari» — per area over a period (Tahlil, Hisobot) ──────────
+// ── «Jo'natish» — over a period (Tahlil, Hisobot) ───────────────────────────
+// Per area what the schedule needs; what AXO asked of the dispatch types and
+// what logistics gave dispatch exist only in all — the split gives dispatch
+// ONE amount and names no area (2026-11-19).
 export function SendingTable({ t, x, loading }) {
   const { tx } = useTranslit();
   const rows = x?.areas ?? [];
-  const COLS = 6;
-  const pctCell = (v) => {
-    const tone = vypTone(v == null ? null : v / 100);
-    return (
-      <td className="px-3 py-2 text-right tabular-nums font-semibold"
-        style={{ color: v == null ? "var(--text-4)" : tone ? `var(--status-${tone})` : "var(--text-1)" }}>
-        {v == null ? "—" : `${v}%`}
-      </td>
-    );
-  };
-  const cells = (r) => (
-    <>
-      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{pair(r.need)}</td>
-      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{pair(r.asked)}</td>
-      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{pair(r.given)}</td>
-      {pctCell(r.pct)}
-    </>
+  const tot = x?.total;
+  const COLS = 3;
+  const tone = tot?.pct == null ? null : vypTone(tot.pct / 100);
+  const fig = (label, value, color) => (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      {label}
+      <b className="tabular-nums font-semibold" style={{ color: color ?? "var(--text-1)" }}>{value}</b>
+    </span>
   );
   return (
     <TableCard icon={Truck} title={t("cflow.snd.tableTitle")} headSize="lg" maxHeight="none"
       subtitle={t("cflow.snd.tableSub").replace("{d}", x?.days ?? 0)}
-      right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{loading ? "" : rows.length}</span>}>
+      right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{loading ? "" : rows.length}</span>}
+      footer={tot ? (
+        <div className="px-3 py-2 text-xs flex flex-wrap gap-x-5 gap-y-1" style={{ color: "var(--text-3)" }}
+          title={t("cflow.snd.pair")}>
+          {fig(t("cflow.snd.col.need"), pair(tot.need))}
+          {fig(t("cflow.snd.col.asked"), pair(tot.asked))}
+          {fig(t("cflow.snd.col.given"), pair(tot.given))}
+          {fig(t("cflow.snd.col.pct"), tot.pct == null ? "—" : `${tot.pct}%`, tone ? `var(--status-${tone})` : undefined)}
+        </div>
+      ) : null}>
       <thead>
         <tr>
           <Th label={t("cflow.sa.col.area")} />
           <Th label={t("cflow.sa.col.shift")} align="center" />
           <Th label={t("cflow.snd.col.need")} align="right" hint={`${t("cflow.snd.hint.need")} · ${t("cflow.snd.pair")}`} />
-          <Th label={t("cflow.snd.col.asked")} align="right" hint={t("cflow.snd.pair")} />
-          <Th label={t("cflow.snd.col.given")} align="right" hint={t("cflow.snd.pair")} />
-          <Th label={t("cflow.snd.col.pct")} align="right" hint={t("cflow.snd.hint.pct")} />
         </tr>
       </thead>
       <tbody>
@@ -249,28 +249,17 @@ export function SendingTable({ t, x, loading }) {
           <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--status-bad)" }}>{t("cflow.loadFailed")}</td></tr>
         ) : !rows.length ? (
           <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--text-3)" }}>{t("cflow.snd.none")}</td></tr>
-        ) : (
-          <>
-            {rows.map((r) => (
-              <tr key={r.area_id} className="text-sm">
-                <td className="px-3 py-2 whitespace-nowrap max-w-[280px] truncate" title={tx(r.area)} style={{ color: "var(--text-1)" }}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <Truck size={13} className="shrink-0" aria-hidden style={{ color: TYPE_COLORS.send }} />{tx(r.area) || "—"}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: "var(--text-2)" }}>{shiftName(t, r.shift)}</td>
-                {cells(r)}
-              </tr>
-            ))}
-            {rows.length > 1 && (
-              <tr className="text-sm font-semibold" style={{ background: "var(--bg-inner)" }}>
-                <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{t("production.cont.total")}</td>
-                <td />
-                {cells(x.total)}
-              </tr>
-            )}
-          </>
-        )}
+        ) : rows.map((r) => (
+          <tr key={r.area_id} className="text-sm">
+            <td className="px-3 py-2 whitespace-nowrap max-w-[320px] truncate" title={tx(r.area)} style={{ color: "var(--text-1)" }}>
+              <span className="inline-flex items-center gap-1.5">
+                <Truck size={13} className="shrink-0" aria-hidden style={{ color: TYPE_COLORS.send }} />{tx(r.area) || "—"}
+              </span>
+            </td>
+            <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: "var(--text-2)" }}>{shiftName(t, r.shift)}</td>
+            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>{pair(r.need)}</td>
+          </tr>
+        ))}
       </tbody>
     </TableCard>
   );

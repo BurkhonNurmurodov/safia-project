@@ -714,6 +714,56 @@ He settled four questions:
 - Not built: a destination (shop / branch) on a delivery, and returns of
   dispatch containers — the operator: «no need».
 
+### One request for the hour — crates and dispatch together (2026-11-19, later)
+
+The same evening the operator changed the request side: «we have to do it all
+in the same request, not different — the dispatch must be included like the
+inside containers; AXO creates the request for all, for the supervisors and
+dispatch». He settled four questions:
+- **The dispatch part goes out as ONE amount** («one lump to dispatch»). The
+  split names no area.
+- **No limit and no confirmation** for it.
+- **Mixing types:** «it depends — AXO should get the containers ready for those
+  hours, and that's all». So the dispatch amount may take any type the request
+  carries.
+- **The separate area requests made earlier** are kept, and no new ones are
+  made.
+
+- **One request.** A brigadirs' request now carries every type (`ALL_KEYS`):
+  the hour's crates by «Konteynerlar» AND every dispatch area's containers and
+  lids of that hour by the schedule.
+  - «Yangi so'rov» has no «Brigadirlarga / Jo'natishga» switch any more. The
+    form fills all seven types for the hour (`hour-need`'s `hours` plus every
+    area's `send`), the dispatch two under a truck line.
+  - «Tayyor so'rovlar» is one item per hour (`hour_need_all` → `prepared`;
+    `prepared_send` is gone, and `/requests/prepared` still answers `send: []`
+    for a tab from the morning).
+  - Telegram tells logistics to split the crates and give the dispatch
+    containers and lids to dispatch (`hint_send`).
+- **The split** (`assign_request(..., dispatch=)`, `POST …/assign` `dispatch`):
+  - The brigadirs' rows are the crates, as before: their limits, their «Qabul».
+  - Under them sits «Jo'natishga», ONE amount for any type of the request: no
+    limit, nobody confirms it. It starts as every dispatch container and lid
+    asked (`split-hint` → `dispatch`), and is stored on the request as
+    `given`.
+  - What is asked in all may not be exceeded; fewer needs a reason, as before.
+    A split may go to dispatch alone.
+  - An approved brigadir extra takes no dispatch amount.
+  - The row shows it after the brigadirs' parts («🚚 Jo'natishga: …»), and the
+    truck columns count it as given.
+- **What it changes downstream:**
+  - **Stock:** `given` of ANY split request leaves the shelf as «Jo'natishga»
+    (`_stock_out` kind `send`).
+  - **«Hisobot» / «Tahlil»:** `send_given` is that amount (plus an area
+    request's delivery), and `in_given` is the brigadirs' parts. `in_asked` /
+    `send_asked` split what was asked by TYPE (crates vs dispatch types).
+  - **The «Jo'natish» table** (`sending_report`) keeps each area's NEED.
+    Asked / given / % exist only in all (the table's footer, the Excel
+    sheet's total row), since the split names no area.
+- The area requests of the first design (`area_id`, «Yetkazish» →
+  `deliver_request`) still read, deliver and count. Only the form no longer
+  makes them.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

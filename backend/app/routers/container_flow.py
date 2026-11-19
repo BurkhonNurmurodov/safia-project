@@ -262,6 +262,7 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     ws3 = wb.create_sheet(body.headers.get("snd_sheet", "Sending")[:31])
     tn = lambda k: body.types.get(k, k)                                        # noqa: E731
     hdr = lambda k: body.headers.get(f"snd_{k}", k)                            # noqa: E731
+    # per area its need; what was asked and given exists only in all (the split names no area)
     ws3.append([hdr("area"), hdr("shift")]
                + [f"{hdr(f)} · {tn(k)}" for f in ("need", "asked", "given") for k in flow.SEND_KEYS]
                + [hdr("pct")])
@@ -269,8 +270,7 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
         c.font = Font(bold=True)
     for a in snd["areas"]:
         ws3.append([a["area"], body.headers.get(f"shift_{a['shift']}", a["shift"] or "")]
-                   + [a[f][k] for f in ("need", "asked", "given") for k in flow.SEND_KEYS]
-                   + [a["pct"]])
+                   + [a["need"][k] for k in flow.SEND_KEYS])
     tot = snd["total"]
     ws3.append([body.headers.get("total", "Total"), ""]
                + [tot[f][k] for f in ("need", "asked", "given") for k in flow.SEND_KEYS] + [tot["pct"]])
@@ -462,11 +462,11 @@ def put_request(request_id: int, body: EditBody, db: Session = Depends(get_db), 
 
 @router.get("/requests/prepared")
 def get_prepared(day: date = Query(...), db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """The day's hours still ahead with what each needs on «Konteynerlar» less
-    what was already asked — AXO sends the picked ones in one go. `send`: the
-    dispatch areas' hours the same way (2026-11-19 — apart, so an older tab
-    keeps reading `hours` as it did)."""
-    return {"day": day.isoformat(), "hours": flow.prepared(db, day), "send": flow.prepared_send(db, day)}
+    """The day's hours still ahead with what each needs — «Konteynerlar» and
+    «Jo'natish jadvali» together, one item per hour (2026-11-19) — less what
+    was already asked; AXO sends the picked ones in one go."""
+    # `send` stays (empty) for a tab of the day before: the areas' hours are inside `hours` now
+    return {"day": day.isoformat(), "hours": flow.prepared(db, day), "send": []}
 
 
 class BulkItem(BaseModel):
@@ -508,9 +508,10 @@ class PartBody(BaseModel):
 
 
 class AssignBody(BaseModel):
-    parts: List[PartBody]
+    parts: List[PartBody] = Field(default_factory=list)
     reason: Optional[str] = None
     comment: Optional[str] = None
+    dispatch: Optional[Dict[str, int]] = None   # ONE amount to the dispatch areas (2026-11-19)
 
 
 @router.post("/requests/{request_id}/assign")
@@ -519,7 +520,7 @@ def post_assign(request_id: int, body: AssignBody, db: Session = Depends(get_db)
     try:
         r = flow.assign_request(db, request_id, [p.model_dump() for p in body.parts], body.reason,
                                 body.comment, _actor(payload), _me(db, payload),
-                                page_admin(db, payload, ADMIN_PAGE))
+                                page_admin(db, payload, ADMIN_PAGE), dispatch=body.dispatch)
         db.commit()
     except flow.FlowError as e:
         db.rollback()
@@ -603,7 +604,9 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
     limits = flow.unit_limits(db, r.day, r.hour, r.id)
     return {"rows": flow.split_hint(db, r, limits), "extra_for": None,
             # each brigadir's limit for the hour: the dialog caps every count at `left`
-            "limits": {str(m): u for m, u in limits.items()}}
+            "limits": {str(m): u for m, u in limits.items()},
+            # the dispatch amount starts as every dispatch container and lid asked
+            "dispatch": {k: n for k, n in (r.lines or {}).items() if k in flow.SEND_KEYS}}
 
 
 @router.get("/receipts")

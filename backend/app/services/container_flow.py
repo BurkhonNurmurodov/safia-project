@@ -310,7 +310,11 @@ def create_request(db: Session, day: date, hour: int, logistics_key: str, counts
     if logistics_key not in people and not (logistics_key == ALL_KEY and people):
         raise FlowError("logistics")
     area = _area(db, area_id) if area_id is not None else None
-    c = _clean_counts(counts, SEND_KEYS if area else KEYS)
+    # ONE request for the hour (2026-11-19, the operator: «we have to do it all
+    # in the same request»): the brigadirs' crates AND the dispatch containers
+    # and lids; an area's own request (the first design, kept for those made)
+    # carries the dispatch types only
+    c = _clean_counts(counts, SEND_KEYS if area else ALL_KEYS)
     if not c:
         raise FlowError("count")
     at = now()
@@ -332,10 +336,14 @@ def _request(db: Session, request_id: int) -> ContainerRequest:
 
 
 def assign_request(db: Session, request_id: int, parts: list, reason, comment, actor,
-                   actor_key, is_admin: bool) -> ContainerRequest:
+                   actor_key, is_admin: bool, dispatch: Optional[dict] = None) -> ContainerRequest:
     """The logistics person splits the request across brigadirs: `parts` is
-    [{manager_id, counts}]. No type may go over what was asked; fewer needs a
-    reason. Only the addressee (or an admin) may do it, once."""
+    [{manager_id, counts}] — and, from 2026-11-19, gives `dispatch`
+    {ctype: n}: what went to the dispatch areas, ONE amount (the operator: «one
+    lump to dispatch»), any type the request carries, no limit and nobody
+    confirms it — it is stored on the request (`given`). No type may go over
+    what was asked in all; fewer needs a reason. Only the addressee (or an
+    admin) may do it, once."""
     r = _request(db, request_id)       # row-locked: of two people splitting at once, one wins
     if r.status == "assigned" and r.logistics_key != actor_key:
         raise FlowError("taken")        # somebody else split it first
@@ -361,7 +369,12 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
                 raise FlowError("type")
             given[k] = given.get(k, 0) + n
         clean.append((mid, c))
-    if not clean:
+    lump = _clean_counts(dispatch, ALL_KEYS) if dispatch else {}
+    for k, n in lump.items():
+        if k not in r.lines:
+            raise FlowError("type")
+        given[k] = given.get(k, 0) + n
+    if not clean and not lump:
         raise FlowError("count")
     if any(given.get(k, 0) > n for k, n in r.lines.items()):
         raise FlowError("over")
@@ -369,7 +382,7 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
     if extra is not None:
         # a brigadir's EXTRA, approved by AXO: to that unit only, and past its
         # limit by exactly what AXO approved (the request's own counts)
-        if any(mid != extra for mid, _c in clean):
+        if lump or any(mid != extra for mid, _c in clean):
             raise FlowError("extra_unit")
     else:
         # no brigadir past their limit for the hour (`unit_limits`)
@@ -390,6 +403,7 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
             merged[(mid, k)] = merged.get((mid, k), 0) + n
     for (mid, k), n in merged.items():
         db.add(ContainerRequestPart(request_id=r.id, manager_id=mid, ctype=k, count=n))
+    r.given = lump or None
     at = now()
     r.status, r.assigned_at, r.assigned_by, r.late = "assigned", at, actor, at > r.due_at
     if to_all:
@@ -476,7 +490,7 @@ def edit_request(db: Session, request_id: int, hour: int, logistics_key: str, co
     area = None
     if r.area_id is not None and area_id is not None and int(area_id) != r.area_id:
         area = _area(db, area_id)
-    c = _clean_counts(counts, SEND_KEYS if r.area_id is not None else KEYS)
+    c = _clean_counts(counts, SEND_KEYS if r.area_id is not None else ALL_KEYS)
     if not c:
         raise FlowError("count")
     extra = db.query(ContainerExtra).filter(ContainerExtra.request_id == r.id).first()
@@ -581,7 +595,8 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "lines": {k: r.lines[k] for k in ALL_KEYS if k in (r.lines or {})}, "note": r.note,
             # a dispatch area's request (2026-11-19): the area, and what was delivered there
             "area_id": r.area_id, "area": r.area_name,
-            "given": dict(r.given or {}) if r.area_id is not None and r.given is not None else None,
+            # an area's request: what was delivered there; a split one: what went to dispatch
+            "given": dict(r.given) if r.given is not None else None,
             "logistics_key": r.logistics_key, "logistics_name": r.logistics_name,
             "status": r.status, "due_at": _iso(r.due_at), "created_at": _iso(r.created_at),
             "created_by": r.created_by, "assigned_at": _iso(r.assigned_at), "assigned_by": r.assigned_by,
@@ -688,8 +703,11 @@ def requests_report(db: Session, d_from: date, d_to: date) -> dict:
         asked = sum((r.lines or {}).values())
         s["asked"] += asked
         d["asked"] += asked
-        s["send_asked" if r.area_id is not None else "in_asked"] += asked
-        if r.area_id is not None:
+        # asked: the crates vs the dispatch types; given (below): to the brigadirs vs to dispatch
+        snd = sum(int(n or 0) for k, n in (r.lines or {}).items() if k in SEND_KEYS)
+        s["send_asked"] += snd
+        s["in_asked"] += asked - snd
+        if snd:
             s["send_requests"] += 1
         who = people.setdefault(r.logistics_key, {"key": r.logistics_key, "name": r.logistics_name,
                                                   "requests": 0, "assigned": 0, "on_time": 0,
@@ -720,13 +738,11 @@ def requests_report(db: Session, d_from: date, d_to: date) -> dict:
             s["short"] += 1
             d["short"] += 1
             reasons[r.short_reason] = reasons.get(r.short_reason, 0) + 1
-        if r.area_id is not None:
-            # a dispatch area's: what was delivered there — nobody confirms it
-            g = sum(int(n or 0) for n in (r.given or {}).values())
-            for f in ("given", "send_given"):
-                s[f] += g
-                d[f] += g
-            continue
+        # what went to dispatch (a split's amount, or an area's delivery) — nobody confirms it
+        g = sum(int(n or 0) for n in (r.given or {}).values())
+        for f in ("given", "send_given"):
+            s[f] += g
+            d[f] += g
         by_unit: dict = {}
         for p in parts.get(r.id, []):
             for f in ("given", "in_given"):
@@ -878,12 +894,10 @@ def analytics(db: Session, d_from: date, d_to: date) -> dict:
         dx["assigned"] += 1
         dx["on_time"] += 0 if r.late else 1
         dx["_assign"].append((r.assigned_at - r.created_at).total_seconds() / 60)
-        if r.area_id is not None:
-            for k, n in (r.given or {}).items():
-                h["given"] += int(n or 0)
-                if k in types:
-                    types[k]["given"] += int(n or 0)
-            continue
+        for k, n in (r.given or {}).items():          # what went to dispatch
+            h["given"] += int(n or 0)
+            if k in types:
+                types[k]["given"] += int(n or 0)
         by_unit: dict = {}
         for p in parts.get(r.id, []):
             h["given"] += p.count
@@ -979,28 +993,32 @@ _TG = {
            "hour": "Soat", "due": "Muddat", "by": "Yubordi", "note": "Izoh", "why": "Sabab",
            "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish",
            "hint_all": "Barcha logistlarga yuborildi — birinchi taqsimlagan oladi.", "all": "Barcha logistlarga",
-           "area": "Jo'natish", "hint_area": "Jo'natish joyiga yetkazing."},
+           "area": "Jo'natish", "hint_area": "Jo'natish joyiga yetkazing.",
+           "hint_send": "Brigadirlarga taqsimlang, jo'natish konteyner va krishkalarini jo'natishga bering."},
     "uz_cyrl": {"new": "Янги контейнер сўрови", "cancelled": "Контейнер сўрови бекор қилинди",
                 "edited": "Контейнер сўрови ўзгартирилди", "moved": "Контейнер сўрови бошқа логистга ўтказилди",
                 "moved_hint": "Бу сўровни энди сиз тақсимламайсиз.",
                 "hour": "Соат", "due": "Муддат", "by": "Юборди", "note": "Изоҳ", "why": "Сабаб",
                 "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш",
                 "hint_all": "Барча логистларга юборилди — биринчи тақсимлаган олади.", "all": "Барча логистларга",
-                "area": "Жўнатиш", "hint_area": "Жўнатиш жойига етказинг."},
+                "area": "Жўнатиш", "hint_area": "Жўнатиш жойига етказинг.",
+                "hint_send": "Бригадирларга тақсимланг, жўнатиш контейнер ва крышкаларини жўнатишга беринг."},
     "ru": {"new": "Новая заявка на контейнеры", "cancelled": "Заявка на контейнеры отменена",
            "edited": "Заявка на контейнеры изменена", "moved": "Заявка на контейнеры передана другому логисту",
            "moved_hint": "Эту заявку теперь распределяете не вы.",
            "hour": "Час", "due": "Срок", "by": "Отправил(а)", "note": "Комментарий", "why": "Причина",
            "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку",
            "hint_all": "Отправлено всем логистам — берёт тот, кто распределит первым.", "all": "Всем логистам",
-           "area": "Отправка", "hint_area": "Доставьте на участок отправки."},
+           "area": "Отправка", "hint_area": "Доставьте на участок отправки.",
+           "hint_send": "Распределите по бригадирам, а контейнеры и крышки для отправки отдайте на отправку."},
     "en": {"new": "New container request", "cancelled": "Container request cancelled",
            "edited": "Container request changed", "moved": "Container request moved to another logistics person",
            "moved_hint": "You no longer split this request.",
            "hour": "Hour", "due": "Due", "by": "Sent by", "note": "Note", "why": "Reason",
            "hint": "Split it across the brigadirs.", "btn": "📦 Open the request",
            "hint_all": "Sent to every logistics person — whoever splits it first takes it.", "all": "Every logistics person",
-           "area": "Dispatch", "hint_area": "Take it to the dispatch area."},
+           "area": "Dispatch", "hint_area": "Take it to the dispatch area.",
+           "hint_send": "Split the crates across the brigadirs and give the dispatch containers and lids to dispatch."},
 }
 NOTIFY_PAGE = "/containers/flow"
 
@@ -1042,7 +1060,11 @@ def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
         rows += [f"{t['due']}: <b>{r.due_at.astimezone(TZ):%H:%M}</b>", f"{t['by']}: {escape(name)}"]
         if r.note:
             rows.append(f"{t['note']}: {escape(transliterate_text(r.note, lang) or r.note)}")
-        rows += ["", f"<i>{escape(t['hint_all'] if r.logistics_key == ALL_KEY else t['hint_area'] if r.area_id is not None else t['hint'])}</i>"]
+        hint = (t["hint_area"] if r.area_id is not None
+                else t["hint_send"] if any(k in SEND_KEYS for k in (r.lines or {})) else t["hint"])
+        rows += ["", f"<i>{escape(hint)}</i>"]
+        if r.logistics_key == ALL_KEY:
+            rows.append(f"<i>{escape(t['hint_all'])}</i>")
     elif r.cancel_note:
         rows.append(f"{t['why']}: {escape(r.cancel_note)}")
     return "\n".join(rows)
@@ -1294,13 +1316,27 @@ def notify_split_cancelled_later(request_id: int) -> None:
 # the picked ones in one go — all or nothing — and the addressee hears ONE
 # message for the lot (`notify_requests`).
 
+def hour_need_all(db: Session, day: date) -> dict:
+    """{hour: {ctype: n}} — the brigadirs' crates by «Konteynerlar» AND every
+    dispatch area's containers and lids by «Jo'natish jadvali», together."""
+    need = {h: dict(c) for h, c in plant_hours(db, day).items()}
+    for hm in send_hours(db).values():
+        for h, c in hm.items():
+            e = need.setdefault(h, {})
+            for k, n in c.items():
+                e[k] = e.get(k, 0) + n
+    return need
+
+
 def prepared(db: Session, day: date, at: Optional[datetime] = None) -> list:
+    """The hours still ahead with what each needs — the brigadirs' and the
+    dispatch areas' together (2026-11-19: one request for the hour) — less
+    what was already asked for the hour."""
     at = at or now()
-    need = plant_hours(db, day)
+    need = hour_need_all(db, day)
     asked: dict = {}
     for r in db.query(ContainerRequest).filter(ContainerRequest.day == day,
                                                ContainerRequest.status != "cancelled",
-                                               ContainerRequest.area_id.is_(None),
                                                ~ContainerRequest.id.in_(_extra_request_ids(db))).all():
         e = asked.setdefault(int(r.hour), {})
         for k, n in (r.lines or {}).items():
@@ -1310,43 +1346,13 @@ def prepared(db: Session, day: date, at: Optional[datetime] = None) -> list:
         hs = hour_start(day, h)
         if hs + timedelta(hours=1) <= at:
             continue                                    # the hour is over
-        counts = {k: need[h][k] - asked.get(h, {}).get(k, 0) for k in KEYS
+        counts = {k: need[h][k] - asked.get(h, {}).get(k, 0) for k in ALL_KEYS
                   if need[h].get(k, 0) - asked.get(h, {}).get(k, 0) > 0}
         if not counts:
             continue
-        out.append({"hour": h, "need": {k: need[h][k] for k in KEYS if need[h].get(k)},
+        out.append({"hour": h, "need": {k: need[h][k] for k in ALL_KEYS if need[h].get(k)},
                     "asked": asked.get(h, {}), "counts": counts,
                     "due_at": _iso(_due(hs, at)), "late": at > hs - timedelta(minutes=LEAD_MIN)})
-    return out
-
-
-def prepared_send(db: Session, day: date, at: Optional[datetime] = None) -> list:
-    """The dispatch areas' hours of `day` still ahead with what each needs by
-    «Jo'natish jadvali» less what was already asked for that area and hour —
-    «Tayyor so'rovlar»' second half (2026-11-19). Each item names its area."""
-    at = at or now()
-    asked: dict = {}
-    for r in db.query(ContainerRequest).filter(ContainerRequest.day == day,
-                                               ContainerRequest.status != "cancelled",
-                                               ContainerRequest.area_id.isnot(None)).all():
-        e = asked.setdefault((r.area_id, int(r.hour)), {})
-        for k, n in (r.lines or {}).items():
-            e[k] = e.get(k, 0) + n
-    out = []
-    for a in send_areas(db):
-        for h, need in sorted(area_hours(a).items()):
-            hs = hour_start(day, h)
-            if hs + timedelta(hours=1) <= at:
-                continue                                # the hour is over
-            got = asked.get((a.id, h), {})
-            counts = {k: need[k] - got.get(k, 0) for k in SEND_KEYS if need.get(k, 0) - got.get(k, 0) > 0}
-            if not counts:
-                continue
-            out.append({"hour": h, "area_id": a.id, "area": a.name, "shift": a.shift,
-                        "need": {k: need[k] for k in SEND_KEYS if need.get(k)}, "asked": got,
-                        "counts": counts, "due_at": _iso(_due(hs, at)),
-                        "late": at > hs - timedelta(minutes=LEAD_MIN)})
-    out.sort(key=lambda x: (x["hour"], x["area"] or ""))
     return out
 
 
@@ -1899,8 +1905,9 @@ def record_stock(db: Session, kind: str, counts: dict, note, actor, actor_key,
 
 def _stock_out(db: Session, since: datetime, until: datetime) -> list:
     """What left AXO after `since`: [(at, {ctype: n}, kind)] — a split request
-    at its split and an issued batch at its issue (`out`, to the brigadirs), a
-    dispatch area's request at its delivery (`send`)."""
+    at its split and an issued batch at its issue (`out`, to the brigadirs);
+    what went to dispatch — a request's dispatch amount, or an area's request
+    delivered — at that moment (`send`)."""
     from sqlalchemy import func as _f
     out: dict = {}
     for rid, at, k, n in db.query(ContainerRequest.id, ContainerRequest.assigned_at,
@@ -1917,7 +1924,7 @@ def _stock_out(db: Session, since: datetime, until: datetime) -> list:
                     ContainerBatch.issued_at <= until, ContainerBatchLine.issued.isnot(None)).all():
         out.setdefault(("b", bid, at), {})[k] = int(n or 0)
     for rid, at, given in db.query(ContainerRequest.id, ContainerRequest.assigned_at, ContainerRequest.given) \
-            .filter(ContainerRequest.status == "assigned", ContainerRequest.area_id.isnot(None),
+            .filter(ContainerRequest.status == "assigned",
                     ContainerRequest.given.isnot(None), ContainerRequest.assigned_at > since,
                     ContainerRequest.assigned_at <= until).all():
         out[("s", rid, at)] = {k: int(n or 0) for k, n in (given or {}).items()}
@@ -1939,7 +1946,7 @@ def stock_ahead(db: Session, at: datetime) -> tuple:
         ahead: Optional[dict] = {}
         # yesterday's production day too: a night shift's hours run past midnight
         for d in (at.date() - timedelta(days=1), at.date()):
-            for h in prepared(db, d, at) + prepared_send(db, d, at):
+            for h in prepared(db, d, at):
                 for k, n in h["counts"].items():
                     ahead[k] = ahead.get(k, 0) + n
     except Exception:
@@ -2176,43 +2183,34 @@ def seed_send_areas(db: Session) -> int:
 
 
 def sending_report(db: Session, d_from: date, d_to: date, today: Optional[date] = None) -> dict:
-    """«Jo'natish» over a period: per dispatch area what the schedule needs
-    (its shift figure for every day of the period from `SEND_FROM` up to
-    today), what AXO asked and what logistics delivered (requests not
-    cancelled), per type and in all."""
+    """«Jo'natish» over a period: per dispatch area what the schedule needs (its
+    shift figure for every day of the period from `SEND_FROM` up to today);
+    in all, what AXO asked of the dispatch types and what logistics gave to
+    dispatch (requests not cancelled). The split gives dispatch ONE amount and
+    names no area (2026-11-19), so asked / given exist only in all."""
     today = today or now().date()
     last = min(d_to, today)
     n_days = max(0, (last - max(d_from, SEND_FROM)).days + 1)
     zero = lambda: {k: 0 for k in SEND_KEYS}                        # noqa: E731
-    rows: dict = {}
-
-    def row(aid, name, shift):
-        return rows.setdefault(aid, {"area_id": aid, "area": name, "shift": shift, "need": zero(),
-                                     "asked": zero(), "given": zero(), "requests": 0, "delivered": 0,
-                                     "late": 0, "short": 0})
-    for a in send_areas(db):
-        r = row(a.id, a.name, a.shift)
-        r["need"] = {"send": (a.send or 0) * n_days, "lid": (a.lid or 0) * n_days}
+    areas = [{"area_id": a.id, "area": a.name, "shift": a.shift,
+              "need": {"send": (a.send or 0) * n_days, "lid": (a.lid or 0) * n_days}}
+             for a in send_areas(db)]
+    total = {"need": zero(), "asked": zero(), "given": zero()}
+    for a in areas:
+        for k in SEND_KEYS:
+            total["need"][k] += a["need"][k]
     for q in db.query(ContainerRequest).filter(ContainerRequest.day >= d_from, ContainerRequest.day <= d_to,
-                                               ContainerRequest.area_id.isnot(None),
                                                ContainerRequest.status != "cancelled").all():
-        r = row(q.area_id, q.area_name, None)
-        r["requests"] += 1
         for k, n in (q.lines or {}).items():
-            if k in r["asked"]:
-                r["asked"][k] += int(n or 0)
+            if k in SEND_KEYS:
+                total["asked"][k] += int(n or 0)
         if q.status == "assigned":
-            r["delivered"] += 1
-            r["late"] += 1 if q.late else 0
-            r["short"] += 1 if q.short_reason else 0
             for k, n in (q.given or {}).items():
-                if k in r["given"]:
-                    r["given"][k] += int(n or 0)
-    out = sorted(rows.values(), key=lambda r: (r["shift"] or 9, r["area"] or ""))
-    total = {f: {k: sum(r[f][k] for r in out) for k in SEND_KEYS} for f in ("need", "asked", "given")}
-    for r in out + [total]:
-        r["pct"] = round(100 * sum(r["given"].values()) / sum(r["need"].values())) if sum(r["need"].values()) else None
-    return {"areas": out, "total": total, "days": n_days}
+                if k in SEND_KEYS:
+                    total["given"][k] += int(n or 0)
+    need = sum(total["need"].values())
+    total["pct"] = round(100 * sum(total["given"].values()) / need) if need else None
+    return {"areas": sorted(areas, key=lambda a: (a["shift"] or 9, a["area"] or "")), "total": total, "days": n_days}
 
 
 # ── a brigadir's EXTRA request (2026-11-18, the operator: «add the request
