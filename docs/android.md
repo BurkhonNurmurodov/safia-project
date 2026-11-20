@@ -102,8 +102,7 @@ daily") **the app downloads every build the site deploys by itself** — see
     to say, the pages' state as its headline — never «Sizda eng so'nggi
     versiya» over pages left behind. The row lights up for them too.
   - **From APK 1.8.0 (released as 1.8.1) the app reports the download itself** (the operator's
-    yes, same day; built 2026-11-20 and installed on the A16 only — NOT
-    published until the operator says so). `window.__safiaApp.pages`; the page sends
+    yes, same day; 1.8.1 published 2026-11-20). `window.__safiaApp.pages`; the page sends
     `{type: "pages", op: "status" | "check"}` and hears `safia-pages`
     (`PageUpdates.state()`: phase checking · downloading · ready · failed ·
     idle, `version`, `got` / `total` bytes — at most every 250 ms while
@@ -252,7 +251,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.8.1, versionCode 15 — built, not yet published; the server still offers 1.7.1; 1.8.0 was never published).
+  **Raise `versionCode` on every release** (current: 1.8.1, versionCode 15 — PUBLISHED 2026-11-20; 1.8.0 was never published).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
@@ -288,6 +287,10 @@ daily") **the app downloads every build the site deploys by itself** — see
     `config.android_published`. A new key = a new SHA-256 in code.
   - Publishing is the release: every installed 1.4.0+ app offers it at its
     next check. There is no staging.
+  - **The upload goes straight to the server** (`--resolve` to the box's IP,
+    `SAFIA_ORIGIN_IP` overrides), Cloudflare only as the fallback: Cloudflare
+    cuts a request off after 100 s, and 1.8.1's 21 MB took 126 s through it
+    (524, nothing stored) and 4 s direct (2026-11-20).
   - Google Play remains possible later: it needs a developer account, and
     Play App Signing re-signs with Google's key — ADD its fingerprint to
     `ANDROID_ASSET_LINKS` (which `publish` also reads).
