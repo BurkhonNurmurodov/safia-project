@@ -341,6 +341,9 @@ async def lifespan(app: FastAPI):
     from app.startup import container_extra_brigadirs, container_extra_brigadirs_off
     later(container_extra_brigadirs)
     later(container_extra_brigadirs_off)     # after it: closed again the same day
+    # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
+    from app.startup import restore_wiped_accounts
+    later(restore_wiped_accounts)
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     later(date_window_edits_nov13)

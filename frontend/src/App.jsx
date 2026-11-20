@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from "react";
 import { lazyWithReload } from "./utils/lazyPage";
 import { ADMIN_PAGES } from "./pages/admin/adminPages";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { isNetworkError, isDown, subscribeConnectivity, OFFLINE_RETRY_MS } from "./utils/connectivity";
 import { queryPersister } from "./utils/offlineCache";
 import { FilterProvider } from "./context/FilterContext";
@@ -475,25 +475,37 @@ function NoAccess({ page, dest }) {
   const { capPages, deniedPages } = useCapabilities();
   // Approved leaders and brigadirs — roles that HAVE pages — reached this screen
   // seconds after signing in (2026-11-20), and no record says why. Each showing
-  // reports what the screen was decided on, once, through the crash door.
+  // reports what the screen was decided on, once, through the crash door — in
+  // the DM itself (`component`), since the log is not readable from outside.
+  // Then it asks the server again: a screen decided on stale data opens the
+  // page by itself once the fresh answer lands; a real «no pages» stays.
+  const qc = useQueryClient();
   useEffect(() => {
     try {
       const role = auth?.role;
+      const age = (key) => {
+        const at = qc.getQueryState(key)?.dataUpdatedAt;
+        return at ? Math.round((Date.now() - at) / 1000) : null;
+      };
+      const diag = JSON.stringify({
+        role, page, dest: dest || null,
+        matrix: access === DEFAULT_PAGE_ACCESS ? "defaults" : "server",
+        role_pages: Object.values(access || {}).filter((v) => Array.isArray(v) && v.includes(role)).length,
+        access_age_s: age(["page-access"]), caps_age_s: age(["my-capabilities"]),
+        cap_pages: capPages || [], denied: deniedPages || [],
+        roles: (auth?.roles || []).length, token: Boolean(getToken()), web: webSession,
+      });
       api.post("/api/crash-report", {
         message: `No-pages screen shown (${role || "no role"})`,
-        stack: JSON.stringify({
-          role, status: auth?.status, page, dest: dest || null,
-          matrix: access === DEFAULT_PAGE_ACCESS ? "defaults" : "server",
-          role_pages: Object.values(access || {}).filter((v) => Array.isArray(v) && v.includes(role)).length,
-          cap_pages: (capPages || []).length, denied: (deniedPages || []).length,
-          roles: (auth?.roles || []).length, token: Boolean(getToken()), web: webSession,
-        }).slice(0, 3000),
-        component: "NoAccess",
+        stack: diag.slice(0, 3000),
+        component: `NoAccess ${diag}`.slice(0, 2000),
         url: String(window.location.pathname + window.location.search).slice(0, 500),
         version: APP_VERSION,
         ua: String(navigator.userAgent || "").slice(0, 500),
       }).catch(() => {});
     } catch { /* a report must never break the screen */ }
+    qc.invalidateQueries({ queryKey: ["page-access"] });
+    qc.invalidateQueries({ queryKey: ["my-capabilities"] });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // In Telegram «Chiqish» is an UNREGISTER, so it asks first and leaves only the
   // active role — exactly the header's. Unconfirmed, this button deleted whole

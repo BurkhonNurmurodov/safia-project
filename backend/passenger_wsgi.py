@@ -318,6 +318,8 @@ try:
     from app.startup import container_extra_brigadirs, container_extra_brigadirs_off
     container_extra_brigadirs()
     container_extra_brigadirs_off()     # after it: closed again the same day
+    from app.startup import restore_wiped_accounts
+    restore_wiped_accounts()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
     from app.startup import date_window_edits_nov13
     date_window_edits_nov13()

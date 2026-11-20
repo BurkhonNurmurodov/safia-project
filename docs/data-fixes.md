@@ -2,6 +2,23 @@
 
 Moved word for word from the repo-root `CLAUDE.md` on 2026-11-06; the index of every topic file is CLAUDE.md «Where everything else is written (`docs/`)».
 
+## The two shared phones the «no pages» sign-out wiped (`startup.restore_wiped_accounts`, 2026-11-20)
+
+The mini app's «Sahifa biriktirilmagan» screen deleted 10 accounts through an
+unconfirmed «Chiqish» (docs/registration.md). By the evening 8 had been
+re-approved by hand onto the very profile they held. The operator: «approve only
+the ones which were connected and signed out by sudden», then «Apply all four»
+for the two shared cell phones left. A one-shot (flag
+`oneshot:restore_wiped_accounts_nov20`, `later`, claimed before anything is
+sent): approves pending #512 (account 8979389385 «8210 Мясной» → Jumamurodova
+Durdona, leader:331) and #515 (8618970324 «Ofor pirojni 1.26» → Ashurov
+Shohzod, leader:265) through `decide_registration`, and reconnects
+leader:332 Eshquvatova Marjona to 8979389385 and supervisor:11 Talipova Mamura to
+8618970324 through `admin.add_user_role` — each held on that phone before the
+wipe and not re-registered. Every row is checked to be exactly what production
+showed at 22:22 (id, account, profile, still pending); anything else is
+skipped and named in the admins' DM. No other pending request is touched.
+
 ## Unit «Turdimurodov Nodirjon» joins Aripova Manzura's (`unit_merge_nov02`, 2026-11-02)
 
 The operator: «Remove the Nodirjon Turdimurodov from brigadirs, add his unit to

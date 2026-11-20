@@ -155,3 +155,11 @@ for approval, or registered on the shared cell phone as somebody else.
   with the role, the route's page, `dest`, whether the matrix was the server's
   or the coded defaults, the counts of role pages, granted and denied pages,
   and whether a token was stored. Read the next one before guessing.
+- **The report fired at once** (22:14 a leader on /production, 22:19 a
+  brigadir on /zagruzka — each role's FIRST page, so the client had decided the
+  role had none). The log was not readable from outside, so from that evening
+  the DM itself carries the details (`component` = «NoAccess {json}»: the
+  role's page count in the matrix held, how old the page-access and capability
+  answers were, the granted and DENIED page lists). And the screen asks the
+  server again as it opens (both queries invalidated): a decision taken on
+  stale data turns into the page by itself; a true «no pages» stays.

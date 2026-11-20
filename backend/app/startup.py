@@ -12046,3 +12046,70 @@ def kpi_off_cells_nov16() -> None:
         details=[("cells", len(codes)), ("codes", ", ".join(codes) or None)],
         reason="HR's list: these cells are not scored on the leaders' KPI; six dismissal reasons excluded",
     )
+
+
+# 2026-11-20 — the mini app's «no pages» screen offered «Chiqish» with no
+# confirm, and inside Telegram that DELETED the account and every role. Eight of
+# the ten wiped accounts were re-approved by hand; two shared cell phones were
+# not. The operator: «approve only the ones which were connected and signed out
+# by sudden», then «Apply all four». Each row is checked to be EXACTLY what was
+# read on production at 22:22 that evening (id, account, profile, status) before
+# it is touched; anything else is left alone and named in the report.
+RESTORE_WIPED_FLAG = "oneshot:restore_wiped_accounts_nov20"
+_RESTORE_APPROVE = [  # (role_ref, telegram_id, profile_key) — pending re-registrations
+    (512, 8979389385, "leader:331"),   # «8210 Мясной» → Jumamurodova Durdona
+    (515, 8618970324, "leader:265"),   # «Ofor pirojni 1.26» → Ashurov Shohzod
+]
+_RESTORE_CONNECT = [  # (telegram_id, role, profile id) — held before the wipe, not re-registered
+    (8979389385, "leader", 332),       # Eshquvatova Marjona
+    (8618970324, "supervisor", 11),    # Talipova Mamura
+]
+
+
+def restore_wiped_accounts() -> None:
+    from fastapi import HTTPException
+    from app.routers.admin import AddRolePayload, add_user_role
+    from app.telegram_bot import decide_registration
+
+    who = "system (one-shot 2026-11-20)"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=RESTORE_WIPED_FLAG).first():
+            return
+        # Claimed BEFORE anything is sent: approvals DM the person, and a
+        # deferred step is never retried.
+        db.add(AppSetting(key=RESTORE_WIPED_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        done, skipped = [], []
+        for ref, tid, pkey in _RESTORE_APPROVE:
+            row = db.query(TelegramUserRole).filter_by(id=ref).first()
+            label = f"#{ref} {pkey} → {tid}"
+            if not row or row.telegram_id != tid or row.profile_key != pkey or row.status != "pending":
+                skipped.append(f"{label}: {'gone' if not row else row.status}")
+                continue
+            ok = decide_registration(ref, "approved", decided_by=who)
+            (done if ok else skipped).append(f"{label} ({row.full_name})" + ("" if ok else ": not changed"))
+            db.expire_all()
+        for tid, role, pid in _RESTORE_CONNECT:
+            label = f"{role}:{pid} → {tid}"
+            user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
+            if not user:
+                skipped.append(f"{label}: no account")
+                continue
+            try:
+                add_user_role(user.id, AddRolePayload(role=role, role_id=pid), db,
+                              {"role": "admin", "sub": None, "full_name": who})
+                done.append(label)
+            except HTTPException as exc:
+                db.rollback()
+                skipped.append(f"{label}: {exc.detail}")
+        print(f"[startup] restore wiped accounts: done {done} · skipped {skipped}")
+        _dm_report("ok" if not skipped else "warn",
+                   "«Sahifa biriktirilmagan» → o'chgan akkauntlar tiklandi",
+                   rows=[("✅", "Bajarildi", done or "—"), ("⏭", "O'tkazildi", skipped or "—")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] restore wiped accounts failed: {exc}")
+        _dm_report("fail", "O'chgan akkauntlarni tiklash bajarilmadi", error=exc)
+    finally:
+        db.close()
