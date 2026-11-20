@@ -80,6 +80,15 @@ final class PageUpdates {
     private final AtomicBoolean queued = new AtomicBoolean();
     private volatile long lastRun;
     private volatile Runnable onReady;
+    // What the page is told (MainActivity → `safia-pages`, utils/androidUpdate.js):
+    // checking · downloading (got of total bytes) · ready · failed · idle. Written by
+    // the worker thread only.
+    private volatile Runnable onState;
+    private volatile String phase = "idle";
+    private volatile String target = "";
+    private volatile long got;
+    private volatile long total;
+    private volatile long told;
     private ScheduledFuture<?> periodic;
     // The worker thread's own.
     private String failing = "";
@@ -112,6 +121,47 @@ final class PageUpdates {
 
     void clearOnReady(Runnable r) {
         if (onReady == r) onReady = null;
+    }
+
+    /** Called (on the worker thread) whenever state() changes; while downloading, at most every 250 ms. */
+    void setOnState(Runnable r) {
+        onState = r;
+    }
+
+    void clearOnState(Runnable r) {
+        if (onState == r) onState = null;
+    }
+
+    /** The page asked (its update window, or it saw a newer build live): now, not at the next check. */
+    void checkNow() {
+        check(0, true);
+    }
+
+    /** {v, phase, version, got, total} for the page. */
+    String state() {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("v", 1).put("phase", phase).put("version", target).put("got", got).put("total", total);
+        } catch (JSONException ignored) {
+            // put() refuses only NaN and infinities
+        }
+        return o.toString();
+    }
+
+    private void setPhase(String p) {
+        phase = p;
+        tell();
+    }
+
+    private void tell() {
+        told = System.currentTimeMillis();
+        Runnable r = onState;
+        if (r != null) r.run();
+    }
+
+    private void progress(long n) {
+        got += n;
+        if (System.currentTimeMillis() - told >= 250) tell();
     }
 
     /** The app is on screen: a check shortly, then every five minutes until pause(). */
@@ -152,6 +202,7 @@ final class PageUpdates {
     private void run() {
         WebBundle pages = WebBundle.get(app);
         String stamp;
+        setPhase("checking");
         try {
             stamp = getJson("/build.json?t=" + System.currentTimeMillis()).optString("buildTime");
         } catch (HttpStatus e) {
@@ -159,9 +210,11 @@ final class PageUpdates {
             // would stop every phone following the site without a word, so it is counted and reported.
             if (e.code >= 400 && e.code < 500 && e.code != 408 && e.code != 429) failed("build.json", e.getMessage());
             else Log.i(TAG, "the site did not answer: " + e.getMessage());
+            setPhase("failed");
             return;
         } catch (IOException | JSONException e) {
             Log.i(TAG, "the site did not answer: " + e);  // offline, or unreachable right now
+            setPhase("failed");
             return;
         }
         if (failing.equals("build.json")) {
@@ -170,6 +223,7 @@ final class PageUpdates {
         }
         if (stamp.length() < 10 || stamp.length() > 64 || !stamp.matches("[0-9A-Za-z:.+\\-]+")) {
             Log.w(TAG, "build.json names no build: " + stamp);
+            setPhase("idle");
             return;
         }
         try {
@@ -177,8 +231,11 @@ final class PageUpdates {
             if (live == null) live = download(pages, stamp);
             if (pages.follow(live)) {
                 Log.i(TAG, "pages " + live.describe() + " ready for the next page load");
+                setPhase("ready");
                 Runnable r = onReady;
                 if (r != null) r.run();
+            } else {
+                setPhase("idle");
             }
             if (stamp.equals(failing)) {
                 failing = "";
@@ -188,9 +245,11 @@ final class PageUpdates {
             pages.collectGarbage();
         } catch (Refused e) {
             failed(stamp, e.getMessage());
+            setPhase("failed");
         } catch (IOException e) {
             // The connection dropped, or the site was deployed again mid-way: the next check goes on.
             Log.i(TAG, "pages " + stamp + " not downloaded yet: " + e);
+            setPhase("failed");
         }
     }
 
@@ -232,10 +291,15 @@ final class PageUpdates {
         if (total > MAX_DOWNLOAD) throw new Refused("build too large to download: " + total + " bytes");
         Log.i(TAG, "downloading pages " + list.optString("version") + ": " + need.size() + " of "
                 + files.size() + " files, " + total + " bytes");
+        target = list.optString("version");
+        got = 0;
+        this.total = total;
+        setPhase("downloading");
         // index.html comes from the site's own address, whose answer carries the
         // Content-Security-Policy these pages were written for — even when the file itself is at hand.
         boolean indexNeeded = need.remove(index) != null;
         String csp = fetch(pages, "index.html", index, indexNeeded ? sizes.get(index) : -1, indexNeeded);
+        if (indexNeeded) progress(sizes.get(index));
         if (csp == null || csp.trim().isEmpty()) throw new Refused("the site sent no Content-Security-Policy");
         for (Map.Entry<String, String> e : need.entrySet()) {
             fetch(pages, e.getValue(), e.getKey(), sizes.get(e.getKey()), true);
@@ -277,6 +341,7 @@ final class PageUpdates {
                     if (got > size) throw new Refused(rel + " is larger than build-files.json says");
                     md.update(buf, 0, n);
                     out.write(buf, 0, n);
+                    progress(n);
                 }
             } catch (Refused | IOException e) {
                 part.delete();

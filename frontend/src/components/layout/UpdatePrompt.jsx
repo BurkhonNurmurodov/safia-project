@@ -38,17 +38,22 @@ const Spinner = (props) => <Loader2 {...props} className="animate-spin" />;
  */
 export default function UpdatePrompt() {
   const { t } = useLang();
-  const { show, incompatible, dismiss, reload, showComing, comingVersion, dismissComing } = useAppUpdate();
+  const {
+    show, incompatible, dismiss, reload, showComing, comingVersion, comingPct, comingFailed, dismissComing,
+  } = useAppUpdate();
 
   if (!show && showComing) {
+    // 1.8.0+ says how far the download is; an older app only that it is coming.
+    const key = comingFailed ? "ui.version.comingFailed"
+      : comingPct !== null ? "ui.version.comingProgress" : "ui.version.coming";
     return (
       <Toast
         open
         tone="info"
-        icon={Spinner}
+        icon={comingFailed ? undefined : Spinner}
         duration={0}
         onClose={dismissComing}
-        message={t("ui.version.coming").replace("{v}", comingVersion ? `v${comingVersion}` : "")}
+        message={t(key).replace("{v}", comingVersion ? `v${comingVersion}` : "").replace("{p}", String(comingPct ?? 0))}
       />
     );
   }

@@ -4,6 +4,7 @@ import { BUILD_TIME } from "../utils/version";
 import { isOutdated, subscribeCompat } from "../utils/compat";
 import { updateWorker } from "../utils/pwa";
 import { inAndroidApp } from "../utils/session";
+import { apkPercent, pagesAsk, usePagesState } from "../utils/androidUpdate";
 
 /**
  * Is the tab running an older build than the one deployed?
@@ -115,6 +116,18 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
   const live = inApp && typeof liveData?.buildTime === "string" ? liveData.buildTime : "";
   const coming = Boolean(live && BUILD_TIME && live !== BUILD_TIME && !updateReady);
 
+  // 1.8.0+ reports the download itself (PageUpdates.java): a percent while it
+  // runs, «failed» when it broke off. Older apps answer nothing (null).
+  const pagesApp = usePagesState();
+  const comingPct = coming && (pagesApp?.phase === "downloading" || pagesApp?.phase === "ready")
+    ? apkPercent(pagesApp) : null;
+  const comingFailed = coming && pagesApp?.phase === "failed";
+  // The page saw the new build first: the app starts on it now instead of at
+  // its next five-minute check. Once per build.
+  useEffect(() => {
+    if (coming) pagesAsk("check");
+  }, [coming, live]);
+
   // A newer build is deployed: tell the service worker (browsers only; a no-op
   // where none is registered) to fetch its new copy now, so the new build is
   // precached BEFORE the user presses reload rather than during it.
@@ -153,6 +166,7 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     if (!BUILD_TIME) return;
     refetch();
     if (inApp) refetchLive();
+    pagesAsk("check");
   }, [refetch, refetchLive, inApp]);
 
   const reload = useCallback(() => {
@@ -176,6 +190,12 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     /** App only: a newer build is live and the phone does not hold it yet. */
     coming,
     comingVersion: coming && typeof liveData?.version === "string" ? liveData.version : "",
+    /** 1.8.0+ only: the download's whole percent, or null when the app says nothing. */
+    comingPct,
+    comingGot: comingPct === null ? 0 : Number(pagesApp?.got) || 0,
+    comingTotal: comingPct === null ? 0 : Number(pagesApp?.total) || 0,
+    /** 1.8.0+ only: the last attempt broke off (the app tries again by itself). */
+    comingFailed,
     showComing: coming && !incompatible && dismissed !== comingMark,
     dismissComing,
     checkNow,

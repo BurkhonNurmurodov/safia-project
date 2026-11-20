@@ -45,10 +45,12 @@ function UpdateRow({ expanded }) {
   const [open, setOpen] = useState(false);
   const app = useApkUpdate();
   const pages = useAppUpdate();
-  const downloading = app?.phase === "downloading";
+  // The APK's download, or (1.8.0+) the pages' with its percent.
+  const apkDownloading = app?.phase === "downloading";
+  const downloading = apkDownloading || pages.comingPct !== null;
   // A newer APK, or newer pages on their way or ready to load.
-  const available = app?.phase === "available" || pages.updateReady || pages.coming;
-  const pct = downloading ? apkPercent(app) : null;
+  const available = !downloading && (app?.phase === "available" || pages.updateReady || pages.coming);
+  const pct = apkDownloading ? apkPercent(app) : pages.comingPct;
   const lit = available || downloading;
   // The label follows what the app knows: a question, then the answer — and
   // the row stays the same row in the same place, whichever it says.
@@ -253,6 +255,10 @@ function Window({ view, onClose }) {
       tone: "brand", Icon: ArrowDownCircle, title: t("ui.apkUpdate.pagesReady"),
       text: fill(t("ui.apkUpdate.pagesReadyText"), { v: pagesTo ? `v${pagesTo}` : "" }),
     };
+  } else if (pagesSpeak && pages.comingFailed) {
+    hero = {
+      tone: "bad", Icon: AlertTriangle, title: t("ui.apkUpdate.pagesFailed"), text: t("ui.apkUpdate.pagesFailedText"),
+    };
   } else if (pagesSpeak) {
     hero = {
       tone: "brand", Icon: Loader2, spin: true, title: t("ui.apkUpdate.pagesComing"),
@@ -298,6 +304,8 @@ function Window({ view, onClose }) {
     let action = null;
     if (pagesSpeak && pagesPhase === "ready") {
       action = <Button variant="primary" onClick={pages.reload}>{t("ui.version.reload")}</Button>;
+    } else if (pagesSpeak && pages.comingFailed) {
+      action = <Button variant="primary" onClick={recheck}>{t("ui.apkUpdate.retry")}</Button>;
     } else if (phase === "available") {
       action = view.legacy
         ? <Button variant="primary" onClick={view.act.download}>{t("ui.apkUpdate.download")}</Button>
@@ -322,6 +330,12 @@ function Window({ view, onClose }) {
       </>
     );
   }
+
+  // One bar: the APK's download, or (1.8.0+) the pages' while they speak.
+  const bar = phase === "downloading" ? { pct: view.pct, got: view.got, total: view.total }
+    : pagesSpeak && !pages.comingFailed && pages.comingPct !== null
+      ? { pct: pages.comingPct, got: pages.comingGot, total: pages.comingTotal }
+      : null;
 
   const hint = phase === "available" && view.legacy
     ? t(view.handedOff ? "ui.apkUpdate.legacyStarted" : "ui.apkUpdate.legacyHint")
@@ -356,25 +370,25 @@ function Window({ view, onClose }) {
         </div>
       </div>
 
-      {phase === "downloading" && (
+      {bar && (
         <div>
           <div
             className="h-2 rounded-full overflow-hidden"
             style={{ background: "var(--bg-accent)" }}
             role="progressbar"
-            aria-valuenow={view.pct}
+            aria-valuenow={bar.pct}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label={t("ui.apkUpdate.progress")}
           >
             <div
               className="h-full rounded-full transition-[width] duration-300 ease-out"
-              style={{ width: `${view.pct}%`, background: "var(--brand)" }}
+              style={{ width: `${bar.pct}%`, background: "var(--brand)" }}
             />
           </div>
           <div className="flex items-baseline justify-between mt-1.5 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-            <span className="font-semibold" style={{ color: "var(--text-1)" }}>{view.pct}%</span>
-            <span>{mbOf(view.got)} / {mb(view.total)}</span>
+            <span className="font-semibold" style={{ color: "var(--text-1)" }}>{bar.pct}%</span>
+            <span>{mbOf(bar.got)} / {mb(bar.total)}</span>
           </div>
         </div>
       )}

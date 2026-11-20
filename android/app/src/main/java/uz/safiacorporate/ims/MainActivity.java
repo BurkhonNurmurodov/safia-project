@@ -83,6 +83,7 @@ public class MainActivity extends ComponentActivity {
     /** The APK's own updates; the main screen only (null on a session screen). */
     private AppUpdates appUpdates;
     private final Runnable pagesReady = this::announcePages;
+    private final Runnable pagesState = this::sendPages;
     private String bridgeScript;
     private boolean bridgeAtDocumentStart;
     private OnBackPressedCallback back;
@@ -186,6 +187,7 @@ public class MainActivity extends ComponentActivity {
         // told when one is whole — the slot holds ONE page, and a session screen
         // that was on top of this one took it.
         updates.setOnReady(pagesReady);
+        updates.setOnState(pagesState);
         updates.resume();
         if (appUpdates != null) appUpdates.onResume();
         if (!isSession()) Push.setListener(pushChanged);
@@ -203,6 +205,7 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onDestroy() {
         updates.clearOnReady(pagesReady);
+        updates.clearOnState(pagesState);
         if (appUpdates != null) appUpdates.destroy();
         if (pendingFiles != null) pendingFiles.onReceiveValue(null);
         if (pendingCamera != null) pendingCamera.deny();
@@ -370,6 +373,12 @@ public class MainActivity extends ComponentActivity {
                             else sendAppUpdate("{\"v\":1,\"phase\":\"unavailable\"}");
                         });
                         break;
+                    // The pages' own download (PageUpdates ↔ utils/androidUpdate.js): its
+                    // progress for the update notice, and «check now» from the page.
+                    case "pages":
+                        if ("check".equals(m.optString("op"))) updates.checkNow();
+                        sendPages();
+                        break;
                     default:
                         break;
                 }
@@ -395,6 +404,16 @@ public class MainActivity extends ComponentActivity {
         runOnUiThread(() -> {
             if (web != null) {
                 web.evaluateJavascript("window.dispatchEvent(new CustomEvent('safia-app-update',{detail:" + json + "}))", null);
+            }
+        });
+    }
+
+    /** The pages' download, for the update notice and window (utils/androidUpdate.js). */
+    private void sendPages() {
+        String json = updates.state();
+        runOnUiThread(() -> {
+            if (web != null) {
+                web.evaluateJavascript("window.dispatchEvent(new CustomEvent('safia-pages',{detail:" + json + "}))", null);
             }
         });
     }

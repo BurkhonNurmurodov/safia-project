@@ -92,11 +92,20 @@ daily") **the app downloads every build the site deploys by itself** — see
     «ready» one. The «Yangilanishni tekshirish» window asks both at once on
     open: a «Sahifalar» row (`v<mine> → v<live>`) and, when the APK has nothing
     to say, the pages' state as its headline — never «Sizda eng so'nggi
-    versiya» over pages left behind. The row lights up for them too. Page-only:
-    the page cannot see the download's progress, start it, or learn that it
-    failed — PageUpdates still starts on its own clock (3 s after opening, on
-    return ≥ 60 s apart, every 5 min), so «coming» can stand up to 5 minutes.
-    Progress and a check that starts the download need an APK release.
+    versiya» over pages left behind. The row lights up for them too.
+  - **From APK 1.8.0 the app reports the download itself** (the operator's
+    yes, same day). `window.__safiaApp.pages`; the page sends
+    `{type: "pages", op: "status" | "check"}` and hears `safia-pages`
+    (`PageUpdates.state()`: phase checking · downloading · ready · failed ·
+    idle, `version`, `got` / `total` bytes — at most every 250 ms while
+    downloading). «check» is `checkNow()`: a check at once, past the 60-second
+    gap. The page asks it whenever it sees a newer build live (once per build)
+    and from the window, so a deploy starts downloading as soon as the page
+    knows of it, not at the app's next 5-minute check. The toast then reads
+    «yuklab olinmoqda: 42%», the window and the sidebar row show the same
+    percent, and a broken-off download says so with «Qayta urinish» (the app
+    retries by itself anyway). An app before 1.8.0 answers nothing and keeps
+    the spinner-only «coming» notice.
   - **Cost**: until v4.324.1 every deploy renamed ~227 of 231 asset files
     (the build stamp sat in a shared chunk), so a new build was ~1.6 MB over
     the wire. The stamp now lives in index.html (see «A deploy renames only
@@ -216,7 +225,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.7.1, versionCode 13).
+  **Raise `versionCode` on every release** (current: 1.8.0, versionCode 14).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.

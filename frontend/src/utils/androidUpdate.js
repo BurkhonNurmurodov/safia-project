@@ -119,6 +119,50 @@ export function useApkUpdate() {
   return useSyncExternalStore(subscribe, () => state, () => null);
 }
 
+// ─── the pages' own download (1.8.0+, PageUpdates.java) ──────────────────────
+
+/** 1.8.0+: the app reports how far the pages' download is, and checks when asked. */
+export function pagesNative() {
+  return inAndroidApp() && !!window.__safiaApp?.pages;
+}
+
+function postPages(op) {
+  try {
+    window.SafiaAndroid.postMessage(JSON.stringify({ type: "pages", op }));
+  } catch { /* no bridge on this web view */ }
+}
+
+/** "status" (its last word) · "check" (ask the server now; a newer build starts downloading). */
+export function pagesAsk(op) {
+  if (pagesNative()) postPages(op);
+}
+
+let pagesState = null;
+let pagesListening = false;
+const pagesListeners = new Set();
+
+function subscribePages(fn) {
+  if (!pagesListening && pagesNative()) {
+    pagesListening = true;
+    window.addEventListener("safia-pages", (e) => {
+      pagesState = e.detail && typeof e.detail === "object" ? e.detail : null;
+      pagesListeners.forEach((f) => f());
+    });
+    postPages("status");
+  }
+  pagesListeners.add(fn);
+  return () => pagesListeners.delete(fn);
+}
+
+/**
+ * {phase: idle · checking · downloading · ready · failed, version, got, total}
+ * (PageUpdates.state()) — or null until the app answers, and always null on an
+ * APK before 1.8.0.
+ */
+export function usePagesState() {
+  return useSyncExternalStore(subscribePages, () => pagesState, () => null);
+}
+
 // ─── an APK without the bridge (1.4.0–1.6.x) ─────────────────────────────────
 
 /**
