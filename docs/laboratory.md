@@ -6,7 +6,8 @@ Moved word for word from the repo-root `CLAUDE.md` on 2026-11-06; the index of e
 
 The operator's request: a screen Judges use to grade a candidate for the
 Supervisor role during a live, verbal assessment. Page key **`assessment`**,
-Laboratory nav group, **ADMIN-ONLY until the operator opens it** (to the
+Laboratory nav group (on the launcher a page of the «HR» app from
+2026-11-20 — `docs/navigation-and-shell.md` «Ilovalar»), **ADMIN-ONLY until the operator opens it** (to the
 judges) on the Access / Permissions tab. `services/assessment.py` is THE rule,
 `routers/assessment.py` (`/api/assessment`) the door, `pages/Assessment.jsx`
 (list + bank tabs) and `pages/AssessmentGrade.jsx` (`/assessment/:id`, the

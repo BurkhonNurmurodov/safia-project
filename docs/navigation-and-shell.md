@@ -113,7 +113,12 @@ untouched.
   group); «HR» (2026-11-03, the operator — `BriefcaseBusiness`,
   hue `fuchsia`, after Liderlar) holds «Liderlar KPI» and «Brigadirlar KPI»,
   moved out of the Liderlar app by their `app: "hr"` (page access unchanged;
-  for everybody else both stay in the Liderlar group); «Avtomatika»
+  for everybody else both stay in the Liderlar group), and after them
+  «Nomzodlarni baholash» (2026-11-20, the operator: «move Assessment grading
+  to HR app» — `/assessment`, out of the Laboratory app by its `app: "hr"`;
+  page access unchanged, admins only until `assessment` is opened, and for
+  everybody else it stays in the Laboratory group; `/assessment/:id`, the
+  grading of one candidate, is the same screen — `screenOf`); «Avtomatika»
   (2026-11-12, the operator: «add one app also called automation, and put the
   Ovens screen in there» — `automation`, `Cpu`, hue `amber`, after the
   Laboratory) holds «Pechlar», moved out of the Laboratory app by its

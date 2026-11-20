@@ -130,8 +130,11 @@ export const ALL_LINKS = [
   // headerless `system` group for everybody else, so its place here is free.
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system", app: "overview" },
   // «Nomzodlarni baholash» — the five-department panel grading a Supervisor
-  // candidate. Laboratory, admin-only until the operator opens it to judges.
-  { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab" },
+  // candidate. Admin-only until the operator opens it to judges. On the
+  // launcher a page of the «HR» app, after the two KPI pages (2026-11-20, the
+  // operator: «move Assessment grading to HR app»); page access unchanged, and
+  // for anybody else it stays in the Laboratory group.
+  { to: "/assessment", page: "assessment", key: "nav.assessment", icon: Gavel, group: "lab", app: "hr" },
   // «Xodim kartasi» — everything the platform knows about ONE person of the
   // plant (/people/:employee_id). Laboratory, admin-only until opened.
   { to: "/people", page: "people", key: "nav.people", icon: Contact, group: "lab" },
@@ -221,7 +224,8 @@ export const APPS = [
   // People tile that wore it is gone; the grouped sidebar keeps the crown.
   { id: "leaders",   labelKey: "navgrp.leaders",    icon: UsersRound,      hue: "violet" },
   // HR — the People group's pages (2026-11-15, `GROUP_APP`), then the monthly
-  // KPIs, the leaders' and the brigadirs' (2026-11-03).
+  // KPIs, the leaders' and the brigadirs' (2026-11-03), then «Nomzodlarni
+  // baholash» (2026-11-20, out of the Laboratory).
   // `sections`: its own pages flush under the app's name (`top` — headerless,
   // no divider), then «Verifix (test)» as a folder holding that group's pages
   // (the sidebar seats a link by its `group` where a section carries that id).
