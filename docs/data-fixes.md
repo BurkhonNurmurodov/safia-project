@@ -478,6 +478,60 @@ nothing changes and the step tries again on the next start. It runs once (flag
 `oneshot:davron_no_idle_time_nov18`). It reopens like any personal entry: lift
 the deny on his «Shaxsiy vakolatlar».
 
+## The Almaty plant, its unit and its catalogue (`startup.add_almaty_plant`, 2026-11-20)
+
+The operator: «We have add our factory which is in Kazakstan. Here I have the
+catalogue for the supervisor in there, please add this catalogue» — with the
+supervisor's own form, «Almata zagruzka» (SKU · Трудоемкость · Команда; 83
+positions: team A 53, B 12, C 18).
+
+Production held two plants that day, Uchtepa and Keles, and no unit for
+Kazakhstan. That was learnt from a one-shot report, read by Abbos and since
+removed: the report door answered `bad_key` to the cloud environment's key,
+also after the key was saved again. Keles's one unit (Axmedova Munisa) holds 82
+other lines and was left alone. Asked one question at a time, the operator
+ruled:
+
+- «Claude creates them» — the plant, the unit and the catalogue in one deploy.
+- The plant is **«Almaty»** (code Almaty · ru Алматы · uz Olmaota).
+- Nobody is named as its supervisor yet, so **the unit is named after the
+  plant**, on shift 1. It is renamed on its profile page once somebody is.
+
+`services/almaty_plant.apply` is the whole change and adds only what is absent:
+
+- **The plant**, found by its code, else added after the last tab.
+- **The unit**: a new one with the next id, shift 1, «Zagruzka hisoblanadi»
+  OFF like every unit created after 2026-10-04. It has no cells and no Verifix
+  people, so an ON unit would read blank on every загрузка table. «Zagruzka
+  fayli» is not gated by that switch and opens for it. If a person made the
+  plant by hand first and it holds ONE live unit, that unit is used.
+- **The catalogue**, only into a unit that holds none (`pp_catalog.is_empty`).
+  A first catalogue has no older one to keep, the import's own rule.
+
+What the catalogue is:
+
+- **No SAP codes.** The form's «SKU» column holds names, so every line is keyed
+  by its name (`pp_calc.daily_key`) and no SAP upload reaches it
+  (`pp_calc.takes_sap`). ПЛАН and ФАКТ are typed, as on every unit since 5 Nov.
+- **Команда is the team as the form writes it: A, B, C** — not a SAP work
+  centre and not a cell code. Their штатка is the form's team block, 2 · 2 · 1,
+  which adds up to its «kelishi kerak edi» 5. The slots the form lists with no
+  people and no position (A1–A4, B1–B4, C1) are not registered.
+- The form's ПЛАН column is one day's quantities, not catalogue, and is not
+  read. Names are the form's with stray spaces dropped; the spelling is left
+  alone.
+
+A state it cannot write into without a guess changes nothing: several live
+units on a hand-made plant, or a live unit named «Almaty» on another plant.
+The admins' DM says why and where to load the catalogue by hand. It runs once
+(flag `oneshot:almaty_plant_catalog_nov20`); only a crash leaves it to try
+again on the next start. Tests: `tests/test_almaty_plant.py`.
+
+**Still to do by hand**, when the plant is staffed: name the supervisor, tie
+the unit and its cells to Verifix, give each cell its team (`cells.sap_code`
+is what `cell_lookup.by_sap` joins a Команда on, per unit), and switch
+«Zagruzka hisoblanadi» on.
+
 ## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
 
 The operator: «Maksudov Alisher can you add the container page for him». He

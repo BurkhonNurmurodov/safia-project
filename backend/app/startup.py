@@ -8040,38 +8040,6 @@ def _closed_day_trace_job() -> None:
                       closed_day_trace_report.send, UNPRICED_DM_CHAT)
 
 
-# ── one-shot: which unit of the Kazakhstan plant its catalogue belongs to ────
-# The operator sent the Kazakhstan supervisor's catalogue on 2026-11-20 to be
-# added. A catalogue hangs on `managers.id`, production cannot be read from a
-# cloud session and the report door refused the session's key that day, so the
-# plants, every unit, and the new plant's cells, work centres and catalogue go
-# out once as TEXT (`services/plant_units_report.py`) — to Abbos, the reader
-# the operator named. READ-ONLY: it writes nothing but its flag. Changing what
-# it sends needs a NEW flag key.
-PLANT_UNITS_FLAG = "plant_units_report_2026_11_20_v1"
-_PLANT_UNITS_DELAY_S = 60
-
-
-def report_plant_units() -> None:
-    """The plants and their supervisor units, DMed once. Never raises."""
-    try:
-        if not _report_pending(PLANT_UNITS_FLAG):
-            return
-        from datetime import timedelta
-        from app.scheduler import schedule_at
-        schedule_at("plant-units-report",
-                    datetime.now(timezone.utc) + timedelta(seconds=_PLANT_UNITS_DELAY_S),
-                    _plant_units_job)
-    except Exception as exc:
-        print(f"[startup] plant units report could not be scheduled: {exc}")
-
-
-def _plant_units_job() -> None:
-    from app.services import plant_units_report
-    _send_report_once(PLANT_UNITS_FLAG, "plant units report",
-                      plant_units_report.send, REPORT_CHAT_ABBOS)
-
-
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance
@@ -11207,6 +11175,82 @@ def alisher_container_logistics() -> None:
         db.rollback()
         print(f"[startup] Alisher logistics failed: {exc}")
         _dm_report("fail", "Maksudov Alisher · «Konteyner berish» (logistika) berilmadi", error=exc)
+    finally:
+        db.close()
+
+
+# ── 20 Nov: the Almaty plant, its unit and its catalogue (docs/data-fixes.md) ─
+# The operator, 2026-11-20, sent the Kazakhstan supervisor's form («Almata
+# zagruzka», 83 positions over the teams A · B · C): «please add this
+# catalogue». Production held Uchtepa and Keles and no unit for Kazakhstan, so
+# — the operator's rulings, asked one at a time — the plant «Almaty», a unit
+# named after it on shift 1 (nobody is named as its supervisor yet) and the
+# catalogue are added here, ONCE. `services/almaty_plant.apply` is the change:
+# it adds only what is absent and writes the catalogue only into a unit that
+# holds none. A state it cannot write into without a guess (several units on a
+# hand-made plant, a namesake unit elsewhere) changes NOTHING and the admins
+# are told what to do by hand; either way the step does not repeat. Only a
+# crash leaves it to try again on the next start.
+ALMATY_PLANT_FLAG = "oneshot:almaty_plant_catalog_nov20"
+_REPORT_FACTORIES = ("Zavodlar", "/panel/factories")
+
+
+def add_almaty_plant() -> None:
+    from app.services import almaty_plant
+
+    title = "Almaty zavodi · bo'linma va katalog"
+    db = SessionLocal()
+    try:
+        # One boot at a time: a worker starting beside this one waits here and
+        # then finds the flag.
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": almaty_plant.LOCK_KEY})
+        if db.query(AppSetting).filter_by(key=ALMATY_PLANT_FLAG).first():
+            return
+        try:
+            res = almaty_plant.apply(db)
+        except almaty_plant.Refused as why:
+            db.rollback()
+            db.add(AppSetting(key=ALMATY_PLANT_FLAG, value=f"refused: {why}"[:250]))
+            db.commit()
+            print(f"[startup] Almaty plant: nothing changed — {why}")
+            _dm_report("warn", title,
+                       rows=[("🔎", "Sabab", str(why))],
+                       notes=[("👉", "Katalogni qaysi bo'linmaga yozishni tanlab, "
+                                    "«Ishlab chiqarish» → katalog importi orqali yuklang.")],
+                       open=_REPORT_FACTORIES)
+            return
+        db.add(AppSetting(key=ALMATY_PLANT_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        unit = (f"{res['unit_name']} · №{res['unit_id']} · {res['unit_shift'] or '—'}-smena"
+                f"{' — yangi' if res['unit_created'] else ' — mavjud edi'}")
+        plant = (f"{almaty_plant.PLANT['code']} · №{res['plant_id']}"
+                 f"{' — yangi' if res['plant_created'] else ' — mavjud edi'}")
+        print(f"[startup] Almaty plant: plant {res['plant_id']} "
+              f"(new={res['plant_created']}), unit {res['unit_id']} "
+              f"(new={res['unit_created']}), catalogue written={res['written']} "
+              f"({res['lines']} lines, {res['work_centers']} work centres)")
+        open_ = ("Profilni ochish", f"/profile/supervisor/{res['unit_id']}")
+        if not res["written"]:
+            _dm_report("warn", title, status="Katalog yozilmadi — bo'linmada katalog bor",
+                       rows=[("🏭", "Zavod", plant), ("👤", "Bo'linma", unit),
+                             ("📦", "Bo'linmadagi katalog", f"{res['lines']} ta pozitsiya, "
+                                                            f"{res['work_centers']} ta komanda")],
+                       notes=[("👉", "Mavjud katalog o'zgartirilmadi. Yangi ro'yxat kerak bo'lsa, "
+                                    "«Ishlab chiqarish» → katalog importi orqali yuklang.")],
+                       open=open_)
+            return
+        teams = ", ".join(f"{c} — {n}" for c, n in almaty_plant.TEAMS)
+        _dm_report("ok", title, status="Zavod, bo'linma va katalog qo'shildi",
+                   rows=[("🏭", "Zavod", plant), ("👤", "Bo'linma", unit),
+                         ("📦", "Katalog", f"{res['lines']} ta pozitsiya (SAP kodsiz, nomi bo'yicha)"),
+                         ("👥", "Komandalar · shtatka", teams)],
+                   notes=[("👉", "Brigadir tayinlangach, bo'linma nomini profil sahifasida o'zgartiring."),
+                          ("ℹ️", "«Zagruzka hisoblanadi» o'chiq — yacheykalar ulangach yoqiladi.")],
+                   open=open_)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Almaty plant failed: {exc}")
+        _dm_report("fail", title, error=exc)
     finally:
         db.close()
 
