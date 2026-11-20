@@ -35,10 +35,15 @@ person's half.
   a cloud session — so the operator made a new key on their Windows PC
   (`.safia\ops.key` under the user's folder: 48 random bytes, url-safe base64)
   and sent its digest, and the cloud environment's network secret
-  (`X-Ops-Key`) is to hold that key. **The Mac's old key is refused since** —
-  `ask-prod.py` there needs the new key copied into its `~/.safia/ops.key`.
-  To replace the key again: make one, put its SHA-256 in `KEY_SHA256`, deploy,
-  then save the key in the environment (never in chat, never in git).
+  (`X-Ops-Key`) is to hold that key. **The Mac's old key is refused since**,
+  and from the same evening **the build Mac has a key of its own** (the
+  operator: «Yes, make a key»): made there (`~/.safia/ops.key`, never shown or
+  sent), its digest beside the first as `ops_door.KEY_SHA256_MAC` — the door
+  accepts either, so no key is carried between computers. (The one attempt to
+  carry the first pasted its DIGEST into the Mac's key file: 64 hex characters
+  there are the fingerprint, never a key.) To replace a key: make one, put its
+  SHA-256 in its constant, deploy, then save the key where it is used (never
+  in chat, never in git); a blanked digest cuts that computer off.
   **A refused key says WHICH refusal** (the same day): «No ask key arrived»
   — the environment's credential is not being added to the request — or «An
   ask key arrived, but it is not the door's: N characters, SHA-256 starting

@@ -13,8 +13,9 @@ query can answer: a module, two deploys and a cache flush per question.
 Five bounds, each one decided rather than defaulted:
 
 - **The ask key** asks and nothing else. Its SHA-256 is all this file holds
-  (`KEY_SHA256`, the APK publish key's pattern); the key lives outside git
-  (~/.safia/ops.key on the build Mac, a credential in a cloud environment).
+  (`KEY_SHA256` and the build Mac's `KEY_SHA256_MAC`, the APK publish key's
+  pattern); a key lives outside git (~/.safia/ops.key on the computer it was
+  made on, a credential in a cloud environment).
   A leak costs a stream of cards the approver denies, never data.
 - **The approver sees the whole question** — a query longer than a card can
   print is refused, never cut — and only the person the card was sent to can
@@ -63,9 +64,13 @@ log = logging.getLogger("app.ops_door")
 #
 # REPLACED on 2026-11-20: the key made on the build Mac (digest 232c9c2e…) could
 # not be reached from a cloud session, so the operator made a new one on their
-# Windows PC (.safia\ops.key under the user's folder) and sent this digest. The
-# Mac's key is refused from this deploy on, until the new key is copied there.
+# Windows PC (.safia\ops.key under the user's folder) and sent this digest.
 KEY_SHA256 = "154d4aff01dfef80205114665561dfeb9c3712c539bd5c9924fa3527a59215e9"
+# The build Mac's OWN key, made there the same evening (the operator: «Yes, make
+# a key»): each computer keeps its key and none is carried to another — the one
+# attempt to carry the first pasted its DIGEST into the Mac's key file. To cut
+# a computer off, blank its digest: `key_ok` takes only a 64-character one.
+KEY_SHA256_MAC = "fc1e01056320b41069a2d359f4f80a36415e0913eaedf3943bb54fd2438c3a6d"
 KEY_HEADER = "x-ops-key"
 
 ASK_TTL = timedelta(minutes=15)      # an unanswered card dies
@@ -186,10 +191,12 @@ def presented_key(headers) -> str:
 
 
 def key_ok(presented: str) -> bool:
-    if not presented or len(KEY_SHA256) != 64:
+    if not presented:
         return False
     digest = hashlib.sha256(presented.strip().encode()).hexdigest()
-    return hmac.compare_digest(digest, KEY_SHA256)
+    # Read at call time, and every digest compared whichever one matched.
+    return any([len(k) == 64 and hmac.compare_digest(digest, k)
+                for k in (KEY_SHA256, KEY_SHA256_MAC)])
 
 
 # A wrong key is answered 401; ten in ten minutes from one address and that
