@@ -57,8 +57,16 @@ daily") **the app downloads every build the site deploys by itself** — see
     the files whose SHA-256 the phone lacks — built-in and earlier downloads
     are reused — into `files/web/blobs/<sha>`, each one hash-checked.
     `index.html` is always fetched from `/`, whose answer carries the new
-    build's CSP. A path that is not content-hashed gets `?b=<sha>`: Cloudflare
-    caches those by extension under fixed names. **Cloudflare Web Analytics
+    build's CSP. Every other file gets `?b=<sha>` (from 1.8.1; before, only
+    paths outside `assets/`): Cloudflare caches by name, and a hashed asset
+    name is NOT proof of its bytes — Vite's entry-chunk name does not cover
+    its `__vite__mapDeps` preload list, so two builds of one source (4.611.1
+    here, 4.611.2 from another session, 2026-11-20) wrote different bytes as
+    `index-CKMlGrSJ.js`, the edge kept the first for a year (`immutable`), and
+    every app refused the build («larger than build-files.json says»). A
+    browser is unharmed (the old file is self-consistent); an app before
+    1.8.1 stays on the pages it has until a deploy renames that chunk.
+    **Cloudflare Web Analytics
     inserts a beacon `<script>` before `</body>` of HTML answered to a request
     with no `Accept` header** (found 2026-09-28): the app sends `Accept: */*`,
     and `storeIndex` still takes that one tag back out before checking, so the
@@ -93,7 +101,7 @@ daily") **the app downloads every build the site deploys by itself** — see
     open: a «Sahifalar» row (`v<mine> → v<live>`) and, when the APK has nothing
     to say, the pages' state as its headline — never «Sizda eng so'nggi
     versiya» over pages left behind. The row lights up for them too.
-  - **From APK 1.8.0 the app reports the download itself** (the operator's
+  - **From APK 1.8.0 (released as 1.8.1) the app reports the download itself** (the operator's
     yes, same day; built 2026-11-20 and installed on the A16 only — NOT
     published until the operator says so). `window.__safiaApp.pages`; the page sends
     `{type: "pages", op: "status" | "check"}` and hears `safia-pages`
@@ -229,7 +237,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.8.0, versionCode 14 — built, not yet published; the server still offers 1.7.1).
+  **Raise `versionCode` on every release** (current: 1.8.1, versionCode 15 — built, not yet published; the server still offers 1.7.1; 1.8.0 was never published).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.

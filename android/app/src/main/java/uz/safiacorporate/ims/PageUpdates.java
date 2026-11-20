@@ -315,10 +315,12 @@ final class PageUpdates {
     private String fetch(WebBundle pages, String rel, String sha, long size, boolean keep)
             throws IOException, Refused {
         String path = rel.equals("index.html") ? "/" : "/" + encode(rel);
-        // Content-hashed files never change under their name. Any other may sit
-        // in the CDN's cache under its fixed name, so the hash rides along as a
-        // query that cache has never seen.
-        if (!rel.startsWith("assets/")) path += "?b=" + sha.substring(0, 16);
+        // Every file asks by its own SHA-256, as a query the CDN's cache has never
+        // seen: a file under a fixed name sits there by name, and so can a hashed
+        // asset — Vite's name for the entry chunk does not cover its preload list,
+        // so two builds of one source wrote different bytes under one name
+        // (2026-11-20, index-CKMlGrSJ.js), and the cached copy was refused.
+        if (!rel.equals("index.html")) path += "?b=" + sha.substring(0, 16);
         HttpURLConnection c = open(path);
         try {
             int code = c.getResponseCode();
