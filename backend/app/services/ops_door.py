@@ -58,9 +58,14 @@ from app.config import settings
 
 log = logging.getLogger("app.ops_door")
 
-# The ask key's SHA-256. The key itself is ~/.safia/ops.key on the build Mac
-# (mode 600, never in git). A new key = a new digest here.
-KEY_SHA256 = "232c9c2eb401ebe731b14d54b2439c1c4270df6ad16fd2f191d22d994a07bfe0"
+# The ask key's SHA-256. The key itself is ~/.safia/ops.key on the computer it
+# was made on (never in git). A new key = a new digest here.
+#
+# REPLACED on 2026-11-20: the key made on the build Mac (digest 232c9c2e…) could
+# not be reached from a cloud session, so the operator made a new one on their
+# Windows PC (.safia\ops.key under the user's folder) and sent this digest. The
+# Mac's key is refused from this deploy on, until the new key is copied there.
+KEY_SHA256 = "154d4aff01dfef80205114665561dfeb9c3712c539bd5c9924fa3527a59215e9"
 KEY_HEADER = "x-ops-key"
 
 ASK_TTL = timedelta(minutes=15)      # an unanswered card dies

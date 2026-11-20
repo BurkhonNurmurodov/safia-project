@@ -26,10 +26,19 @@ person's half.
 - **Ask WHO every time, never both** — the standing rule above; `--to` is
   `burkhon` or `abbos` (`startup.REPORT_CHAT_*`), and only the person the card
   went to can answer it (checked against the ROW, never the chat).
-- **The ask key asks and nothing else.** `~/.safia/ops.key` on the build Mac
-  (mode 600, never in git), sent as `X-Ops-Key` or `Authorization: Bearer`;
-  production holds only its SHA-256 (`ops_door.KEY_SHA256` — a new key is a
-  new digest there). A wrong key is 401, ten in ten minutes from one address
+- **The ask key asks and nothing else.** `~/.safia/ops.key` on the computer it
+  was made on (mode 600, never in git), sent as `X-Ops-Key` or
+  `Authorization: Bearer`; production holds only its SHA-256
+  (`ops_door.KEY_SHA256` — a new key is a new digest there). **The key was
+  REPLACED on 2026-11-20**: the first one lived on the build Mac only, the
+  cloud environment's saved copy was not it, and nobody could read it out for
+  a cloud session — so the operator made a new key on their Windows PC
+  (`.safia\ops.key` under the user's folder: 48 random bytes, url-safe base64)
+  and sent its digest, and the cloud environment's network secret
+  (`X-Ops-Key`) is to hold that key. **The Mac's old key is refused since** —
+  `ask-prod.py` there needs the new key copied into its `~/.safia/ops.key`.
+  To replace the key again: make one, put its SHA-256 in `KEY_SHA256`, deploy,
+  then save the key in the environment (never in chat, never in git). A wrong key is 401, ten in ten minutes from one address
   429, the first refusal a Jurnal row. A leak costs cards the approver denies.
 - **Nothing runs before the tap, and nothing is kept after.** An unanswered
   card dies in 15 minutes (`ASK_TTL`), an allowed answer not taken in 15 more
