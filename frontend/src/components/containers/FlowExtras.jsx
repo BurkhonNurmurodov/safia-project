@@ -26,7 +26,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, fmt, Chip, CountPills, countsText, fieldCls, fieldStyle,
-  EXTRA_REASONS, reasonText, hourNow, useLogisticsPick, LogisticsField,
+  EXTRA_REASONS, reasonText, hourNow, useLogisticsPick, LogisticsField, prodToday, COUNT_GRID,
 } from "./flowUtil";
 
 const REASON_COLORS = { plan: "#3b82f6", damaged: "#ef4444", short: "#f97316", other: "#94a3b8" };
@@ -96,7 +96,7 @@ export function AskExtraModal({ t, day, unit, isAdmin, onClose, onDone, onFail }
             options={hours.map((h) => ({ value: h, label: h > 23 ? `${span(h)} (+1)` : span(h) }))} />
         </FormField>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+      <div className={`${COUNT_GRID} gap-3 mt-3`}>
         {KEYS.map((k) => (
           <FormField key={k} label={t(`production.cont.${k}`)}>
             <CountStepper min={0} max={MAX_ASK} value={counts[k] ?? null} placeholder="0"
@@ -279,7 +279,7 @@ export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
   const pick = useLogisticsPick();
   const { to } = pick;
   // what is on AXO's shelf now (`flow.stock`) — beside each count, so a yes is an informed one
-  const today = tashkentNow().iso;
+  const today = prodToday();
   const stock = useQuery({
     queryKey: ["cflow-stock", today, today],
     queryFn: () => api.get("/api/container-flow/stock", { params: { date_from: today, date_to: today } }).then((r) => r.data),
@@ -312,7 +312,7 @@ export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
       </p>
       <LogisticsField t={t} pick={pick} />
       <p className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>{t("cflow.ex.toHint")}</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+      <div className={`${COUNT_GRID} gap-3 mt-3`}>
         {types.map((k) => (
           <FormField key={k} label={t(`production.cont.${k}`)}
             hint={[t("cflow.ex.askedN").replace("{n}", fmt(e.lines[k])),

@@ -81,6 +81,17 @@ def hour_start(day: date, hour: int) -> datetime:
     return datetime.combine(day, time(0), TZ) + timedelta(hours=int(hour))
 
 
+# The production day opens at 08:00 (the page's `DAY_START_MIN`): 00:00–07:59
+# still belongs to the day that started the evening before, as its hours 24–31.
+DAY_START_HOUR = 8
+
+
+def production_day(at: datetime) -> date:
+    """The production day running at `at`."""
+    t = at.astimezone(TZ)
+    return t.date() - timedelta(days=1) if t.hour < DAY_START_HOUR else t.date()
+
+
 # ── settings ────────────────────────────────────────────────────────────────
 
 def settings(db: Session) -> dict:
@@ -1530,7 +1541,9 @@ def alert_short_split(request_id: int) -> int:
         if r is None or r.status != "assigned" or not r.short_reason or not r.created_key \
                 or not settings(db)["notify_axo"]:
             return 0
-        given: dict = dict(r.given or {}) if r.area_id is not None else {}
+        # what went to dispatch counts as given (2026-11-20: a combined
+        # request's lump was left out — «25 given» when 2,400 went to dispatch)
+        given: dict = dict(r.given or {})
         for u in _units_of(db, r.id).values():
             for k, n in u.items():
                 given[k] = given.get(k, 0) + n
@@ -1636,18 +1649,28 @@ def alert_overdue(db: Session, at: Optional[datetime] = None) -> int:
 
 def escalate_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
     """A brigadir still silent ESCALATE_AFTER_MIN after the reminder: the shift
-    managers are told once per unit of a request (their switch on)."""
+    managers are told once per unit of a request (their switch on).
+
+    Counted from the reminder SENT, else from the moment it was DUE
+    (`remind_at`) — 2026-11-20: a brigadir who got no reminder (the brigadirs'
+    switch off, or no «Qabul» page) was never escalated, though nobody had
+    asked him at all."""
     from sqlalchemy import update as _update
     from app.translit import transliterate
     at = at or now()
     if not settings(db)["notify_managers"]:
         return 0
     lo, hi = at - timedelta(minutes=ESCALATE_AFTER_MIN + ALERT_WINDOW_MIN), at - timedelta(minutes=ESCALATE_AFTER_MIN)
+    today = at.astimezone(TZ).date()
     pending: dict = {}
-    for p in db.query(ContainerRequestPart).filter(
+    for p, rq in db.query(ContainerRequestPart, ContainerRequest).join(
+            ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
             ContainerRequestPart.received.is_(None), ContainerRequestPart.escalated_at.is_(None),
-            ContainerRequestPart.reminded_at.isnot(None), ContainerRequestPart.reminded_at <= hi,
-            ContainerRequestPart.reminded_at >= lo).all():
+            ContainerRequest.status == "assigned",
+            ContainerRequest.day >= today - timedelta(days=2), ContainerRequest.day <= today).all():
+        anchor = p.reminded_at or remind_at(rq)
+        if anchor is None or not (lo <= anchor <= hi):
+            continue
         pending.setdefault((p.request_id, p.manager_id), {})[p.ctype] = p.count
     sent = 0
     for (rid, mid), counts in pending.items():
@@ -2070,23 +2093,28 @@ def _stock_out(db: Session, since: datetime, until: datetime) -> list:
 
 
 def stock_ahead(db: Session, at: datetime) -> tuple:
-    """What still has to leave AXO for the hours not over: (`reserved` — asked
-    of a logistics person, not split yet; `ahead` — the hours' need nobody
-    asked for yet, None when the plan could not be read)."""
+    """What still has to leave AXO for the hours not over OF THE PRODUCTION DAY
+    RUNNING NOW: (`reserved` — asked of a logistics person, not split yet;
+    `ahead` — the hours' need nobody asked for yet, None when the plan could
+    not be read).
+
+    The production day, not the calendar (2026-11-20): it read «yesterday and
+    today» by the date, so after midnight the whole NEXT production day — and
+    any request made ahead for tomorrow — was counted as leaving «today»
+    (23,333 dispatch containers at 00:09)."""
+    pday = production_day(at)
     reserved: dict = {}
     for r in db.query(ContainerRequest).filter(ContainerRequest.status == "requested",
-                                               ContainerRequest.day >= at.date() - timedelta(days=1)).all():
+                                               ContainerRequest.day == pday).all():
         if hour_start(r.day, r.hour) + timedelta(hours=1) <= at:
             continue
         for k, n in (r.lines or {}).items():
             reserved[k] = reserved.get(k, 0) + int(n or 0)
     try:
         ahead: Optional[dict] = {}
-        # yesterday's production day too: a night shift's hours run past midnight
-        for d in (at.date() - timedelta(days=1), at.date()):
-            for h in prepared(db, d, at):
-                for k, n in h["counts"].items():
-                    ahead[k] = ahead.get(k, 0) + n
+        for h in prepared(db, pday, at):
+            for k, n in h["counts"].items():
+                ahead[k] = ahead.get(k, 0) + n
     except Exception:
         logger.warning("container-flow: the hours ahead could not be read for the stock", exc_info=True)
         db.rollback()
@@ -2189,9 +2217,8 @@ def stock(db: Session, d_from: date, d_to: date, at: Optional[datetime] = None) 
 # is asked for WHOLE at the hour the round starts (2026-11-20 — see
 # `round_hours`). Kept on «Sozlamalar» by AXO and the admins.
 #
-# The production day opens at 08:00 (the page's `DAY_START_MIN`): a round
-# starting earlier on the clock is past midnight, its hour counted on from 24.
-SEND_DAY_START_HOUR = 8
+# A round starting before the production day opens (`DAY_START_HOUR`) is past
+# midnight, its hour counted on from 24.
 # The schedule's first day: a period reaching before it needs nothing on those
 # days — the schedule did not exist, so 0% delivered there would be a lie.
 SEND_FROM = date(2026, 11, 19)
@@ -2225,7 +2252,7 @@ def round_hours(rounds) -> list:
     end). Until then a round was spread over the 3 hours from its start, the
     workbook's «1 соатда керак» column — that column is not used.
 
-    A start before `SEND_DAY_START_HOUR` is past midnight: night 20:00 · 00:00
+    A start before `DAY_START_HOUR` is past midnight: night 20:00 · 00:00
     · 03:30 → hours 20 · 24 · 27, day 06:00 · 09:00 · 12:30 → 30 · 9 · 12 —
     the 06:00 round is the one at the END of the production day, so it no
     longer sits before the day opens, overdue from the start."""
@@ -2235,7 +2262,7 @@ def round_hours(rounds) -> list:
         if m is None:
             continue
         h = m // 60
-        out.append(h + 24 if h < SEND_DAY_START_HOUR else h)
+        out.append(h + 24 if h < DAY_START_HOUR else h)
     return out
 
 

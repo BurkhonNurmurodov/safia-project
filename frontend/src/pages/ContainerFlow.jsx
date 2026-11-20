@@ -8,8 +8,8 @@ import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
-import { tashkentNow, prevISO } from "../components/production/HourlyContainers";
-import { errText, refreshFlow, LIVE_LIST, useExtras, extraWaiting } from "../components/containers/flowUtil";
+import { tashkentNow } from "../components/production/HourlyContainers";
+import { errText, refreshFlow, LIVE_LIST, useExtras, extraWaiting, liveDay } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, PreparedModal, isFresh } from "../components/containers/FlowRequests";
@@ -35,7 +35,6 @@ import api from "../utils/api";
 // shift- and top-managers WATCHING (2026-11-15): every reading tab, no
 // button; the settings are admins'. The automatic batches («Partiyalar») were
 // removed on 2026-11-18.
-const DAY_START_MIN = 8 * 60;
 const REFRESH_MS = 60_000;
 // The page's tabs (2026-11-15, rebuilt): the request flow people use every
 // hour first — «So'rovlar», «Qabul» — then what it adds up to — «Tahlil» (the
@@ -47,7 +46,6 @@ const tabsFor = (r) => TABS.filter((k) => r.admin
   || (k === "settings" && r.axo)
   // «Qabul» also holds a brigadir's EXTRA request (`container-extra`, 2026-11-18)
   || (k === "receive" && (r.receive || r.watch || r.extra)));
-const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 
 export default function ContainerFlow() {
   const { t } = useLang();

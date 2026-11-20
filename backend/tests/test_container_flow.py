@@ -697,6 +697,35 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(flow.prepared(self.db, DAY, self.at(10, 6)), [])       # nothing left to ask
         self.assertEqual(r.status, "requested")
 
+    def test_short_split_names_dispatch_and_silent_brigadir_escalates(self):
+        """2026-11-20: AXO's «Kam taqsimlandi» counts what went to dispatch, and
+        a brigadir who got NO reminder (the brigadirs' switch off) is still
+        escalated, from the moment the reminder was due."""
+        from app.models import RoleProfile
+        from app.routers import staff
+        nk = self._logistics()
+        self.db.add(RoleProfile(role="shift-manager", name="SM Two"))
+        self.db.commit()
+        sent = []
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=lambda db, key, nkey, params, **kw:
+                               sent.append((key, nkey, params))):
+            r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30, "send": 100}, "", "axo", "guest:7")
+            self.db.commit()
+            with mock.patch.object(flow, "now", return_value=self.at(9, 20)):
+                flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 24}}],
+                                    "short", None, "n", nk, False, dispatch={"send": 100})
+            self.db.commit()
+            self.assertEqual(flow.alert_short_split(r.id), 1)
+            self.assertEqual(sent[-1][2]["counts"], flow.counts_text({"yellow": 24, "send": 100}))
+            flow.save_settings(self.db, None, False, None, True)        # no reminders; managers on
+            self.db.commit()
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 1)), 0)
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 20)), 0)   # due 10:00 — too early
+            self.assertGreaterEqual(flow.escalate_unconfirmed(self.db, self.at(10, 40)), 1)
+            self.assertEqual(sent[-1][1], "container_unconfirmed")
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 45)), 0)   # once
+
     def test_alerts_to_axo_and_the_shift_managers(self):
         from app.models import RoleProfile
         from app.routers import staff
@@ -1276,6 +1305,27 @@ class FlowTest(unittest.TestCase):
             self.assertIsNone(s["today"]["ahead"])                                 # said, not guessed …
             self.assertEqual(s["now"]["yellow"], 100)                              # … and the rest stands
 
+    def test_stock_today_is_the_production_day(self):
+        """2026-11-20: «Bugun yana ketadi» is the production day running now
+        (08:00 → 08:00) — never the next one after midnight, never a request
+        made ahead for tomorrow."""
+        nk = self._stock()
+        self._count(self.at(8))
+        nxt = DAY + timedelta(days=1)
+        need = {DAY: {13: {"yellow": 40}, 26: {"yellow": 7}}, nxt: {9: {"yellow": 500}}}
+        with mock.patch.object(flow, "plant_hours", side_effect=lambda db, day: need.get(day, {})):
+            flow.create_request(self.db, nxt, 10, nk, {"yellow": 50}, "", "axo", "guest:1")   # tomorrow's, made ahead
+            self.db.commit()
+            t = flow.stock(self.db, DAY, DAY, self.at(12))["today"]
+            self.assertEqual((t["reserved"]["yellow"], t["ahead"]["yellow"]), (0, 47))
+            past_midnight = self.at(0, 30) + timedelta(days=1)                    # still DAY's night
+            t = flow.stock(self.db, DAY, DAY, past_midnight)["today"]
+            self.assertEqual((t["reserved"]["yellow"], t["ahead"]["yellow"]), (0, 7))   # not tomorrow's 500 / 50
+            t = flow.stock(self.db, nxt, nxt, self.at(9) + timedelta(days=1))["today"]
+            self.assertEqual((t["reserved"]["yellow"], t["ahead"]["yellow"]), (50, 500))
+        self.assertEqual(flow.production_day(self.at(7, 59)), DAY - timedelta(days=1))
+        self.assertEqual(flow.production_day(self.at(8)), DAY)
+
     # ── «Jo'natish» — the dispatch areas (2026-11-19) ──────────────────────
     def _areas(self):
         self.db.execute(flow.text("DELETE FROM container_send_areas"))
@@ -1339,7 +1389,7 @@ class FlowTest(unittest.TestCase):
             with self.assertRaises(flow.FlowError):
                 flow.create_request(self.db, DAY, 6, nk, {"yellow": 5}, "", "axo", "guest:1", area_id=burger.id)
             # waiting: promised in the stock, not gone
-            t = flow.stock(self.db, DAY, DAY, self.at(5, 30))
+            t = flow.stock(self.db, DAY, DAY, self.at(9))         # hour 30 is DAY's own (06:00 next morning)
             self.assertEqual((t["now"]["send"], t["today"]["reserved"]["send"]), (0, 334))
             # delivered, not split: fewer needs a reason; never more than asked
             with self.assertRaises(flow.FlowError):

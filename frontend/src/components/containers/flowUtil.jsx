@@ -266,6 +266,15 @@ export function useExtras(day, enabled = true) {
   });
 }
 
+// The production day opens at 08:00: 00:00–07:59 still belongs to the day
+// that started the evening before (the server's `DAY_START_HOUR`).
+export const DAY_START_MIN = 8 * 60;
+export const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
+// the production day running now — what a page opens on, never the calendar
+// date (2026-11-20: «Hisobot» opened on an empty 20th at 00:09 while the
+// night's requests sat on the 19th)
+export const prodToday = () => liveDay(tashkentNow());
+
 // The hour a production day is at now: 0–23 today, 24+ for the night past
 // midnight (the day started yesterday), 48 for a day already over.
 export function hourNow(day) {
@@ -276,6 +285,18 @@ export function hourNow(day) {
   return day > n.iso ? 0 : 48;
 }
 export const canAskFor = (day) => hourNow(day) <= 31;
+// «Yangi so'rov» opens on the production day's NEXT hour (2026-11-20: after
+// midnight it took the calendar hour — 01:00 of a day already over), kept
+// inside the day's 08:00 → 07:00 (+1).
+export const defaultHour = (day) => Math.min(31, Math.max(DAY_START_MIN / 60, hourNow(day) + 1));
+
+// THE grid a dialog's count fields sit in (2026-11-20): never a cell narrower
+// than one CountStepper (38 + 8 + 80 + 8 + 38 = 172px), so a phone gets one
+// column instead of two cut numbers («1221» read «12» in the split dialog).
+// `COUNT_GRID` keeps empty tracks, so the columns of two groups line up;
+// `COUNT_PAIR` lets two counts share the row.
+export const COUNT_GRID = "grid grid-cols-[repeat(auto-fill,minmax(min(172px,100%),1fr))]";
+export const COUNT_PAIR = "grid grid-cols-[repeat(auto-fit,minmax(min(172px,100%),1fr))]";
 
 // ── whom AXO sends a request to (2026-11-18, the operator: «AXO should send
 // one request and this request should go to both, and one of them should

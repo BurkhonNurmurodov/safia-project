@@ -19,7 +19,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk, refreshFlow, LIVE_LIST, useExtras, canAskFor,
-  OtdelList,
+  OtdelList, COUNT_GRID,
 } from "./flowUtil";
 import { AskExtraModal, ExtrasList } from "./FlowExtras";
 
@@ -231,7 +231,7 @@ function ReceiveModal({ t, x, onClose, onDone, onFail }) {
           </Button>
         </>
       )}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className={`${COUNT_GRID} gap-3`}>
         {types.map((k) => (
           <FormField key={k} label={t(`production.cont.${k}`)} hint={t("cflow.rcv.sent").replace("{n}", x.counts[k])}>
             <CountStepper min={0} max={x.counts[k]} value={counts[k] ?? null} placeholder="0"

@@ -691,7 +691,7 @@ He settled four questions:
     (`share_out`), so the rounds add up to the shift exactly: 8000 → 2667 ·
     2667 · 2666. Each round's share sits in the one production hour its
     start falls in; the hours after it get nothing.
-  - The production day opens at 08:00 (`SEND_DAY_START_HOUR`, the page's
+  - The production day opens at 08:00 (`DAY_START_HOUR`, the page's
     `DAY_START_MIN`): a start earlier on the clock is past midnight and counts
     from 24. Night 20:00 · 00:00 · 03:30 → hours 20 · 24 · 27; day 06:00 ·
     09:00 · 12:30 → hours 30 · 9 · 12.
@@ -821,6 +821,43 @@ dispatch». He settled four questions:
 - The area requests of the first design (`area_id`, «Yetkazish» →
   `deliver_request`) still read, deliver and count. Only the form no longer
   makes them.
+
+### Seven fixes from the review (2026-11-20)
+
+The operator asked for a review of what the page still misses, then «fix the
+other seven bugs» (the eighth, the day dispatch round at 06:00, was fixed by
+«A round is asked for at its start»).
+
+1. **«Yangi so'rov»'s default hour is the production day's next hour**
+   (`flowUtil.defaultHour` = `hourNow(day) + 1`, kept within 08:00 → 07:00
+   (+1)). After midnight it took the calendar hour, 01:00 of a day already
+   over, so nothing filled and the split was refused («limit»).
+2. **Count fields never shrink below one stepper.** `flowUtil.COUNT_GRID`
+   (columns line up across groups) and `COUNT_PAIR` (two counts share the
+   row) give each cell at least 172px (38 + 8 + 80 + 8 + 38). Every
+   container dialog uses them: the request form, the split, delivery,
+   «Qabul», the stock count, the extras, a dispatch area. On a phone the
+   split dialog had shown «1221» as «12».
+3. **A request with no crates (dispatch only) splits without a brigadir.**
+   No brigadir row, and no «no limit left — AXO may cancel» line. It says
+   `cflow.split.sendOnly`: everything goes to dispatch.
+4. **«Kam taqsimlandi» counts what went to dispatch.** `alert_short_split`
+   reads `r.given` on every request. It used to read it only on an area's own
+   request, so a combined request said «25 given» when 2,400 went to dispatch.
+5. **Escalation no longer needs a reminder that was sent.**
+   `escalate_unconfirmed` counts from `reminded_at`, or else from the moment
+   the reminder was DUE (`remind_at`). A brigadir with reminders off, or with
+   no «Qabul» page, used to be never escalated.
+6. **«Hisobot» and «Tahlil» open on the production day** (`flowUtil.prodToday`,
+   the page's own `liveDay`, now shared). Between 00:00 and 08:00 they used to
+   open on an empty calendar day. The extra-approval dialog's stock read uses
+   it too.
+7. **«Bugun yana ketadi» is the production day running now**
+   (`production_day`, `DAY_START_HOUR` = 8, `stock_ahead`). It counts only
+   that day's waiting requests and the hours ahead. It used to read
+   «yesterday and today» by the calendar, so after midnight it took in the
+   whole next production day plus requests made ahead for tomorrow: 23,333
+   dispatch containers at 00:09.
 
 ### Not built (the plan's remaining parts — ask first)
 

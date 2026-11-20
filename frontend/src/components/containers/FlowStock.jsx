@@ -29,7 +29,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
-  ALL_KEYS as KEYS, fmt, hhmm, errText, countsText, Chip, TYPE_COLORS, fieldCls, fieldStyle, refreshFlow, LIVE_LIST, TypeName,
+  ALL_KEYS as KEYS, fmt, hhmm, errText, countsText, Chip, TYPE_COLORS, fieldCls, fieldStyle, refreshFlow, LIVE_LIST, TypeName, COUNT_GRID,
 } from "./flowUtil";
 
 const REFRESH_MS = 60_000;
@@ -285,7 +285,7 @@ function StockModal({ t, kind, now, toast, onClose, onDone }) {
           </Button>
         </>
       )}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className={`${COUNT_GRID} gap-3`}>
         {KEYS.map((k) => (
           <FormField key={k} label={<TypeName t={t} k={k} long />} required={count}
             hint={count && now ? t("cflow.stock.m.book").replace("{n}", fmt(now[k] ?? 0)) : undefined}>

@@ -28,7 +28,6 @@ import ActionMenu from "../ui/ActionMenu";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { SplitBar, SplitLegend } from "../ui/Meter";
-import { tashkentNow } from "../production/HourlyContainers";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
@@ -36,6 +35,7 @@ import {
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
   refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
+  defaultHour, COUNT_GRID, COUNT_PAIR,
   OtdelList, otdelBreakdown, otdelsText,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
@@ -711,7 +711,7 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
   if (edit?.area_id != null && !areaOpts.some((o) => o.value === edit.area_id)) {
     areaOpts.unshift({ value: edit.area_id, label: tx(edit.area) || "—" });
   }
-  const [hour, setHour] = useState(() => edit?.hour ?? initialHour ?? Math.min(47, Math.floor(tashkentNow().min / 60) + 1));
+  const [hour, setHour] = useState(() => edit?.hour ?? initialHour ?? defaultHour(day));
   const [counts, setCounts] = useState(() => (edit ? { ...edit.lines } : {}));
   // The hour's figure fills the counts whenever an hour (and, for a dispatch
   // area, an area) is picked — «Konteynerlar» for the brigadirs (the operator,
@@ -839,7 +839,7 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
               <span className="mt-2">{t("cflow.req.sendPart")}</span>
             </span>
           )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className={`${COUNT_GRID} gap-3`}>
             {group.map((k) => (
               <FormField key={k} label={<TypeName t={t} k={k} long />}
                 hint={extraCap ? t("cflow.ex.askedN").replace("{n}", extraCap[k] ?? 0)
@@ -892,7 +892,7 @@ function DeliverModal({ t, r, onClose, onDone, onFail }) {
       )}>
       <div className="flex flex-col gap-3">
         <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.snd.hint")}</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`${COUNT_PAIR} gap-3`}>
           {types.map((k) => (
             <FormField key={k} label={<TypeName t={t} k={k} long />}
               hint={t("cflow.snd.askedN").replace("{n}", fmt(r.lines[k]))}>
@@ -926,6 +926,9 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   const { tl, tx } = useTranslit();
   const types = KEYS.filter((k) => r.lines[k] != null);         // the brigadirs' rows: crates
   const allTypes = ALL_KEYS.filter((k) => r.lines[k] != null);  // everything the request carries
+  // a request with no crates — dispatch only (a night hour, 2026-11-20): no
+  // brigadir row and no «no limit left» line; it all goes to dispatch
+  const crates = types.length > 0;
   const units = useQuery({
     queryKey: ["cflow-all-units"],
     queryFn: () => api.get("/api/container-flow/units").then((x) => x.data.units),
@@ -969,9 +972,9 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   const over = allTypes.some((k) => given[k] > r.lines[k]);
   // «Why fewer?» only once something is split — not on an empty form.
   const short = allTypes.some((k) => (given[k] ?? 0) < r.lines[k]) && allTypes.some((k) => given[k] > 0);
-  const ready = rows.filter((row) => row.unit != null && sum(row.counts) > 0);
+  const ready = crates ? rows.filter((row) => row.unit != null && sum(row.counts) > 0) : [];
   const lumpAny = sum(lump) > 0;
-  const bad = rows.some((row) => (row.unit == null) !== (sum(row.counts) === 0));
+  const bad = crates && rows.some((row) => (row.unit == null) !== (sum(row.counts) === 0));
   const taken = new Set(rows.map((x) => x.unit).filter((x) => x != null));
   // over a limit: the server refuses it too; the field says which count and its cap
   const overLimit = rows.some((row) => row.unit != null && types.some((k) => (row.counts[k] ?? 0) > capOf(row.unit, k)));
@@ -1026,6 +1029,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
           <Wand2 size={14} className="shrink-0" style={{ color: hinted ? "var(--brand-text)" : "var(--text-3)" }} />
           <span className="flex-1 min-w-0">
             {hint.isLoading ? t("cflow.split.loading")
+              : !crates ? t("cflow.split.sendOnly")
               : extraFor != null ? t("cflow.split.extra").replace("{x}", tl(r.extra?.unit) || "—")
               : hinted ? t(touched ? "cflow.split.edited" : "cflow.split.filled")
               : t("cflow.split.none")}
@@ -1036,7 +1040,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
             </Button>
           )}
         </div>
-        {rows.map((row, i) => (
+        {crates && rows.map((row, i) => (
           <div key={row.id} className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
             <div className="flex items-end gap-2">
               <div className="flex-1 min-w-0">
@@ -1062,7 +1066,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   icon={<Trash2 size={15} />} onClick={() => { setTouched(true); setRows((rs) => rs.filter((x) => x.id !== row.id)); }} />
               )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className={`${COUNT_GRID} gap-2.5`}>
               {types.map((k) => {
                 const cap = row.unit == null ? r.lines[k] : capOf(row.unit, k);
                 const past = row.unit != null && (row.counts[k] ?? 0) > cap;
@@ -1094,7 +1098,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
               <Truck size={14} style={{ color: TYPE_COLORS.send }} />{t("cflow.split.dispatch")}
             </span>
             <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.split.dispatchHint")}</span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className={`${COUNT_GRID} gap-2.5`}>
               {allTypes.map((k) => (
                 <FormField key={k} label={<TypeName t={t} k={k} />}>
                   <CountStepper min={0} max={r.lines[k]} value={lump[k] ?? null} placeholder="0"

@@ -13,10 +13,9 @@ import DateRangePicker from "../ui/DateRangePicker";
 import KPICard from "../ui/KPICard";
 import TableCard, { Th } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
-import { tashkentNow } from "../production/HourlyContainers";
 import { exportXlsx } from "../../utils/exportXlsx";
 import api from "../../utils/api";
-import { fmt, errText, durText, onTimeTone, ALL_KEYS } from "./flowUtil";
+import { fmt, errText, durText, onTimeTone, ALL_KEYS, prodToday } from "./flowUtil";
 import { SendingTable, TogetherCard } from "./FlowSending";
 
 const toDMY = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
@@ -26,7 +25,7 @@ const RQ_BAD = new Set(["missing", "late", "overdue", "short"]);
 const rqVal = (d, c) => (c === "missing" ? d.sent_confirmed - d.received : d[c]);
 
 export default function FlowReport({ t, toast }) {
-  const today = tashkentNow().iso;
+  const today = prodToday();                // the production day, never the calendar date
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [busy, setBusy] = useState(false);

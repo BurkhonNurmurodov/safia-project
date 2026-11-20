@@ -31,7 +31,7 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { fmt, errText, fieldCls, fieldStyle, refreshFlow, useSendAreas, shiftName, TYPE_COLORS, TypeName } from "./flowUtil";
+import { fmt, errText, fieldCls, fieldStyle, refreshFlow, useSendAreas, shiftName, TYPE_COLORS, TypeName, COUNT_PAIR } from "./flowUtil";
 
 const MAX_ROUNDS = 8;
 const pair = (o) => `${fmt(o?.send ?? 0)} / ${fmt(o?.lid ?? 0)}`;
@@ -164,7 +164,7 @@ function AreaModal({ t, area, onClose, onDone, onFail }) {
           <SegmentedToggle fill value={shift} onChange={setShift}
             options={[[1, t("cflow.sa.shift.1")], [2, t("cflow.sa.shift.2")]]} />
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`${COUNT_PAIR} gap-3`}>
           <FormField label={<TypeName t={t} k="send" long />} hint={t("cflow.sa.hint.perShift")}>
             <CountStepper min={0} max={100000} value={send} placeholder="0" onChange={setSend} />
           </FormField>

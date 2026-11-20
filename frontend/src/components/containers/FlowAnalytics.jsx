@@ -20,7 +20,6 @@ import EmptyState from "../ui/EmptyState";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { Meter, SplitBar, SplitLegend } from "../ui/Meter";
 import { SkeletonBlock } from "../ui/Skeleton";
-import { tashkentNow } from "../production/HourlyContainers";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useElementWidth from "../../hooks/useElementWidth";
 import { ticksForWidth, axisLabelPx } from "../../utils/chartRange";
@@ -28,7 +27,7 @@ import { CATEGORY_COLORS } from "../../utils/chartPalette";
 import { TONE_HEX, GREEN, AMBER, RED, vypTone } from "../../utils/statusBands";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
-import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip, isSend } from "./flowUtil";
+import { KEYS, REASONS, span, fmt, errText, durText, STAGE_COLORS, onTimeTone, Chip, isSend, prodToday } from "./flowUtil";
 import FlowStock from "./FlowStock";
 import { SendingTable, TogetherCard } from "./FlowSending";
 import { ExtrasAnalytics } from "./FlowExtras";
@@ -63,7 +62,7 @@ function buckets(days) {
 
 export default function FlowAnalytics({ t, canStock = false, toast }) {
   const { tl } = useTranslit();
-  const today = tashkentNow().iso;
+  const today = prodToday();                // the production day, never the calendar date
   const [from, setFrom] = useState(() => shiftISO(today, -6));
   const [to, setTo] = useState(today);
   const q = useQuery({
