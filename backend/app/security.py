@@ -38,6 +38,7 @@ Wiring (see ``main.py``):
 from typing import Annotated
 
 import hmac
+import logging
 import secrets
 
 import jwt
@@ -47,6 +48,8 @@ from jwt import PyJWTError as JWTError
 
 from app.config import settings
 from app.routers.auth import _validate_init_data
+
+log = logging.getLogger(__name__)
 
 # Endpoints that legitimately run without the initData header. Each either
 # verifies initData itself (from its request body) or must work before/without a
@@ -122,7 +125,12 @@ def _web_token_live(request: Request) -> bool | None:
     ``None`` — the request carries no browser token (none at all, an invalid one,
     or a Telegram-issued JWT). ``True`` — a browser token that is still honoured.
     ``False`` — a browser token that is not (login disabled, password reset,
-    signed out everywhere, profile gone), or one whose standing could not be read.
+    signed out everywhere, profile gone).
+
+    A standing that could not be READ (the DB pool full, Postgres refusing a
+    connection mid-deploy) raises 503 — still refused, but never 401: the
+    browser drops its token on any 401 (``utils/api.js``), so a DB hiccup used
+    to sign web users out.
 
     Only tokens minted by ``/api/auth/web/login`` carry ``web``."""
     token = _bearer_token(request)
@@ -143,7 +151,8 @@ def _web_token_live(request: Request) -> bool | None:
     try:
         return bool(web_session_is_live(db, payload))
     except Exception:
-        return False
+        log.exception("WEB-LOGIN liveness_unreadable | login=%s", payload.get("wu"))
+        raise HTTPException(status_code=503, detail="Session check unavailable, try again")
     finally:
         db.close()
 
