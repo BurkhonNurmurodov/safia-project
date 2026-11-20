@@ -618,7 +618,9 @@ sending — the sending containers are not like the inside containers, but we
 have to add them together». He attached the workbook «Отправка_контейнер_крышка
 _соат_боича_день_ва_ночт_смена.xlsx». In it, each dispatch area (where finished
 goods are packed to be sent out) needs N containers and N lids a shift, packed
-in three 3-hour rounds:
+in three 3-hour rounds (the «Per hour» column is the workbook's; since
+2026-11-20 each round is asked for whole at its start — see «A round is
+asked for at its start» below):
 
 | Shift | Area | Per shift | Rounds | Per hour |
 |---|---|---|---|---|
@@ -659,15 +661,18 @@ He settled four questions:
     (`area_name`).
   - Seeded once from the workbook (`startup.seed_container_send_areas`, flag
     `oneshot:container_send_areas_seed_nov19`, only into an empty table).
-- **An area's hours** (`area_hours`):
-  - The shift's figure is spread over the rounds, and each round's over the
-    `SEND_ROUND_HOURS` = 3 clock hours from the hour its start falls in. Both
-    spreads are largest-remainder (`share_out`), so the hours add up to the
-    shift exactly: 8000 → 2667 · 2667 · 2666 → 889 an hour.
-  - A round starting earlier on the clock than the one before is past
-    midnight, so its hours count from 24 (the production day): night = hours
-    20–22 and 24–29.
-  - The ends of a round only document it: 06:00–08:30 is still three hours.
+- **An area's hours** (`area_hours`, `round_hours`) — **each round WHOLE at
+  the hour it starts** (2026-11-20; see «A round is asked for at its start»
+  below):
+  - The shift's figure is shared over the rounds by largest remainder
+    (`share_out`), so the rounds add up to the shift exactly: 8000 → 2667 ·
+    2667 · 2666. Each round's share sits in the one production hour its
+    start falls in; the hours after it get nothing.
+  - The production day opens at 08:00 (`SEND_DAY_START_HOUR`, the page's
+    `DAY_START_MIN`): a start earlier on the clock is past midnight and counts
+    from 24. Night 20:00 · 00:00 · 03:30 → hours 20 · 24 · 27; day 06:00 ·
+    09:00 · 12:30 → hours 30 · 9 · 12.
+  - The ends of a round only document it.
 - **A request FOR an area** — `container_requests.area_id` / `area_name` /
   `given` (`add_container_send_columns`); NULL on every brigadir request.
   - «Yangi so'rov» has a «Brigadirlarga · Jo'natishga» switch. «Jo'natishga»
@@ -713,6 +718,36 @@ He settled four questions:
   - **The hour strip** counts the areas' need into each hour.
 - Not built: a destination (shop / branch) on a delivery, and returns of
   dispatch containers — the operator: «no need».
+
+### A round is asked for at its start (2026-11-20)
+
+The operator sent a photo of «Yangi so'rov» for 10:00–11:00 carrying 556
+dispatch containers and 556 lids, and asked why: «the dispatch containers
+should show exact time when they need at sending time». The platform had
+followed the workbook's «1 соатда керак» column and spread each round over the
+3 hours from its start, so 10:00 was the 09:00 round's second hour. Offered
+«whole round at its start», «an hour earlier» and «at its end», he picked
+**the whole round at its start**.
+
+- `round_hours` gives each round ONE hour: the hour its start falls in.
+  `area_hours` puts the round's whole share there. The `SEND_ROUND_HOURS`
+  constant, and the `round_hours` field of `GET /send-areas` that carried it,
+  are gone (no tab read the field).
+- Every place reading the schedule follows: the request form's fill
+  (`/hour-need`), the strip, «Tayyor so'rovlar» (`hour_need_all`). A day now
+  reads, in containers + as many lids:
+  - day: 1 667 at 09:00, 1 666 at 12:00 (the 12:30 round), and 1 667 at 06:00
+    of the next morning (hour 30);
+  - night: 3 667 at 20:00, 3 667 at 00:00, 3 666 at 03:00 (the 03:30 round).
+- **The 06:00 day round moved to the END of the production day.** It was hour
+  6, before the day opens at 08:00, so its two tiles were red and overdue
+  every morning before anybody could ask for them. As hour 30 it shows on the
+  strip that is running at the time.
+- On «Sozlamalar», «Jo'natish jadvali»'s «Soatiga» column is «Bosqichiga»
+  (`cflow.sa.col.perRound`) and the form's preview line names one round.
+- Requests already made keep their hour and figures; nothing was migrated.
+- «Jo'natish»'s need over a period (`sending_report`) counts shifts × days
+  and is unchanged.
 
 ### One request for the hour — crates and dispatch together (2026-11-19, later)
 

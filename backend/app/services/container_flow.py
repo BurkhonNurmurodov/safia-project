@@ -2046,10 +2046,14 @@ def stock(db: Session, d_from: date, d_to: date, at: Optional[datetime] = None) 
 # The operator: «sending containers are not like the inside containers, but we
 # have to add them together», with his workbook «Отправка контейнер крышка соат
 # бўйича день ва ночь смена»: each dispatch area needs so many containers and
-# lids a shift, packed in 3-hour rounds. A round's share of the shift is spread
-# over its three hours; the hours add up to the shift exactly (largest
-# remainder). Kept on «Sozlamalar» by AXO and the admins.
-SEND_ROUND_HOURS = 3
+# lids a shift, packed in rounds. The shift's figure is shared over the rounds
+# (largest remainder, so they add up to the shift exactly) and a round's share
+# is asked for WHOLE at the hour the round starts (2026-11-20 — see
+# `round_hours`). Kept on «Sozlamalar» by AXO and the admins.
+#
+# The production day opens at 08:00 (the page's `DAY_START_MIN`): a round
+# starting earlier on the clock is past midnight, its hour counted on from 24.
+SEND_DAY_START_HOUR = 8
 # The schedule's first day: a period reaching before it needs nothing on those
 # days — the schedule did not exist, so 0% delivered there would be a lie.
 SEND_FROM = date(2026, 11, 19)
@@ -2075,35 +2079,41 @@ def _hm(v) -> Optional[int]:
 
 
 def round_hours(rounds) -> list:
-    """Each round's production hours — `SEND_ROUND_HOURS` from the hour its
-    start falls in. A round starting earlier on the clock than the one before
-    it is past midnight: its hours count on from 24 (the production day)."""
-    out, prev, plus = [], None, 0
+    """The production hour each round is asked for — the hour its START falls
+    in, the round's whole share there (2026-11-20, the operator, shown a
+    request for 10:00–11:00 carrying the 09:00 round's second hour: «the
+    dispatch containers should show exact time when they need at sending
+    time»; he picked «whole round at its start» over an hour earlier or at its
+    end). Until then a round was spread over the 3 hours from its start, the
+    workbook's «1 соатда керак» column — that column is not used.
+
+    A start before `SEND_DAY_START_HOUR` is past midnight: night 20:00 · 00:00
+    · 03:30 → hours 20 · 24 · 27, day 06:00 · 09:00 · 12:30 → 30 · 9 · 12 —
+    the 06:00 round is the one at the END of the production day, so it no
+    longer sits before the day opens, overdue from the start."""
+    out = []
     for rd in rounds or []:
         m = _hm(rd[0] if rd else None)
         if m is None:
             continue
-        if prev is not None and m + plus < prev:
-            plus += 24 * 60
-        start = m + plus
-        prev = start
-        out.append([start // 60 + i for i in range(SEND_ROUND_HOURS)])
+        h = m // 60
+        out.append(h + 24 if h < SEND_DAY_START_HOUR else h)
     return out
 
 
 def area_hours(a) -> dict:
-    """{hour: {"send": n, "lid": n}} — the shift's figure over the rounds, each
-    round's share over its hours."""
+    """{hour: {"send": n, "lid": n}} — the shift's figure shared over the
+    rounds, each round's share whole at the hour it starts (two rounds starting
+    in one hour add up there)."""
     hrs = round_hours(a.rounds)
     out: dict = {}
     if not hrs:
         return out
     for k, total in (("send", a.send or 0), ("lid", a.lid or 0)):
-        for hs, per_round in zip(hrs, share_out(total, [1] * len(hrs))):
-            for h, n in zip(hs, share_out(per_round, [1] * len(hs))):
-                if n:
-                    e = out.setdefault(h, {})
-                    e[k] = e.get(k, 0) + n
+        for h, n in zip(hrs, share_out(total, [1] * len(hrs))):
+            if n:
+                e = out.setdefault(h, {})
+                e[k] = e.get(k, 0) + n
     return out
 
 
@@ -2134,8 +2144,6 @@ def _clean_rounds(rounds) -> list:
             raise FlowError("rounds")
         out.append([f"{a // 60:02d}:{a % 60:02d}", f"{b // 60:02d}:{b % 60:02d}"])
     if not 1 <= len(out) <= 8:
-        raise FlowError("rounds")
-    if any(h > 47 for hs in round_hours(out) for h in hs):
         raise FlowError("rounds")
     return out
 

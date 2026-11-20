@@ -1248,16 +1248,22 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(flow.seed_send_areas(self.db), 0)          # only into an empty schedule
         return {(a.name, a.shift): a for a in flow.send_areas(self.db)}
 
-    def test_send_schedule_spreads_the_shift_over_its_rounds(self):
+    def test_send_schedule_puts_each_round_at_its_start(self):
+        """2026-11-20: a round's share is asked for WHOLE at the hour the round
+        starts — nothing in the hours after it (10:00 carried the 09:00
+        round's second hour)."""
         areas = self._areas()
         night = flow.area_hours(areas[("Сдоба Слойка Мясной", 2)])
-        self.assertEqual(sorted(night), [20, 21, 22, 24, 25, 26, 27, 28, 29])   # past midnight: the production day
-        self.assertEqual(night[20], {"send": 889, "lid": 889})
-        self.assertEqual(sum(e["send"] for e in night.values()), 8000)         # the hours add up to the shift
+        self.assertEqual(sorted(night), [20, 24, 27])                          # 20:00 · 00:00 · 03:30, past midnight from 24
+        self.assertEqual(night[20], {"send": 2667, "lid": 2667})
+        self.assertEqual(sum(e["send"] for e in night.values()), 8000)         # the rounds add up to the shift
         day = flow.area_hours(areas[("Бургер", 1)])
-        self.assertEqual(sorted(day), [6, 7, 8, 9, 10, 11, 12, 13, 14])
-        self.assertEqual([day[h]["send"] for h in (6, 7, 8)], [334, 333, 333])
+        self.assertEqual(sorted(day), [9, 12, 30])                             # 06:00 ends the production day (opens 08:00)
+        self.assertEqual([day[h]["send"] for h in (30, 9, 12)], [1000, 1000, 1000])
+        self.assertNotIn(10, day)
         self.assertEqual(sum(e["lid"] for e in day.values()), 3000)
+        pie = flow.area_hours(areas[("Пирог печенья", 1)])
+        self.assertEqual([pie[h]["send"] for h in (30, 9, 12)], [167, 167, 166])
         # kept on the page: checked, changed, archived
         for bad in (dict(name=" ", shift=1, send=1, lid=1, rounds=[["06:00", "09:00"]]),
                     dict(name="X", shift=3, send=1, lid=1, rounds=[["06:00", "09:00"]]),
@@ -1267,7 +1273,7 @@ class FlowTest(unittest.TestCase):
             with self.assertRaises(flow.FlowError, msg=bad):
                 flow.save_area(self.db, None, actor="a", **bad)
         a = flow.save_area(self.db, None, "Tort", 1, 90, 0, [["08:00", "11:00"]], "Dilafruz")
-        self.assertEqual(flow.area_hours(a), {8: {"send": 30}, 9: {"send": 30}, 10: {"send": 30}})
+        self.assertEqual(flow.area_hours(a), {8: {"send": 90}})
         flow.remove_area(self.db, a.id, "Dilafruz")
         self.db.commit()
         self.assertNotIn(a.id, [x.id for x in flow.send_areas(self.db)])
@@ -1283,15 +1289,16 @@ class FlowTest(unittest.TestCase):
         with mock.patch.object(flow, "plant_hours", return_value={}):
             self._count(self.at(5))
             # «Tayyor»: ONE item per hour — every area's need of the hour together
-            # (Бургер 334 + Сдоба Фасовка 167 + Пирог печенья 56 at 06:00)
-            hour6 = lambda: next(i for i in flow.prepared(self.db, DAY, self.at(5)) if i["hour"] == 6)  # noqa: E731
-            self.assertEqual(hour6()["counts"], {"send": 557, "lid": 557})
+            # (Бургер 1000 + Сдоба Фасовка 500 + Пирог печенья 167: the 06:00
+            # round, hour 30 — the end of the production day)
+            hour6 = lambda: next(i for i in flow.prepared(self.db, DAY, self.at(5)) if i["hour"] == 30)  # noqa: E731
+            self.assertEqual(hour6()["counts"], {"send": 1667, "lid": 1667})
             # a request FOR the area: only its two types; the crates are another request's
-            r = flow.create_request(self.db, DAY, 6, nk, {"send": 334, "lid": 334, "yellow": 5}, "", "axo",
+            r = flow.create_request(self.db, DAY, 30, nk, {"send": 334, "lid": 334, "yellow": 5}, "", "axo",
                                     "guest:1", area_id=burger.id)
             self.db.commit()
             self.assertEqual((r.lines, r.area_name), ({"send": 334, "lid": 334}, "Бургер"))
-            self.assertEqual(hour6()["counts"], {"send": 223, "lid": 223})      # an area's own request counts as asked
+            self.assertEqual(hour6()["counts"], {"send": 1333, "lid": 1333})    # an area's own request counts as asked
             with self.assertRaises(flow.FlowError):
                 flow.create_request(self.db, DAY, 6, nk, {"yellow": 5}, "", "axo", "guest:1", area_id=burger.id)
             # waiting: promised in the stock, not gone
@@ -1354,7 +1361,9 @@ class FlowTest(unittest.TestCase):
                                     "guest:1")
             self.db.commit()
             self.assertEqual((r.lines, r.area_id), ({"yellow": 30, "send": 1223, "lid": 1223}, None))
-            self.assertFalse([i for i in flow.prepared(self.db, DAY, self.at(18)) if i["hour"] == 20])  # all asked
+            # the 20:00 rounds whole at 20:00 (2667 + 500 + 500): the rest still to ask
+            self.assertEqual([i["counts"] for i in flow.prepared(self.db, DAY, self.at(18)) if i["hour"] == 20],
+                             [{"send": 2444, "lid": 2444}])
             parts = [{"manager_id": 1, "counts": {"yellow": 25}}]
             with self.assertRaises(flow.FlowError):                     # short without a reason
                 flow.assign_request(self.db, r.id, parts, None, None, "n", nk, False,

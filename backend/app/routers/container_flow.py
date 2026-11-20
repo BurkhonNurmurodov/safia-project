@@ -324,8 +324,9 @@ def get_hour_need(day: date = Query(...), db: Session = Depends(get_db),
 
 @router.get("/send-areas")
 def get_send_areas(db: Session = Depends(get_db), payload: dict = Depends(ANY)):
-    """The dispatch areas on the schedule, each with its hours."""
-    return {"areas": [flow.area_out(a) for a in flow.send_areas(db)], "round_hours": flow.SEND_ROUND_HOURS}
+    """The dispatch areas on the schedule, each with its hours — a round's
+    share whole at the hour it starts (`round_hours`)."""
+    return {"areas": [flow.area_out(a) for a in flow.send_areas(db)]}
 
 
 class AreaBody(BaseModel):

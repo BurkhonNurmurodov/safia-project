@@ -1,8 +1,10 @@
 // «Jo'natish» (2026-11-19, the operator: «sending containers are not like the
 // inside containers, but we have to add them together»). A dispatch area packs
 // finished goods for sending and needs so many containers and lids a shift,
-// in 3-hour rounds (his workbook «Отправка контейнер крышка соат бўйича день
-// ва ночь смена»). That packaging leaves with the product, so it is two types
+// in rounds (his workbook «Отправка контейнер крышка соат бўйича день ва ночь
+// смена»), each round's share asked for whole at the hour it starts
+// (2026-11-20, the server's `round_hours`). That packaging leaves with the
+// product, so it is two types
 // of its own — always shown with a truck — asked of logistics like any
 // request and added into every total. Here:
 // - `SendAreasCard` — «Jo'natish jadvali» on «Sozlamalar», kept by AXO and the
@@ -31,12 +33,12 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import { fmt, errText, fieldCls, fieldStyle, refreshFlow, useSendAreas, shiftName, TYPE_COLORS, TypeName } from "./flowUtil";
 
-const ROUND_HOURS = 3;
 const MAX_ROUNDS = 8;
 const pair = (o) => `${fmt(o?.send ?? 0)} / ${fmt(o?.lid ?? 0)}`;
 const roundsText = (rounds) => (rounds ?? []).map(([a, b]) => `${a}–${b}`).join(" · ");
-// The busiest hour of an area — what «Soatiga» shows (the rounds share the shift evenly).
-const perHour = (a) => {
+// The biggest round of an area — what «Bosqichiga» shows (the rounds share the
+// shift evenly, each whole in the hour it starts).
+const perRound = (a) => {
   const hs = Object.values(a.hours ?? {});
   return hs.length ? hs.reduce((m, c) => ((c.send ?? 0) + (c.lid ?? 0) > (m.send ?? 0) + (m.lid ?? 0) ? c : m), hs[0]) : null;
 };
@@ -69,8 +71,8 @@ export function SendAreasCard({ t, toast, canEdit }) {
             <Th label={t("cflow.sa.col.shift")} align="center" />
             <Th label={t("cflow.ct.send")} icon={Truck} align="right" hint={t("cflow.sa.hint.perShift")} />
             <Th label={t("cflow.ct.lid")} icon={Truck} align="right" hint={t("cflow.sa.hint.perShift")} />
-            <Th label={t("cflow.sa.col.rounds")} hint={t("cflow.sa.hint.rounds").replace("{h}", ROUND_HOURS)} />
-            <Th label={t("cflow.sa.col.perHour")} align="right" hint={t("cflow.sa.hint.perHour")} />
+            <Th label={t("cflow.sa.col.rounds")} hint={t("cflow.sa.hint.rounds")} />
+            <Th label={t("cflow.sa.col.perRound")} align="right" hint={t("cflow.sa.hint.perRound")} />
             <Th label="" cls="w-px" />
           </tr>
         </thead>
@@ -82,7 +84,7 @@ export function SendAreasCard({ t, toast, canEdit }) {
           ) : !areas.length ? (
             <tr><td colSpan={COLS} className="px-3 py-6 text-center" style={{ color: "var(--text-3)" }}>{t("cflow.sa.none")}</td></tr>
           ) : areas.map((a) => {
-            const ph = perHour(a);
+            const ph = perRound(a);
             return (
               <tr key={a.id} className="text-sm">
                 <td className="px-3 py-2 whitespace-nowrap max-w-[280px] truncate" title={tx(a.name)} style={{ color: "var(--text-1)" }}>{tx(a.name)}</td>
@@ -126,7 +128,7 @@ const blankRound = (from = "", to = "") => ({ id: roundSeq++, from, to });
 
 // One dispatch area: its name, shift, the shift's containers and lids, and the
 // packing rounds. The hours are worked out by the server (`area_hours`); the
-// line under the rounds says what each round and hour gets.
+// line under the rounds says what each round gets.
 function AreaModal({ t, area, onClose, onDone, onFail }) {
   const [name, setName] = useState(area?.name ?? "");
   const [shift, setShift] = useState(area?.shift ?? 1);
@@ -170,7 +172,7 @@ function AreaModal({ t, area, onClose, onDone, onFail }) {
             <CountStepper min={0} max={100000} value={lid} placeholder="0" onChange={setLid} />
           </FormField>
         </div>
-        <FormField label={t("cflow.sa.rounds")} required hint={t("cflow.sa.hint.rounds").replace("{h}", ROUND_HOURS)}>
+        <FormField label={t("cflow.sa.rounds")} required hint={t("cflow.sa.hint.rounds")}>
           <div className="flex flex-col gap-2">
             {rounds.map((r, i) => (
               <div key={r.id} className="flex items-center gap-2">
@@ -195,11 +197,9 @@ function AreaModal({ t, area, onClose, onDone, onFail }) {
             </div>
           </div>
         </FormField>
-        {/* always one line: what a round and an hour get — never moves the form */}
+        {/* always one line: what a round gets — never moves the form */}
         <p className="text-xs min-h-[16px] tabular-nums" style={{ color: "var(--text-3)" }}>
-          {t("cflow.sa.preview")
-            .replace("{r}", `${fmt(per(send))} / ${fmt(per(lid))}`)
-            .replace("{h}", `${fmt(Math.round(per(send) / ROUND_HOURS))} / ${fmt(Math.round(per(lid) / ROUND_HOURS))}`)}
+          {t("cflow.sa.preview").replace("{r}", `${fmt(per(send))} / ${fmt(per(lid))}`)}
         </p>
       </div>
     </Modal>
