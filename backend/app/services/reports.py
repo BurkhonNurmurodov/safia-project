@@ -20,7 +20,9 @@ section:
   `fulfillment` — the twins of `utils/formulas.js`, never a second spelling.
 * **Xodimlar** — /workers' own `att_rate` ((came + on leave) ÷ on the list)
   through `brigadir_board.attendance`, and the month's turnover out of
-  `turnover.month_payload` — the «Liderlar KPI» page's own.
+  `turnover.month_payload` — the «Liderlar KPI» page's own — with the
+  workforce movement its `aggregate` counts beside it (initial + hires −
+  dismissals − attrition = final).
 * **Kutish** — `routers/downtime._downtime`'s rows, which ARE the /downtime
   page's computation (the headcount-weighted mean of a unit's cells, the
   platform's one ojidaniya reading). «Kutish %» is `idle_share.build`: Σ(N·T)
@@ -95,6 +97,8 @@ BUILT_ONLY = ("idle", "cost", "quality", "concerns", "arc")
 CUMULATIVE = {
     "production.actualMin", "production.planMin", "production.shortMin",
     "personnel.listed", "personnel.came", "personnel.onLeave", "personnel.left",
+    # The month's movement — a running month has not finished hiring or losing.
+    "personnel.wfHires", "personnel.wfDismissals", "personnel.wfAttrition",
     "personnel.overtimeDirect", "personnel.overtimeIndirect",
     # Counts over the month that a running month has not finished counting —
     # their change is withheld too, now every table carries one.
@@ -293,11 +297,24 @@ def _personnel(inp: dict, n: int) -> list[dict]:
         for kid, key in REPORT_KINDS
     ]))
 
+    # The workforce movement, TopSim's «Workforce» table (the operator,
+    # 2026-11-20: «Initial Workforce, Hires, Dismissals, Attrition, Final
+    # Workforce and Turnover»): initial + hires − dismissals − attrition =
+    # final, every figure `turnover.aggregate`'s own, counted off one set of
+    # people (the cells the turnover KPI counts), so the rows add up exactly.
+    # «Left» went with it — the two rows it became say more; the rate under
+    # them is HR's, over the leavers its «Sabablar» list counts.
     have_turn = any(turn.get(y) for y in yms)
     if have_turn:
+        def _tv(key: str) -> list:
+            return [_r((turn.get(y) or {}).get(key)) for y in yms]
+
         blocks.append(periods_block("turnover", [
-            prow("working", "int", [_r((turn.get(y) or {}).get("working")) for y in yms]),
-            prow("left", "int", [_r((turn.get(y) or {}).get("left")) for y in yms]),
+            prow("wfInitial", "int", _tv("initial")),
+            prow("wfHires", "int", _tv("hired")),
+            prow("wfDismissals", "int", _tv("dismissed")),
+            prow("wfAttrition", "int", _tv("attrition")),
+            prow("working", "int", _tv("working"), bold=True),
             prow("turnRate", "pct", [_r((turn.get(y) or {}).get("rate"), 1) for y in yms],
                  bold=True),
         ]))

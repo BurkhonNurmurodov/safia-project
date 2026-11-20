@@ -759,6 +759,12 @@ workbook, `routers/turnover.py` the door; `pages/Turnover.jsx` (+ its words in
   placed by today's unit, marked ≈); working people by their CURRENT unit,
   owners as the dated links answer — so a saved past month is approximate and the page
   says so. `PAST_FROM` / `START_MONTH` are the two floors.
+- **`aggregate(…, month=)` also counts the workforce MOVEMENT** (2026-11-20, for
+  «Hisobotlar»): `initial` + `hired` − `dismissed` − `attrition` = `working`
+  in the totals, over the same counted cells, every leaver included whatever
+  «Sabablar» says; `left_kind` / `DISMISSAL_REASONS` split the leavers by who
+  ended the job. The page itself prints none of it yet. Record:
+  `docs/reports-and-ontime.md`.
 - `turnover_month_people.approx` arrived after the tables shipped (v4.230.1,
   swept in by another session's auto-commit), so `startup.add_turnover_month_people_approx`
   adds it — any further column on these tables needs the same.

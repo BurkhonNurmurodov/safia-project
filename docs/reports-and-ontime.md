@@ -335,6 +335,54 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   (the document is tables), and any figure the platform does not already
   print.
 
+## «Hisobotlar» — the workforce table: initial, hires, dismissals, attrition, final, turnover (2026-11-20)
+
+The operator, with TopSim's «Workforce» table as the picture: «This one should
+be like I shared the pic from TopSim: Initial Workforce, Hires, Dismissals,
+Attrition, Final Workforce and Turnover». The «Xodimlar» section's turnover
+block (Working · Left · Turnover) is that table now, captioned «Xodimlar soni»
+(«Workforce»), its rows signed as TopSim prints them:
+
+| row | key | what it counts |
+|---|---|---|
+| Dastlabki xodimlar soni | `wfInitial` | employed when the month began |
+| + Ishga qabul qilinganlar | `wfHires` | employments that BEGAN in the month — still working or already gone |
+| − Ishdan bo'shatilganlar | `wfDismissals` | leavers the COMPANY let go |
+| − O'zi ketganlar | `wfAttrition` | every other leaver |
+| = Yakuniy xodimlar soni | `working` | working on the month's last day (the old «Ishlayotganlar») |
+| Qo'nimsizlik (yillik) | `turnRate` | HR's rate, unchanged |
+
+- **The rows add up, always**: initial + hires − dismissals − attrition =
+  final. `turnover.aggregate(…, month=)` counts all five off ONE set of people
+  — the month's working list and EVERY leaver of a counted cell — so the
+  identity holds in any scope (`tests/test_turnover_workforce.py`). The
+  population is the turnover KPI's: registered cells with «KPI hisoblanadi»
+  on, in the report's plant / shift / brigadir scope.
+- **A leaver HR keeps out of turnover is still in the movement.** «Sabablar»
+  takes a reason out of the RATE; the person left all the same, so they are a
+  dismissal or attrition here. Hence dismissals + attrition can exceed the
+  «left» the rate divides — the rate is HR's formula (counted leavers ÷ final
+  × 12), not attrition ÷ final. «Left» as a row is gone.
+- **Dismissal or attrition is WHO ENDED THE JOB** (the operator's ruling, asked):
+  Verifix records both as a dismissal with a reason, so `turnover.left_kind`
+  reads the reason — `DISMISSAL_REASONS` (Verifix's own words, by
+  `norm_reason`) is the company's side, everything else and a leaver with no
+  reason is attrition. Read live by every month; it scores nothing.
+  **Today the list is only «Дисциплинарные нарушения» and «Черное списка»** —
+  the two company-ended reasons the repo already knew. The full list of
+  reasons could not be read from production when this was built (the report
+  door refused the cloud session's key), so any other company-ended reason
+  counts as attrition until it is added there.
+- **`wfInitial` is not always last month's `working`.** Each person is placed
+  where the working list or the dismissal has them, so somebody who moved
+  between a counted cell and an uncounted one (KPI off, not on /cells) inside
+  the month is in `initial` where they ended. The table adding up was chosen
+  over the two cells matching.
+- Hires, dismissals and attrition are month totals — their change is withheld
+  while the month runs (`CUMULATIVE`); initial, final and the rate keep
+  theirs. No delta colour on the new rows. Each opens `/leaders-kpi`,
+  «Qo'nimsizlik», on its month. `FORMAT` is 3.
+
 ## «Hisobotlar» — «ARC xizmat so'rovlari», the requests filed in the month (2026-11-20)
 
 The operator, on the Executive summary: «we should add the metric of the

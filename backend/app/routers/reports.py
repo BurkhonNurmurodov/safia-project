@@ -525,7 +525,9 @@ def _merge(parts: list[dict]) -> dict:
 # part `compose` fails on is dropped and built in the request — `_report` — so
 # a forgotten bump costs one slow open, never a broken page.)
 # 2 (2026-11-20): a part carries `arc`, the month's ARC request count.
-FORMAT = 2
+# 3 (2026-11-20): `turnover` carries the workforce movement (initial, hired,
+# dismissed, attrition) — a month stored before would print «—» in those rows.
+FORMAT = 3
 _FINISHED_DAYS = 45
 _RUNNING_DAYS = 3            # its key carries the day: a row is of use for one
 _FINISHED = KeptAnswers("reports-month", ttl=1800, stale=_FINISHED_DAYS * 86400, max_keys=48,

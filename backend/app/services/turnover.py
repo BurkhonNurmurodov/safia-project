@@ -190,8 +190,35 @@ def norm_reason(raw: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(raw or "")).strip().casefold()
 
 
+# WHO ENDED THE JOB (the operator, 2026-11-20 — «Hisobotlar»'s workforce table,
+# TopSim's «Dismissals» and «Attrition»). Verifix records every ended employment
+# the same way, as a dismissal with a reason, so the two are told apart by that
+# reason: a DISMISSAL is one the company ended, ATTRITION one where the person
+# left — and everything this list does not name, a leaver with no reason too
+# (the journal unreadable that night), is attrition. Verifix's own words,
+# compared by `norm_reason`. It is read LIVE by every month, never frozen with
+# one: it splits a count, it scores nothing.
+#
+# shortcut: only the two company-ended reasons the repo already knew (HR's file
+# of 22 Oct) are here — the full list of reasons Verifix carries could not be
+# read when this was built (the report door refused the session's key), so
+# another company-ended reason sits under attrition until it is added.
+DISMISSAL_REASONS = (
+    "Дисциплинарные нарушения",
+    "Черное списка",
+)
+
+
+def left_kind(reason: Optional[str]) -> str:
+    """«dismissal» (the company ended it) or «attrition» (the person left)."""
+    return "dismissal" if norm_reason(reason) in _DISMISSAL else "attrition"
+
+
 MAX_EXCLUDED = 100
 MAX_REASON_LEN = 200
+
+
+_DISMISSAL = frozenset(norm_reason(x) for x in DISMISSAL_REASONS)
 
 
 def clean_reasons(raw) -> list[str]:
@@ -759,10 +786,22 @@ def _tenure(hired: Optional[date], left: Optional[date]) -> Optional[int]:
 
 
 def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r: dict,
-              scope: Optional[dict] = None) -> dict:
+              scope: Optional[dict] = None, month: Optional[date] = None) -> dict:
     """The month's figures from its people. ONE function for the open month,
     a month waiting to close and a closed one — so the page, the explain
-    dialog and the workbook can never state two answers."""
+    dialog and the workbook can never state two answers.
+
+    With `month` (its first day) the totals also carry the workforce MOVEMENT
+    (2026-11-20, «Hisobotlar»): `initial` + `hired` − `dismissed` − `attrition`
+    = `working`, exactly, because all five are counted off the same people in
+    the same cells — the working list and EVERY leaver of a counted cell, a
+    reason HR keeps out of turnover included (they did leave). A person hired
+    in the month is a hire, whether still working or already gone; everybody
+    else on either list was there when the month began. Each is placed where
+    the working list or the dismissal has them, so somebody who moved between
+    a counted cell and an uncounted one within the month sits in `initial`
+    where they ended — which is why `initial` can differ by a few from the
+    month before's `working`."""
     scope = scope or {}
     any_scope = bool(scope.get("factory") is not None or scope.get("shift") is not None or scope.get("managers"))
 
@@ -771,8 +810,14 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
     def cell(k: str) -> dict:
         if k not in cells:
             c = cmap[k]
-            cells[k] = {"key": k, **c, "working": 0, "left": 0}
+            cells[k] = {"key": k, **c, "working": 0, "left": 0,
+                        "initial": 0, "hired": 0, "gone": 0, "dismissed": 0}
         return cells[k]
+
+    def came(p: dict) -> str:
+        """`hired` for an employment that began in the month, else `initial`."""
+        h = p.get("hired")
+        return "hired" if month is not None and h is not None and h >= month else "initial"
 
     unreg: dict[str, dict] = {}
 
@@ -788,7 +833,9 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             continue
         if k in cmap:
             if cmap[k].get("kpi") is not False:     # a cell out of the KPI counts nobody
-                cell(k)["working"] += 1
+                x = cell(k)
+                x["working"] += 1
+                x[came(p)] += 1
         else:
             miss(k, p)["working"] += 1
 
@@ -821,6 +868,12 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
             x = cell(k)
             if not off:
                 x["left"] += 1
+            # The movement counts every leaver of a counted cell, whatever HR's
+            # turnover list says of the reason: the person is gone either way.
+            x["gone"] += 1
+            x[came(p)] += 1
+            if left_kind(p.get("reason")) == "dismissal":
+                x["dismissed"] += 1
             counted = "reason" if off else ("owner" if owned(c) else "no_owner")
             if any_scope and not _scope_ok(c, scope):
                 continue
@@ -916,9 +969,19 @@ def aggregate(roster: list[dict], leavers: list[dict], cmap: dict[str, dict], r:
     unregistered = [] if any_scope else sorted(unreg.values(), key=lambda u: -(u["working"] + u["left"]))
     rt = rate_of(left, working, r)
     owners = len(by_owner)
+    # The movement, over EVERY counted cell in scope — `out_cells` leaves out a
+    # cell with nobody working and no counted leaver, whose leavers under a
+    # reason HR does not count still left.
+    moved = [c for c in cells.values() if not any_scope or _scope_ok(c, scope)]
+    movement = {} if month is None else {
+        "initial": sum(c["initial"] for c in moved),
+        "hired": sum(c["hired"] for c in moved),
+        "dismissed": sum(c["dismissed"] for c in moved),
+        "attrition": sum(c["gone"] - c["dismissed"] for c in moved),
+    }
     return {
         "totals": {
-            "working": working, "left": left, "rate": rt,
+            "working": working, "left": left, "rate": rt, **movement,
             "left_owner": left_owner, "left_no_owner": left - left_owner,
             # The names a tab on an older bundle reads — the same figures.
             "left_leader": left_owner, "left_no_leader": left - left_owner,
@@ -1033,7 +1096,7 @@ def month_payload(db: Session, m: date, scope: Optional[dict] = None,
     if state in ("before", "future", "past"):
         return {**base, "rule": rule(db)}
     inp = _inputs(db, m, state, row, now)
-    agg = aggregate(inp["roster"], inp["leavers"], inp["cmap"], inp["rule"], scope)
+    agg = aggregate(inp["roster"], inp["leavers"], inp["cmap"], inp["rule"], scope, month=m)
     roster_at = row.roster_at if row and row.roster_at else None
     late_days = None
     if roster_at:
