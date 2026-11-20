@@ -180,6 +180,8 @@ const uz = {
   moveRow: "«{name}» — {i}/{n}. Suring yoki ↑ ↓ bosing",
   orderCustom: "Sizning tartibingiz",
   orderSaveFailed: "Tartib saqlanmadi — sahifani yangilab, qayta urinib ko'ring",
+  // A figure opens the page it is read from, on the month of the column pressed.
+  openOn: "«{page}» sahifasida ochish — {month}",
 };
 
 const uz_cyrl = {
@@ -276,6 +278,7 @@ const uz_cyrl = {
   moveRow: "«{name}» — {i}/{n}. Суринг ёки ↑ ↓ босинг",
   orderCustom: "Сизнинг тартибингиз",
   orderSaveFailed: "Тартиб сақланмади — саҳифани янгилаб, қайта уриниб кўринг",
+  openOn: "«{page}» саҳифасида очиш — {month}",
 };
 
 const ru = {
@@ -371,6 +374,7 @@ const ru = {
   moveRow: "«{name}» — {i}/{n}. Перетащите или нажмите ↑ ↓",
   orderCustom: "Ваш порядок",
   orderSaveFailed: "Порядок не сохранился — обновите страницу и попробуйте снова",
+  openOn: "Открыть на странице «{page}» — {month}",
 };
 
 const en = {
@@ -465,6 +469,7 @@ const en = {
   moveRow: "«{name}» — {i} of {n}. Drag, or press ↑ ↓",
   orderCustom: "Your order",
   orderSaveFailed: "The order was not saved — reload the page and try again",
+  openOn: "Open on “{page}” — {month}",
 };
 
 export const TXT = { uz, uz_cyrl, ru, en };

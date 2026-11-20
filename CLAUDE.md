@@ -49,7 +49,7 @@ loaded by themselves:
 - `docs/kelish.md` — «Ish grafigi» (`/kelish`) and task #11 checked on it.
 - `docs/laboratory.md` — candidate assessment, «Xodim kartasi», Trello, the audit table, Notion tasks, the live monitor, the goal board.
 - `docs/ovens.md` — the Revent ovens (read-only, ever) and the board that collects them.
-- `docs/reports-and-ontime.md` — «Hisobotlar» and the logistics on-time report.
+- `docs/reports-and-ontime.md` — «Hisobotlar» and the logistics on-time report; **a report figure opens the page it is read from, on its month and scope** (`components/reports/figureLinks.js` — a new figure needs a row there; `utils/scopeLinks.js` + the page's `useUrlScope`), and **a pressed link naming `date_from` + `date_to` is adopted by the shared filters** (`FilterContext`, PUSH only).
 - `docs/equipment.md` — «Uskunalar» `/equipment`: the equipment register (admin-only page of «Avtomatizatsiya», editable, seeded once from the workbook, a/b/c «Holati»).
 - `docs/arc.md` — ARC as one page, and both ARC mirrors.
 - `docs/notifications-and-telegram.md` — the notification centre, phone notifications, coloured and disabled Telegram buttons, the `task_from_top` and `task_reminder` cards.

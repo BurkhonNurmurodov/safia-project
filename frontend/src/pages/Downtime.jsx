@@ -19,6 +19,8 @@ import { useToast } from "../components/ui/Toast";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam, idsParam, shiftParam } from "../utils/scopeLinks";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory, useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
@@ -74,7 +76,36 @@ const seasonMatrix = (labels, colTotals, catCol) => {
 // Who may open «Xarajat» — the twin of COST_ROLES in routers/downtime.py.
 const COST_ROLES = ["admin", "shift-manager"];
 
+// A link that opens this page on one VIEW (utils/scopeLinks.js `downtimeLink`
+// — «Hisobotlar»'s waiting figures, 2026-11-20). The period, the shift and the
+// brigadirs are the shared filters, which the provider takes off the same
+// link. «Tahlil» is opened on the stopped half with no category singled out —
+// what the report's minutes are; «Xarajat» keeps a period and picks of its
+// own, so it is handed the same scope and its cell / category picks are
+// cleared. `view` is the link's own mark — dropped once read. Read by
+// `useUrlScope`.
+const LINK_VIEWS = ["analysis", "percat", "cost"];
+const readLinkScope = (q) => {
+  const view = q.get("view");
+  if (!LINK_VIEWS.includes(view)) return null;
+  if (view === "cost") {
+    return {
+      downtime_view: view,
+      dtcost_from: dayParam(q, "date_from"),
+      dtcost_to: dayParam(q, "date_to"),
+      dtcost_shift: shiftParam(q),
+      dtcost_sups: idsParam(q, "manager_id"),
+      dtcost_cells: null,
+      dtcost_cats: null,
+    };
+  }
+  return { downtime_view: view, downtime_tab: "stopped", downtime_selected_cats: null };
+};
+
 export default function Downtime() {
+  // Before every persisted pick below (and «Xarajat»'s): a scope link writes
+  // them first.
+  useUrlScope(readLinkScope);
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { factory } = useFactory();
   const { t } = useLang();

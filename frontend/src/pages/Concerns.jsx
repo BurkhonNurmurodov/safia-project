@@ -41,7 +41,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useUrlScope } from "../hooks/useUrlScope";
 import { useOpenParam } from "../hooks/useOpenParam";
-import { dayParam, listParam } from "../utils/scopeLinks";
+import { dayParam, idsParam, listParam, shiftParam } from "../utils/scopeLinks";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
@@ -500,17 +500,25 @@ const asList = (v) => (Array.isArray(v) ? v : []);
 // was pressed on has no period). It clears every filter it does not name, so
 // the register holds exactly the rows that count was made of. Read by
 // `useUrlScope`.
+//
+// «Hisobotlar»'s «Xavotirlar» figure opens it over a MONTH (`concernsSpanLink`,
+// 2026-11-20): `from` + `to` with no `unit` — the report's own `units` and
+// `shift` where it is narrowed — every level and status, on whichever view
+// the reader last used.
 const readLinkScope = (q) => {
   const unit = Number(q.get("unit"));
-  if (!q.has("unit") || !Number.isInteger(unit) || unit <= 0) return null;
+  const one = q.has("unit") && Number.isInteger(unit) && unit > 0;
+  const span = dayParam(q, "from") && dayParam(q, "to");
+  if (!one && !span) return null;
+  const units = idsParam(q, "units");
   return {
     concerns_date_from: dayParam(q, "from"),
     concerns_date_to: dayParam(q, "to"),
-    concerns_sup_sel: [String(unit)],
+    concerns_sup_sel: one ? [String(unit)] : units ? units.map(String) : null,
     concerns_level_sel: listParam(q, "level", LEVELS),
     concerns_status_sel: listParam(q, "status", STATUSES),
     concerns_search: null,
-    concerns_shift: null,
+    concerns_shift: one ? null : shiftParam(q),
     concerns_cell_sel: null,
     concerns_owner_sel: null,
     concerns_resp_sel: null,
@@ -518,7 +526,7 @@ const readLinkScope = (q) => {
     concerns_deadline_min: null,
     concerns_deadline_max: null,
     concerns_only_my_level: null,
-    concerns_view: "list",
+    ...(one ? { concerns_view: "list" } : {}),
   };
 };
 

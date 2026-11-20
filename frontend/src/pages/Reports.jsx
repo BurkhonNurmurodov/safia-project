@@ -19,6 +19,7 @@ import { useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import ReportSection from "../components/reports/ReportSection";
 import { useRowOrder, ordered } from "../components/reports/useRowOrder";
+import { useFigureLinks } from "../components/reports/figureLinks";
 import CatLockNotice from "../components/idle/CatLockNotice";
 import { CATS } from "../components/idle/categories";
 import {
@@ -128,6 +129,13 @@ export default function Reports() {
   [data, shift, params.factory]);
   const brigName = (id) =>
     tl((data?.options?.brigadirs || []).find((b) => b.id === id)?.name || `#${id}`);
+  // A figure opens the page it is read from, on this report's own scope —
+  // the shift and the brigadirs picked here; the Quality register knows a
+  // brigadir by the unit's name as stored, so the raw names ride along.
+  const brigRaw = useMemo(() => brig
+    .map((id) => (data?.options?.brigadirs || []).find((b) => b.id === id)?.name)
+    .filter(Boolean), [brig, data]);
+  const figureLink = useFigureLinks({ shift, units: brig, unitNames: brigRaw });
 
   const shifts = data?.options?.shifts?.length ? data.options.shifts : [1, 2];
   const sections = [
@@ -338,7 +346,7 @@ export default function Reports() {
           </div>
           {LOCK_SECS.has(current?.key) && <CatLockNotice cats={catLocked} />}
           {current && <ReportSection section={current} months={data.months || []}
-            order={rowOrder.order} setBlock={rowOrder.setBlock} />}
+            order={rowOrder.order} setBlock={rowOrder.setBlock} link={figureLink} />}
 
           {/* What this platform cannot report, said out loud rather than left
               as a gap the reader has to notice: a management report of this

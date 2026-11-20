@@ -22,7 +22,8 @@ export const CONCERN_OPEN = ["todo", "doing"];
 const query = (params) => {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === null || v === undefined || v === "") continue;
+    // An empty list names nothing — never a bare «key=».
+    if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) continue;
     q.set(k, Array.isArray(v) ? v.join(",") : String(v));
   }
   const s = q.toString();
@@ -51,9 +52,12 @@ export const staffLink = ({ unit, date, tab = "workers" }) =>
 // «Sifat va shikoyatlar», «Brigadirlar» tab — one brigadir, by the name the
 // register matched (`r.sup`, the unit's own name), over a date span.
 // `hair: "with"` opens it «Soch bilan» (the board's with-hair lane); without
-// it the page lands «Sochsiz», as it always did.
-export const qualityLink = ({ brigadir, from, to, status, hair }) =>
-  `/quality${query({ brigadir, from: isoDay(from), to: isoDay(to), status, hair })}`;
+// it the page lands «Sochsiz», as it always did. With no `brigadir`, `from` +
+// `to` alone open the whole register over the span, and `shift` narrows it to
+// one shift («Hisobotlar»'s figures). ONE brigadir only: the page's chain is
+// single-pick, so it has no way to stand on two.
+export const qualityLink = ({ brigadir, from, to, status, hair, shift }) =>
+  `/quality${query({ brigadir, from: isoDay(from), to: isoDay(to), status, hair, shift })}`;
 
 // «Xavotirlar» — one brigadir's unit, at one level, in the given statuses,
 // over «Barcha vaqt»: the board's count has no period, so nothing narrower
@@ -77,3 +81,58 @@ export const monthSpan = (ym) => {
   // starts.
   return { from, to: end < today ? end : today < from ? end : today };
 };
+
+// ── «Hisobotlar» — a figure opens the page it is read from ──────────────────
+// (the operator, 2026-11-20). `scope` is what the report read the figure over:
+// `from` / `to` — a month's days, the running month's so far — plus the
+// report's own `shift` and `units` (the brigadirs it is narrowed to, by unit
+// id). Which figure opens which page is `components/reports/figureLinks.js`.
+
+// The pages on the SHARED filters (context/FilterContext.jsx) speak the
+// provider's own params — `date_from`, `date_to`, `shift`, `manager_id` — which
+// it adopts from a pressed link and a fresh tab alike. `extra` are the page's
+// own, read by its `useUrlScope` and dropped.
+const shared = ({ from, to, shift, units } = {}, extra = {}) => {
+  const q = new URLSearchParams();
+  if (isoDay(from) && isoDay(to)) {
+    q.set("date_from", from);
+    q.set("date_to", to);
+  }
+  if (shift) q.set("shift", String(shift));
+  for (const id of units || []) q.append("manager_id", String(id));
+  for (const [k, v] of Object.entries(extra)) if (v) q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : "";
+};
+// What a page on the shared filters reads back for its OWN brigadir pick.
+export const idsParam = (q, key) => {
+  const ids = q.getAll(key).flatMap((v) => v.split(",")).map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return ids.length ? ids : null;
+};
+export const shiftParam = (q, key = "shift") => {
+  const n = Number(q.get(key));
+  return n === 1 || n === 2 ? n : null;
+};
+
+// «Zagruzka foizi» and «Odam soni · Davomat» keep nothing of their own that
+// the scope would have to clear.
+export const zagruzkaLink = (scope) => `/zagruzka${shared(scope)}`;
+export const attendanceLink = (scope) => `/workers/attendance${shared(scope)}`;
+// «Plan Bajarish» — its overview, its own brigadir pick set to the scope's.
+export const planLink = (scope) => `/plan${shared(scope, { tab: "overview" })}`;
+// «Ojidaniya» — «Tahlil», or «Xarajat» (which keeps a period of its own and
+// is given the same one).
+export const downtimeLink = (scope, view = "analysis") => `/downtime${shared(scope, { view })}`;
+
+// «Xavotirlar» over a span — every level and status, the scope's units.
+export const concernsSpanLink = ({ from, to, shift, units }) =>
+  `/concerns${query({ from: isoDay(from), to: isoDay(to), shift, units })}`;
+
+// «Liderlar KPI» — one tab, one month («2026-11»).
+export const leadersKpiLink = ({ tab, month, shift, units }) =>
+  `/leaders-kpi${query({ tab, month, shift, brig: units })}`;
+
+// «O'z vaqtida yetkazish» over a span (the sheet names no brigade or shift).
+export const ontimeLink = ({ from, to }) =>
+  `/ontime${query({ from: isoDay(from), to: isoDay(to) })}`;

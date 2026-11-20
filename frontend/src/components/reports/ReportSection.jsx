@@ -19,7 +19,17 @@
 // it, or focus it and press ↑ ↓. The order is saved per profile
 // (`useRowOrder`) and the download follows it. Unarmed, the table carries no
 // handles, so a report reads as a report.
+//
+// A figure OPENS the page it is read from (the operator, 2026-11-20): its
+// name, and each month's number — the name on the picked month, a number on
+// its own column's month, so October's figure opens October. `link` decides
+// (`figureLinks.js`): a figure no page prints, a «—», and a page the viewer
+// may not open stay plain text. The name wears the platform's pressable look
+// (`.cell-link`, visible without a hover); a number fills its cell as the
+// target and shows itself on hover only, so the table still reads as figures.
+// While the rows are being arranged nothing navigates.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ArrowUpDown, Check, GripVertical, RotateCcw } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Button from "../ui/Button";
@@ -79,7 +89,13 @@ function MonthHead({ m, T, t }) {
 
 const sameKeys = (a, b) => a.length === b.length && a.every((k, i) => k === b[i]);
 
-function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey }) {
+// A number's link fills its cell (the cell's own padding moved onto it), so
+// the target is the cell and the row keeps its height.
+const NUM_LINK = "block -mx-3 -my-2 px-3 py-2 rounded-sm underline-offset-[3px] "
+  + "hover:underline hover:text-[var(--brand-text)] "
+  + "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]";
+
+function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey, link }) {
   const last = months.length - 1;
   // The change against the month before has a column of its own on EVERY
   // table (the operator, 2026-11-02), so the picked month's figures line up —
@@ -100,6 +116,18 @@ function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey }) 
   const [focusKey, setFocusKey] = useState(null);
   const byKey = new Map(block.rows.map((r) => [r.key, r]));
   const rows = drag ? drag.keys.map((k) => byKey.get(k)).filter(Boolean) : shown;
+
+  // Where a figure opens, for one month's column — null while arranging.
+  const target = (r, i) => {
+    const m = months[i];
+    const to = !arranging && m ? link?.(r, secKey, m) : null;
+    if (!to) return null;
+    // A register with no period is opened as it stands — the hint names no month.
+    const hint = to.timeless
+      ? fill(t("overview.sr.goto"), { page: to.page })
+      : fill(T.openOn, { page: to.page, month: monthLabel(m.ym, t) });
+    return { to: to.to, hint };
+  };
 
   // The server's own order is stored as NO entry, so «Asl tartib» and a drag
   // back to where everything started leave nothing behind.
@@ -206,7 +234,10 @@ function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey }) 
         </tr>
       </thead>
       <tbody ref={bodyRef} className={drag ? "select-none" : undefined}>
-        {rows.map((r, idx) => (
+        {rows.map((r, idx) => {
+          const name = rowLabel(r, T, t);
+          const open = target(r, last);
+          return (
           <tr key={r.key} data-key={r.key}
             style={drag?.key === r.key ? {
               background: "rgba(var(--brand-rgb), 0.12)",
@@ -229,32 +260,46 @@ function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey }) 
                   <GripVertical size={14} />
                 </button>
               )}
-              {rowLabel(r, T, t)}
+              {open
+                ? <Link to={open.to} className="cell-link" title={open.hint}>{name}</Link>
+                : name}
             </td>
             <td className="px-3 py-2 whitespace-nowrap text-xs" style={{ color: "var(--text-3)" }}>
               {uomOf(r, T)}
             </td>
-            {r.values.map((v, i) => (
-              <td key={i} className="px-3 py-2 text-right tabular-nums"
-                style={{
-                  color: v === null || v === undefined ? "var(--text-4)" : "var(--text-1)",
-                  fontWeight: i === last ? 500 : 400,
-                  background: i === last ? "var(--bg-inner)" : undefined,
-                }}>
-                {fmtCell(v, r.fmt, true)}
-              </td>
-            ))}
+            {r.values.map((v, i) => {
+              const none = v === null || v === undefined;
+              const text = fmtCell(v, r.fmt, true);
+              // «—» is no answer — there is nothing behind it to open.
+              const at = none ? null : target(r, i);
+              return (
+                <td key={i} className="px-3 py-2 text-right tabular-nums"
+                  style={{
+                    color: none ? "var(--text-4)" : "var(--text-1)",
+                    fontWeight: i === last ? 500 : 400,
+                    background: i === last ? "var(--bg-inner)" : undefined,
+                  }}>
+                  {at ? (
+                    <Link to={at.to} className={NUM_LINK} title={at.hint}
+                      aria-label={`${name}, ${monthLabel(months[i].ym, t)}: ${text}. ${at.hint}`}>
+                      {text}
+                    </Link>
+                  ) : text}
+                </td>
+              );
+            })}
             {hasDelta && (
               <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap"><DeltaCell row={r} T={T} secKey={secKey} /></td>
             )}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </TableCard>
   );
 }
 
-export default function ReportSection({ section, months, order = {}, setBlock }) {
+export default function ReportSection({ section, months, order = {}, setBlock, link }) {
   const T = useRT();
   const { t } = useLang();
   return (
@@ -262,7 +307,7 @@ export default function ReportSection({ section, months, order = {}, setBlock })
       {(section.blocks || []).filter((b) => b.kind === "periods").map((b) => (
         <PeriodsBlock key={b.key} block={b} months={months} T={T} t={t}
           caption={T.caps[`${section.key}.${b.key}`] || T.caps[b.key] || ""}
-          secKey={section.key}
+          secKey={section.key} link={link}
           saved={order[`${section.key}.${b.key}`]}
           onOrder={(keys, now) => setBlock?.(`${section.key}.${b.key}`, keys, now)} />
       ))}

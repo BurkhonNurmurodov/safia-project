@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigationType, useSearchParams } from "react-router-dom";
 import api from "../utils/api";
 import { useAuth } from "./AuthContext";
 
@@ -35,8 +35,30 @@ function initArr(key) {
   try { return JSON.parse(LS.get(key, "[]")); } catch { return []; }
 }
 
+// A link that NAMES the shared scope — the very params this provider writes:
+// `date_from` + `date_to` (both, real days, in order), and optionally `shift`
+// and `manager_id`. Such a URL is a COMPLETE statement, exactly as the one
+// written below is: no `shift` means both shifts, no `manager_id` every
+// brigadir. Null when the URL names no period.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function readLink(search) {
+  const q = new URLSearchParams(search);
+  const from = q.get("date_from");
+  const to = q.get("date_to");
+  if (!ISO_DAY.test(from || "") || !ISO_DAY.test(to || "") || from > to) return null;
+  const shift = Number(q.get("shift"));
+  return {
+    from, to,
+    shift: shift === 1 || shift === 2 ? shift : null,
+    ids: q.getAll("manager_id").map(Number).filter(Boolean),
+  };
+}
+const sameIds = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
 export function FilterProvider({ children }) {
   const [, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navType = useNavigationType();
   const { auth } = useAuth();
 
   const [dateFrom,    setDateFromState]    = useState(() => init("date_from"));
@@ -45,6 +67,29 @@ export function FilterProvider({ children }) {
   const [unit,        setUnitState]        = useState(() => init("unit", "min"));
   const [brigadirIds, setBrigadirIdsState] = useState(() => initArr("manager_id"));
   const [ready,       setReady]            = useState(false);
+
+  // A link pressed INSIDE the app that names the scope is honoured — the same
+  // URL a fresh tab already opens on (`init` above). Until 2026-11-20 only the
+  // first load read the address bar, so `/zagruzka?date_from=…` pressed on a
+  // page was ignored: the provider was already standing on its own dates. The
+  // first callers are «Hisobotlar»'s figures (utils/scopeLinks.js), each of
+  // which opens its page on the month it was read for.
+  //
+  // PUSH only: a link somebody pressed. Never this provider's own URL sync (a
+  // REPLACE), a redirect, or Back / Forward (POP) — an older entry's params
+  // must not quietly undo a period picked since. Adopted DURING the render the
+  // navigation arrives in, so the page it opens never asks for the old scope.
+  const [seenKey, setSeenKey] = useState(location.key);
+  if (seenKey !== location.key) {
+    setSeenKey(location.key);
+    const link = navType === "PUSH" ? readLink(location.search) : null;
+    if (link) {
+      setDateFromState(link.from);
+      setDateToState(link.to);
+      setShiftState(link.shift);
+      setBrigadirIdsState((cur) => (sameIds(cur, link.ids) ? cur : link.ids));
+    }
+  }
 
   // If dates are known (URL or localStorage), go ready immediately. Otherwise
   // fetch the available range from the DB — but only once the session is
@@ -60,13 +105,15 @@ export function FilterProvider({ children }) {
       .then((r) => {
         const from = r.data?.date_from;
         const to   = r.data?.date_to;
+        // `cur ||`: a link may have named the period while this was on its
+        // way, and it stands. The sync effect below stores whichever won.
         if (to) {
           // Default to the last 14 days of available data.
           const start = lastNDaysFrom(to, from);
-          setDateFromState(start); LS.set("date_from", start);
-          setDateToState(to);      LS.set("date_to",   to);
+          setDateFromState((cur) => cur || start);
+          setDateToState((cur) => cur || to);
         } else if (from) {
-          setDateFromState(from);  LS.set("date_from", from);
+          setDateFromState((cur) => cur || from);
         }
       })
       .catch(() => {})
@@ -88,9 +135,11 @@ export function FilterProvider({ children }) {
     LS.set("unit",      unit !== "min" ? unit : "");
     LS.set("manager_id", brigadirIds.length ? JSON.stringify(brigadirIds) : "");
 
-    // URL
-    setSearchParams(prev => {
-      const p = new URLSearchParams(prev);
+    // URL. Built on the address bar as it IS, not on this render's copy of
+    // it: a page that has just dropped a link's own params (`useUrlScope`
+    // runs before this — a child's effect) must not have them written back.
+    setSearchParams(() => {
+      const p = new URLSearchParams(window.location.search);
       if (dateFrom) p.set("date_from", dateFrom); else p.delete("date_from");
       if (dateTo)   p.set("date_to",   dateTo);   else p.delete("date_to");
       if (shift)    p.set("shift",     String(shift)); else p.delete("shift");

@@ -19,6 +19,8 @@ import { useFactory, useFactoryParams } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { idsParam } from "../utils/scopeLinks";
 import { usePageAccess } from "../hooks/usePageAccess";
 import { useCapabilities } from "../hooks/useCapabilities";
 import useStatusBands from "../hooks/useStatusBands";
@@ -43,6 +45,26 @@ const NO_LIST = [];
 // filters every analytics page reads (FilterContext); the picks below them are
 // this page's own. Each level narrows the list under it and says so, and a
 // pick the new parent no longer offers is dropped before a request goes out.
+// A link that opens this page on a scope (utils/scopeLinks.js `planLink` —
+// «Hisobotlar»'s production figures, 2026-11-20). The period and the shift
+// are the shared filters, which the provider takes off the same link; this
+// reads the page's own half: the view named, the brigadir pick set to the
+// link's `manager_id` (none = every brigadir), and the leader / cell / product
+// picks cleared, so the page totals what the figure totalled. `tab` is the
+// link's own mark — dropped once read, so a reload imposes nothing.
+const PLAN_TABS = ["overview", "products", "cells", "units"];
+const readLinkScope = (q) => {
+  const tab = q.get("tab");
+  if (!PLAN_TABS.includes(tab)) return null;
+  return {
+    plan_tab: tab,
+    plan_brig: idsParam(q, "manager_id"),
+    plan_lead: null,
+    plan_cell: null,
+    plan_prod: null,
+  };
+};
+
 export default function PlanFulfillment() {
   const { t } = useLang();
   const { tl, tx, lang } = useTranslit();
@@ -52,6 +74,8 @@ export default function PlanFulfillment() {
   const factorySection = useFactorySection();
   useStatusBands();   // the completion bands in force paint every figure here
 
+  // Before the persisted picks below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [tab, setTab] = usePersistentState("plan_tab", "overview");
   const [brigSel, setBrigSel] = usePersistentState("plan_brig", NO_LIST);
   const [leadSel, setLeadSel] = usePersistentState("plan_lead", NO_LIST);

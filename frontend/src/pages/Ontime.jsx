@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   Layers, Truck, Package, Info, RotateCw, SlidersHorizontal, RefreshCw, AlertTriangle, Database,
@@ -20,6 +20,8 @@ import OntimeProductModal from "../components/ontime/OntimeProductModal";
 import OntimeSkipped from "../components/ontime/OntimeSkipped";
 import { useOT, fill, ddmm, useGroupName, skippedOf } from "../components/ontime/ontimeUtil";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam } from "../utils/scopeLinks";
 import useStatusBands from "../hooks/useStatusBands";
 import { useTranslit } from "../utils/transliterate";
 import { padChartParams } from "../utils/chartRange";
@@ -40,6 +42,20 @@ const NO_LIST = [];
 // products register and the group × day heatmap. The period defaults to the
 // last 14 days the sheet holds — the team pastes a day after it ends, so
 // «today» is usually not in it yet. Filters: group, wave, product.
+// A link that opens this page over a span (utils/scopeLinks.js `ontimeLink` —
+// «Hisobotlar»'s on-time figure, a month, 2026-11-20). The figure is the whole
+// sheet's, so the group / wave / product picks are cleared and the overview
+// opened; the span itself is not a saved filter here (the page opens on the
+// latest days), so it seeds `range` for this visit. Read by `useUrlScope`.
+const linkSpan = (q) => {
+  const from = dayParam(q, "from");
+  const to = dayParam(q, "to");
+  return from && to && from <= to ? { from, to } : null;
+};
+const readLinkScope = (q) => (linkSpan(q)
+  ? { ontime_tab: "overview", ontime_groups: null, ontime_waves: null, ontime_prods: null }
+  : null);
+
 export default function Ontime() {
   const T = useOT();
   const { tx } = useTranslit();
@@ -51,8 +67,12 @@ export default function Ontime() {
   const { capTabs } = useCapabilities();
   const bands = useStatusBands();   // the on-time band paints every figure here
 
+  // Before the persisted picks below: a scope link writes them first.
+  const { search } = useLocation();
+  useUrlScope(readLinkScope);
   const [tab, setTab] = usePersistentState("ontime_tab", "overview");
-  const [range, setRange] = useState(null);           // null = the latest 14 days of data
+  // null = the latest 14 days of data; a link's span for the visit it opens.
+  const [range, setRange] = useState(() => linkSpan(new URLSearchParams(search)));
   const [groupSel, setGroupSel] = usePersistentState("ontime_groups", NO_LIST);
   const [waveSel, setWaveSel] = usePersistentState("ontime_waves", NO_LIST);
   const [prodSel, setProdSel] = usePersistentState("ontime_prods", NO_LIST);

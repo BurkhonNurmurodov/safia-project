@@ -38,6 +38,8 @@ import { useCapabilities } from "../hooks/useCapabilities";
 import { canAccessPage } from "../config/pages";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { idsParam, shiftParam } from "../utils/scopeLinks";
 import { TXT, fill } from "./leadersKpiText";
 import { TXT as TXT_T } from "./turnoverText";
 import { TXT as TXT_F } from "./foreignObjectsText";
@@ -57,6 +59,23 @@ import ComplianceExplain from "../components/kpi/ComplianceExplain";
 import { PAST_FROM, START_MONTH, curMonth, errText, monthLabel, prevMonth, scoreOf, sortRows, todayISO, useSort } from "../components/kpi/kpiUtil";
 
 const TAB_KEYS = ["board", "concerns", "turnover", "foreign", "compliance", "audit"];
+
+// A link that opens this page on one tab and one MONTH (utils/scopeLinks.js
+// `leadersKpiLink` — «Hisobotlar»'s turnover figures, 2026-11-20), on the shift
+// and the brigadirs the figure was read over; none named means every one.
+// Read by `useUrlScope`. A `?tab=` alone (the three retired routes) names no
+// month and is left to the effect below.
+const readLinkScope = (q) => {
+  const month = q.get("month") || "";
+  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+  const tab = q.get("tab");
+  return {
+    ...(TAB_KEYS.includes(tab) ? { "lkpi.tab": tab } : {}),
+    "lkpi.month": month,
+    "lkpi.shift": shiftParam(q),
+    "lkpi.brig": idsParam(q, "brig"),
+  };
+};
 
 // The last calendar day of «YYYY-MM» — the register's `date_to`.
 const lastDayOf = (ym) => {
@@ -79,6 +98,8 @@ export default function LeadersKpi() {
   const { access } = usePageAccess();
   const mayConcerns = canAccessPage(auth?.role, "concerns", access, capPages, deniedPages);
 
+  // Before the persisted filters below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [tab, setTab] = usePersistentState("lkpi.tab", "board");
   const [month, setMonth] = usePersistentState("lkpi.month", null);
   const [shift, setShift] = usePersistentState("lkpi.shift", null);

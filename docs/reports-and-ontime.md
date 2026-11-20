@@ -335,6 +335,69 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   (the document is tables), and any figure the platform does not already
   print.
 
+## «Hisobotlar» — a figure opens the page it is read from (2026-11-20)
+
+The operator, on «Asosiy ko'rsatkichlar»: «when these figures are clicked, we
+should be able to go to the page of that metric to see in detail info». Every
+figure of the report is one another page already prints, so each row is now a
+LINK to that page — in every table, not only Key figures.
+
+- **What is pressed.** The figure's NAME (the platform's pressable look,
+  `.cell-link`) opens the page on the PICKED month; each month's NUMBER opens it
+  on its own column's month — October's 96 opens October. A number fills its
+  cell as the target and shows itself on hover only, so the table still reads
+  as figures. A «—» opens nothing; while «Tartib» is armed nothing navigates.
+  The hint says where: «"Plan Bajarish" sahifasida ochish — Oktyabr 2026»
+  (`T.openOn`). The downloaded document is unchanged.
+- **Which page** — `components/reports/figureLinks.js` (`TARGETS`, keyed
+  «<section>.<row>», the section a row belongs to — `deltaTone`'s rule):
+  plan · fact · shortfall · «Plan bajarilishi» → `/plan` (overview);
+  «Samaradorlik», both loads → `/zagruzka`; the list, came, on leave,
+  «Davomat» → `/workers/attendance`; working · left · turnover →
+  `/leaders-kpi`, «Qo'nimsizlik» tab; waiting minutes, % of worked time, per
+  day → `/downtime` «Tahlil» (the stopped half); cost of waiting → `/downtime`
+  «Xarajat»; complaints → `/quality` «Soch bilan», the closure rate →
+  `/quality` «Sochsiz»; concerns → `/concerns`; on-time → `/ontime`; «Faol
+  yacheykalar» → `/cells`; shift managers · brigadirs · leaders →
+  `/panel/orgchart` (the last four are registers with no period, opened as
+  they stand today — their hint names no month).
+- **Not linked: Verifix's overtime** (both rows) — the report is the only
+  place it is shown. A figure whose page the viewer may not open is plain
+  text too (`canAccessPage`; the org chart: an admin or its tab grant), never
+  a dead link.
+- **The page opens on the figure's scope and KEEPS it** — the «Smena hisoboti»
+  rule («exact scope, remembered», 2026-09-30), through the same two files:
+  `utils/scopeLinks.js` builds the URL, the page's `useUrlScope` reader writes
+  it into the page's saved filters before its first render. The scope is the
+  column's month (`from` / `to` of the payload's month — the running one to
+  today), the report's shift and its brigadirs; the plant is the shared one
+  already. Readers added or widened: `/plan` (`tab` — own brigadir pick set,
+  leader / cell / product cleared), `/downtime` (`view`; «Xarajat»'s own period
+  and picks set from the same link), `/leaders-kpi` (`month` + `tab`, `shift`,
+  `brig`), `/ontime` (`from` + `to` seed the visit's range — not a saved
+  filter there — and clear group / wave / product), `/quality` (now also `from`
+  + `to` with no brigadir, and `shift`), `/concerns` (`concernsSpanLink`: `from`
+  + `to` with no `unit`, `units`, `shift`; every level and status).
+- **A pressed link that names the shared period is honoured**
+  (`context/FilterContext.jsx`). `/zagruzka`, `/plan`, `/workers/*` and
+  `/downtime` read the shared filters, whose provider read the address bar on
+  the first load only — a link pressed inside the app was ignored. It now
+  adopts `date_from` + `date_to` (both, valid, in order) with `shift` and
+  `manager_id` from a **PUSH** navigation, during the render the navigation
+  arrives in, so the page never asks for the old scope. Such a URL is a
+  complete statement, as the one the provider writes is: no `shift` = both, no
+  `manager_id` = every brigadir. Never on Back / Forward or a redirect — an
+  older entry must not undo a period picked since. Its URL sync is built on the
+  address bar as it is, so a page's dropped link params are not written back.
+  **Never set the shared filters and navigate in one handler**: the router
+  moves in a transition, the filter commit lands first and its URL sync
+  replaces the entry just pushed.
+- Limits, known: the Quality chain is single-pick, so a report narrowed to
+  SEVERAL brigadirs opens Quality on the month and shift with every brigadir
+  listed; a target's other toggles («Jami / Zagruzka» on «Davomat», the
+  heatmap mode) are left as the reader had them; a page with a `useUrlScope`
+  reader ends with a bare address (the scope is saved, not in the URL).
+
 ## «O'z vaqtida yetkazish» — the logistics on-time report (`/ontime`, 2026-10-20)
 
 The operator's request: «a new screen for the analytics of the last 4 tabs of

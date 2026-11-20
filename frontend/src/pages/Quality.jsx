@@ -485,12 +485,17 @@ const fmtDateTime = (iso8601) => {
 // the link says `hair=with` (its second lane, 2026-11-13), and
 // clears every record filter it does not name, so the list is exactly the
 // linked scope. Read by `useUrlScope`.
+//
+// «Hisobotlar»'s figures open it too (2026-11-20): with no brigadir, `from` +
+// `to` alone — the whole register over a month — and one `shift`.
 const readLinkScope = (q) => {
   const brig = (q.get("brigadir") || "").trim();
-  if (!brig) return null;
+  const span = dayParam(q, "from") && dayParam(q, "to");
+  if (!brig && !span) return null;
+  const shift = q.get("shift");
   return {
     quality_view: "production",
-    quality_brig_sel: [brig],
+    quality_brig_sel: brig ? [brig] : null,
     quality_date_from: dayParam(q, "from"),            // none → the page's default
     quality_date_to: dayParam(q, "to"),
     quality_status_sel: listParam(q, "status", Object.keys(STATUS_COLORS)),
@@ -499,7 +504,7 @@ const readLinkScope = (q) => {
     quality_type_sel: null,
     quality_cat_sel: null,
     quality_ret_sel: null,
-    quality_shift_sel: null,
+    quality_shift_sel: shift === "1" || shift === "2" ? [shift] : null,
     quality_mgr_sel: null,
     quality_lead_sel: null,
     quality_cell_sel: null,
