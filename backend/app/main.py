@@ -350,6 +350,9 @@ async def lifespan(app: FastAPI):
     # The 12 cells the sync hid in October count for October (once).
     from app.startup import backdate_dispatch_cells_october
     later(backdate_dispatch_cells_october)
+    # Two roster fixes from the lost-workers audit (20 Nov, once).
+    from app.startup import fix_lost_workers_nov20
+    later(fix_lost_workers_nov20)
     # HR's cells out of the leaders' KPI + six turnover reasons (16 Nov, once).
     from app.startup import kpi_off_cells_nov16
     later(kpi_off_cells_nov16)

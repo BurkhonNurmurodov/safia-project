@@ -338,6 +338,42 @@ are a real identical pair inside each load, and both of each pair stay).
   upstream (replace, not append). The operator approved this one deletion, not
   a standing one; cleaning again is deleting that flag's row, or a new ruling.
 
+## Two roster fixes from the lost-workers audit (`startup.fix_lost_workers_nov20`, 2026-11-20)
+
+The operator: «Audit every single lost workers and the reason for it and if we
+need to add them to their day or not», then «Yes, fix both». The audit read
+both «Yo'qolgan xodimlar» lists (26 + 14 rows, the same on production that
+evening) and found two cases with a clear answer. Runs once (flag
+`oneshot:lost_workers_fix_nov20`), every row named by its id; a row that no
+longer reads as production showed it refuses the whole run and the flag stores
+`{"refused": why}`. One transaction with the flag. The flag's value is the
+record: the three removed rows in full (the undo), the documents, the new id.
+
+- **5 Sep, Axmedova Munisa (unit 20) — three workers were counted twice.**
+  Mamayeva Raxima, Maxmudova Ugiloy and Sayfullayeva Shoxsanam were sent home
+  early («Uyga qaytarilgan», documents 3705–3707, a timed → task move below
+  the 2-hour minimum): off the roster by rule, their hours kept as nameless
+  rows 138826 / 138827 / 138831. The documents never recorded that (`applied`
+  empty — document 3702 of the same minute did), so the general check called
+  the three «lost» and the repair button put them back on 8 Sep (rows 140289–
+  140291) beside the nameless ones. The fix deletes the three named rows and
+  writes on each document the record 3702 carries (`side: below_min`,
+  `task_blanked`, `leftover_id`) — without it the page lists them as lost
+  again and one press of repair re-creates the doubles; with it a cancel of
+  the document restores the row in place.
+- **13 Sep, Raximova Kamola (unit 9) — Babayeva Umida was never written.** Her
+  one-person cell 8218 first came in a file uploaded on 14 Sep 09:24 and the
+  day was closed at 11:28 before the cell was saved. Her file row (batch row
+  60822: 14:43–18:43, 4.0 h) is copied in the way a Save writes one. Not
+  through Save itself, which rebuilds the unit's whole day from the file.
+- **Left as they are**: her 12 Sep (absent — nothing to count), the cell's
+  `pending` mark in the 12 and 13 Sep files, and document 4027 (Sayfullayeva,
+  11 Sep, 0.76 h) — the same unrecorded blanking, still listed as «lost» with
+  nothing doubled; **do not press repair on it**. The 12 workers of 30 Jun
+  (document 875) have no stored hours and wait on a Verifix read. Both days
+  were closed and stay closed; nobody was notified; September's figures for
+  the two units move by 3 people / 5.26 h down and 1 person / 4 h up.
+
 ## Two dismissed leaders lose their Telegram link (`unbind_ended_leaders_nov13`, 2026-11-13)
 
 From v4.502.0 a Verifix dismissal takes a leader's accounts and browser login

@@ -11788,6 +11788,118 @@ def backdate_dispatch_cells_october() -> None:
         db.close()
 
 
+# 2026-11-20, the lost-workers audit (docs/data-fixes.md «Two roster fixes from
+# the lost-workers audit»). Two file-era days, fixed ONCE, every row named by
+# the id production returned that evening: a row that no longer reads the same
+# refuses the whole run, and nothing is written but the refusal.
+#  · 5 Sep, Axmedova Munisa: three workers sent home early were blanked by rule
+#    (their hours kept as a nameless row) and then put back by the «repair»
+#    button on 8 Sep, because documents 3705-3707 never recorded what they did.
+#    The three named rows go, and the documents get the record 3702 carries —
+#    without it the page calls the three lost again and one press of repair
+#    doubles them again.
+#  · 13 Sep, Raximova Kamola: Babayeva Umida's cell 8218 came in a late file
+#    and the day closed before it was written. Her file row is copied in, the
+#    way a Save would have written it.
+LOST_WORKERS_FIX_FLAG = "oneshot:lost_workers_fix_nov20"
+_LWF_DAY, _LWF_UNIT = date(2026, 9, 5), 20
+# (the named double, its nameless leftover, the document, the worker)
+_LWF_DOUBLES = (
+    (140289, 138826, 3705, "MAMAYEVA RAXIMA BAXTIYAROVNA"),
+    (140290, 138827, 3706, "MAXMUDOVA UGILOY SAIDALIYEVNA"),
+    (140291, 138831, 3707, "SAYFULLAYEVA SHOXSANAM XAYRULLAYEVNA"),
+)
+_LWF_ADD = {"day": date(2026, 9, 13), "batch_row": 60822, "unit": 9, "cell": "8218",
+            "worker": "BABAYEVA UMIDA KOZIM QIZI"}
+
+
+def _lost_workers_fix(db) -> dict:
+    """Every check first, then every write; the caller commits. ValueError =
+    a row is not what production showed on 2026-11-20, and nothing was written."""
+    import copy
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.models import AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow
+
+    def need(ok, why):
+        if not ok:
+            raise ValueError(why)
+
+    plan = []
+    for named_id, left_id, doc_id, name in _LWF_DOUBLES:
+        named, left, doc = db.get(Attendance, named_id), db.get(Attendance, left_id), db.get(HrDocument, doc_id)
+        need(named is not None and (named.manager_id, named.date, named.worker_name, named.split_of)
+             == (_LWF_UNIT, _LWF_DAY, name, None), f"row {named_id} changed")
+        need(left is not None and (left.manager_id, left.date, left.worker_name, left.verifix_code)
+             == (_LWF_UNIT, _LWF_DAY, None, named.verifix_code), f"leftover {left_id} changed")
+        need(not db.query(Attendance).filter(Attendance.split_of == named_id).count(),
+             f"row {named_id} is split")
+        need(db.query(Attendance).filter(Attendance.date == _LWF_DAY,
+                                         Attendance.worker_name == name).count() == 1,
+             f"{name}: not exactly one row on the day")
+        need(doc is not None and (doc.doc_type, doc.status, doc.manager_id, doc.date)
+             == ("people_exchange", "approved", _LWF_UNIT, _LWF_DAY), f"document {doc_id} changed")
+        payload = copy.deepcopy(doc.payload or {})
+        emps = [e for e in payload.get("employees") or [] if (e or {}).get("worker_name") == name]
+        need(payload.get("target_type") == "task" and len(emps) == 1 and not emps[0].get("applied"),
+             f"document {doc_id} already records its effect")
+        plan.append((named, left, doc, payload, emps[0]))
+
+    a = _LWF_ADD
+    br = db.get(AttendanceBatchRow, a["batch_row"])
+    need(br is not None and (br.worker_name, br.verifix_code) == (a["worker"], a["cell"]), "the file row changed")
+    batch = db.get(AttendanceBatch, br.batch_id)
+    need(batch is not None and batch.date == a["day"], "the file row is of another day")
+    cell = db.query(AttendanceBatchCell).filter_by(batch_id=br.batch_id, verifix_code=a["cell"]).first()
+    need(cell is not None and cell.included and cell.manager_id == a["unit"], "cell 8218's routing changed")
+    need(not db.query(Attendance).filter(Attendance.date == a["day"],
+                                         Attendance.worker_name == a["worker"]).count(),
+         "the worker already has a row on the day")
+
+    cols = [c.name for c in Attendance.__table__.columns]
+    removed = []
+    for named, left, doc, payload, emp in plan:
+        removed.append({c: getattr(named, c) for c in cols})   # the undo
+        db.delete(named)
+        emp["applied"] = {"side": "below_min", "leftover_id": left.id,
+                          "recv_leftover_id": None, "task_blanked": True}
+        doc.payload = payload   # a NEW object: these documents' own edit in place never persisted
+        flag_modified(doc, "payload")
+    row = Attendance(manager_id=cell.manager_id, date=a["day"], worker_name=br.worker_name,
+                     job_title=br.job_title, schedule=br.schedule, clock_in_out=br.clock_in_out,
+                     hours_worked=br.hours_worked, early_arrival_min=br.early_arrival_min,
+                     effective_hours=br.effective_hours, verifix_code=br.verifix_code)
+    db.add(row)
+    db.flush()
+    return {"removed": removed, "documents": [d for _n, _l, d, _w in _LWF_DOUBLES], "added": row.id}
+
+
+def fix_lost_workers_nov20() -> None:
+    import json
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LOST_WORKERS_FIX_FLAG).first():
+            return
+        try:
+            record = {"done": _lost_workers_fix(db)}
+        except ValueError as why:
+            db.rollback()
+            record = {"refused": str(why)}
+        # The flag rides the same transaction: both land or neither does.
+        db.add(AppSetting(key=LOST_WORKERS_FIX_FLAG,
+                          value=json.dumps(record, default=str, ensure_ascii=False)))
+        db.commit()
+        print("[startup] lost-workers fix: "
+              + ("done" if "done" in record else f"REFUSED — {record['refused']}"))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] lost-workers fix failed: {exc}")
+    finally:
+        db.close()
+
+
 def add_equipment_responsible_column() -> None:
     """2026-11-19: ``equipment.responsible`` — «Mas'ul shaxs», a free-text
     column of the «Uskunalar» register. Blank on every existing row.
