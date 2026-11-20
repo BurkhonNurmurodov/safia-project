@@ -19,6 +19,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, errText, Chip, CountPills, ReasonFields, reasonOk, refreshFlow, LIVE_LIST, useExtras, canAskFor,
+  OtdelList,
 } from "./flowUtil";
 import { AskExtraModal, ExtrasList } from "./FlowExtras";
 
@@ -158,6 +159,8 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
                     <ReceiptChip x={x} t={t} />
                   </div>
                   <CountPills counts={x.received ?? x.counts} of={x.received ? x.counts : undefined} t={t} />
+                  {/* in which otdel how many — fixed at the split (2026-11-20) */}
+                  <OtdelList t={t} otdels={x.otdels} />
                   <div className="text-xs flex flex-wrap gap-x-3 gap-y-1" style={{ color: "var(--text-3)" }}>
                     <span>{t("cflow.rcv.from").replace("{x}", tl(x.from) || "—").replace("{at}", hhmm(x.assigned_at))}</span>
                     {x.received && (

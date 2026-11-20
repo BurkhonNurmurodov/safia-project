@@ -72,6 +72,7 @@ try:
         add_container_request_seen,
         add_container_receipt_columns,
         add_container_send_columns,
+        add_container_part_otdels,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -243,6 +244,7 @@ try:
     add_container_request_seen()
     add_container_receipt_columns()
     add_container_send_columns()
+    add_container_part_otdels()
     add_last_seen_column()
     add_tg_name_column()
     add_edit_requests_batch_id()

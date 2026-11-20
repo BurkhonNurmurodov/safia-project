@@ -2,7 +2,7 @@
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Truck } from "lucide-react";
+import { Building2, Clock, Truck } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
@@ -139,6 +139,69 @@ export function TypeName({ t, k, long = false }) {
 // «30 to'rtburchak, 8 chelak» — a set of counts as words.
 export const countsText = (t, counts) => ALL_KEYS.filter((k) => counts?.[k])
   .map((k) => `${counts[k]} ${t(isSend(k) ? `production.cont.${k}` : `cflow.ct.${k}`).toLowerCase()}`).join(", ");
+
+// ── in which otdel how many (2026-11-20) ─────────────────────────────────────
+// The twins of `container_flow.share_out` / `otdel_split` — KEEP THEM IN STEP:
+// the dialog shows the very numbers the split then stores.
+export function shareOut(total, weights) {
+  const w = weights.reduce((a, x) => a + x, 0);
+  if (!(total > 0) || !(w > 0)) return weights.map(() => 0);
+  const quota = weights.map((x) => (total * x) / w);
+  const out = quota.map((q) => Math.floor(q));
+  let left = total - out.reduce((a, x) => a + x, 0);
+  const order = weights.map((_, i) => i).sort((a, b) => (quota[b] - out[b]) - (quota[a] - out[a]) || a - b);
+  for (const i of order) { if (left <= 0) break; out[i] += 1; left -= 1; }
+  return out;
+}
+
+// `entry` = one brigadir's {names, w: {ctype: [[otdel, weight]…]}} from the split hint
+export function otdelSplit(entry, k, n) {
+  if (!entry || !(n > 0)) return {};
+  const ws = entry.w?.[k] ?? [];
+  if (!ws.length) return entry.names?.length ? { [entry.names[0]]: n } : {};
+  const got = shareOut(n, ws.map((x) => x[1]));
+  const out = {};
+  ws.forEach(([o], i) => { if (got[i]) out[o] = got[i]; });
+  return out;
+}
+
+// {otdel: {ctype: n}} for one brigadir's counts — every otdel of theirs listed, in order
+export function otdelBreakdown(entry, counts, keys) {
+  const out = {};
+  for (const o of entry?.names ?? []) out[o] = {};
+  for (const k of keys) {
+    for (const [o, n] of Object.entries(otdelSplit(entry, k, counts?.[k] ?? 0))) (out[o] ??= {})[k] = n;
+  }
+  return out;
+}
+
+// The breakdown as rows: the otdel (Verifix's name, «not known» for "") and its counts.
+export function OtdelList({ t, otdels, className = "" }) {
+  const { tx } = useTranslit();
+  const rows = Object.entries(otdels ?? {});
+  if (!rows.length) return null;
+  return (
+    <div className={`rounded-lg overflow-hidden ${className}`} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
+      {rows.map(([o, c], i) => {
+        const name = o ? tx(o) : t("cflow.otdel.none");
+        const text = countsText(t, c);
+        return (
+          <div key={o || "_"} className="flex items-start gap-2 px-2.5 py-1.5 text-xs"
+            style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+            <Building2 size={13} className="shrink-0 mt-px" aria-hidden style={{ color: "var(--text-3)" }} />
+            <span className="flex-1 min-w-0 truncate font-medium" title={name} style={{ color: "var(--text-1)" }}>{name}</span>
+            <span className="max-w-[60%] text-right tabular-nums" style={{ color: text ? "var(--text-2)" : "var(--text-4)" }}>{text || "—"}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// «Otdel: 120 to'rtburchak · …» in one line — a tooltip, a table cell.
+export const otdelsText = (t, tx, otdels) => Object.entries(otdels ?? {})
+  .filter(([, c]) => countsText(t, c))
+  .map(([o, c]) => `${o ? tx(o) : t("cflow.otdel.none")}: ${countsText(t, c)}`).join("; ");
 
 // The same counts as pills — on a card, where there is room to read them.
 export function CountPills({ counts, t, of }) {

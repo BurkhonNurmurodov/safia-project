@@ -2151,6 +2151,14 @@ def add_container_receipt_columns() -> None:
         "container receipt columns")
 
 
+def add_container_part_otdels() -> None:
+    """2026-11-20: `container_request_parts.otdels` — in which otdel how many
+    of a brigadir's part, fixed at the split; NULL on every older part. Pure
+    DDL, idempotent, no flag; every ORM read of a part selects it."""
+    _ensure_columns((("container_request_parts", (("otdels", "JSONB"),), None),),
+                    "container part otdels column")
+
+
 def add_container_send_columns() -> None:
     """2026-11-19: a request FOR a dispatch area — `container_requests.area_id`,
     `area_name` and `given` (what logistics delivered there). NULL on every

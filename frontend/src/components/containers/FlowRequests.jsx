@@ -36,6 +36,7 @@ import {
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
   refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
+  OtdelList, otdelBreakdown, otdelsText,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
@@ -405,7 +406,8 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
   const area = r.area_id != null;
   const lumpGiven = !area && r.given && sum(r.given) > 0 ? r.given : null;
   const title = area ? [tx(r.area), r.given && countsText(t, r.given)].filter(Boolean).join(": ")
-    : [...r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`),
+    : [...r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`
+        + (otdelsText(t, tx, p.otdels) ? ` (${otdelsText(t, tx, p.otdels)})` : "")),
       lumpGiven && `${t("cflow.req.kind.send")}: ${countsText(t, lumpGiven)}`].filter(Boolean).join(" · ");
   return (
     <tr className={`text-sm ${fresh ? "font-semibold" : ""}`}
@@ -529,7 +531,12 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
         )}
         {r.status === "assigned" && r.parts.length > 0 && (
           <ul className="flex flex-col gap-1 text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
-            {r.parts.map((p) => <li key={p.manager_id} className="min-w-0 truncate"><PartLine p={p} t={t} tl={tl} /></li>)}
+            {r.parts.map((p) => (
+              <li key={p.manager_id} className="min-w-0 flex flex-col gap-1">
+                <span className="truncate"><PartLine p={p} t={t} tl={tl} /></span>
+                <OtdelList t={t} otdels={p.otdels} />
+              </li>
+            ))}
           </ul>
         )}
         {r.status === "cancelled" && r.cancel_note && (
@@ -969,9 +976,12 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   // over a limit: the server refuses it too; the field says which count and its cap
   const overLimit = rows.some((row) => row.unit != null && types.some((k) => (row.counts[k] ?? 0) > capOf(row.unit, k)));
   // a brigadir with room for the hour first; one with none stays listed, not pickable
-  // a brigadir's otdel (from Verifix, 2026-11-20): where their part goes — named in
-  // the picker (searchable) and on the row, the trigger keeps the bare name
+  // a brigadir's otdels (from Verifix, 2026-11-20): named in the picker (searchable),
+  // and under the row IN WHICH OTDEL HOW MANY — the count shared by the hour's need
+  // (`otdelSplit`, the server's twin stores the same numbers at the split)
   const otdelOf = (unit) => (units.data ?? []).find((u) => u.id === unit)?.otdel?.map(tx).join(", ") || "";
+  const otdelEntry = (unit) => hint.data?.otdels?.[String(unit)]
+    ?? { names: (units.data ?? []).find((u) => u.id === unit)?.otdel ?? [], w: {} };
   const opts = (mine) => (units.data ?? []).filter((u) => u.id === mine || !taken.has(u.id))
     .map((u) => {
       const room = roomOf(u.id);
@@ -1042,14 +1052,8 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   })()}>
                   <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
-                  {row.unit != null && otdelOf(row.unit) && (
-                    <div className="mt-1.5 self-start inline-flex items-center gap-1.5 max-w-full rounded-lg px-2 py-1 text-xs font-medium"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-1)" }}
-                      title={otdelOf(row.unit)}>
-                      <Building2 size={13} className="shrink-0" style={{ color: "var(--text-3)" }} />
-                      <span className="shrink-0" style={{ color: "var(--text-3)" }}>{t("cflow.otdel")}:</span>
-                      <span className="truncate">{otdelOf(row.unit)}</span>
-                    </div>
+                  {row.unit != null && !hint.isLoading && (
+                    <OtdelList t={t} className="mt-1.5" otdels={otdelBreakdown(otdelEntry(row.unit), row.counts, types)} />
                   )}
                 </FormField>
               </div>

@@ -604,9 +604,14 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
         return {"extra_for": extra,
                 "rows": [{"manager_id": extra, "unit": getattr(m, "name", None), "shift": getattr(m, "shift", None),
                           "counts": counts, "need": {}}],
-                "limits": {str(extra): {"limit": counts, "given": {}, "left": counts}}}
+                "limits": {str(extra): {"limit": counts, "given": {}, "left": counts}},
+                "otdels": {str(m): e for m, e in flow.otdel_weights(db, r.day, r.hour, r.id).items()
+                           if m == extra}}
     limits = flow.unit_limits(db, r.day, r.hour, r.id)
     return {"rows": flow.split_hint(db, r, limits), "extra_for": None,
+            # in which otdel how many: each brigadir's count is shared by these
+            # weights (`otdel_split`, the dialog's `otdelSplit`), the split stores it
+            "otdels": {str(m): e for m, e in flow.otdel_weights(db, r.day, r.hour, r.id).items()},
             # each brigadir's limit for the hour: the dialog caps every count at `left`
             "limits": {str(m): u for m, u in limits.items()},
             # the dispatch amount starts as every dispatch container and lid asked

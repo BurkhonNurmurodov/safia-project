@@ -1571,8 +1571,9 @@ if __name__ == "__main__":
 
 
 class UnitOtdelsTest(unittest.TestCase):
-    """The split dialog names each brigadir's otdel (2026-11-20): the Verifix
-    subdivision their cells hang under, else the one the brigadir sits in."""
+    """In which otdel how many (2026-11-20): a cell's otdel is the Verifix
+    subdivision it hangs under, a brigadir's are their cells' (else the one
+    the brigadir sits in), and a part is shared across them by the need."""
 
     DIVS = {
         "10": {"id": "10", "name": "Цех круассанов", "parent": "1"},
@@ -1584,17 +1585,35 @@ class UnitOtdelsTest(unittest.TestCase):
 
     def test_cells_parent_names_the_otdel_most_cells_first(self):
         from app.services.verifix_org import otdels_from
-        cells = [(1, "101", None), (1, "102", None), (1, "111", None), (2, "111", None)]
-        out = otdels_from(self.DIVS, cells, [(1, None), (2, None)])
-        self.assertEqual(out[1], ["Цех круассанов", "Цех тортов"])
-        self.assertEqual(out[2], ["Цех тортов"])
+        cells = [(1, 1, "101", None), (2, 1, "102", None), (3, 1, "111", None), (4, 2, "111", None)]
+        by_cell, by_unit = otdels_from(self.DIVS, cells, [(1, None), (2, None)])
+        self.assertEqual(by_unit[1], ["Цех круассанов", "Цех тортов"])
+        self.assertEqual(by_unit[2], ["Цех тортов"])
+        self.assertEqual(by_cell[3], "Цех тортов")
 
     def test_a_cell_the_read_lost_keeps_its_stored_parent(self):
         from app.services.verifix_org import otdels_from
-        out = otdels_from(self.DIVS, [(3, "999", {"parent": "11"})], [])
+        _c, out = otdels_from(self.DIVS, [(9, 3, "999", {"parent": "11"})], [])
         self.assertEqual(out[3], ["Цех тортов"])
 
     def test_no_cell_falls_back_to_the_brigadirs_seat_and_unknown_is_absent(self):
         from app.services.verifix_org import otdels_from
-        out = otdels_from(self.DIVS, [], [(4, {"unit": "10"}), (5, {"unit": "nope"}), (6, None)])
+        _c, out = otdels_from(self.DIVS, [], [(4, {"unit": "10"}), (5, {"unit": "nope"}), (6, None)])
         self.assertEqual(out, {4: ["Цех круассанов"]})
+
+    def test_team_hours_go_under_their_cells_otdel(self):
+        teams = [{"cell": {"id": 1}, "hours": {8: {"yellow": 30}, 9: {"yellow": 10}}},
+                 {"cell": {"id": 3}, "hours": {8: {"yellow": 10, "round": 4}}},
+                 {"cell": None, "hours": {9: {"grey": 2}}}]          # no cell → the unit's own otdel
+        out = flow._otdel_hours(teams, 1, {1: "A", 3: "B"}, {1: ["A", "B"]})
+        self.assertEqual(out, {"A": {8: {"yellow": 30}, 9: {"yellow": 10, "grey": 2}},
+                               "B": {8: {"yellow": 10, "round": 4}}})
+
+    def test_split_follows_the_need_and_adds_up(self):
+        entry = {"names": ["A", "B"], "w": {"yellow": [["A", 30], ["B", 10]], "round": [["B", 4]]}}
+        self.assertEqual(flow.otdel_split(entry, "yellow", 190), {"A": 143, "B": 47})
+        self.assertEqual(flow.otdel_split(entry, "round", 3), {"B": 3})
+        self.assertEqual(flow.otdel_split(entry, "grey", 5), {"A": 5})     # no need → the first otdel
+        self.assertEqual(flow.otdel_split(entry, "yellow", 0), {})
+        self.assertEqual(flow.otdel_split(None, "yellow", 5), {})          # no otdel → no breakdown
+        self.assertEqual(flow.otdel_split({"names": [], "w": {}}, "yellow", 5), {})
