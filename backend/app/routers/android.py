@@ -7,9 +7,12 @@ same file the operator already hands out in Telegram.
   GET  /api/android/latest          — the published release, or 404
   GET  /api/android/app/{code}.apk  — that release's file (an older code: 404)
   GET  /api/android/download        — a shareable link: redirects to the latest
+  GET  /api/android/pages           — the pages build production serves (its build.json)
   POST /api/android/publish         — android/publish-release.sh; X-Publish-Key
 """
+import json
 import logging
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -28,6 +31,29 @@ def latest():
     if meta is None:
         return JSONResponse({"detail": "no release published"}, status_code=404, headers=_NO_STORE)
     return JSONResponse({**meta, "url": f"/api/android/app/{meta['version_code']}.apk"}, headers=_NO_STORE)
+
+
+@router.get("/pages")
+def pages():
+    """The pages build production serves, as the page inside the app cannot see it.
+
+    In the app /build.json is answered by the PHONE (WebBundle) from the builds it
+    already holds, so a page there learns of a deploy only once the whole build has
+    downloaded. A server path is never answered by the phone, so this is the live
+    stamp (hooks/useAppUpdate.js). Read per request: a frontend-only deploy never
+    restarts the worker.
+    """
+    from app.main import STATIC_DIR  # lazy: main imports this router
+    try:
+        if not STATIC_DIR:
+            raise OSError("no dist")
+        with open(os.path.join(STATIC_DIR, "build.json"), encoding="utf-8") as f:
+            marker = json.load(f)
+    except (OSError, ValueError):
+        return JSONResponse({"detail": "no build"}, status_code=404, headers=_NO_STORE)
+    return JSONResponse(
+        {"version": marker.get("version"), "buildTime": marker.get("buildTime")}, headers=_NO_STORE,
+    )
 
 
 @router.get("/app/{code}.apk")

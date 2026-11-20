@@ -11,7 +11,8 @@ import {
   APK_DOWNLOAD_URL, apkPercent, apkUpdate, apkUpdateNative, apkUpdateShown, apkVersionName,
   checkLatest, compareVersions, useApkUpdate,
 } from "../../utils/androidUpdate";
-import { fmtStamp } from "../../utils/version";
+import { useAppUpdate } from "../../hooks/useAppUpdate";
+import { APP_VERSION, fmtStamp } from "../../utils/version";
 
 /**
  * «Yangilanishni tekshirish» — the Android app's own update, one row above
@@ -43,8 +44,10 @@ function UpdateRow({ expanded }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const app = useApkUpdate();
+  const pages = useAppUpdate();
   const downloading = app?.phase === "downloading";
-  const available = app?.phase === "available";
+  // A newer APK, or newer pages on their way or ready to load.
+  const available = app?.phase === "available" || pages.updateReady || pages.coming;
   const pct = downloading ? apkPercent(app) : null;
   const lit = available || downloading;
   // The label follows what the app knows: a question, then the answer — and
@@ -228,8 +231,34 @@ function Window({ view, onClose }) {
   const vName = latest?.name ? `v${latest.name}` : "";
   const ready = phase === "available" && view.downloaded;
 
+  // The pages the APK carries follow every deploy by themselves; the window
+  // answers for them too, so «up to date» is never said over pages left behind.
+  const pages = useAppUpdate();
+  const { checkNow } = pages;
+  // Opening the window IS the question: ask the server now, once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { checkNow(); }, []);
+  const pagesPhase = pages.updateReady ? "ready" : pages.coming ? "coming" : null;
+  const pagesTo = pagesPhase === "ready" ? pages.deployedVersion : pages.comingVersion;
+  // The APK's own news comes first; with nothing to say about it, the pages speak.
+  const pagesSpeak = pagesPhase && (phase === "current" || phase === "none");
+  const recheck = () => {
+    view.act.check();
+    checkNow();
+  };
+
   let hero;
-  if (phase === "checking") {
+  if (pagesSpeak && pagesPhase === "ready") {
+    hero = {
+      tone: "brand", Icon: ArrowDownCircle, title: t("ui.apkUpdate.pagesReady"),
+      text: fill(t("ui.apkUpdate.pagesReadyText"), { v: pagesTo ? `v${pagesTo}` : "" }),
+    };
+  } else if (pagesSpeak) {
+    hero = {
+      tone: "brand", Icon: Loader2, spin: true, title: t("ui.apkUpdate.pagesComing"),
+      text: fill(t("ui.apkUpdate.pagesComingText"), { v: pagesTo ? `v${pagesTo}` : "" }),
+    };
+  } else if (phase === "checking") {
     hero = { tone: "neutral", Icon: Loader2, spin: true, title: t("ui.apkUpdate.checking"), text: t("ui.apkUpdate.checkingText") };
   } else if (phase === "current") {
     hero = {
@@ -267,7 +296,9 @@ function Window({ view, onClose }) {
     );
   } else {
     let action = null;
-    if (phase === "available") {
+    if (pagesSpeak && pagesPhase === "ready") {
+      action = <Button variant="primary" onClick={pages.reload}>{t("ui.version.reload")}</Button>;
+    } else if (phase === "available") {
       action = view.legacy
         ? <Button variant="primary" onClick={view.act.download}>{t("ui.apkUpdate.download")}</Button>
         : (
@@ -279,7 +310,7 @@ function Window({ view, onClose }) {
       action = <Button variant="primary" onClick={view.act.retry}>{t("ui.apkUpdate.retry")}</Button>;
     } else if (phase === "current" || phase === "none") {
       action = (
-        <Button variant="secondary" icon={<RefreshCw size={13} />} onClick={view.act.check}>
+        <Button variant="secondary" icon={<RefreshCw size={13} />} onClick={recheck}>
           {t("ui.apkUpdate.recheck")}
         </Button>
       );
@@ -364,6 +395,10 @@ function Window({ view, onClose }) {
         {latest?.publishedAt && fmtStamp(latest.publishedAt) && (
           <Row label={t("ui.apkUpdate.published")} value={fmtStamp(latest.publishedAt).slice(0, 10)} />
         )}
+        <Row
+          label={t("ui.apkUpdate.pages")}
+          value={pagesPhase && pagesTo ? `v${APP_VERSION} → v${pagesTo}` : `v${APP_VERSION}`}
+        />
       </div>
 
       {hint && (

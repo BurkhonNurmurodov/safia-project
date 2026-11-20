@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BUILD_TIME } from "../utils/version";
 import { isOutdated, subscribeCompat } from "../utils/compat";
 import { updateWorker } from "../utils/pwa";
+import { inAndroidApp } from "../utils/session";
 
 /**
  * Is the tab running an older build than the one deployed?
@@ -91,6 +92,29 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
   const deployed = typeof data?.buildTime === "string" ? data.buildTime : "";
   const updateReady = Boolean(deployed && BUILD_TIME && deployed !== BUILD_TIME);
 
+  // In the Android app /build.json above is answered by the PHONE from the
+  // builds it already holds, so it names a deploy only once the whole build has
+  // downloaded. The server's own answer comes from a server path the phone
+  // never answers (routers/android.py `/pages`): a newer stamp there, with
+  // nothing held yet, means the app is fetching it — say so now, and offer the
+  // reload only once `updateReady` (a reload before that lands on the old pages).
+  const inApp = inAndroidApp();
+  const { data: liveData, refetch: refetchLive } = useQuery({
+    queryKey: ["live-build"],
+    queryFn: async () => {
+      const res = await fetch(`/api/android/pages?t=${Date.now()}`, { cache: "no-store", credentials: "omit" });
+      if (!res.ok) throw new Error(`pages ${res.status}`);
+      return res.json();
+    },
+    enabled: Boolean(BUILD_TIME) && inApp,
+    refetchInterval: pollMs,
+    refetchOnWindowFocus: true,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const live = inApp && typeof liveData?.buildTime === "string" ? liveData.buildTime : "";
+  const coming = Boolean(live && BUILD_TIME && live !== BUILD_TIME && !updateReady);
+
   // A newer build is deployed: tell the service worker (browsers only; a no-op
   // where none is registered) to fetch its new copy now, so the new build is
   // precached BEFORE the user presses reload rather than during it.
@@ -111,6 +135,26 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     setDismissed(deployed);
   }, [deployed]);
 
+  // The «coming» notice is waved away under its own mark, so closing it never
+  // silences the «ready — reload» that follows for the same build.
+  const comingMark = live ? `coming:${live}` : "";
+  const dismissComing = useCallback(() => {
+    if (!comingMark) return;
+    try {
+      sessionStorage.setItem(DISMISS_KEY, comingMark);
+    } catch {
+      /* storage blocked — the notice simply reappears next mount */
+    }
+    setDismissed(comingMark);
+  }, [comingMark]);
+
+  /** Ask now: both the phone's held build and, in the app, the server's live one. */
+  const checkNow = useCallback(() => {
+    if (!BUILD_TIME) return;
+    refetch();
+    if (inApp) refetchLive();
+  }, [refetch, refetchLive, inApp]);
+
   const reload = useCallback(() => {
     window.location.reload();
   }, []);
@@ -129,6 +173,12 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     show: incompatible || (updateReady && dismissed !== deployed),
     dismiss,
     reload,
+    /** App only: a newer build is live and the phone does not hold it yet. */
+    coming,
+    comingVersion: coming && typeof liveData?.version === "string" ? liveData.version : "",
+    showComing: coming && !incompatible && dismissed !== comingMark,
+    dismissComing,
+    checkNow,
   };
 }
 

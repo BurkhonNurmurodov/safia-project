@@ -77,6 +77,26 @@ daily") **the app downloads every build the site deploys by itself** — see
     build is ready, which `useAppUpdate` answers with an immediate refetch
     instead of waiting for its 5-minute poll. It follows the LIVE stamp, not
     "the newest": a rollback is followed too.
+  - **The page says «a new version is out» BEFORE the download ends**
+    (2026-11-20, the operator: the check said nothing until the update had
+    fully loaded — «really nerve-triggering»). Because the phone answers
+    `/build.json`, the page alone could not see a deploy until it was whole
+    on the phone. In the app `useAppUpdate` also asks
+    `GET /api/android/pages` — the server's own `dist/build.json`, read per
+    request, public, a server path the phone never answers. Live ≠ the page's
+    stamp with nothing held yet = `coming`: `UpdatePrompt` shows a spinning
+    «Yangi versiya chiqdi — ilova uni o'zi yuklab olyapti» with NO reload
+    button (a reload before the build is whole lands on the same pages), and
+    the same toast turns into «tayyor — Yangilash» once it is. Closing the
+    «coming» toast is remembered as `coming:<stamp>`, so it never silences the
+    «ready» one. The «Yangilanishni tekshirish» window asks both at once on
+    open: a «Sahifalar» row (`v<mine> → v<live>`) and, when the APK has nothing
+    to say, the pages' state as its headline — never «Sizda eng so'nggi
+    versiya» over pages left behind. The row lights up for them too. Page-only:
+    the page cannot see the download's progress, start it, or learn that it
+    failed — PageUpdates still starts on its own clock (3 s after opening, on
+    return ≥ 60 s apart, every 5 min), so «coming» can stand up to 5 minutes.
+    Progress and a check that starts the download need an APK release.
   - **Cost**: until v4.324.1 every deploy renamed ~227 of 231 asset files
     (the build stamp sat in a shared chunk), so a new build was ~1.6 MB over
     the wire. The stamp now lives in index.html (see «A deploy renames only

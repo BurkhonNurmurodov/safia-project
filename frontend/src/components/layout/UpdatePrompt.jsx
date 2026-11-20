@@ -1,7 +1,11 @@
+import { Loader2 } from "lucide-react";
 import Toast from "../ui/Toast";
 import Button from "../ui/Button";
 import { useLang } from "../../context/LangContext";
 import { useAppUpdate } from "../../hooks/useAppUpdate";
+
+/** Toast draws its icon as <Icon size style />; this one turns while the app fetches. */
+const Spinner = (props) => <Loader2 {...props} className="animate-spin" />;
 
 /**
  * "A new version is ready" — offered, never imposed.
@@ -26,10 +30,28 @@ import { useAppUpdate } from "../../hooks/useAppUpdate";
  * longer served: warning tone, no × at all, because "later" is not an outcome
  * this state has. It still does not reload by itself — the reason for the
  * prompt is precisely that some of what is on screen may be unsaved.
+ *
+ * In the Android app there is a step before «ready»: a newer build is live and
+ * the app is still fetching it (`coming`). It is said at once, with no reload
+ * button — a reload before the phone holds the build lands on the same pages —
+ * and the same toast turns into «ready — reload» when the build has arrived.
  */
 export default function UpdatePrompt() {
   const { t } = useLang();
-  const { show, incompatible, dismiss, reload } = useAppUpdate();
+  const { show, incompatible, dismiss, reload, showComing, comingVersion, dismissComing } = useAppUpdate();
+
+  if (!show && showComing) {
+    return (
+      <Toast
+        open
+        tone="info"
+        icon={Spinner}
+        duration={0}
+        onClose={dismissComing}
+        message={t("ui.version.coming").replace("{v}", comingVersion ? `v${comingVersion}` : "")}
+      />
+    );
+  }
 
   return (
     <Toast
