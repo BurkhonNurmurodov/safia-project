@@ -16,6 +16,7 @@ read — the middleware could only have named an anonymous POST.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import timedelta
@@ -53,14 +54,27 @@ def _key(request: Request) -> None:
     ip = _ip(request)
     if ops_door.throttled(ip):
         raise _refuse("throttled", "Too many wrong keys from this address — wait ten minutes.", 429)
-    if ops_door.key_ok(ops_door.presented_key(request.headers)):
+    presented = ops_door.presented_key(request.headers)
+    if ops_door.key_ok(presented):
         return
     n = ops_door.note_bad(ip)
     if n == 1:
         action_log.record(category="sync_export", action="ops.key_refused", source="ops",
                           outcome="denied", actor_name="?",
                           details=[("ip", ip), ("path", request.url.path)])
-    raise _refuse("bad_key", "Missing or wrong ask key.", 401)
+    # WHICH refusal it is (2026-11-20): a cloud session's key is injected by a
+    # proxy the session cannot see into, and «missing or wrong» left it unable
+    # to tell a credential that never arrived from one holding the wrong value
+    # — an afternoon of pasting keys blind. The answer names only what the
+    # caller itself sent: whether a key arrived, and the first digits of ITS
+    # SHA-256 (so «I pasted the fingerprint instead of the key» is recognisable
+    # from outside). Nothing about the door's own key, whose digest is in git.
+    if not presented:
+        raise _refuse("bad_key", "No ask key arrived with the request (no X-Ops-Key, "
+                                 "no Authorization: Bearer).", 401)
+    seen = hashlib.sha256(presented.strip().encode()).hexdigest()[:8]
+    raise _refuse("bad_key", f"An ask key arrived, but it is not the door's: {len(presented.strip())} "
+                             f"characters, SHA-256 starting {seen}.", 401)
 
 
 class AskIn(BaseModel):

@@ -38,7 +38,13 @@ person's half.
   (`X-Ops-Key`) is to hold that key. **The Mac's old key is refused since** —
   `ask-prod.py` there needs the new key copied into its `~/.safia/ops.key`.
   To replace the key again: make one, put its SHA-256 in `KEY_SHA256`, deploy,
-  then save the key in the environment (never in chat, never in git). A wrong key is 401, ten in ten minutes from one address
+  then save the key in the environment (never in chat, never in git).
+  **A refused key says WHICH refusal** (the same day): «No ask key arrived»
+  — the environment's credential is not being added to the request — or «An
+  ask key arrived, but it is not the door's: N characters, SHA-256 starting
+  xxxxxxxx» — the digest of what the CALLER sent, never the door's. A saved
+  value whose digest starts like `sha256(<the fingerprint text>)` is the
+  fingerprint pasted in place of the key. A wrong key is 401, ten in ten minutes from one address
   429, the first refusal a Jurnal row. A leak costs cards the approver denies.
 - **Nothing runs before the tap, and nothing is kept after.** An unanswered
   card dies in 15 minutes (`ASK_TTL`), an allowed answer not taken in 15 more
