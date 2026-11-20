@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { lazyWithReload } from "./utils/lazyPage";
 import { ADMIN_PAGES } from "./pages/admin/adminPages";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
@@ -195,6 +195,7 @@ preloadOpenedRoute();
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary, { ScopedErrorBoundary } from "./components/ui/ErrorBoundary";
 import ErrorScreen from "./components/ui/ErrorScreen";
+import ConfirmDialog from "./components/ui/ConfirmDialog";
 import {
   ArrowUpCircle, SmartphoneNfc, UserPlus, Clock, UserX, WifiOff, AlertTriangle, Lock, ChevronRight,
   UserRoundCog,
@@ -205,10 +206,12 @@ import DocumentTitle from "./components/DocumentTitle";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { usesLauncher } from "./utils/launcherRoles";
-import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
+import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS, DEFAULT_PAGE_ACCESS } from "./config/pages";
 import { idleSolutionsRoles } from "./config/idleSolutions";
 import { useTranslit } from "./utils/transliterate";
-import { inTelegram } from "./utils/session";
+import { inTelegram, getToken } from "./utils/session";
+import api from "./utils/api";
+import { APP_VERSION } from "./utils/version";
 
 // A request that failed for want of a CONNECTION is tried again for as long
 // as the connection is down (utils/connectivity.js) — every OFFLINE_RETRY_MS
@@ -464,10 +467,40 @@ function LegacyAdminRedirect() {
  * escape hatches — otherwise a multi-role user (e.g. an admin who switched
  * into a page-less role) would be permanently trapped here.
  */
-function NoAccess() {
+function NoAccess({ page, dest }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  const { auth, switchRole, logout } = useAuth();
+  const { auth, switchRole, leaveRole, logout, webSession } = useAuth();
+  const { access } = usePageAccess();
+  const { capPages, deniedPages } = useCapabilities();
+  // Approved leaders and brigadirs — roles that HAVE pages — reached this screen
+  // seconds after signing in (2026-11-20), and no record says why. Each showing
+  // reports what the screen was decided on, once, through the crash door.
+  useEffect(() => {
+    try {
+      const role = auth?.role;
+      api.post("/api/crash-report", {
+        message: `No-pages screen shown (${role || "no role"})`,
+        stack: JSON.stringify({
+          role, status: auth?.status, page, dest: dest || null,
+          matrix: access === DEFAULT_PAGE_ACCESS ? "defaults" : "server",
+          role_pages: Object.values(access || {}).filter((v) => Array.isArray(v) && v.includes(role)).length,
+          cap_pages: (capPages || []).length, denied: (deniedPages || []).length,
+          roles: (auth?.roles || []).length, token: Boolean(getToken()), web: webSession,
+        }).slice(0, 3000),
+        component: "NoAccess",
+        url: String(window.location.pathname + window.location.search).slice(0, 500),
+        version: APP_VERSION,
+        ua: String(navigator.userAgent || "").slice(0, 500),
+      }).catch(() => {});
+    } catch { /* a report must never break the screen */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // In Telegram «Chiqish» is an UNREGISTER, so it asks first and leaves only the
+  // active role — exactly the header's. Unconfirmed, this button deleted whole
+  // accounts of people who pressed it to get past the screen (2026-11-20).
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState(null);
+  const [leaving, setLeaving] = useState(false);
   const others = (auth?.roles ?? []).filter(
     (r) => r.id !== auth?.active_role_ref && r.status === "approved",
   );
@@ -475,6 +508,7 @@ function NoAccess() {
   // "contact an administrator" would read like a pending confirmation.
   const isAdminAccount = (auth?.roles ?? []).some((r) => r.role === "admin");
   return (
+    <>
     <ErrorScreen
       tone="neutral"
       icon={Lock}
@@ -482,7 +516,8 @@ function NoAccess() {
       live="status"
       title={t("access.noPagesTitle")}
       message={t(isAdminAccount ? "access.noPagesAdmin" : "access.noPages")}
-      secondary={{ label: t("nav.signOut"), onClick: logout }}
+      action={{ label: t("error.reload"), onClick: () => window.location.reload() }}
+      secondary={{ label: t("nav.signOut"), onClick: webSession ? logout : () => setConfirmLeave(true) }}
     >
       {others.length > 0 && (
         <div className="space-y-2 text-left">
@@ -514,6 +549,26 @@ function NoAccess() {
         </div>
       )}
     </ErrorScreen>
+      {confirmLeave && (
+        <ConfirmDialog
+          tone="danger"
+          title={t("nav.signOutConfirmTitle")}
+          message={t("nav.signOutConfirmText")}
+          confirmLabel={t("nav.signOutConfirm")}
+          cancelLabel={t("nav.signOutCancel")}
+          error={leaveError}
+          loading={leaving}
+          onCancel={() => { setConfirmLeave(false); setLeaveError(null); }}
+          onConfirm={() => {
+            setLeaving(true);
+            leaveRole(auth?.active_role_ref).catch((e) => {
+              setLeaving(false);
+              setLeaveError(e?.response?.data?.detail || t("common.requestFailed"));
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -536,7 +591,7 @@ function RequirePage({ page, children }) {
   // The redirect target has to respect the denies too, or a person blocked from
   // their role's first page is bounced straight back into it and loops.
   const dest = firstAccessibleRoute(auth?.role, access, capPages, deniedPages);
-  if (!dest || dest === window.location.pathname) return <NoAccess />;
+  if (!dest || dest === window.location.pathname) return <NoAccess page={page} dest={dest} />;
   if (window.location.pathname === "/") {
     try { localStorage.setItem(HOME_ROUTE_KEY, dest); } catch { /* a hint only */ }
   }

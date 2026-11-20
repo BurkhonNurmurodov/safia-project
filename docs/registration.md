@@ -127,3 +127,31 @@ data.
 online, the channel's latest post, anything the person's privacy settings hide
 from non-contacts (a hidden photo is simply absent). The page says the first two
 in its footnote. Business opening hours are left out (no registrant has one).
+
+## «Chiqish» on the «no pages» screen wiped accounts (2026-11-20)
+
+Mini-app users reported being «logged out». The register showed 11 accounts in
+14 days (7–20 Nov; three on the 20th) of approved leaders and brigadirs — up to
+346 earlier sign-ins — whose OWN session sent `DELETE /api/auth/me` 6–55
+seconds after an approved sign-in (`identity.own_account_deleted`). That call
+deletes the account and every role; the person had to register again and wait
+for approval, or registered on the shared cell phone as somebody else.
+
+- **The door**: `NoAccess` («Sahifa biriktirilmagan», `App.jsx`) offered
+  «Chiqish» → `logout()` with NO confirmation, and inside Telegram `logout()`
+  was that DELETE. The header's «Chiqish» always asked first and left only the
+  active role (`leaveRole`); this screen did not.
+- **Now**: the screen's primary button is «Qayta yuklash» (a reload). Its
+  «Chiqish» does exactly what the header's does: a confirm, then `leaveRole`.
+  In a browser it stays `logout()`, which only ends the session. `logout()` no
+  longer has a Telegram branch, so nothing in the app sends
+  `DELETE /api/auth/me` any more (the endpoint stays). Leaving a LAST role still
+  deletes the account, behind that confirm.
+- **Not found: why approved leaders saw the screen at all.** The live data
+  cannot produce it: the stored matrix opens 9 pages to `leader`, 17 to
+  `supervisor`, and no leader or brigadir profile or account carries a deny. So
+  the screen was decided on a client state no record kept. Each showing now
+  posts to `/api/crash-report` (`CLIENT-CRASH`, «No-pages screen shown (role)»)
+  with the role, the route's page, `dest`, whether the matrix was the server's
+  or the coded defaults, the counts of role pages, granted and denied pages,
+  and whether a token was stored. Read the next one before guessing.

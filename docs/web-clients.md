@@ -61,8 +61,9 @@ re-verifies it on every request. The second is a username + password at
   it. Still NOT closed: removing an admin or a profile holder does not bump
   `token_version`, so that browser token stays honoured (it is the next
   finding of the audit, not this one).
-- **A standing that cannot be READ is 503, never 401** (2026-11-20, users
-  reported sudden sign-outs in browsers). `_web_token_live` used to read any
+- **A standing that cannot be READ is 503, never 401** (2026-11-20; found
+  while looking into reported sign-outs, which turned out to be the mini app's
+  «no pages» screen — `docs/registration.md` — not this). `_web_token_live` used to read any
   exception of its DB check (the pool full — 15/15 has been measured — or
   Postgres refusing a connection during a worker swap) as «revoked» → 401, and
   `utils/api.js` drops the token on every 401: one busy minute could sign

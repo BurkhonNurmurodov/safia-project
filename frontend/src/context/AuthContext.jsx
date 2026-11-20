@@ -456,14 +456,10 @@ export function AuthProvider({ children }) {
       clearPush();
       clearToken();
       window.location.href = "/";
-      return;
     }
-    await clearCacheScope(getCacheScope());
-    await dropBootPayload(getToken());
-    try {
-      await api.delete("/api/auth/me");
-    } catch (_) {}
-    setCountdown(COUNTDOWN_SEC);
+    // Inside Telegram signing out is leaving a ROLE, behind a confirm
+    // (leaveRole). This used to DELETE /api/auth/me — the whole account and every
+    // role — unconfirmed, from the «no pages» screen (2026-11-20).
   }
 
   /** Accept a successful password login and enter the app. */
