@@ -140,12 +140,30 @@ export function pagesAsk(op) {
 let pagesState = null;
 let pagesListening = false;
 const pagesListeners = new Set();
+let askedFor = "";
+let retryTimer = null;
+
+/**
+ * The page saw `stamp` live and the phone does not hold it: the app starts on
+ * it now. ONCE per build, however many components ask — a second ask queued
+ * behind the download would run again and knock «ready» back to «checking».
+ */
+export function pagesCheckFor(stamp) {
+  if (!stamp || stamp === askedFor || !pagesNative()) return;
+  askedFor = stamp;
+  postPages("check");
+}
 
 function subscribePages(fn) {
   if (!pagesListening && pagesNative()) {
     pagesListening = true;
     window.addEventListener("safia-pages", (e) => {
       pagesState = e.detail && typeof e.detail === "object" ? e.detail : null;
+      // A download that broke off (no connection) is retried by the app only at
+      // its next check, up to 5 minutes away: while a newer build is waiting,
+      // ask again in 30 s — the notice promises it.
+      clearTimeout(retryTimer);
+      if (pagesState?.phase === "failed" && askedFor) retryTimer = setTimeout(() => postPages("check"), 30_000);
       pagesListeners.forEach((f) => f());
     });
     postPages("status");

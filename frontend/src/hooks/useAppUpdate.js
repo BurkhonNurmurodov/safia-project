@@ -4,7 +4,7 @@ import { BUILD_TIME } from "../utils/version";
 import { isOutdated, subscribeCompat } from "../utils/compat";
 import { updateWorker } from "../utils/pwa";
 import { inAndroidApp } from "../utils/session";
-import { apkPercent, pagesAsk, usePagesState } from "../utils/androidUpdate";
+import { apkPercent, pagesAsk, pagesCheckFor, usePagesState } from "../utils/androidUpdate";
 
 /**
  * Is the tab running an older build than the one deployed?
@@ -123,9 +123,9 @@ export function useAppUpdate({ pollMs = 5 * 60 * 1000 } = {}) {
     ? apkPercent(pagesApp) : null;
   const comingFailed = coming && pagesApp?.phase === "failed";
   // The page saw the new build first: the app starts on it now instead of at
-  // its next five-minute check. Once per build.
+  // its next five-minute check. Once per build (pagesCheckFor dedupes).
   useEffect(() => {
-    if (coming) pagesAsk("check");
+    if (coming) pagesCheckFor(live);
   }, [coming, live]);
 
   // A newer build is deployed: tell the service worker (browsers only; a no-op

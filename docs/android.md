@@ -94,7 +94,8 @@ daily") **the app downloads every build the site deploys by itself** — see
     to say, the pages' state as its headline — never «Sizda eng so'nggi
     versiya» over pages left behind. The row lights up for them too.
   - **From APK 1.8.0 the app reports the download itself** (the operator's
-    yes, same day). `window.__safiaApp.pages`; the page sends
+    yes, same day; built 2026-11-20 and installed on the A16 only — NOT
+    published until the operator says so). `window.__safiaApp.pages`; the page sends
     `{type: "pages", op: "status" | "check"}` and hears `safia-pages`
     (`PageUpdates.state()`: phase checking · downloading · ready · failed ·
     idle, `version`, `got` / `total` bytes — at most every 250 ms while
@@ -104,7 +105,10 @@ daily") **the app downloads every build the site deploys by itself** — see
     knows of it, not at the app's next 5-minute check. The toast then reads
     «yuklab olinmoqda: 42%», the window and the sidebar row show the same
     percent, and a broken-off download says so with «Qayta urinish» (the app
-    retries by itself anyway). An app before 1.8.0 answers nothing and keeps
+    retries only at its next check, so while a newer build waits the page asks
+    again every 30 s — `pagesCheckFor` / the `safia-pages` listener in
+    `utils/androidUpdate.js`, which also make the «check» ONCE per build however
+    many components ask). An app before 1.8.0 answers nothing and keeps
     the spinner-only «coming» notice.
   - **Cost**: until v4.324.1 every deploy renamed ~227 of 231 asset files
     (the build stamp sat in a shared chunk), so a new build was ~1.6 MB over
@@ -225,7 +229,7 @@ daily") **the app downloads every build the site deploys by itself** — see
   (platform 36, build-tools 36.0.0) in `~/Library/Android/sdk`, AGP 8.13.2 +
   Gradle 8.14.5, `androidx.activity` 1.13.0 · `core` 1.18.0 (1.19 needs
   compileSdk 37 and AGP 9.1) · `webkit` 1.17.1 (Android 7+, hence minSdk 24).
-  **Raise `versionCode` on every release** (current: 1.8.0, versionCode 14).
+  **Raise `versionCode` on every release** (current: 1.8.0, versionCode 14 — built, not yet published; the server still offers 1.7.1).
   Icons: `scripts/render-android-icons.py`, never hand-edited. Nothing here
   touches the deploy: `deploy/deploy.sh` reacts to backend/, bot/ and
   frontend/ only.
