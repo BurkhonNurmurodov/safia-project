@@ -10255,6 +10255,48 @@ def add_assessment_answer_columns() -> None:
     _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer + candidates.employee_id")
 
 
+_ASSESSMENT_TICKET_DDL = (
+    ("assessments", (("ticket_no", "INTEGER"),), None),
+)
+
+
+def add_assessment_ticket_numbers() -> None:
+    """2026-11-20: a sitting's drawn set of questions is a numbered TICKET
+    («Bilet №N» — the operator: «that set of random questions should be
+    numbered, xuddi biletday»). `assessments.ticket_no`, and the sequence
+    `assessment.TICKET_SEQ` every draw takes its number from (a redraw takes a
+    new one; no number is ever handed out twice, a deleted sitting's included).
+    The sequence never trails a number already printed, and a sitting without
+    one — every sitting from before, or one an old worker opened during a
+    deploy — is numbered here, in the order the sittings were opened.
+    Idempotent, no flag; FATAL on failure, since every draw calls `nextval`."""
+    import logging
+    from app.services.assessment import TICKET_SEQ as seq
+    _ensure_columns(_ASSESSMENT_TICKET_DDL, "assessments.ticket_no")
+    db = SessionLocal()
+    try:
+        db.execute(text("SET LOCAL lock_timeout = '5s'"))
+        db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq}"))
+        top = db.execute(text("SELECT COALESCE(MAX(ticket_no), 0) FROM assessments")).scalar() or 0
+        last, called = db.execute(text(f"SELECT last_value, is_called FROM {seq}")).one()
+        handed = last if called else last - 1      # a fresh sequence has handed out none
+        if top > handed:
+            db.execute(text("SELECT setval(:s, :n, true)"), {"s": seq, "n": top})
+        ids = [r[0] for r in db.execute(text(
+            "SELECT id FROM assessments WHERE ticket_no IS NULL ORDER BY created_at NULLS FIRST, id"))]
+        for aid in ids:
+            db.execute(text(f"UPDATE assessments SET ticket_no = nextval('{seq}') "
+                            "WHERE id = :i AND ticket_no IS NULL"), {"i": aid})
+        db.commit()
+        if ids:
+            logging.getLogger(__name__).info("[startup] assessment tickets: %d sitting(s) numbered", len(ids))
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 
 
 def seed_hr_kaizen_questions() -> None:

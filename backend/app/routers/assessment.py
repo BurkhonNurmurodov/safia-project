@@ -22,7 +22,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -161,6 +161,9 @@ def _draw_into(db: Session, a: Assessment) -> int:
         db.add(AssessmentItem(assessment_id=a.id, position=i, question_id=q["id"],
                               department=q["department"], qtype=q["qtype"], text=q["text"],
                               answer=q.get("answer")))
+    # The set is a numbered ticket («Bilet №N»), a new one at every draw —
+    # taken only once the draw has succeeded, so a short bank burns no number.
+    a.ticket_no = db.execute(text(f"SELECT nextval('{rules.TICKET_SEQ}')")).scalar()
     return len(picked)
 
 
@@ -521,7 +524,7 @@ def list_assessments(
                 if v.get("verdict") == "pass" and idep.get(k) == e.department)
         j = sum(_graded(grades.get(e.id, {}), _own_ids(idep, e.department)) for e in sub)
         out.append({
-            "id": a.id, "status": a.status, "held_on": _iso(a.held_on),
+            "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
             "created_at": _iso(a.created_at), "created_by": a.created_by,
             "closed_at": _iso(a.closed_at),
             "candidate": _cand_dict(c),
@@ -576,8 +579,9 @@ def create_assessment(body: dict = Body(...), db: Session = Depends(get_db), pay
     n = _draw_into(db, a)
     db.commit()
     action_log.enrich(target_kind="assessment", target_id=str(a.id),
-                      details=[("candidate", cand.full_name), ("day", held_on.isoformat()), ("questions", n)])
-    return {"id": a.id}
+                      details=[("candidate", cand.full_name), ("day", held_on.isoformat()),
+                               ("ticket", a.ticket_no), ("questions", n)])
+    return {"id": a.id, "ticket_no": a.ticket_no}
 
 
 @router.get("/assessments/{aid}")
@@ -608,7 +612,7 @@ def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
     taken = {e.department for e in evs}
     work = _has_work(db, aid)
     return {
-        "id": a.id, "status": a.status, "held_on": _iso(a.held_on),
+        "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
         "created_at": _iso(a.created_at), "created_by": a.created_by,
         "closed_at": _iso(a.closed_at), "closed_by": a.closed_by,
         "candidate": _cand_dict(c),
@@ -861,8 +865,9 @@ def redraw(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE
     db.flush()
     n = _draw_into(db, a)
     db.commit()
-    action_log.enrich(target_kind="assessment", target_id=str(aid), details=[("questions", n)])
-    return {"ok": True}
+    action_log.enrich(target_kind="assessment", target_id=str(aid),
+                      details=[("ticket", a.ticket_no), ("questions", n)])
+    return {"ok": True, "ticket_no": a.ticket_no}
 
 
 @router.delete("/assessments/{aid}")

@@ -2,7 +2,7 @@
 // look of a department / type chip, the verdict colours, and the one way a
 // refusal from the server is put into words.
 import { useMemo } from "react";
-import { BadgeCheck, Users, Factory, HardHat, Sparkles, BookOpen, Wrench } from "lucide-react";
+import { BadgeCheck, Users, Factory, HardHat, Sparkles, BookOpen, Wrench, Ticket } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { TXT, fill } from "../../pages/assessmentText";
 
@@ -48,6 +48,14 @@ export function DeptChip({ dept, T }) {
 
 export function TypeChip({ type, T }) {
   return <Chip icon={TYPE_ICON[type]}>{T.type[type] || type}</Chip>;
+}
+
+/** «Bilet №12» — the drawn set's number, like an exam ticket (2026-11-20).
+ *  An identity, not a status: the neutral chip. Nothing while a sitting has
+ *  no number yet (one opened mid-deploy, numbered at the next boot). */
+export function TicketChip({ n, T }) {
+  if (n == null) return null;
+  return <Chip icon={Ticket} title={T.ticketTip}><span className="tabular-nums">{fill(T.ticket, { n })}</span></Chip>;
 }
 
 /** A whole percent, «—» when there is nothing to divide. */

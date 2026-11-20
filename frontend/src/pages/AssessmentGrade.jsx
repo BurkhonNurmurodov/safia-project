@@ -18,7 +18,7 @@ import SeatStrip, { SeatRing } from "../components/assessment/SeatStrip";
 import useIsMobile from "../hooks/useIsMobile";
 import ScoreCard from "../components/assessment/ScoreCard";
 import ResultsView from "../components/assessment/ResultsView";
-import { useAT, fill, errText, fmtDate } from "../components/assessment/assessmentUtil";
+import { useAT, fill, errText, fmtDate, TicketChip } from "../components/assessment/assessmentUtil";
 import { useCanOpen } from "../components/people/peopleUtil";
 
 /**
@@ -82,13 +82,13 @@ export default function AssessmentGrade() {
 
   const act = useMutation({
     mutationFn: ({ method, url, body }) => api.request({ method, url, data: body }).then((r) => r.data),
-    onSuccess: (_, v) => {
+    onSuccess: (res, v) => {
       setAsk(null);
       qc.invalidateQueries({ queryKey: ["assessment-list"] });
       if (v.after === "list") { nav("/assessment"); return; }
       if (v.seat !== undefined) setSeat(v.seat);
       refresh();
-      if (v.toast) toast.success(v.toast);
+      if (v.toast) toast.success(typeof v.toast === "function" ? v.toast(res) : v.toast);
     },
     onError: (e, v) => {
       if (v.inline) setAskErr(errText(e, T));
@@ -168,7 +168,8 @@ export default function AssessmentGrade() {
     },
     redraw: {
       title: T.redrawTitle, tone: "warning", confirm: T.redraw, message: T.redrawMsg,
-      run: { method: "post", url: `/api/assessment/assessments/${id}/redraw`, toast: T.done },
+      run: { method: "post", url: `/api/assessment/assessments/${id}/redraw`,
+        toast: (res) => (res?.ticket_no != null ? fill(T.redrawnTicket, { n: res.ticket_no }) : T.done) },
     },
     delete: {
       title: T.deleteTitle, tone: "danger", confirm: T.del,
@@ -205,6 +206,8 @@ export default function AssessmentGrade() {
                 <h2 className="text-lg sm:text-[22px] font-semibold leading-tight tracking-[-0.01em] break-words" style={{ color: "var(--text-1)" }}>
                   {candName || "—"}
                 </h2>
+                {/* «Bilet №» — the drawn set's number (2026-11-20). */}
+                <TicketChip n={d.ticket_no} T={T} />
                 {/* A STATE: a neutral chip with a status dot — brand gold is
                     an accent, never a status. */}
                 <span className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium"

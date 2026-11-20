@@ -30,7 +30,27 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   naming each part, need vs have, with its `department` where it is one) — never a
   short sitting. The draw COPIES each question's text, department and type onto
   `assessment_items`, so editing or archiving the bank changes no sitting.
-- **Six tables** (created by `create_all`, nothing to migrate):
+- **Every drawn set is a numbered TICKET — «Bilet №N»** (2026-11-20, the
+  operator: «that set of random questions should be numbered. Xuddi
+  biletday»). `assessments.ticket_no`, taken at EVERY draw from the Postgres
+  sequence `assessment_ticket_seq` (`assessment.TICKET_SEQ`) — so a redraw is
+  a new ticket with a new number, and no number is ever handed out twice (a
+  deleted sitting's, a redrawn set's and a test sitting's are simply retired,
+  like a torn-up ticket). One sequence for the whole plant, not per candidate.
+  The number is taken only after the draw succeeds, so a `pool_short` refusal
+  burns none. `startup.add_assessment_ticket_numbers` (`run`, both
+  entrypoints, idempotent, FATAL on failure) adds the column and the sequence,
+  keeps the sequence from trailing any number already printed, and numbers
+  every sitting without one in the order the sittings were opened — all of
+  them at its first boot, later only one an old worker opened mid-deploy.
+  Shown as a «Bilet» column first on the list (sortable; the search box finds
+  «12», «№12» or «#12»), a chip on the phone card after the date, and a chip
+  beside the status on the grading page (`TicketChip` in `assessmentUtil.jsx`,
+  the neutral chip — an identity, not a status); the redraw's confirm says the
+  number changes and its toast names the new one; the Jurnal's create and
+  redraw rows carry it (`ticket`). Pinned by `tests/test_assessment_ticket.py`
+  (Postgres).
+- **Six tables** (created by `create_all`; later columns through startup steps — the expected answer, the candidate's Verifix id, the ticket number):
   `assessment_candidates` (a worker of the plant + an optional note — see the
   next bullet), `assessment_questions` (the bank; never
   deleted, `archived_at` takes one out of the draw), `assessments` (one sitting:

@@ -12,7 +12,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import NewAssessmentModal from "./NewAssessmentModal";
-import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace } from "./assessmentUtil";
+import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace, TicketChip } from "./assessmentUtil";
 import { PersonLink } from "../people/peopleUtil";
 
 /** One seat of the panel as a small square: free (dashed), being graded
@@ -86,14 +86,18 @@ export default function AssessmentList({ isAdmin }) {
   const rows = useMemo(() => {
     const all = list.data?.rows || [];
     const needle = q.trim().toLowerCase();
+    // A number (with or without «№» / «#») finds its ticket too.
+    const num = needle.replace(/^[№#]\s*/, "");
     const f = needle
-      ? all.filter((r) => `${r.candidate?.full_name || ""} ${r.candidate?.note || ""} ${tl(r.candidate?.full_name || "")} ${workPlace(r.candidate)}`
-        .toLowerCase().includes(needle))
+      ? all.filter((r) => (/^\d+$/.test(num) && String(r.ticket_no ?? "") === num)
+        || `${r.candidate?.full_name || ""} ${r.candidate?.note || ""} ${tl(r.candidate?.full_name || "")} ${workPlace(r.candidate)}`
+          .toLowerCase().includes(needle))
       : all;
     const key = (r) => sort.k === "candidate" ? (r.candidate?.full_name || "").toLowerCase()
       : sort.k === "date" ? (r.held_on || "")
       : sort.k === "result" ? (r.overall?.pct ?? -1)
       : sort.k === "panel" ? r.submitted
+      : sort.k === "ticket" ? (r.ticket_no ?? -1)
       : r.id;
     const dir = sort.d === "asc" ? 1 : -1;
     return [...f].map((r) => [key(r), r]).sort((a, b) => (a[0] > b[0] ? dir : a[0] < b[0] ? -dir : 0)).map((x) => x[1]);
@@ -141,6 +145,7 @@ export default function AssessmentList({ isAdmin }) {
               <div className="mt-1 flex items-center gap-1.5">
                 {r.seats.map((s) => <SeatDot key={s.department} seat={s} T={T} tl={tl} />)}
                 <span className="ml-1 text-[11px]" style={{ color: "var(--text-3)" }}>{fmtDate(r.held_on)}</span>
+                <TicketChip n={r.ticket_no} T={T} />
               </div>
             </div>
             <div className="text-xs text-right"><Result row={r} T={T} /></div>
@@ -158,6 +163,7 @@ export default function AssessmentList({ isAdmin }) {
         toolbar={toolbar} mobile={mobile}>
         <thead>
           <tr>
+            <Th label={T.colTicket} k="ticket" sort={sort} onSort={onSort} />
             <Th label={T.colCandidate} k="candidate" sort={sort} onSort={onSort} />
             <Th label={T.colDate} k="date" sort={sort} onSort={onSort} />
             <Th label={T.colPanel} k="panel" sort={sort} onSort={onSort} />
@@ -168,12 +174,16 @@ export default function AssessmentList({ isAdmin }) {
         <tbody>
           {list.isLoading ? (
             [...Array(4)].map((_, i) => (
-              <tr key={i}><td colSpan={5} className="px-3 py-3"><div className="h-4 rounded animate-pulse" style={{ background: "var(--bg-inner)" }} /></td></tr>
+              <tr key={i}><td colSpan={6} className="px-3 py-3"><div className="h-4 rounded animate-pulse" style={{ background: "var(--bg-inner)" }} /></td></tr>
             ))
           ) : empty ? (
-            <tr><td colSpan={5}>{emptyNode}</td></tr>
+            <tr><td colSpan={6}>{emptyNode}</td></tr>
           ) : rows.map((r) => (
             <tr key={r.id} onClick={() => open(r)} className="cursor-pointer">
+              <td className="px-3 py-2 whitespace-nowrap tabular-nums font-medium" title={T.ticketTip}
+                style={{ color: r.ticket_no == null ? "var(--text-3)" : "var(--text-1)" }}>
+                {r.ticket_no == null ? "—" : fill(T.ticketShort, { n: r.ticket_no })}
+              </td>
               <td className="px-3 py-2 max-w-[360px]">
                 <div className="flex items-baseline gap-2 min-w-0 whitespace-nowrap">
                   <span className="font-medium shrink-0" style={{ color: "var(--text-1)" }}>

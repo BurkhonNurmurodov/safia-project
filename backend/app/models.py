@@ -5717,6 +5717,11 @@ class Assessment(Base):
     created_by   = Column(String, nullable=True)
     closed_at    = Column(DateTime(timezone=True), nullable=True)
     closed_by    = Column(String, nullable=True)                 # a name, or «auto» (all five submitted)
+    # «Bilet №» — the drawn set's number (2026-11-20, the operator: «xuddi
+    # biletday»). Taken from `assessment_ticket_seq` at EVERY draw, so a redraw
+    # is a new ticket and no number is handed out twice; NULL only for a
+    # sitting an old worker opened mid-deploy (the next boot numbers it).
+    ticket_no    = Column(Integer, nullable=True)
 
 
 class AssessmentItem(Base):

@@ -49,6 +49,10 @@ SEAT_ORDER = ("kaizen", "production", "tb", "hr", "okk")
 # sittings drawn from them) in one go: `DELETE /api/assessment/samples`.
 SAMPLE_SOURCE = "Namuna (sinov uchun)"
 
+# Every draw is a numbered ticket («Bilet №N»): the number comes from this
+# Postgres sequence (made by `startup.add_assessment_ticket_numbers`).
+TICKET_SEQ = "assessment_ticket_seq"
+
 MAX_TEXT = 2000        # one question
 MAX_ANSWER = 4000      # its expected answer
 MAX_NOTE = 2000        # a judge's note on one answer
