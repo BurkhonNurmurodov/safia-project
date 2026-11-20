@@ -11613,11 +11613,14 @@ def backdate_dispatch_cells_october() -> None:
 
 def add_equipment_responsible_column() -> None:
     """2026-11-19: ``equipment.responsible`` — «Mas'ul shaxs», a free-text
-    column of the «Uskunalar» register. Blank on every existing row. Pure DDL,
-    idempotent; the DB default covers an old worker inserting without it."""
+    column of the «Uskunalar» register. Blank on every existing row.
+    2026-11-20: ``equipment.responsible_id`` — the Verifix employee_id the
+    person is picked by (blank = typed by hand before, or nobody). Pure DDL,
+    idempotent; the DB defaults cover an old worker inserting without them."""
     db = SessionLocal()
     try:
         db.execute(text("ALTER TABLE equipment ADD COLUMN IF NOT EXISTS responsible VARCHAR(120) NOT NULL DEFAULT ''"))
+        db.execute(text("ALTER TABLE equipment ADD COLUMN IF NOT EXISTS responsible_id VARCHAR(64) NOT NULL DEFAULT ''"))
         db.commit()
     except Exception as exc:
         db.rollback()

@@ -109,6 +109,21 @@ def directory(db: Session) -> dict:
     return data
 
 
+def search_current(db: Session, q: str, limit: int = 30) -> tuple[list[dict], bool]:
+    """The CURRENT workers (status W) whose name holds every word of `q` — in
+    Latin or Cyrillic, apostrophes ignored — those whose name STARTS with the
+    first word first, then in name order. Fewer than 2 letters answers
+    nothing, so a picker never paints thousands of rows. → (rows, more)."""
+    words = [w for w in fold_name(q).split(" ") if w]
+    if sum(len(w) for w in words) < 2:
+        return [], False
+    hits = [(0 if r["folded"].startswith(words[0]) else 1, r)
+            for r in directory(db)["rows"]
+            if r["status"] == "W" and all(w in r["folded"] for w in words)]
+    hits.sort(key=lambda h: h[0])   # stable: name order within each rank
+    return [r for _, r in hits[:limit]], len(hits) > limit
+
+
 def namesakes(dirx: dict, eid: str) -> list[str]:
     p = dirx["by_id"].get(eid)
     if not p:

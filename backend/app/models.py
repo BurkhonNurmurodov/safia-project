@@ -6280,6 +6280,7 @@ class Equipment(Base):
     brigadir   = Column(String(120), nullable=False, default="")   # Mas'ul brigadir
     leader     = Column(String(120), nullable=False, default="")   # Mas'ul lider
     cell_code  = Column(String(40), nullable=False, default="")    # Mas'ul yacheyka (Verifix code)
-    responsible = Column(String(120), nullable=False, default="")  # Mas'ul shaxs (2026-11-19, free text)
+    responsible = Column(String(120), nullable=False, default="")  # Mas'ul shaxs (2026-11-19) — the name as shown
+    responsible_id = Column(String(64), nullable=False, default="")  # …its Verifix employee_id (2026-11-20); "" = typed by hand / nobody
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -24,3 +24,31 @@ admins plus whoever is granted it on the Access tab; `RequirePage` on the route,
   `startup.add_equipment_responsible_column`), blank on the 319 seeded rows,
   beside the three «Mas'ul …» columns; it is searched, sorted and edited like
   them.
+
+## Columns and «Mas'ul shaxs» from Verifix (2026-11-20)
+
+- **The table's columns are the reader's own**: `ColumnsPicker` on the toolbar's
+  right edge, after «Uskuna qo'shish» — show / hide / drag to reorder, saved per
+  profile at `/api/ui-prefs/equipment_cols` (reconciled against `COL_KEYS` in
+  `pages/Equipment.jsx`, so a new column simply appears at the end). «Uskuna
+  nomi (Doc)» is the LOCKED identity column — 4 of the 319 seeded rows lack it
+  against 103 without the Real name. The ⋮ is always last and not in the
+  picker; a sort on a column just hidden falls back to the list's own order.
+  A new column needs a key in `COL_KEYS` / `COL_LABEL` and a case in `cell`.
+- **«Mas'ul shaxs» is PICKED, never typed**: a server-side-search
+  `StyledSelect` over the plant's CURRENT workers (Verifix directory, status W
+  — the /assessment candidate picker's pattern), `GET /api/admin/equipment/people?q=`
+  (≥ 2 letters, Latin or Cyrillic, `people.search_current`; it answers name,
+  job and place only). The row stores `equipment.responsible_id` (the Verifix
+  employee_id, added by `startup.add_equipment_responsible_column`) beside
+  `responsible`, and **the name is the directory's, copied by the server** —
+  whatever name the client sends with an id is ignored; an unknown id is a 422.
+  The table prints the name as a `PersonLink` to the person's «Xodim kartasi».
+- **A name typed by hand before the picker keeps its text with no id**: the form
+  shows it as «Qo'lda yozilgan» until somebody is picked over it; «—» clears
+  the field. A tab from before the picker (no `responsible_id` in its body)
+  keeps the stored person while its text is unchanged.
+- **Reach**: the search lists current workers plant-wide to anyone holding the
+  page (admins + personal grants) — the operator asked for the Verifix picker
+  here; it shows no more than the dropdown prints, and the card a name opens
+  still applies its own reach (`docs/laboratory.md`).
