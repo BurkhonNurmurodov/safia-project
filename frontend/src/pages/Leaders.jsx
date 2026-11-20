@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
 import { leaveRef } from "../utils/leave";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -10,7 +10,7 @@ import {
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
   ShieldCheck, Hourglass, Layers, X, FileText, CircleSlash, CalendarCheck,
-  ChevronRight, ChevronDown, Medal, Globe,
+  ChevronRight, ChevronDown, ChevronLeft, Medal, Globe,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import ProfileAvatar from "../components/ui/ProfileAvatar";
@@ -28,6 +28,11 @@ import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import Disputes from "../components/leaders/Disputes";
+import { AppealDigest } from "../components/leaders/AppealQueue";
+import NatijaDays from "../components/leaders/NatijaDays";
+import { NATIJA_T } from "../components/leaders/natijaText";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import { publishLeaderTab } from "../components/layout/leaderTab";
 import LateProofs from "../components/leaders/LateProofs";
 import TaskRequirements from "../components/leaders/TaskRequirements";
 import Checklist from "../components/leaders/Checklist";
@@ -50,6 +55,7 @@ import { showReason as expandReason } from "../utils/leaderReason";
 import { autoResultLines } from "../utils/autoResult";
 import StaffListAtCheckButton, { hasStaffList } from "../components/leaders/StaffListAtCheck";
 import { surnameInitial } from "../utils/personName";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 import {
   rowDate, lastFinishedDay, slotsBy, rosterFold, scoreSlots, filedOn, unitSlots, rankPlaces,
   inScope, rosterIn, rosterByUnit, filedUnderOf, buildCutLeaders, buildCutUnits, scopeBounds,
@@ -1666,7 +1672,12 @@ const placesOf = (pool, scopes, win, metric) => {
 };
 
 // The pool in rank order, the reader's slot framed on it.
-function RankStrip({ t }) {
+// Natijam's ONE strong mark (a leader's phone, 2026-11-20): the identity hue
+// of the «Natijam» area — pink, CATEGORY_COLORS, never a status — worn by the
+// place itself and nowhere else on the screen.
+const NATIJA_HUE = CATEGORY_COLORS[7];
+
+function RankStrip({ t, mark }) {
   const { size, lo, hi, bands } = t;
   const pct = (n) => (n / size) * 100;
   let at = 0;
@@ -1691,11 +1702,11 @@ function RankStrip({ t }) {
           style={{
             left: `${pct((lo + hi + 1) / 2)}%`,
             width: `max(5px, ${pct(hi + 1 - lo)}%)`,
-            border: "2px solid var(--text-1)",
+            border: `2px solid ${mark || "var(--text-1)"}`,
             boxShadow: "0 0 0 1px var(--bg-inner)",
           }} />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] tabular-nums leading-none"
+      <div className="mt-1 flex justify-between text-[10px] max-md:text-[12px] tabular-nums leading-none"
         style={{ color: "var(--text-4)" }}>
         <span>1</span><span>{size}</span>
       </div>
@@ -1703,7 +1714,7 @@ function RankStrip({ t }) {
   );
 }
 
-function RankTile({ scope, label, t, loading, T }) {
+function RankTile({ scope, label, t, loading, T, hero = false }) {
   const Icon = SCOPE_ICON[scope];
   const ok = t?.state === "ok";
   // The board's medals, on the board's terms: a podium only above three.
@@ -1717,11 +1728,11 @@ function RankTile({ scope, label, t, loading, T }) {
     : "";
   return (
     <div role="group" aria-label={said ? `${label}: ${said}` : label} title={said || undefined}
-      className="rounded-2xl p-2.5 sm:p-3 flex flex-col min-w-0"
+      className={`rounded-2xl ${hero ? "p-3.5 col-span-2" : "p-2.5 sm:p-3"} flex flex-col min-w-0`}
       style={{ background: "var(--bg-inner)",
                border: `1px solid ${tone ? hexA(tone, t.place === 1 ? 0.6 : 0.38) : "var(--border)"}` }}>
       <div className="flex items-start justify-between gap-2 min-w-0">
-        <span className="text-[10px] uppercase tracking-wider font-semibold leading-[1.3] line-clamp-2 min-w-0 pt-0.5"
+        <span className="text-[10px] max-md:text-[12px] uppercase tracking-wider font-semibold leading-[1.3] line-clamp-2 min-w-0 pt-0.5"
           style={{ color: "var(--text-3)" }}>{label}</span>
         {/* The chip needs room a phone's third of a card does not have. */}
         <span className="hidden sm:grid place-items-center w-6 h-6 rounded-lg flex-shrink-0"
@@ -1729,20 +1740,21 @@ function RankTile({ scope, label, t, loading, T }) {
           <Icon size={13} />
         </span>
       </div>
-      <div className="mt-2 h-7 sm:h-8 flex items-baseline gap-1 min-w-0">
+      <div className={`${hero ? "mt-1.5 h-12" : "mt-2 h-7 sm:h-8"} flex items-baseline gap-1 min-w-0`}>
         {loading ? (
-          <SkeletonBlock className="h-6 w-14 self-center" />
+          <SkeletonBlock className={`${hero ? "h-10 w-20" : "h-6 w-14"} self-center`} />
         ) : ok ? (
           <>
-            {tone && <Trophy size={15} className="flex-shrink-0 self-center" style={{ color: tone }} />}
-            <span className="text-[24px] sm:text-[28px] font-black tabular-nums leading-none"
-              style={{ color: tone || "var(--text-1)" }}>{t.place}</span>
-            <span className="text-[12px] font-semibold tabular-nums leading-none" style={{ color: "var(--text-4)" }}>
+            {tone && <Trophy size={hero ? 20 : 15} className="flex-shrink-0 self-center" style={{ color: tone }} />}
+            <span className={`${hero ? "text-[48px]" : "text-[24px] sm:text-[28px]"} font-black tabular-nums leading-none`}
+              style={{ color: hero ? NATIJA_HUE : (tone || "var(--text-1)") }}>{t.place}</span>
+            <span className={`${hero ? "text-[16px]" : "text-[12px]"} font-semibold tabular-nums leading-none`}
+              style={{ color: hero ? "var(--text-3)" : "var(--text-4)" }}>
               /{t.size}
             </span>
           </>
         ) : (
-          <span className="text-[24px] sm:text-[28px] font-black leading-none" style={{ color: "var(--text-4)" }}>—</span>
+          <span className={`${hero ? "text-[48px]" : "text-[24px] sm:text-[28px]"} font-black leading-none`} style={{ color: "var(--text-4)" }}>—</span>
         )}
       </div>
       {/* One fixed-height floor for the strip or, with no place to show, the
@@ -1752,9 +1764,9 @@ function RankTile({ scope, label, t, loading, T }) {
           {loading ? (
             <SkeletonBlock className="h-1.5 w-full mt-1" />
           ) : ok ? (
-            <RankStrip t={t} />
+            <RankStrip t={t} mark={hero ? NATIJA_HUE : undefined} />
           ) : (
-            <p className="text-[10.5px] leading-snug line-clamp-2" style={{ color: "var(--text-4)" }}>{said}</p>
+            <p className="text-[10.5px] max-md:text-[12px] leading-snug line-clamp-2 text-[var(--text-4)] max-md:text-[var(--text-3)]">{said}</p>
           )}
         </div>
       </div>
@@ -1762,7 +1774,11 @@ function RankTile({ scope, label, t, loading, T }) {
   );
 }
 
-function MyStanding({ kind, query, win, metric, shiftHint, T, onInfo }) {
+// `hero` — a leader's phone (Natijam): the unit place is the screen's one
+// strong moment, drawn large across the card, the shift and the plant smaller
+// under it; no methodology «i» and no period line (the period control sits
+// right above, and the calendar under it hatches the days not counted).
+function MyStanding({ kind, query, win, metric, shiftHint, T, onInfo, hero = false }) {
   const { data: pool, isLoading, isError, isFetching, refetch } = query;
   const scopes = MY_SCOPES[kind];
   const out = useMemo(() => placesOf(pool, scopes, win, metric), [pool, scopes, win, metric]);
@@ -1774,15 +1790,15 @@ function MyStanding({ kind, query, win, metric, shiftHint, T, onInfo }) {
   return (
     <section aria-label={title} className="rounded-2xl overflow-hidden mb-4"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <SectionHead icon={Medal} title={title}
-        subtitle={`${ddmm(win.from)} – ${ddmm(win.to)} · ${win.days} ${T.dayAbbr} · ${metric === "consist" ? T.meByConsist : T.meByRating}`}
-        right={
+      <SectionHead icon={Medal} title={title} color={hero ? NATIJA_HUE : undefined}
+        subtitle={hero ? undefined : `${ddmm(win.from)} – ${ddmm(win.to)} · ${win.days} ${T.dayAbbr} · ${metric === "consist" ? T.meByConsist : T.meByRating}`}
+        right={hero ? null : (
           <button onClick={onInfo} title={T.standInfo} aria-label={T.standInfo}
             className="-my-2 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10"
             style={{ color: "var(--brand-text)" }}>
             <Info size={16} />
           </button>
-        } />
+        )} />
       {isError && !pool ? (
         <div role="alert" className="px-4 py-6 flex flex-wrap items-center justify-center gap-3 text-sm"
           style={{ color: "var(--text-3)" }}>
@@ -1790,10 +1806,10 @@ function MyStanding({ kind, query, win, metric, shiftHint, T, onInfo }) {
           <Button size="md" variant="secondary" loading={isFetching} onClick={() => refetch()}>{T.retry}</Button>
         </div>
       ) : (
-        <div className={`grid gap-2 sm:gap-2.5 p-2.5 sm:p-3 ${scopes.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
-          {scopes.map((key) => (
+        <div className={`grid gap-2 sm:gap-2.5 p-2.5 sm:p-3 ${hero || scopes.length !== 3 ? "grid-cols-2" : "grid-cols-3"}`}>
+          {scopes.map((key, i) => (
             <RankTile key={key} scope={key} label={label(key)} t={out?.[key]}
-              loading={isLoading && !pool} T={T} />
+              loading={isLoading && !pool} T={T} hero={hero && i === 0} />
           ))}
         </div>
       )}
@@ -2097,6 +2113,16 @@ export default function Leaders() {
   // The server draws the same line (`capabilities.leaders_admin`).
   const isAdmin = auth?.role === "admin" || can(CAP.LEADERS_ADMIN);
   const pageTitle = T.title;
+  // ── a LEADER on a PHONE (2026-11-20, the leader-phone redesign) ──────────
+  // The menu IS their navigation: «Bugun» opens `?tab=checklist`, «Natijam»
+  // `?tab=monitor`. So for them the view follows the URL on EVERY change of it
+  // (the menu navigates between two /leaders links without remounting the
+  // page), the page draws neither its own H1 nor its tab strip (the app bar
+  // titles the page), and no tab is remembered in the browser. Desktop, and
+  // every other role's phone, keep the strip and the remembered tab.
+  const leaderPhone = useLeaderPhone();
+  const location = useLocation();
+  const NT = NATIJA_T[lang] || NATIJA_T.uz;
 
   // Filters persist across visits under the pre-split "leaders" prefix; the
   // retired shift pages' leaders1_*/leaders2_* keys are orphaned, not read.
@@ -2207,7 +2233,17 @@ export default function Leaders() {
   // leader does during an exam changes real data.
   const tabOk = { monitor: true, checklist: !examOn, tasks: true, ai: isAdmin,
                   disputes: showDisputesTab, lateproof: showLateProofsTab };
-  const tab = tabOk[tabSaved] ? tabSaved : "monitor";
+  const urlTab = new URLSearchParams(location.search).get("tab");
+  const tab = leaderPhone
+    // No tab named (or one this leader cannot open): their day, «Bugun».
+    ? (urlTab && tabOk[urlTab] ? urlTab : (tabOk.checklist ? "checklist" : "monitor"))
+    : (tabOk[tabSaved] ? tabSaved : "monitor");
+  // The phone menu lights «Bugun» or «Natijam» — and the app bar names the
+  // view — by the tab ON SCREEN, which only this page knows for certain.
+  useLayoutEffect(() => {
+    if (leaderPhone) publishLeaderTab(tab);
+  }, [leaderPhone, tab]);
+  useLayoutEffect(() => () => publishLeaderTab(null), []);
 
   // ── the «Chek-list» tab ──────────────────────────────────────────────────
   // ONE leader and ONE day. The leader is a PROFILE id, not the register's
@@ -2229,7 +2265,7 @@ export default function Leaders() {
   // wins on that same first visit.
   const landed = useRef(false);
   useEffect(() => {
-    if (landed.current || !isLeader || examOn) return;
+    if (landed.current || !isLeader || examOn || leaderPhone) return;
     landed.current = true;
     try {
       if (localStorage.getItem("leaders_cl_landed")) return;
@@ -2238,7 +2274,7 @@ export default function Leaders() {
       return;
     }
     setTab("checklist");
-  }, [isLeader, examOn, setTab]);
+  }, [isLeader, examOn, setTab, leaderPhone]);
 
   // The objections queue: the tab badge needs the count before the tab is ever
   // opened, and Disputes reads the SAME query key, so the two share one
@@ -2285,17 +2321,15 @@ export default function Leaders() {
   // this page no longer carries (`?tab=late`) fails `tabOk` and leaves the
   // saved tab standing, rather than opening onto nothing.
   const deepLinked = useRef(false);
-  useEffect(() => {
-    if (deepLinked.current) return;
-    deepLinked.current = true;
-    const sp = new URLSearchParams(window.location.search);
-    const want = sp.get("tab");
-    if (want && tabOk[want]) setTab(want);
-    // The checklist can be linked to one leader, one day and one task — the
-    // objection chat does it for a day still being filed, and the in-app
-    // camera comes back here with the task it was shooting for. The task is
-    // consumed from the URL, or a reload would open its sheet again.
+  // The checklist can be linked to one leader, one day and one task — the
+  // objection chat does it for a day still being filed, and the in-app
+  // camera comes back here with the task it was shooting for. The task is
+  // consumed from the URL, or a reload would open its sheet again.
+  const readChecklistLink = (sp, want, resetDate = false) => {
     if (want === "checklist") {
+      // A plain «Bugun» (a leader's phone) opens today, not whichever day a
+      // link left behind.
+      if (resetDate && !sp.get("date")) setClDate(null);
       const lid = Number(sp.get("leader")) || null;
       if (lid && !isLeader) {
         // A link naming a leader must land ON them, not behind a shift or
@@ -2311,11 +2345,28 @@ export default function Leaders() {
         sp.delete("open");
         sp.delete("focus");
         const qs = sp.toString();
-        window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+        window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
       }
     }
+  };
+  useEffect(() => {
+    if (deepLinked.current || leaderPhone) return;
+    deepLinked.current = true;
+    const sp = new URLSearchParams(window.location.search);
+    const want = sp.get("tab");
+    if (want && tabOk[want]) setTab(want);
+    readChecklistLink(sp, want);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // …and on a leader's phone, every time the URL changes: a «Bugun» link with
+  // a day or a task in it (the camera's way back, the appeal chat's «open the
+  // checklist») lands on the page they are already on.
+  useEffect(() => {
+    if (!leaderPhone) return;
+    const sp = new URLSearchParams(location.search);
+    readChecklistLink(sp, sp.get("tab") || "checklist", true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaderPhone, location.search]);
 
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
@@ -2894,6 +2945,48 @@ export default function Leaders() {
   const avg = useMemo(() => (leaderScores.length
     ? Math.round(leaderScores.reduce((s, e) => s + e.score, 0) / leaderScores.length)
     : 0), [leaderScores]);
+
+  // «Kunlarim» — Natijam's calendar (a leader's phone): every day of the
+  // picked period, each read through the page's ONE rule. The rows here are
+  // the leader's own, so they are slotted under one key; the leader's cutoff
+  // and first owed day ride in under it exactly as the board applies them. A
+  // day past `countCap` (today while it runs, the days ahead) is not scored at
+  // all; a day with no slot that is not `off` is a day nobody filed — a real
+  // 0, drawn as the register draws it, red.
+  const myDays = useMemo(() => {
+    if (!leaderPhone || !calWin.from || !calWin.to) return null;
+    const n = Math.min(calWin.days, 186);   // half a year of tiles at most
+    const first = isoShift(calWin.to, -(n - 1));
+    const dates = Array.from({ length: n }, (_, i) => isoShift(first, i));
+    const me = filtered.find((r) => r.leader && r.leader !== "N/A")?.leader;
+    const cuts = new Map(), starts = new Map();
+    if (me && cutLeaders?.get?.(me)) cuts.set("me", cutLeaders.get(me));
+    if (me && startLeaders?.get?.(me)) starts.set("me", startLeaders.get(me));
+    const slot = slotsBy(filtered, () => "me", cuts, dates, null, starts).get("me")
+      || { days: new Map(), off: new Set() };
+    const byDate = new Map();
+    for (const r of filtered) {
+      const d = rowDate(r);
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d).push(r);
+    }
+    const today = todayISO();
+    return dates.map((d) => {
+      const rs = byDate.get(d) || [];
+      const reports = rs.filter((r) => !r.missing);
+      let state = "missed", pct = null;
+      if (d === today) state = "today";
+      else if (countCap && d > countCap) state = "later";
+      else if (slot.days.has(d)) {
+        const v = slot.days.get(d);
+        state = "ok"; pct = Math.round(v.sum / v.n);
+      } else if (slot.off.has(d)) state = "off";
+      else if (reports.some((r) => r.rejected)) state = "void";
+      return { date: d, state, pct, reports };
+    });
+  }, [leaderPhone, calWin, filtered, cutLeaders, startLeaders, countCap]);
+  // A day filed for several cells has several reports — which one is asked.
+  const [dayPick, setDayPick] = useState(null);
 
   // Per-question rates, on the same footing: the denominator is every day each
   // leader owed an answer, so a day with no report is that question undone —
@@ -3662,7 +3755,9 @@ export default function Leaders() {
           setDateFrom={setStartDate}
           setDateTo={setEndDate}
           compactLabel
-          triggerClassName="px-3 py-2 text-sm"
+          // Alone on a leader's phone (no filter panel beside it), so it can
+          // take a thumb's height without breaking a toolbar's baseline.
+          triggerClassName={leaderPhone ? "px-3 py-2 text-sm min-h-[44px]" : "px-3 py-2 text-sm"}
         />
       )}
       {(!isLeader) && (
@@ -3740,6 +3835,18 @@ export default function Leaders() {
     </div>
   );
 
+  // Switching views. On a leader's phone the URL IS the view, so a switch is a
+  // navigation (Back returns to where they were). Everywhere else the tab is
+  // remembered as before — and a URL still naming the tab a deep link opened
+  // is brought into step (2026-11-20): it said `?tab=disputes` over the late
+  // queue, and a reload then opened the wrong tab.
+  const pickTab = (v) => {
+    if (leaderPhone) { navigate(`/leaders?tab=${v}`); return; }
+    setTab(v);
+    const sp = new URLSearchParams(location.search);
+    if (sp.has("tab") && sp.get("tab") !== v) navigate(`/leaders?tab=${v}`, { replace: true });
+  };
+
   // Always rendered: «Vazifalar» gives every viewer a second tab, so the
   // strip is no longer conditional on the admin/supervisor tools.
   const tabsBar = (
@@ -3749,7 +3856,7 @@ export default function Leaders() {
           on a desktop. It earns its keep at 390px, where four tabs cannot fit
           and the selected one used to sit clipped off the right edge with
           nothing on screen saying more existed. */}
-      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
+      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={pickTab}
         options={[
           ["monitor", T.tabMonitor],
           // Second on the strip (the operator's call): after the page's
@@ -3817,11 +3924,27 @@ export default function Leaders() {
   // own badge is what tells them there is something to look at.
   const aiRunStrip = isAdmin ? <AiProgress showIdle /> : null;
 
+  // ── a leader's phone: the frame ──────────────────────────────────────────
+  // The app bar names the view by the menu entry that opened it; the page's
+  // own H1 and tab strip are not drawn (decision 5 — the title was printed
+  // twice). A view the menu does not name — a bot card's link to one queue,
+  // the task rules — carries its way back to «Natijam» instead.
+  const phoneTitle = ({ checklist: NT.bugun, monitor: NT.natijam, tasks: T.tabTasks,
+    disputes: T.tabDisputes, lateproof: T.tabLateProofs })[tab] || pageTitle;
+  const layoutTitle = leaderPhone ? phoneTitle : pageTitle;
+  const chrome = leaderPhone ? null : <>{headerBar}{pageChrome}</>;
+  const backRow = leaderPhone ? (
+    <button type="button" onClick={() => navigate("/leaders?tab=monitor")}
+      className="-ml-2 mb-2 inline-flex items-center gap-1 min-h-[44px] pl-1 pr-3 rounded-lg text-[14px] font-semibold transition-colors hover:bg-[var(--hover-bg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
+      style={{ color: "var(--text-2)" }}>
+      <ChevronLeft size={18} />{NT.natijam}
+    </button>
+  ) : null;
+
   if (tab === "checklist") {
     return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
+      <Layout title={layoutTitle}>
+        {chrome}
         <Checklist
           key={isLeader ? "me" : (clLeader?.id ?? "none")}
           leaderId={isLeader ? null : (clLeader?.id ?? null)}
@@ -3840,9 +3963,9 @@ export default function Leaders() {
 
   if (tab === "tasks") {
     return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
+      <Layout title={layoutTitle}>
+        {chrome}
+        {backRow}
         <TaskRequirements scope={scope} rows={rows}
           isLeader={isLeader} isSupervisor={isSupervisor} nm={nm}
           focusTaskId={taskFocus} onFocusDone={() => setTaskFocus(null)} />
@@ -3852,9 +3975,10 @@ export default function Leaders() {
 
   if (tab === "disputes") {
     return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
+      <Layout title={layoutTitle}>
+        {chrome}
+        {backRow}
+        {leaderPhone && scopeBar}
         <Disputes scope={scope} onClearScope={clearScope} />
       </Layout>
     );
@@ -3862,9 +3986,10 @@ export default function Leaders() {
 
   if (tab === "lateproof") {
     return (
-      <Layout title={pageTitle}>
-        {headerBar}
-        {pageChrome}
+      <Layout title={layoutTitle}>
+        {chrome}
+        {backRow}
+        {leaderPhone && scopeBar}
         <LateProofs scope={scope} onClearScope={clearScope} />
       </Layout>
     );
@@ -3901,6 +4026,57 @@ export default function Leaders() {
               )}
             </>
           } />
+      </Layout>
+    );
+  }
+
+  // ── «Natijam» — a leader's results on a phone (2026-11-20) ───────────────
+  // One question, «how am I doing», answered top down: the place (the one
+  // strong moment), the days as a calendar (a tap opens that day's report),
+  // and the appeals still being argued or settled in the period. The board's
+  // analytics — the trend, the per-task bars named by T-code, «Eng past
+  // vazifa», the register's counters and its card list — stay on the desktop
+  // and on every other role's phone.
+  if (leaderPhone && tab === "monitor") {
+    const openDay = (d) => {
+      if (d.state === "today" && !d.reports.length) { navigate("/leaders?tab=checklist"); return; }
+      if (d.reports.length === 1) { navigate(`/leaders/report/${encodeURIComponent(d.reports[0].uid)}`); return; }
+      if (d.reports.length > 1) setDayPick(d);
+    };
+    return (
+      <Layout title={layoutTitle}>
+        {scopeBar}
+        {standingOn && (
+          <MyStanding hero kind={standKind} query={standQuery} win={standWin}
+            metric="rating" shiftHint={standShiftHint} T={T} />
+        )}
+        {isError && (
+          <div className="rounded-2xl p-4 text-sm mb-4" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
+            {error?.response?.data?.detail || "Error"}
+          </div>
+        )}
+        <NatijaDays days={myDays} avg={avg} hasAvg={hasData && scoreWin.days > 0}
+          loading={showLoading} color={scoreColor} onPick={openDay} />
+        <AppealDigest from={startDate || ""} to={endDate || ""} />
+        <Modal open={!!dayPick} onClose={() => setDayPick(null)} icon={CalendarDays}
+          title={NT.pickReport} subtitle={dayPick ? fmtDate(dayPick.date, lang) : undefined}>
+          <div className="space-y-2">
+            {(dayPick?.reports || []).map((r) => (
+              <button key={r.uid} type="button"
+                onClick={() => { setDayPick(null); navigate(`/leaders/report/${encodeURIComponent(r.uid)}`); }}
+                className="w-full min-h-[52px] px-3 rounded-xl flex items-center gap-3 text-left transition-colors hover:bg-[var(--hover-bg)]"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <span className="flex-1 min-w-0 text-[15px] font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+                  {r.cell ? NT.cellReport.replace("{c}", r.cell) : NT.report}
+                </span>
+                <span className="text-[15px] font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+                  {Math.round(r.completion)}%
+                </span>
+                <ChevronRight size={16} style={{ color: "var(--text-3)" }} />
+              </button>
+            ))}
+          </div>
+        </Modal>
       </Layout>
     );
   }
@@ -4016,7 +4192,7 @@ export default function Leaders() {
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
-              right={<button onClick={() => setTab("tasks")} className="-my-2 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10" title={T.taskInfoTitle} aria-label={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={16} /></button>} />
+              right={<button onClick={() => pickTab("tasks")} className="-my-2 w-9 h-9 grid place-items-center rounded-lg transition-colors hover:bg-white/10" title={T.taskInfoTitle} aria-label={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={16} /></button>} />
             <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: chartTasks.map((t) => t.rate) }]} options={taskOptions} height={260} /></div>
           </div>
         </div>
@@ -4320,7 +4496,7 @@ export default function Leaders() {
                  whose tab it is; everyone else reads the number in place. */
               <RegStat label={T.regFlagged} value={regStats.flagged.toLocaleString()}
                 tone={regStats.open ? C_AI : regStats.flagged ? "var(--text-1)" : "var(--text-3)"}
-                onClick={isAdmin && regStats.open ? () => setTab("ai") : undefined}
+                onClick={isAdmin && regStats.open ? () => pickTab("ai") : undefined}
                 sub={!regStats.flagged ? T.regClean
                   : regStats.open
                     ? T.regOpenN.replace("{n}", regStats.open.toLocaleString())
@@ -4478,7 +4654,12 @@ export default function Leaders() {
                             </>
                           )}
                         </span>
-                        <span style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
+                        {/* Only when something was missed (2026-11-20): «0 ta
+                            vazifa bajarilmadi» under every 100% day said
+                            nothing the green badge had not. */}
+                        {r._failed > 0 && (
+                          <span style={{ color: "#ef4444" }}>{r._failed} {T.missed}</span>
+                        )}
                       </div>
                     </div>
                     {!r.missing && (
@@ -4666,7 +4847,7 @@ export default function Leaders() {
                               tab; a reader of a failed day is one tap from it,
                               landing on this very task's card. */}
                           <button type="button"
-                            onClick={() => { setDetail(null); setTaskFocus(id); setTab("tasks"); }}
+                            onClick={() => { setDetail(null); setTaskFocus(id); pickTab("tasks"); }}
                             className="p-0.5 rounded transition-colors hover:bg-white/10"
                             title={T.taskInfoTitle} aria-label={T.taskInfoTitle}
                             style={{ color: "var(--text-3)" }}>

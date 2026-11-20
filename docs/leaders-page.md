@@ -366,3 +366,7 @@ leader files, reads and argues their checklist on the web, one day at a time —
   from a role on the client. Reads are page-gated on `leaders` and row-scoped
   like the day report; auto-check live figures (`/auto-live`,
   `leader_auto_rich.snapshot`) are fetched only when a sheet opens.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — «Bugun» (the Chek-list tab) and «Natijam» (the Monitoring tab) on a LEADER's phone, the URL as the view, the count under the score (C3) and the task sheet opening on its photo action. md+ is unchanged.

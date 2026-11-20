@@ -135,7 +135,7 @@ export default function VerdictBlock({ ruling: given, title, ...rest }) {
     <div className="space-y-2">
       <div className="rounded-xl px-3.5 py-3"
         style={{ background: hexA(C_BAD, 0.08), border: `1px solid ${hexA(C_BAD, 0.25)}` }}>
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+        <div className="flex items-center gap-1.5 text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider mb-2"
           style={{ color: C_BAD }}>
           <ShieldX size={12} />{T.admin}
         </div>
@@ -158,7 +158,7 @@ function Verdict({ rev, autoReason, autoFacts, autoTiming, missedReason, title }
   if (!rev && !autoReason && missedReason) {
     return (
       <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+        <div className="flex items-center gap-1.5 text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider mb-2"
           style={{ color: "var(--text-3)" }}>
           <TimerOff size={12} />{T.deadline}
         </div>
@@ -177,7 +177,7 @@ function Verdict({ rev, autoReason, autoFacts, autoTiming, missedReason, title }
     const facts = autoResultLines(autoFacts, lang);
     return (
       <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+        <div className="flex items-center gap-1.5 text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider mb-2"
           style={{ color: "var(--text-3)" }}>
           <Settings2 size={12} />{T.auto}
         </div>
@@ -198,7 +198,7 @@ function Verdict({ rev, autoReason, autoFacts, autoTiming, missedReason, title }
   const dated = flags.some((f) => f === "no_date" || f === "date_mismatch");
   return (
     <div className="rounded-xl px-3.5 py-3" style={{ background: "var(--bg-inner)" }}>
-      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider mb-2"
+      <div className="flex items-center gap-1.5 text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider mb-2"
         style={{ color: "var(--text-3)" }}>
         <Sparkles size={12} />{title || T.ai}
       </div>

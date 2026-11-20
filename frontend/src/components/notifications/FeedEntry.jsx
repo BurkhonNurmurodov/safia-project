@@ -4,8 +4,9 @@ import { CheckCircle2, ChevronDown, ChevronRight, CircleDot, Megaphone } from "l
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import {
-  CATEGORY_ICON, TONE_INK, displayBody, entryTitle, fmt, fmtDate, nameList, timeAgo,
+  CATEGORY_ICON, TONE_INK, displayBody, entryTitle, fmt, fmtDate, nameList, noEmoji, timeAgo,
 } from "./notifMeta";
+import useIsMobile from "../../hooks/useIsMobile";
 import { IconChip, StatusChip, UnreadDot } from "./NotifParts";
 
 const ROW = "flex gap-3 px-4 py-3 sm:py-2.5 w-full text-left transition-colors hover:bg-[var(--bg-inner)] " +
@@ -25,10 +26,13 @@ export default function FeedEntry({ entry, unread, onRead, onOpen }) {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [expanded, setExpanded] = useState(false);
+  // A phone shows the server's text without its raw emoji (notifMeta.noEmoji).
+  const phone = useIsMobile(768);
+  const clean = phone ? noEmoji : (s) => s;
   const Icon = CATEGORY_ICON[entry.category] || Megaphone;
   const ink = TONE_INK[entry.type];
-  const title = entryTitle(entry);
-  const body = displayBody(entry.body);
+  const title = clean(entryTitle(entry));
+  const body = clean(displayBody(entry.body));
   const isGroup = entry.kind === "group";
   const markRead = () => { if (unread) onRead?.(entry.ids); };
 
@@ -116,10 +120,10 @@ export default function FeedEntry({ entry, unread, onRead, onOpen }) {
           {(entry.items || []).map((it) => {
             const inner = (
               <>
-                <span className="block text-[13px] leading-snug" style={{ color: "var(--text-1)" }}>{it.title}</span>
+                <span className="block text-[13px] leading-snug" style={{ color: "var(--text-1)" }}>{clean(it.title)}</span>
                 {it.body && (
                   <span className="text-xs mt-0.5 leading-snug line-clamp-2" style={{ color: "var(--text-2)" }}>
-                    {displayBody(it.body)}
+                    {clean(displayBody(it.body))}
                   </span>
                 )}
                 <span className="block text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{timeAgo(it.at, t)}</span>

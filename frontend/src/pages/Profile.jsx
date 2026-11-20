@@ -28,6 +28,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { copyText } from "../utils/copyText";
 import { useLang } from "../context/LangContext";
+import useIsMobile from "../hooks/useIsMobile";
 import { useAuth } from "../context/AuthContext";
 import { useExam } from "../context/ExamContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -125,7 +126,7 @@ function Card({ icon, color, title, subtitle, right, children, className = "", b
 function Detail({ label, children, className = "" }) {
   return (
     <div className={`min-w-0 ${className}`}>
-      <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="text-[11px] max-md:text-xs uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
       <div className="mt-1 text-sm font-medium break-words" style={{ color: "var(--text-1)" }}>{children}</div>
     </div>
   );
@@ -147,7 +148,7 @@ function RoleChip({ role }) {
 
 function StatusTag({ color, children }) {
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap"
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] max-md:text-xs font-semibold whitespace-nowrap"
           style={{ background: `${color}1f`, color, border: `1px solid ${color}40` }}>
       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
       {children}
@@ -166,7 +167,7 @@ function Fact({ icon: Icon, color, label, dot, children }) {
         <Icon size={17} />
       </span>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
+        <div className="text-[11px] max-md:text-xs uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{label}</div>
         {/* Wraps, never cuts: the login or the date is the whole tile. */}
         <div className="mt-0.5 flex items-start gap-1.5 min-w-0 text-[13px] font-semibold leading-[18px]"
              style={{ color: "var(--text-1)" }}>
@@ -304,7 +305,7 @@ function NamesBlock({ canonical, names }) {
   const { t } = useLang();
   return (
     <div className="min-w-0">
-      <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+      <div className="text-[11px] max-md:text-xs uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
         {t("profile.names")}
       </div>
       <div className="mt-2 grid grid-cols-1 @xl:grid-cols-2 gap-x-5 gap-y-2">
@@ -530,6 +531,10 @@ function WebLoginStatus({ web }) {
 
 function MyProfile() {
   const { auth } = useAuth();
+  // A phone (below md): the page is the person's own facts, not notes about
+  // them — the cards' explanatory subtitles and the name spelt in four
+  // languages (their own name, four times) stay on the desktop view.
+  const phone = useIsMobile(768);
   // «Imtihon»: the dated badge for a passed exam, only while the admin switch is on.
   const examBadge = useExam()?.me?.badge || null;
   const { t, lang } = useLang();
@@ -566,7 +571,7 @@ function MyProfile() {
           <>
             <RoleChip role={me?.role || auth?.role} />
             {examBadge && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] max-md:text-xs font-semibold"
                     style={{ background: "rgba(34,197,94,0.12)", color: GREEN, border: "1px solid rgba(34,197,94,0.3)" }}
                     title={examBadge.date || ""}>
                 <Award size={11} />
@@ -611,13 +616,13 @@ function MyProfile() {
               </span>
             </Detail>
           )}
-          <NamesBlock canonical={canonical} names={me?.names} />
+          {!phone && <NamesBlock canonical={canonical} names={me?.names} />}
         </div>
       </Card>
 
       {/* Website login + password */}
       <Card icon={Globe} color={HUE.web} title={t("weblogin.section")}
-            subtitle={me?.web ? t("profile.webHint") : undefined}
+            subtitle={me?.web && !phone ? t("profile.webHint") : undefined}
             right={<WebLoginStatus web={me?.web} />}>
         {me?.web ? (
           <div className="space-y-3">
@@ -645,7 +650,7 @@ function MyProfile() {
       </Card>
 
       {/* Linked Telegram accounts */}
-      <Card icon={Send} color={HUE.tg} title={t("profile.holders")} subtitle={t("profile.holdersHint")}>
+      <Card icon={Send} color={HUE.tg} title={t("profile.holders")} subtitle={phone ? undefined : t("profile.holdersHint")}>
         {holders.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {holders.map((b) => (

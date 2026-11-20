@@ -32,7 +32,7 @@ export default function FormField({ label, required, hint, error, alignTop, chil
     <div className="flex flex-col h-full">
       {label && (
         <div
-          className={`text-[11px] uppercase tracking-wider mb-1${alignTop ? "" : " flex-1"}`}
+          className={`text-[11px] max-md:text-xs uppercase tracking-wider mb-1${alignTop ? "" : " flex-1"}`}
           style={{ color: "var(--text-3)" }}
         >
           {label}{required && <span style={{ color: "#ef4444" }}> *</span>}
@@ -40,10 +40,10 @@ export default function FormField({ label, required, hint, error, alignTop, chil
       )}
       {children}
       {hint && !error && (
-        <p className="mt-1 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{hint}</p>
+        <p className="mt-1 text-[11px] max-md:text-xs leading-snug" style={{ color: "var(--text-3)" }}>{hint}</p>
       )}
       {error && (
-        <p className="mt-1 text-[11px] leading-snug font-medium" style={{ color: "#ef4444" }}>{error}</p>
+        <p className="mt-1 text-[11px] max-md:text-xs leading-snug font-medium" style={{ color: "#ef4444" }}>{error}</p>
       )}
     </div>
   );

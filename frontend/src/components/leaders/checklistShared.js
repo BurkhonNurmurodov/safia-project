@@ -1,5 +1,6 @@
 import {
   Camera, ImagePlus, Settings2, CheckSquare, Lock, TimerOff, Clock, PencilLine, Loader2,
+  Circle, Hourglass, CheckCircle2, ShieldAlert, XCircle, CircleSlash, Gavel,
 } from "lucide-react";
 import { put } from "./checklistText";
 import { showReason } from "../../utils/leaderReason";
@@ -9,6 +10,12 @@ import { showReason } from "../../utils/leaderReason";
  * other. */
 
 export const C_OK = "#22c55e", C_BAD = "#ef4444", C_WARN = "#eab308", C_WAIT = "#94a3b8";
+
+/** A status hue as TEXT: the theme's own ink (`--status-*`, index.css), which
+ *  holds AA on a light card where the raw fill (#eab308 on white) does not.
+ *  Fills, bars and tints keep the raw hue. */
+export const ink = (c) => (c === C_BAD ? "var(--status-bad)" : c === C_WARN ? "var(--status-warn)"
+  : c === C_OK ? "var(--status-ok)" : c);
 
 // Which group a state belongs to — the one mapping both the list and the
 // summary's bar read, so a count and the group it names can never disagree.
@@ -27,7 +34,43 @@ export const GROUP_OF = {
 export const groupOfTask = (t) => (t.rejectedBy ? "rejected" : GROUP_OF[t.state] || "todo");
 export const KIND_ICON = { camera: Camera, screenshot: ImagePlus, auto: Settings2, none: CheckSquare };
 
+// One icon and one colour per state. Every state carries an ICON as well as a
+// colour (see verifyState.js): a red dot beside a green one is not a message a
+// colour-blind reader can receive. The tab's rows and «Bugun»'s read this one.
+export const STATE_LOOK = {
+  open: { Icon: Circle, color: C_WAIT },
+  draft: { Icon: PencilLine, color: C_WARN },
+  pending: { Icon: Hourglass, color: C_WAIT },
+  passed: { Icon: CheckCircle2, color: C_OK },
+  autopass: { Icon: CheckCircle2, color: C_OK },
+  rejected: { Icon: ShieldAlert, color: C_BAD },
+  autofail: { Icon: XCircle, color: C_BAD },
+  expired: { Icon: TimerOff, color: C_BAD },
+  notdone: { Icon: XCircle, color: C_BAD },
+  missing: { Icon: CircleSlash, color: C_BAD },
+  ruledout: { Icon: Gavel, color: C_BAD },
+};
+
 export const DISPUTE_OPEN = ["supervisor", "admin"];
+
+/** The in-app camera for one task, coming back to this tab with the task open
+ *  (`/proof/camera`'s `back`, docs/checklist-camera.md). `late` shoots onto the
+ *  late proof's draft roll and comes back to the late form. */
+export function cameraPath(view, taskId, late = false) {
+  const back = `/leaders?tab=checklist&open=${taskId}${late ? "&focus=late" : ""}`;
+  return `/proof/camera?leader=${view.leader?.id}&task=${taskId}${view.cell ? `&cell=${view.cell}` : ""}`
+    + `${late ? "&late=1" : ""}&back=${encodeURIComponent(back)}`;
+}
+
+/** Did the LEADER hand this task in? (C3, 2026-11-20.) `locked` cannot say: a
+ *  closed day locks every task, and the deadline sweep and the automatic check
+ *  write LOCKED entries nobody filed — their reasons are the `__missed__|` and
+ *  `__auto__|` sentinels (utils/leaderReason.js). So: an answer exists, it is
+ *  not one the platform wrote, and on a unit that submits task by task it was
+ *  submitted (locked) — on a day-mode unit the answer is all there is. */
+const SENTINEL = /^__(missed|auto)__\|/;
+export const filedByLeader = (t, perTask) => !!t.answered && t.kind !== "auto"
+  && !SENTINEL.test(t.reason || "") && (perTask ? !!t.locked : true);
 export const clock = (iso) => (iso ? String(iso).slice(11, 16) : "");
 
 /** «1 soat 20 daq» — how long until an instant, in the reader's words. */

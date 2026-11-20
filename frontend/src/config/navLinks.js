@@ -281,3 +281,33 @@ export const appOf = (link) => link.app ?? GROUP_APP[link.group] ?? link.group;
 
 // For a launcher role «/» is the launcher, so the overview answers at /overview.
 export const adminPath = (to) => (to === "/" ? "/overview" : to);
+
+// A LEADER's menu on a PHONE (below md — `hooks/useLeaderPhone.js`; the
+// leader-phone redesign, 2026-11-20, the operator's decisions 2 and 4): five
+// entries named for the JOB, in the order a shift asks for them, then the rest
+// quieter. The names are `components/layout/shellPhoneText.js` `job.*` (code,
+// four languages); the same names head the app bar. A leader has no launcher,
+// so their menu was never the stored nav layout (`utils/navLayout.js` arranges
+// the launcher roles' apps only): it is THIS list, and its order is code.
+// - Two entries open «Lider nazorati» on a TAB: «Bugun» the checklist,
+//   «Natijam» the monitor (the standing, the days, the way into the objections
+//   and late proofs). `tab` is what the sidebar lights an entry by
+//   (`components/layout/leaderPhoneNav.js`); the page's other tabs light neither.
+// - An entry shows only when the leader may open its page (`page`).
+// - `hue` is the job area's identity (utils/chartPalette.js CATEGORY_COLORS:
+//   blue · orange · teal · purple · pink), worn on the menu icon only — never a
+//   status colour; `light` is the 600 shade a white drawer needs for 3:1.
+// - `LEADER_PHONE_QUIET` lead the quieter rows; everything else the leader may
+//   open follows them in ALL_LINKS order, except `LEADER_PHONE_HIDDEN`:
+//   «Xavotirlar» (/concerns) shows the same concerns as «Havotirlar»
+//   (/cell-concerns), so a leader's phone keeps one (decision 2). The page
+//   still opens by link.
+export const LEADER_PHONE_JOBS = [
+  { id: "bugun",      to: "/leaders",       tab: "checklist", page: "leaders",       icon: ClipboardCheck,    hue: "#3b82f6", light: "#2563eb" },
+  { id: "havotirlar", to: "/cell-concerns",                   page: "cell-concerns", icon: MessageSquarePlus, hue: "#f97316", light: "#ea580c" },
+  { id: "grafik",     to: "/kelish",                          page: "kelish",        icon: UserCheck,         hue: "#14b8a6", light: "#0d9488" },
+  { id: "kutish",     to: "/idle-cell",                       page: "idle-cell",     icon: Timer,             hue: "#a855f7", light: "#9333ea" },
+  { id: "natijam",    to: "/leaders",       tab: "monitor",   page: "leaders",       icon: Trophy,            hue: "#ec4899", light: "#db2777" },
+];
+export const LEADER_PHONE_QUIET = ["/tasks", "/education", "/exam"];
+export const LEADER_PHONE_HIDDEN = ["/concerns"];

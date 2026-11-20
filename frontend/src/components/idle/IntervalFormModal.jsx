@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Clock, Timer, AlertTriangle, Play, Square, Sunrise } from "lucide-react";
+import { Clock, Timer, AlertTriangle, Play, Square, Sunrise, Info } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
@@ -13,6 +13,9 @@ import { errText } from "../../utils/idleErrors";
 import { CATS, iconFor, catByName, catColor } from "./categories";
 import { DAY, toMin, fmtDur, durationOf, crossesMidnight } from "../../utils/idleTime";
 import { useLang } from "../../context/LangContext";
+import CategoryLegendModal from "../ui/CategoryLegendModal";
+import useIsMobile from "../../hooks/useIsMobile";
+import { useFloorText } from "../../pages/floorPhoneText";
 
 // Add or correct ONE ojidaniya — the only writer for cell_ojidaniya_intervals.
 //
@@ -49,6 +52,13 @@ export default function IntervalFormModal({
 }) {
   const { t } = useLang();
   const editing = !!interval;
+  // Below md (2026-11-20, the leader-phone redesign) the form carries no notes
+  // — «pick the start first», «pick both times», «only stopped waits count»,
+  // «(majburiy)» beside a red * — and the category guide moves here from the
+  // page's toolbar, to where the category is chosen. md+ unchanged.
+  const phone = useIsMobile(768);
+  const F = useFloorText();
+  const [guide, setGuide] = useState(false);
 
   const [category, setCategory] = useState("");
   const [start, setStart] = useState("");
@@ -169,15 +179,16 @@ export default function IntervalFormModal({
         dismissable={!save.isPending}
         icon={<Timer size={16} style={{ color: "var(--brand-text)" }} />}
         title={editing ? t("idleCell.editInterval") : t("idleCell.addInterval")}
-        subtitle={`${cell?.verifix_code || ""} · ${date}`}
+        subtitle={`${cell?.verifix_code || ""} · ${phone && /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}` : date}`}
         maxWidth="max-w-md"
         footer={
           <>
-            <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
+            <Button variant="secondary" onClick={onClose} disabled={save.isPending} className="max-md:min-h-[44px]">
               {t("idleCell.cancel")}
             </Button>
             <Button
               variant="primary"
+              className="max-md:min-h-[44px]"
               disabled={!valid}
               loading={save.isPending}
               onClick={() => save.mutate()}
@@ -188,6 +199,24 @@ export default function IntervalFormModal({
         }
       >
         <FormField label={t("idleCell.category")} required>
+          {phone ? (
+            <div className="flex items-stretch gap-2">
+              <StyledSelect
+                value={category}
+                onChange={setCategory}
+                options={catOptions}
+                placeholder={t("idleCell.pickCategory")}
+                triggerClassName="px-3 py-3 text-sm"
+                className="flex-1 min-w-0"
+              />
+              <Button
+                variant="secondary" size="lg" icon={<Info size={16} />}
+                className="flex-shrink-0 !w-11 !min-h-[44px] !px-0 justify-center"
+                aria-label={F.catGuide} title={F.catGuide}
+                onClick={() => setGuide(true)}
+              />
+            </div>
+          ) : (
           <StyledSelect
             value={category}
             onChange={setCategory}
@@ -195,12 +224,13 @@ export default function IntervalFormModal({
             placeholder={t("idleCell.pickCategory")}
             triggerClassName="px-3 py-2.5 text-sm"
           />
+          )}
         </FormField>
         {/* The definition of the category, where the choice is made — it used to
             live behind an ⓘ toggle on the row, i.e. everywhere except the
             moment somebody has to pick the right one. */}
         {cat && (
-          <p className="text-[11px] leading-snug -mt-1" style={{ color: "var(--text-3)" }}>
+          <p className="text-[11px] max-md:text-xs leading-snug -mt-1" style={{ color: "var(--text-3)" }}>
             {t(`downtime.cat.${cat.code}.note`)}
           </p>
         )}
@@ -237,7 +267,7 @@ export default function IntervalFormModal({
             label={t("idleCell.endTime")}
             required
             alignTop
-            hint={!start ? t("idleCell.endNeedsStart") : undefined}
+            hint={!start && !phone ? t("idleCell.endNeedsStart") : undefined}
           >
             {timeButton("end", end, !start)}
           </FormField>
@@ -264,7 +294,7 @@ export default function IntervalFormModal({
                 </span>
                 {nextDay && (
                   <span
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                    className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-semibold px-1.5 py-0.5 rounded"
                     style={{ background: "rgba(148,163,184,0.18)", color: "var(--text-2)" }}
                     title={t("idleCell.nextDayHint")}
                   >
@@ -281,17 +311,18 @@ export default function IntervalFormModal({
               )}
             </div>
           ) : (
-            <span className="text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.pickBothTimes")}</span>
+            <span className="text-xs" style={{ color: "var(--text-4)" }}>{phone ? "—" : t("idleCell.pickBothTimes")}</span>
           )}
         </div>
 
         <FormField
           label={t("idleCell.stoppedQuestion")}
           required
-          hint={lockedStopped ? t("idleCell.catHAlwaysStopped") : t("idleCell.stoppedHint")}
+          hint={lockedStopped ? t("idleCell.catHAlwaysStopped") : phone ? undefined : t("idleCell.stoppedHint")}
         >
           <SegmentedToggle
             fill
+            size={phone ? "lg" : "md"}
             value={stopped}
             onChange={(v) => !lockedStopped && setStopped(v)}
             options={[
@@ -323,12 +354,20 @@ export default function IntervalFormModal({
             rows={3}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder={t("idleCell.notePlaceholder")}
+            placeholder={phone ? F.notePh : t("idleCell.notePlaceholder")}
             className="w-full rounded-lg px-3 py-2 text-base md:text-sm outline-none resize-y"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
           />
         </FormField>
       </Modal>
+
+      {guide && open && (
+        <CategoryLegendModal
+          catNames={CATS.map((c) => c.name)}
+          catColors={CATS.map((c) => catColor(c.name))}
+          onClose={() => setGuide(false)}
+        />
+      )}
 
       {/* Start: the whole clock, per the operator's call — a cell can wait at
           any hour, and a bound guessed from a shift would refuse honest data. */}

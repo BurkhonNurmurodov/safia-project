@@ -71,7 +71,7 @@ function getPresets(t, max) {
 
 // ── Day cell ──────────────────────────────────────────────────────────────────
 
-function Day({ iso, cur, from, to, hover, onPick, onHover, max, min, marked }) {
+function Day({ iso, cur, from, to, hover, onPick, onHover, max, min, marked, t }) {
   const effTo  = from && !to && hover ? hover : to;
   let a=null, b=null;
   if (from && effTo) [a,b] = from<=effTo ? [from,effTo] : [effTo,from];
@@ -83,13 +83,20 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max, min, marked }) {
 
   // Out-of-month, beyond-max and before-min days render muted and unclickable.
   if (!cur || (max && iso > max) || (min && iso < min)) return (
-    <div className="h-8 flex items-center justify-center">
-      <span className="text-[11px]" style={{ color:"var(--text-4)", opacity:0.4 }}>{day}</span>
+    <div className="h-8 max-sm:h-11 flex items-center justify-center" aria-hidden={!cur || undefined}>
+      <span className="text-[11px] max-sm:text-xs" style={{ color:"var(--text-4)", opacity:0.4 }}>{day}</span>
     </div>
   );
 
+  // A real button named by its whole date (2026-11-20, audit X6): a screen
+  // reader heard a list of bare numbers, and a keyboard could not reach a day.
+  // 44px tall on a phone — a finger's target, not the 32px a mouse needs.
+  const [y, m] = iso.split("-");
   return (
-    <div className="relative h-8 flex items-center justify-center cursor-pointer"
+    <button type="button"
+      aria-label={t ? `${day} ${t(`cal.m${parseInt(m) - 1}`)} ${y}` : iso}
+      aria-pressed={selected}
+      className="press-none relative w-full h-8 max-sm:h-11 flex items-center justify-center cursor-pointer"
       onClick={()=>onPick(iso)} onMouseEnter={()=>onHover(iso)}>
       {(inRange||(selected&&!isSingle)) && (
         <div className={`absolute inset-y-[3px] z-0 ${isStart?"left-1/2 right-0":isEnd?"left-0 right-1/2":"left-0 right-0"}`}
@@ -106,7 +113,7 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max, min, marked }) {
         <span aria-hidden="true" className="absolute bottom-[3px] left-1/2 -translate-x-1/2 z-10 w-1 h-1 rounded-full"
           style={{ background:"var(--brand)" }} />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -116,7 +123,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, min,
     <div>
       <div className="grid grid-cols-7 mb-0.5">
         {[0,1,2,3,4,5,6].map(i => (
-          <div key={i} className="h-7 flex items-center justify-center text-[10px] font-medium"
+          <div key={i} className="h-7 flex items-center justify-center text-[10px] max-sm:text-xs font-medium"
             style={{ color:"var(--text-4)" }}>{t(`cal.d${i}`)}</div>
         ))}
       </div>
@@ -124,7 +131,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max, min,
         {days.map(({iso,cur}) => (
           <Day key={iso} iso={iso} cur={cur}
             from={from} to={to} hover={hover}
-            onPick={onPick} onHover={onHover} max={max} min={min} marked={marked} />
+            onPick={onPick} onHover={onHover} max={max} min={min} marked={marked} t={t} />
         ))}
       </div>
     </div>
@@ -252,6 +259,10 @@ export default function DateRangePicker({
   }, [open, tempFrom, tempTo]); // eslint-disable-line
 
   function handlePick(iso) {
+    // On a phone a single date is ONE tap (2026-11-20, audit X9): the day
+    // pressed is the answer, so it applies and the sheet closes. A desktop
+    // keeps its pick-then-«Qo'llash» popover.
+    if (single && isMobile) { markDraft(); setDateFrom(iso); setDateTo(iso); setOpen(false); return; }
     if (single) { setTempFrom(iso); setTempTo(iso); setActiveP(null); return; }
     if (phase==="from"||(tempFrom&&tempTo)) {
       setTempFrom(iso); setTempTo(""); setPhase("to"); setActiveP(null);
@@ -263,6 +274,8 @@ export default function DateRangePicker({
   }
 
   function handlePreset(p) {
+    // A quick pick is a whole answer; on a phone it applies at once.
+    if (isMobile) { markDraft(); setDateFrom(p.from); setDateTo(p.to); setOpen(false); return; }
     setTempFrom(p.from); setTempTo(p.to); setPhase("from"); setActiveP(p.label);
     const anchor = p.anchor || p.from;
     setLeftY(parseInt(anchor.split("-")[0])); setLeftM(parseInt(anchor.split("-")[1])-1);
@@ -464,7 +477,11 @@ export default function DateRangePicker({
             <div className="sheet rounded-t-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
               <div className="flex items-center justify-between px-4 pt-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
                 <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t(year ? "filter.selectYear" : "filter.selectMonth")}</span>
-                <button onClick={() => setOpen(false)} style={{ color: "var(--text-3)" }}><X size={18} /></button>
+                <button onClick={() => setOpen(false)} aria-label={t("ui.modal.close")}
+                  className="relative w-9 h-9 -mr-2 flex items-center justify-center rounded-full" style={{ color: "var(--text-3)" }}>
+                  <span aria-hidden="true" className="absolute -inset-1" />
+                  <X size={18} />
+                </button>
               </div>
               {year ? yearBody : monthBody}
             </div>
@@ -494,25 +511,33 @@ export default function DateRangePicker({
               style={{ borderBottom:"1px solid var(--border)" }}>
               <div className="w-10 h-1 rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-2"
                 style={{ background:"var(--border-md)" }} />
-              <span className="text-sm font-semibold" style={{ color:"var(--text-1)" }}>{t("filter.selectDates")}</span>
-              <button onClick={() => setOpen(false)} style={{ color:"var(--text-3)" }}><X size={18} /></button>
+              <span className="text-sm font-semibold" style={{ color:"var(--text-1)" }}>{t(single ? "filter.selectDate" : "filter.selectDates")}</span>
+              <button onClick={() => setOpen(false)} aria-label={t("ui.modal.close")}
+                className="relative w-9 h-9 -mr-2 flex items-center justify-center rounded-full" style={{ color:"var(--text-3)" }}>
+                <span aria-hidden="true" className="absolute -inset-1" />
+                <X size={18} />
+              </button>
             </div>
 
             <div className="overflow-y-auto flex-1 px-4 pb-4">
               {/* Presets */}
               <div className="flex flex-wrap gap-1.5 py-3">
+                {/* Quick picks read as BUTTONS on a phone — they were plain
+                    words on the sheet (audit X9) — and are a finger's height. */}
                 {presets.map(p => (
                   <button key={p.label} onClick={() => handlePreset(p)}
-                    className="px-3 py-1.5 rounded-full text-xs transition-colors"
-                    style={btnStyle(activeP===p.label)}>
+                    className="px-3.5 min-h-[36px] rounded-full text-[13px] transition-colors"
+                    style={{ ...btnStyle(activeP===p.label), border: `1px solid ${activeP===p.label ? "transparent" : "var(--border-md)"}`,
+                      background: activeP===p.label ? "var(--brand)" : "var(--bg-inner)" }}>
                     {p.label}
                   </button>
                 ))}
               </div>
 
-              {/* Date input(s) */}
+              {/* Date input(s) — a phone's single date is one tap, so it needs
+                  no echo of the pick above the calendar. */}
               {single ? (
-                <div className="flex items-center gap-2 mb-3">
+                <div className="hidden">
                   <div className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
                     style={{ background:"var(--bg-inner)", border:inputBorder(true), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
                     <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
@@ -559,7 +584,9 @@ export default function DateRangePicker({
               </div>
             </div>
 
-            {/* Apply / Cancel */}
+            {/* Apply / Cancel — a range only: a phone's single date applies on
+                the tap itself. */}
+            {single ? <div style={{ height: "calc(0.5rem + var(--tg-safe-bottom, 0px))" }} /> : (
             <div className="px-4 py-3 flex gap-2"
               style={{ borderTop:"1px solid var(--border)", paddingBottom:"calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
               <button onClick={() => setOpen(false)}
@@ -573,6 +600,7 @@ export default function DateRangePicker({
                 {t("filter.apply")}
               </button>
             </div>
+            )}
           </div>
         </div>,
         document.body

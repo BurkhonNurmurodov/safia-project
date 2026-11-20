@@ -212,6 +212,8 @@ import { useTranslit } from "./utils/transliterate";
 import { inTelegram, getToken } from "./utils/session";
 import api from "./utils/api";
 import { APP_VERSION } from "./utils/version";
+import useLeaderPhone from "./hooks/useLeaderPhone";
+import { primeLeaderTab } from "./components/layout/leaderTab";
 
 // A request that failed for want of a CONNECTION is tried again for as long
 // as the connection is down (utils/connectivity.js) — every OFFLINE_RETRY_MS
@@ -619,6 +621,7 @@ function RequirePage({ page, children }) {
 function HomeRoute() {
   const { auth } = useAuth();
   const launcher = usesLauncher(auth?.role);
+  const leaderPhone = useLeaderPhone();
   useEffect(() => {
     try {
       if (launcher) localStorage.setItem(LAUNCHER_HOME_KEY, "1");
@@ -626,7 +629,45 @@ function HomeRoute() {
     } catch { /* a hint only */ }
   }, [launcher]);
   if (launcher) return <AppLauncher />;
+  if (leaderPhone) return <LeaderPhoneHome />;
   return <RequirePage page="overview"><Overview /></RequirePage>;
+}
+
+/**
+ * A LEADER's «/» on a PHONE (2026-11-20, the operator's decision 1 of the
+ * leader-phone redesign): «Bugun» — «Lider nazorati» on its checklist tab, the
+ * day they owe — instead of the first page their access lists (it was «Zagruzka
+ * fayli», the brigadir's file). Every door lands here: the Android app and the
+ * PWA open «/», Telegram's menu button opens «/». A leader who may not open
+ * `leaders` keeps the old way (RequirePage's first page); a leader's desktop
+ * and every other role never reach this.
+ */
+function LeaderPhoneHome() {
+  const { auth } = useAuth();
+  const { access, isLoading } = usePageAccess();
+  const { capPages, deniedPages, isLoading: capsLoading } = useCapabilities();
+  if (isLoading || capsLoading) return <PageLoader where="access" />;
+  if (!canAccessPage(auth?.role, "leaders", access, capPages, deniedPages)) {
+    return <RequirePage page="overview"><Overview /></RequirePage>;
+  }
+  try { localStorage.setItem(HOME_ROUTE_KEY, "/leaders"); } catch { /* a hint only */ }
+  primeLeaderTab("checklist");
+  return <Navigate to="/leaders?tab=checklist" replace />;
+}
+
+/**
+ * «Lider nazorati». On a leader's phone two menu entries open it on different
+ * tabs («Bugun», «Natijam» — components/layout/leaderPhoneNav.js), and the page
+ * reads `?tab=` once, when it mounts. So there a navigation the menu made
+ * (`leaderMenu` in its history state) keys the page by that history entry: a
+ * menu tap always lands on its tab, even onto the page already open, and Back
+ * walks the entries. Everybody else: one key, as before.
+ */
+function LeadersRoute() {
+  const location = useLocation();
+  const leaderPhone = useLeaderPhone();
+  const key = leaderPhone && location.state?.leaderMenu ? location.key : "page";
+  return <Leaders key={key} />;
 }
 
 function LogoutOverlay() {
@@ -741,7 +782,7 @@ function AppWithLang() {
             <Route path="/containers/flow" element={<AuthGate><RequirePage page={["container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"]}><ContainerFlow /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
-            <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />
+            <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><LeadersRoute /></RequirePage></AuthGate>} />
             {/* One leader's verified day. AUTH-ONLY, deliberately not page-gated:
                 it is the destination of the verification DM, and the brigadir
                 being told their unit's score is often somebody nobody granted

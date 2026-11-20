@@ -13,6 +13,7 @@ import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
 import CellIdent from "../components/ui/CellIdent";
+import ActionMenu from "../components/ui/ActionMenu";
 import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
@@ -41,6 +42,9 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useOpenParam } from "../hooks/useOpenParam";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import useIsMobile from "../hooks/useIsMobile";
+import { useFloorText } from "./floorPhoneText";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const localTodayIso = () => {
@@ -69,7 +73,7 @@ function Totals({ summary, t, stacked = false }) {
   const ns = summary?.not_stopped_sum_min || 0;
   const fig = (label, value, color, weight) => (
     <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      <span className="text-[10px]" style={{ color: "var(--text-4)" }}>{label}</span>
+      <span className="text-[10px] max-md:text-xs text-[var(--text-4)] max-md:text-[var(--text-3)]">{label}</span>
       <span className="tabular-nums" style={{ color, fontWeight: weight }}>
         {value ? fmtDur(value, t) : "—"}
       </span>
@@ -98,13 +102,13 @@ function OverlapNote({ summary, t }) {
       className="px-3 py-2 flex flex-wrap items-baseline gap-x-3 gap-y-1"
       style={{ background: "var(--bg-inner)", borderTop: "1px solid var(--border)" }}
     >
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#eab308" }}>
+      <span className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-semibold uppercase tracking-wide" style={{ color: "#eab308" }}>
         <Layers2 size={10} />{t("idleCell.overlapChip")}
       </span>
       <span className="text-xs font-semibold tabular-nums" style={{ color: "#eab308" }}>
         {fmtDur(overlap, t)}
       </span>
-      <span className="basis-full text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+      <span className="basis-full text-[11px] leading-snug max-md:hidden" style={{ color: "var(--text-3)" }}>
         {t("idleCell.oldMethodWouldSay").replace("{v}", fmtDur(summary.stopped_sum_min, t))}
       </span>
     </div>
@@ -119,7 +123,7 @@ function StatusCell({ r, t }) {
   if (r.kind === "legacy") {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+        className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-semibold px-1.5 py-0.5 rounded"
         style={{ background: "rgba(148,163,184,0.16)", color: "var(--text-2)" }}
         title={t("idleCell.legacyHint")}
       >
@@ -130,7 +134,7 @@ function StatusCell({ r, t }) {
   return (
     <>
     <span
-      className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded"
+      className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-medium px-1.5 py-0.5 rounded"
       style={r.stopped
         ? { background: "rgba(239,68,68,0.14)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.35)" }
         : { background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
@@ -157,7 +161,7 @@ function CrewChip({ r, t }) {
   const shown = people == null ? "" : (Number.isInteger(people) ? String(people) : Number(people).toFixed(1));
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1 tabular-nums"
+      className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-semibold px-1.5 py-0.5 rounded ml-1 tabular-nums"
       style={r.overPeople
         ? { background: "rgba(234,179,8,0.16)", color: "#eab308", border: "1px solid rgba(234,179,8,0.4)" }
         : { background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
@@ -184,7 +188,7 @@ function LiveChip({ r, t }) {
     : null;
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1"
+      className="inline-flex items-center gap-1 text-[10px] max-md:text-xs font-semibold px-1.5 py-0.5 rounded ml-1"
       style={{ background: "rgba(200,151,63,0.16)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}
       title={hhmm ? t("idleCell.liveChipHint").replace("{v}", hhmm) : t("idleCell.liveChip")}
     >
@@ -221,7 +225,12 @@ function RequestCell({ r, t }) {
 // or scan by, and cost a heading row per category on a card that usually holds
 // two or three entries. As a column it is comparable with the rest, and the
 // whole day reads in start order by default.
-function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLeader = false }) {
+function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLeader = false, own = false, viewer = "" }) {
+  const F = useFloorText();
+  // «Kiritdi: …» on a phone card names somebody ELSE — a leader's own entries
+  // do not print their own name back at them (the own-name rule).
+  const fold = (n) => tl(n || "").toLowerCase().replace(/[ʻʼ'’‘`]/g, "").replace(/\s+/g, " ").trim();
+  const isViewer = (n) => !!viewer && fold(n) === fold(viewer);
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
   const [form, setForm] = useState(null);          // {interval, category} | null
@@ -356,6 +365,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
           leader={cell.leader ? tl(cell.leader) : ""}
           noLeader={t("idleCell.noLeader")}
           leaderTitle={t("idleCell.leader")}
+          self={own}
         />
         <span className="flex items-center gap-2 flex-shrink-0">
           {summary.overlap_min > 0 && (
@@ -375,7 +385,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
               nothing was ever filed. */}
           {legacy.length > 0 && (
             <span
-              className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              className="text-[10px] max-md:text-xs font-semibold px-1.5 py-0.5 rounded"
               style={{ background: "rgba(148,163,184,0.16)", color: "var(--text-2)" }}
               title={t("idleCell.legacyHint")}
             >
@@ -397,8 +407,25 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
         <>
           <OverlapNote summary={summary} t={t} />
 
-          {entryCount === 0 ? (
-            <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
+          {entryCount === 0 && view === "timeline" ? (
+            <>
+              <div className="md:hidden px-3 py-5">
+                {/* A phone's empty «Vaqt chizig'i» is drawn as an EMPTY TRACK, so
+                    it never reads as the «Kutish» tab's empty list (audit I2). */}
+                <div
+                  className="h-11 rounded-lg flex items-center justify-center gap-2 text-xs"
+                  style={{ border: "1px dashed var(--border-md)", background: "var(--bg-inner)", color: "var(--text-3)" }}
+                >
+                  <GanttChartSquare size={15} className="flex-shrink-0" aria-hidden="true" />
+                  {F.timelineEmpty}
+                </div>
+              </div>
+              <div className="max-md:hidden px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>
+                {t("idleCell.noIntervals")}
+              </div>
+            </>
+          ) : entryCount === 0 ? (
+            <div className="px-3 py-6 text-center text-xs max-md:text-sm" style={{ color: "var(--text-4)" }}>
               {t("idleCell.noIntervals")}
             </div>
           ) : view === "timeline" ? (
@@ -427,10 +454,88 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
                 {t("idleCell.legacyOnlyTimeline")}
               </div>
             )
-          ) : (
-            /* Its OWN horizontal scrollport: six columns plus actions cannot fit
-               390px, and the page body must never scroll sideways. */
-            <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
+          ) : (<>
+            {/* Below md the day is a list of CARDS, not a 760px table swiped
+                sideways (2026-11-20, the leader-phone redesign): the category
+                and its minutes on the first line, the clock and the answer on
+                the second, the note under them; a row the viewer may change
+                offers it from a ⋮. The table stays for md+. */}
+            <ul className="md:hidden" style={{ borderTop: "1px solid var(--border)" }}>
+              {rows.map((r, i) => {
+                const idx = CATS.findIndex((c) => c.name === r.category);
+                const color = catColor(r.category);
+                const code = idx >= 0 ? CATS[idx].code : String(r.category || "").replace(/^Cat\s*/i, "");
+                const Icon = iconFor(code);
+                const label = catLabel(code, t) || `${t("idleCell.category")} ${code}`;
+                const who = r.enteredBy && !isViewer(r.enteredBy) ? tl(r.enteredBy) : "";
+                return (
+                  <li key={r.key} className="px-3 py-3" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+                    <div className="flex items-start gap-2">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-px"
+                        style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
+                      >
+                        <Icon size={12} />{code}
+                      </span>
+                      <span className="flex-1 min-w-0 text-sm font-medium leading-snug" style={{ color: "var(--text-1)" }}>{label}</span>
+                      <span className="flex-shrink-0 text-sm font-semibold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+                        {r.overlapping && <Layers2 size={12} className="inline mr-1 -mt-0.5" style={{ color: "#eab308" }} aria-label={t("idleCell.overlapChip")} />}
+                        {fmtDur(r.minutes, t)}
+                      </span>
+                      {(r.canEdit || r.canDelete) && (
+                        <ActionMenu
+                          label={`${t("idleCell.editInterval")}: ${label}`}
+                          items={[
+                            r.canEdit && { key: "edit", label: t("idleCell.editInterval"), icon: Pencil,
+                              onSelect: () => setForm({ interval: r.src, category: r.category }) },
+                            r.canDelete && { key: "del", tone: "danger", icon: Trash2,
+                              label: t(r.kind === "legacy" ? "idleCell.deleteLegacy" : "idleCell.deleteInterval"),
+                              onSelect: () => { setDelErr(""); setConfirm({ kind: r.kind, row: r.src }); } },
+                          ]}
+                        />
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      {r.kind !== "legacy" && (
+                        <span className="tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>
+                          {r.start || "—"} – {r.end || "—"}
+                        </span>
+                      )}
+                      {r.nextDay && (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: "rgba(148,163,184,0.18)", color: "var(--text-2)" }}
+                        >
+                          <Sunrise size={11} />{t("idleCell.nextDay")}
+                        </span>
+                      )}
+                      <StatusCell r={r} t={t} />
+                      <RequestCell r={r} t={t} />
+                    </div>
+                    {r.note && <p className="mt-1.5 text-xs leading-snug" style={{ color: "var(--text-2)" }}>{r.note}</p>}
+                    {r.kind === "legacy" && (
+                      <p className="mt-1 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+                        {t("idleCell.stopped")} {r.legacyStopped} · {t("idleCell.notStopped")} {r.legacyNotStopped}
+                      </p>
+                    )}
+                    {r.status === "rejected" && r.decisionNote && (
+                      <p className="mt-1 text-xs leading-snug" style={{ color: "#ef4444" }}>
+                        {t("idleCell.reasonLabel")}: {r.decisionNote}
+                      </p>
+                    )}
+                    {who && (
+                      <p className="mt-1 text-xs flex items-center gap-1 min-w-0" style={{ color: "var(--text-3)" }}>
+                        <UserRound size={12} className="flex-shrink-0" />
+                        <span className="truncate">{t("idleCell.enteredBy")}: {who}</span>
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {/* Its OWN horizontal scrollport: six columns plus actions cannot fit
+               390px, and the page body must never scroll sideways. */}
+            <div className="overflow-x-auto max-md:hidden" style={{ borderTop: "1px solid var(--border)" }}>
               <table
                 className="w-full text-xs min-w-[760px] [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]"
                 style={{ color: "var(--text-1)" }}
@@ -583,7 +688,7 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
                 </tbody>
               </table>
             </div>
-          )}
+          </>)}
 
           <div
             className="flex flex-wrap items-center gap-2 px-3 pt-2"
@@ -599,9 +704,12 @@ function CellCard({ cell, date, view, sort, onSort, t, tl, autoOpen, toast, isLe
                 does. Gated on the server's `can_manage` as well as the role: a
                 leader holding the grant that covers their unit DOES get the
                 buttons, and the sentence would then be a lie. */}
-            <span className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {/* «Only the brigadir changes an entry» is a note — off a phone; the
+                closed day's line is a state and stays (at a readable size). */}
+            <span className="text-[11px] max-md:text-xs leading-snug" style={{ color: "var(--text-3)" }}>
               {!cell.can_add ? t("idleCell.dayClosedNoAdd")
-                : (isLeader && !cell.can_manage && intervals.length > 0) ? t("idleCell.leaderCannotEdit") : ""}
+                : (isLeader && !cell.can_manage && intervals.length > 0)
+                  ? <span className="max-md:hidden">{t("idleCell.leaderCannotEdit")}</span> : ""}
             </span>
             <span className="ml-auto flex flex-wrap items-center gap-2">
               {cell.can_add && addBtn}
@@ -669,6 +777,16 @@ export default function IdleCell() {
   // ONE definition on the platform.
   const isLeader = auth?.role === "leader";
   const locked = (auth?.role === "supervisor" || isLeader) && !seesAllOn("idle-cell");
+  // A leader pinned to their own cells reads only cells they lead, so the
+  // card heads leave their own name off on a phone (CellIdent `self`).
+  const own = isLeader && locked;
+  // A leader's phone (2026-11-20, the leader-phone redesign): the page is
+  // «Kutish», its toolbar is the day alone — no inert brigadir chip, no cell
+  // filter over the two or three own cells that open by themselves — and the
+  // category guide lives in the add form, where the category is chosen.
+  const leaderPhone = useLeaderPhone();
+  const isPhone = useIsMobile(768);
+  const F = useFloorText();
   const toast = useToast({ position: "bottom" });
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
@@ -905,7 +1023,7 @@ export default function IdleCell() {
   );
 
   return (
-    <Layout title={t("idleCell.title")}>
+    <Layout title={leaderPhone ? F.title : t("idleCell.title")}>
       {/* First thing on the page: an event log showing a fraction of a day
           without saying so reads as a quiet shift. */}
       <CatLockNotice cats={catLocked} />
@@ -913,13 +1031,15 @@ export default function IdleCell() {
       {/* View switch — stays OUTSIDE the filter zone (platform rule). */}
       <SegmentedToggle
         asTabs
+        size={isPhone ? "lg" : "md"}
+        fill={isPhone}
         value={tab}
         onChange={setTab}
         ariaLabel={t("idleCell.title")}
         options={[
-          { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
-          { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
-          ...(examOn ? [] : [{ value: "peren", label: (<span className="inline-flex items-center gap-1.5"><Repeat2 size={13} />{t("idleCell.tabPerenaladka")}</span>), title: t("idleCell.tabPerenaladka") }]),
+          { value: "ojidaniya", label: (<span className="inline-flex items-center gap-1.5"><ListTree size={13} className="max-md:hidden" />{t("idleCell.tabOjidaniya")}</span>), title: t("idleCell.tabOjidaniya") },
+          { value: "timeline", label: (<span className="inline-flex items-center gap-1.5"><GanttChartSquare size={13} className="max-md:hidden" />{t("idleCell.tabTimeline")}</span>), title: t("idleCell.tabTimelineHint") },
+          ...(examOn ? [] : [{ value: "peren", label: (<span className="inline-flex items-center gap-1.5"><Repeat2 size={13} className="max-md:hidden" />{t("idleCell.tabPerenaladka")}</span>), title: t("idleCell.tabPerenaladka") }]),
           ...(isAdmin ? [{
             value: "live",
             title: t("idleCell.tabLiveHint"),
@@ -972,12 +1092,14 @@ export default function IdleCell() {
           triggerClassName="px-3 py-2 text-sm"
           className="w-full md:w-auto md:min-w-[180px]"
         />}
-        <FilterPanel
-          sections={[
+        {(() => {
+          const sections = [
             // Whose unit these numbers are — stated, never implied. Removing
             // the picker without this would leave a day's totals on screen with
-            // nothing naming the unit they belong to.
-            ...(locked ? [{
+            // nothing naming the unit they belong to. (Not on a leader's phone:
+            // the template draws no static chip below md, and the trigger
+            // would open onto nothing.)
+            ...(locked && !leaderPhone ? [{
               key: "unit", icon: UserRound, static: true,
               label: t("idleCell.pickSupervisor"),
               display: lockedUnit ? tl(lockedUnit.name) : "—",
@@ -1026,7 +1148,10 @@ export default function IdleCell() {
             // leader owning a single cell was handed. It stays visible while a
             // selection is live, so a filter that IS narrowing the view can
             // always be found and cleared.
-            ...(cellOptions.length > 1 || selectedCellIds.length > 0 ? [{
+            // On a leader's phone their own two or three cells open by
+            // themselves, so a filter over them narrows nothing worth a control.
+            ...((cellOptions.length > 1 || selectedCellIds.length > 0)
+              && !(leaderPhone && own && cellOptions.length <= 3 && !selectedCellIds.length) ? [{
               key: "cells", icon: Boxes, label: t("idleCell.allCells"),
               active: selectedCellIds.length > 0,
               display: selectedCellIds.length === 1
@@ -1041,8 +1166,9 @@ export default function IdleCell() {
                   render={(v) => cellOptions.find((o) => o.value === v)?.label || v} />
               ),
             }] : []),
-          ]}
-        />
+          ];
+          return sections.length ? <FilterPanel sections={sections} /> : null;
+        })()}
         {/* The 11 category definitions, once for the page. They used to be
             reachable only through a per-category ⓘ inside every cell card —
             eleven triggers per cell, each opening one definition — which is
@@ -1050,12 +1176,15 @@ export default function IdleCell() {
             material belongs beside the page's controls, not multiplied down
             its content. Not on «Perenaladka»: a changeover has no category,
             and a control that explains nothing on screen is only noise. */}
+        {/* Below md the guide is reached from the add form's category field
+            instead — on a phone this button took a second toolbar row (I1). */}
         {!isPeren && <Button
           size="lg"
           variant="secondary"
           icon={<Info size={14} />}
           onClick={() => setLegendOpen(true)}
           title={t("idleCell.catGuideBtn")}
+          className="max-md:hidden"
         >
           {t("idleCell.catGuideBtn")}
         </Button>}
@@ -1074,6 +1203,10 @@ export default function IdleCell() {
           isLoading={factLoading}
           sort={factSort}
           onSort={onFactSort}
+          // Below md no «type the minutes — saved on Enter…» subtitle: a phone
+          // has no Enter, and the field saves when it is left (a note, audit
+          // I2). `null` = no subtitle; md+ passes nothing and keeps the default.
+          subtitle={isPhone ? null : undefined}
         />
       ) : supFailed || cellsFailed ? (
         // A dead request is NOT an empty answer. Both of these used to fall
@@ -1108,7 +1241,7 @@ export default function IdleCell() {
               instead of a trip to the Daily page. */}
           {day && !day.can_write && (
             <div
-              className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
+              className="flex flex-wrap max-md:flex-nowrap items-center gap-2 px-3 py-2 rounded-xl text-xs"
               style={{
                 background: "rgba(100,116,139,0.14)",
                 border: "1px solid rgba(100,116,139,0.35)",
@@ -1116,15 +1249,16 @@ export default function IdleCell() {
               }}
             >
               <Lock size={14} style={{ color: "#94a3b8", flexShrink: 0 }} />
-              <span className="font-semibold">{t("idleCell.dayClosedTitle")}</span>
-              {day.closed_by && <span style={{ color: "var(--text-3)" }}>· {tl(day.closed_by)}</span>}
-              <span className="w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
+              <span className="font-semibold whitespace-nowrap">{t("idleCell.dayClosedTitle")}</span>
+              {day.closed_by && <span className="max-md:truncate max-md:min-w-0" style={{ color: "var(--text-3)" }}>· {tl(day.closed_by)}</span>}
+              {/* one line on a phone: the state and who — the hint is a note */}
+              <span className="max-md:hidden w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
                 {t("idleCell.dayClosedHint")}
               </span>
               {day.can_reopen && (
                 <Button
                   size="sm" variant="secondary" tint icon={<Unlock size={13} />}
-                  className="ml-auto"
+                  className="ml-auto max-md:flex-shrink-0 max-md:min-h-[44px]"
                   onClick={() => { setReopenErr(""); setReopen(true); }}
                 >
                   {t("idleCell.reopenDay")}
@@ -1148,6 +1282,8 @@ export default function IdleCell() {
               cell={c}
               date={date}
               isLeader={isLeader}
+              own={own}
+              viewer={auth?.full_name || ""}
               view={tab === "timeline" ? "timeline" : "table"}
               sort={rowSort}
               onSort={onRowSort}

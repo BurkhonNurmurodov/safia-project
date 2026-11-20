@@ -12,6 +12,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { ExamplePhoto } from "./ProofPhoto";
 import { useLang } from "../../context/LangContext";
 import api from "../../utils/api";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
 
 /**
  * «Vazifalar» — the reference tab of /leaders: what each daily checklist task
@@ -183,19 +184,19 @@ function Tile({ icon: Icon, label, value, sub, className = "" }) {
   return (
     <div className={`rounded-xl px-3 py-2 min-w-0 flex flex-col ${className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-      <div className="flex items-start gap-1.5 text-[11px] uppercase tracking-wide font-semibold leading-tight"
+      <div className="flex items-start gap-1.5 text-[11px] max-md:text-[12px] uppercase tracking-wide font-semibold leading-tight"
         style={{ color: "var(--text-3)" }}>
         <Icon size={12} className="flex-shrink-0 mt-px" /> <span className="min-w-0 break-words">{label}</span>
       </div>
       <div className="mt-auto pt-1 text-sm font-semibold tabular-nums leading-snug break-words" style={{ color: "var(--text-1)" }}>
         {value}
-        {sub && <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-3)" }}>{sub}</span>}
+        {sub && <span className="ml-1.5 text-[11px] max-md:text-[12px] font-normal" style={{ color: "var(--text-3)" }}>{sub}</span>}
       </div>
     </div>
   );
 }
 
-function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perTask, onZoom, flash }) {
+function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perTask, onZoom, flash, leaderPhone = false }) {
   // Answered by the PLATFORM, not by this leader. Read once: five things on
   // this card change meaning for such a task, and a re-test at each is a
   // re-test one of them would eventually be missing.
@@ -236,10 +237,14 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
                boxShadow: flash ? "0 0 0 3px var(--brand-bg)" : "none",
                transition: "border-color 300ms, box-shadow 300ms" }}>
       <header className="flex items-start gap-2.5">
-        <span className="flex-shrink-0 grid place-items-center rounded-lg text-[11px] font-bold tabular-nums"
-          style={{ width: 34, height: 26, background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
-          T{task.id}
-        </span>
+        {/* The task's code is a reference for whoever compares chains; a
+            leader on a phone reads the task by its name alone. */}
+        {!leaderPhone && (
+          <span className="flex-shrink-0 grid place-items-center rounded-lg text-[11px] max-md:text-[12px] font-bold tabular-nums"
+            style={{ width: 34, height: 26, background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
+            T{task.id}
+          </span>
+        )}
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>{name}</h3>
           <div className="mt-0.5 flex items-start gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
@@ -271,8 +276,11 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
           they can resolve alone. Full card width, not tucked under the title
           beside the «T2» chip — on a phone that column was 60px narrower and
           stretched a three-line sentence to six. */}
+      {/* Both boxes explain how the task is answered — notes, so not on a
+          phone (2026-11-20); the proof line under the title still says
+          «Tizim tekshiradi» / the camera. */}
       {isAuto && (
-        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
+        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug max-md:hidden"
           style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
                    border: "1px solid rgba(200,151,63,0.30)" }}>
           <Cog size={13} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
@@ -280,7 +288,7 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
         </div>
       )}
       {task.proof_kind === "camera" && (
-        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
+        <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug max-md:hidden"
           style={{ background: "rgba(200,151,63,0.10)", color: "var(--text-2)",
                    border: "1px solid rgba(200,151,63,0.30)" }}>
           <Camera size={13} className="flex-shrink-0 mt-px" style={{ color: "var(--brand)" }} />
@@ -290,7 +298,7 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
 
       {description && (
         <div>
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.what}</div>
+          <div className="text-[11px] max-md:text-[12px] uppercase tracking-wide font-semibold mb-1" style={{ color: "var(--text-3)" }}>{T.what}</div>
           <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-1)" }}>{description}</p>
         </div>
       )}
@@ -330,7 +338,7 @@ function TaskCard({ task, lang, T, total, shift, filingTo, filingOvernight, perT
 
       {task.examples?.length > 0 && (
         <div>
-          <div className="text-[11px] uppercase tracking-wide font-semibold mb-1.5 flex items-center gap-1"
+          <div className="text-[11px] max-md:text-[12px] uppercase tracking-wide font-semibold mb-1.5 flex items-center gap-1"
             style={{ color: "var(--text-3)" }}>
             <ImageIcon size={12} /> {T.examples}
           </div>
@@ -356,6 +364,7 @@ export default function TaskRequirements({
 }) {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.uz;
+  const leaderPhone = useLeaderPhone();
   const [zoom, setZoom] = useState("");
   const [flash, setFlash] = useState(null);
 
@@ -403,7 +412,8 @@ export default function TaskRequirements({
   const subject = (() => {
     if (!data) return "";
     const s = data.subject || {};
-    if (data.level === "leader") return [nm(s.leader), s.supervisor ? fill(T.unit, { name: nm(s.supervisor) }) : null, shiftLabel].filter(Boolean).join(" · ");
+    // A leader on their phone is not told their own name (2026-11-20).
+    if (data.level === "leader") return [leaderPhone && isLeader ? null : nm(s.leader), s.supervisor ? fill(T.unit, { name: nm(s.supervisor) }) : null, shiftLabel].filter(Boolean).join(" · ");
     if (data.level === "supervisor") return [fill(T.unit, { name: nm(s.supervisor) }), shiftLabel].join(" · ");
     return `${T.globalStd} · ${shiftLabel}`;
   })();
@@ -416,7 +426,7 @@ export default function TaskRequirements({
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={ListChecks} title={T.title}
           right={data ? (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md tabular-nums"
+            <span className="text-[11px] max-md:text-[12px] font-semibold px-2 py-0.5 rounded-md tabular-nums"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
               {fill(T.countN, { n: tasks.length })}
             </span>
@@ -450,7 +460,7 @@ export default function TaskRequirements({
                 <span className="min-w-0 break-words leading-snug pt-1">{subject}</span>
               </div>
               {(leaderUnresolved || (canPick && data?.level === "global")) && (
-                <p className="text-xs flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
+                <p className="text-xs flex items-start gap-1.5 max-md:hidden" style={{ color: "var(--text-3)" }}>
                   <Info size={13} className="flex-shrink-0 mt-[1px]" />
                   <span>{leaderUnresolved ? T.leaderUnresolved : T.pickHint}</span>
                 </p>
@@ -465,7 +475,8 @@ export default function TaskRequirements({
                   value={fill(T.filingRange, { from: filing.from || "—", to: filingTo || "—" })}
                   sub={filing.overnight ? T.nextMorning : null} />
               </div>
-              <p className="text-[11px] flex items-start gap-1.5" style={{ color: "var(--text-3)" }}>
+              {/* How the unit's day closes — a note; not on a phone. */}
+              <p className="text-[11px] max-md:text-[12px] flex items-start gap-1.5 max-md:hidden" style={{ color: "var(--text-3)" }}>
                 <Info size={12} className="flex-shrink-0 mt-[2px]" />
                 <span>{perTask ? T.autoNote : T.deadlineNote}</span>
               </p>
@@ -495,7 +506,7 @@ export default function TaskRequirements({
           {tasks.map((task) => (
             <TaskCard key={task.id} task={task} lang={lang} T={T} total={total}
               shift={shift} filingTo={filingTo} filingOvernight={!!filing.overnight}
-              perTask={perTask}
+              perTask={perTask} leaderPhone={leaderPhone && isLeader}
               onZoom={setZoom} flash={flash === task.id} />
           ))}
         </div>

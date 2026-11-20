@@ -22,6 +22,8 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import api from "../utils/api";
 import { pushSeen } from "../utils/androidPush";
+import useIsMobile from "../hooks/useIsMobile";
+import { shellText } from "../components/layout/shellPhoneText";
 
 /**
  * /notifications — the bell's full page (2026-10-01). Two views over the
@@ -30,7 +32,8 @@ import { pushSeen } from "../utils/androidPush";
  * every session has notifications, so no page grant gates it.
  */
 export default function Notifications() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const phone = useIsMobile(768);
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = usePersistentState("notif_page_tab", "queue");
@@ -56,39 +59,72 @@ export default function Notifications() {
   const waiting = sum?.queue ?? 0;
   const qc = useQueryClient();
   const markAll = useMarkAllRead();
+  const unread = sum?.unread ?? 0;
+  const markAllNow = () => markAll.mutate(undefined, {
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notif", "feed"] }),
+  });
+
+  // On a phone «mark all read» has a row of its own under the tabs, and once
+  // pressed it STAYS (disabled, nothing left unread) until the view changes:
+  // pressing it must not pull the list up under the finger.
+  const markShown = view === "history" && (unread > 0 || markAll.isPending || markAll.isSuccess);
+  const pickView = (v) => { markAll.reset(); setTab(v); };
+
+  const tabOptions = [
+    ["queue", (
+      <span className="inline-flex items-center gap-1.5">
+        {t("notif.tabQueue")}
+        {waiting > 0 && (
+          <span className="text-[10px] max-md:text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+            style={{ background: view === "queue" ? "rgba(255,255,255,0.3)" : "#ef4444", color: "#fff" }}>
+            {waiting > 99 ? "99+" : waiting}
+          </span>
+        )}
+      </span>
+    )],
+    ["history", t("notif.tabHistory")],
+  ];
 
   return (
     <Layout title={t("notif.title")}>
       <div className="w-full max-w-3xl mx-auto space-y-4">
-        {/* The view tabs, and the two actions that are about the whole page
-            rather than its filters — so the filter row below stays one row. */}
+        {phone ? (
+          <>
+            {/* A phone: the two views fill the row as its navigation (44px
+                segments), the settings gear beside them. */}
+            <div className="flex items-center gap-2">
+              <SegmentedToggle asTabs fill size="lg" className="flex-1 min-w-0"
+                ariaLabel={t("notif.title")} value={view} onChange={pickView} options={tabOptions} />
+              <button type="button" aria-label={t("notif.settings")} title={t("notif.settings")}
+                onClick={() => setPrefsOpen(true)}
+                className="w-11 h-11 grid place-items-center rounded-xl flex-shrink-0"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                <Settings size={18} />
+              </button>
+            </div>
+            {view === "history" && markShown && (
+              <div className="flex justify-end -my-1">
+                <Button variant="ghost" size="lg" className="min-h-[44px]" loading={markAll.isPending}
+                  disabled={unread === 0} onClick={markAllNow}>
+                  {shellText(lang).notif.markAllRead}
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+        /* The view tabs, and the two actions that are about the whole page
+            rather than its filters — so the filter row below stays one row. */
         <div className="flex items-center gap-2 flex-wrap">
           <SegmentedToggle
             asTabs
             ariaLabel={t("notif.title")}
             value={view}
             onChange={setTab}
-            options={[
-              ["queue", (
-                <span className="inline-flex items-center gap-1.5">
-                  {t("notif.tabQueue")}
-                  {waiting > 0 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-                      style={{ background: view === "queue" ? "rgba(255,255,255,0.3)" : "#ef4444", color: "#fff" }}>
-                      {waiting > 99 ? "99+" : waiting}
-                    </span>
-                  )}
-                </span>
-              )],
-              ["history", t("notif.tabHistory")],
-            ]}
+            options={tabOptions}
           />
           <div className="flex items-center gap-2 ml-auto">
-            {view === "history" && (sum?.unread ?? 0) > 0 && (
-              <Button variant="secondary" size="lg" loading={markAll.isPending}
-                onClick={() => markAll.mutate(undefined, {
-                  onSuccess: () => qc.invalidateQueries({ queryKey: ["notif", "feed"] }),
-                })}>
+            {view === "history" && unread > 0 && (
+              <Button variant="secondary" size="lg" loading={markAll.isPending} onClick={markAllNow}>
                 {t("notif.markAllRead")}
               </Button>
             )}
@@ -98,6 +134,7 @@ export default function Notifications() {
             </Button>
           </div>
         </div>
+        )}
         {view === "queue" ? <QueueView /> : <HistoryView />}
       </div>
       {prefsOpen && (
@@ -306,7 +343,7 @@ function HistoryView() {
         <>
           {days.map((d) => (
             <div key={d.day || "x"}>
-              <h2 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              <h2 className="px-1 pb-2 text-[11px] max-md:text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
                 {dayLabel(d.day, today, t)}
               </h2>
               <Card>

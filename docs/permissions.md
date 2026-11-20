@@ -67,3 +67,7 @@ THE name of a capability, wherever one is printed), so they need no
   `admin.tab.permissions` can hand out every grant, themselves included —
   the operator's call.
 - Additive like every grant: nobody's current access changed on deploy.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — «a leader deletes no concern at all» — an identity rule in `routers/concerns.py` `may_delete`; no grant (`page.admin.concerns` included) reopens it. md+ is unchanged.

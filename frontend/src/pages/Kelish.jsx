@@ -75,6 +75,8 @@ import { TONE_HEX } from "../utils/statusBands";
 import { transliterate, useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 import { useCanOpenPeople, useP } from "../components/people/peopleUtil";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import { useFloorText, fill as fillF } from "./floorPhoneText";
 
 const NONE = "none";          // the «cells with no brigadir» bucket
 const WINDOW_DAYS = 30;       // services/kelish.WINDOW_DAYS
@@ -92,6 +94,11 @@ const NO_PARAMS = {};
 // name, the surname at 12px), 32px to 400px (~120px at 375), 36px on the larger phones, then the
 // days widen with the screen and the name column keeps roughly 250–400px.
 const GRID = "[--kd:32px] max-[359px]:[--kd:26px] min-[400px]:[--kd:36px] sm:[--kd:60px] lg:[--kd:72px] xl:[--kd:88px]";
+// A LEADER on a PHONE reads two days, today and tomorrow — the only two a tap
+// can change (2026-11-20, the leader-phone redesign; the 7-day register stays
+// on every wider screen and for every other role). Two columns get room: each
+// day is a 72–120px tap target and the name keeps ~45% of the card.
+const GRID_TWO = "[--kd:84px] max-[359px]:[--kd:72px] min-[400px]:[--kd:92px] sm:[--kd:120px]";
 // The name cell's inset: tighter below 360px, where every pixel goes to the surname.
 const NAME_PAD = "px-2 max-[359px]:px-1.5 sm:px-3";
 const ROW_H = "h-11 sm:pointer-fine:h-10";
@@ -221,7 +228,7 @@ function patchSlot(old, rowKey, i, patch) {
 // ── pieces of the grid ──────────────────────────────────────────────────────
 
 // The mark inside a filled cell. Colour + icon, so it reads without colour.
-function DayHead({ day, t }) {
+function DayHead({ day, t, two = false }) {
   const future = day.state === "future";
   const current = day.state === "today" || day.state === "tomorrow";
   const label = [
@@ -229,6 +236,32 @@ function DayHead({ day, t }) {
     day.when ? whenText(day.when, t) : null,
     future ? t("kelish.legendFuture") : null,
   ].filter(Boolean).join(" · ");
+  if (two) {
+    // A leader's phone: the column says WHAT the day is in the leader's words
+    // («Bugun» / «Ertaga» / «Hozir» — off the server's `when`, so a night
+    // unit's «tomorrow» at 15:00 reads «Bugun»), the date under it. It is the
+    // night unit's footer line, carried by the column it describes.
+    return (
+      <th
+        scope="col"
+        title={label}
+        aria-label={label}
+        className="sticky z-10 px-0 py-1.5 text-center font-normal"
+        style={{
+          ...STICK_TOP,
+          background: current ? LANE_HEAD : "var(--bg-inner)",
+          boxShadow: current ? "inset 0 -2px 0 var(--brand)" : "inset 0 -1px 0 var(--border)",
+        }}
+      >
+        <span className="block text-xs leading-4 font-semibold" style={{ color: "var(--text-1)" }}>
+          {tagOf(day, t) || t(`cal.d${dow(day.date)}`)}
+        </span>
+        <span className="block mt-0.5 text-xs leading-4 tabular-nums" style={{ color: "var(--text-2)" }}>
+          {dayLabel(day.date, t)}
+        </span>
+      </th>
+    );
+  }
   return (
     <th
       scope="col"
@@ -267,6 +300,7 @@ function DayHead({ day, t }) {
 // «bugungi» reads two ways, and on shift 2 the 08:00 check's «today» is the
 // night that has just ended.
 function KindLine({ cellId, kind, next, canSet, t, toast, onSaved }) {
+  const F = useFloorText();
   const [saving, setSaving] = useState(false);
   const k = kind?.kind || "";
   const word = k === "today" ? t("kelish.kindToday") : k === "tomorrow" ? t("kelish.kindTomorrow") : t("kelish.kindNone");
@@ -288,23 +322,51 @@ function KindLine({ cellId, kind, next, canSet, t, toast, onSaved }) {
       setSaving(false);
     }
   };
+  const select = canSet && (
+    <StyledSelect
+      value={k}
+      onChange={save}
+      disabled={saving}
+      triggerClassName="px-2.5 py-1.5 text-xs"
+      options={[
+        { value: "", label: t("kelish.kindUnset") },
+        { value: "today", label: dated(t("kelish.kindToday"), next?.today) },
+        { value: "tomorrow", label: dated(t("kelish.kindTomorrow"), next?.tomorrow) },
+      ]}
+    />
+  );
+  // Below md the rule sentences go (the operator: no notes on a phone) and
+  // the check is ONE chip: when it runs, and which list it reads when an admin
+  // pinned one; the dates of the lists and the rule are in its tooltip. An
+  // admin keeps the pin picker beside it.
+  const chipTitle = [
+    next ? fillF(F.t11Title, { d: dm(next.due), t: next.at }) : t("kelish.kindLabel"),
+    k ? word : t("kelish.kindNone"),
+    what,
+  ].filter(Boolean).join(" · ");
+  const chip = (
+    <div className="md:hidden flex flex-wrap items-center gap-2 mt-2">
+      <span
+        className="inline-flex items-center gap-1.5 min-h-[28px] px-2.5 py-1 rounded-lg text-xs font-medium tabular-nums"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+        title={chipTitle}
+        aria-label={chipTitle}
+      >
+        <ListChecks size={14} className="flex-shrink-0" aria-hidden="true" />
+        <span style={{ color: "var(--text-1)" }}>{F.t11}</span>
+        {next && <span>· {dm(next.due)}, {next.at}</span>}
+        {k && !canSet && <span>· {word}</span>}
+      </span>
+      {select}
+    </div>
+  );
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5" style={{ color: "var(--text-2)" }}>
+    <>
+    {chip}
+    <div className="max-md:hidden flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5" style={{ color: "var(--text-2)" }}>
       <ListChecks size={12} className="flex-shrink-0" aria-hidden="true" />
       <span>{t("kelish.kindLabel")}:</span>
-      {canSet ? (
-        <StyledSelect
-          value={k}
-          onChange={save}
-          disabled={saving}
-          triggerClassName="px-2.5 py-1.5 text-xs"
-          options={[
-            { value: "", label: t("kelish.kindUnset") },
-            { value: "today", label: dated(t("kelish.kindToday"), next?.today) },
-            { value: "tomorrow", label: dated(t("kelish.kindTomorrow"), next?.tomorrow) },
-          ]}
-        />
-      ) : (
+      {canSet ? select : (
         <span className="font-semibold" style={{ color: "var(--text-1)" }}>{word}</span>
       )}
       {canSet && !k && <span style={{ color: "var(--text-3)" }}>{t("kelish.kindNone")}</span>}
@@ -315,6 +377,7 @@ function KindLine({ cellId, kind, next, canSet, t, toast, onSaved }) {
         </span>
       )}
     </div>
+    </>
   );
 }
 
@@ -352,7 +415,7 @@ function Legend({ open, gaps = false, t }) {
 // lives here, one per cell, so two open cells never share a selection, a
 // cursor or a request chain.
 
-function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
+function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx, two = false, self = false }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(autoOpen);
   // A list narrowed to one cell (or a leader's few) opens by itself — the
@@ -434,6 +497,17 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   const data = weekQ.data && weekQ.data.cell?.id === cell.id ? weekQ.data : null;
   const stale = !!data && weekQ.isPlaceholderData;      // last week on screen while the next one loads
   const days = data?.days || [];
+  // The columns this card draws: the whole week, or — a leader on a phone —
+  // the two open days alone (today and tomorrow, by the server's `state`).
+  // Each keeps its index in the week, so a tap, a key and a slot still name
+  // the same day the server sent.
+  const shown = useMemo(() => {
+    const all = days.map((_, i) => i);
+    if (!two) return all;
+    const open = all.filter((i) => days[i].state === "today" || days[i].state === "tomorrow");
+    return open.length ? open : all.slice(0, 2);
+  }, [days, two]);
+  const span = (data ? shown.length : two ? 2 : 7) + 1;
   const openAny = days.some((d) => d.editable);
   // «+» / «−» decide who is ON the list — the brigadir's and the admin's,
   // never the leader's (the operator, 2026-10-04). The server says which.
@@ -679,7 +753,39 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   // fixed for its total so a tap never shifts the head (nothing above the rows
   // may move on a tap); a done list carries the totals row's green tick.
   let progress = <span className="text-xs" style={{ color: "var(--text-4)" }}>—</span>;
-  if (prog && prog.total) {
+  // A leader's phone: BOTH open days, each «Ju 6/6» — so whichever day the
+  // leader is marking, the count that moves is on the head (the week view
+  // counted tomorrow alone, which sat still while today was being marked).
+  const pair = two && data && !stale ? shown.map((i) => days[i]).filter((d) => d?.counts?.total) : [];
+  if (pair.length) {
+    progress = (
+      <span className="inline-flex items-center gap-3">
+        {pair.map((d) => {
+          const c = d.counts;
+          const n = c.yes + c.no;
+          const done = c.none === 0;
+          return (
+            <span
+              key={d.date}
+              className="inline-flex items-center gap-1 whitespace-nowrap"
+              title={fill(t("kelish.cellProgress"), { d: dm(d.date), n, total: c.total })}
+            >
+              <span className="text-xs" style={{ color: "var(--text-3)" }}>{t(`cal.d${dow(d.date)}`)}</span>
+              <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+                <span className="inline-block text-right" style={{ minWidth: `${String(c.total).length}ch` }}>{n}</span>/{c.total}
+              </span>
+              <Check
+                aria-label={done ? t("kelish.complete") : undefined}
+                aria-hidden={!done}
+                className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={3}
+                style={{ color: "var(--status-ok)", visibility: done ? "visible" : "hidden" }}
+              />
+            </span>
+          );
+        })}
+      </span>
+    );
+  } else if (prog && prog.total) {
     const n = prog.yes + prog.no;
     const done = prog.none === 0;
     progress = (
@@ -687,7 +793,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
         className="inline-flex items-center gap-1.5 whitespace-nowrap"
         title={fill(t("kelish.cellProgress"), { d: dm(prog.day), n, total: prog.total })}
       >
-        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{dayLabel(prog.day, t)}</span>
+        <span className="text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>{dayLabel(prog.day, t)}</span>
         <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
           <span className="inline-block text-right" style={{ minWidth: `${String(prog.total).length}ch` }}>{n}</span>/{prog.total}
         </span>
@@ -719,6 +825,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           leader={cell.leader ? titleCase(tl(cell.leader)) : ""}
           noLeader={t("idleCell.noLeader")}
           leaderTitle={t("idleCell.leader")}
+          self={self}
         />
         <span className="flex items-center gap-3 flex-shrink-0">
           {/* A week nobody may change says so here — a line of its own would
@@ -766,7 +873,10 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           On a phone the legend takes the whole line and the buttons the next,
           so the cycle reads as one line instead of three beside them. */}
       <div className="min-w-0 basis-full sm:basis-0 sm:flex-1 text-[11px] leading-snug" style={{ color: "var(--text-2)" }}>
-        {view.length > 0 && <Legend open={openAny} gaps={closedGaps} t={t} />}
+        {/* The how-to legend is a note: gone below md (2026-11-20 — the
+            operator: no notes on a phone; the cells' own fill and icons say
+            what they are). */}
+        {view.length > 0 && <div className="max-md:hidden"><Legend open={openAny} gaps={closedGaps} t={t} /></div>}
         <KindLine
           cellId={cell.id} kind={data.kind} next={data.next_check} canSet={!!data.can_set_kind} t={t} toast={toast}
           onSaved={() => {
@@ -774,8 +884,8 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
             qc.invalidateQueries({ queryKey: ["kelish-cells"] });
           }}
         />
-        {nightLine && (
-          <div className="flex items-start gap-1.5 mt-1.5" style={{ color: "var(--text-2)" }}>
+        {nightLine && !two && (
+          <div className="flex items-start gap-1.5 mt-1.5 max-md:text-xs" style={{ color: "var(--text-2)" }}>
             <Clock size={12} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
             <span>{nightLine}</span>
           </div>
@@ -800,7 +910,8 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
   );
 
   // ── the grid ──────────────────────────────────────────────────────────────
-  const cols = data ? days : Array.from({ length: 7 }, (_, i) => ({ date: String(i), skeleton: true }));
+  const cols = data ? shown.map((i) => days[i])
+    : Array.from({ length: two ? 2 : 7 }, (_, i) => ({ date: String(i), skeleton: true }));
   const dim = stale ? { opacity: 0.5, pointerEvents: "none", transition: "opacity .15s" } : { transition: "opacity .15s" };
 
   const nameHead = (
@@ -821,7 +932,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           <span className="hidden sm:inline">{t("kelish.selectAll")}</span>
         </label>
       ) : (
-        <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+        <span className="inline-flex items-center gap-1.5 text-[11px] max-md:text-xs uppercase tracking-wider max-md:tracking-wide" style={{ color: "var(--text-2)" }}>
           {t("kelish.colWorker")}
           {data && <span className="tabular-nums normal-case tracking-normal" style={{ color: "var(--text-2)" }}>{currentCount}</span>}
         </span>
@@ -842,7 +953,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
             {awayShort && <Clock size={12} className="flex-shrink-0" style={{ color: "var(--status-warn)" }} aria-hidden="true" />}
             <span className="text-[13px] max-[359px]:text-xs leading-4 font-semibold truncate" style={{ color: ink }}>{r.surname}</span>
           </span>
-          <span className="block text-[11px] leading-[14px] truncate" style={{ color: "var(--text-2)" }}>
+          <span className="block text-[11px] max-md:text-xs leading-[14px] max-md:leading-4 truncate" style={{ color: "var(--text-2)" }}>
             {r.given || " "}
           </span>
         </span>
@@ -946,7 +1057,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
       <TableCard
         head={head} collapsed={!open}
         fixed minWidth={280} footer={footer} hover={false} pageScroll
-        className={GRID}
+        className={two ? GRID_TWO : GRID}
       >
         <colgroup>
           <col />
@@ -962,14 +1073,14 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
                   <SkeletonBlock className="h-3.5 w-6" />
                 </div>
               </th>
-            ) : <DayHead key={d.date} day={d} t={t} />))}
+            ) : <DayHead key={d.date} day={d} t={t} two={two} />))}
           </tr>
         </thead>
         <tbody onKeyDown={onGridKey} onFocus={onGridFocus} onBlur={onGridBlur} style={dim}>
           {!data && !failed && skeletonRows}
           {failed && (
             <tr>
-              <td colSpan={8} className="px-4 py-8 text-center whitespace-normal">
+              <td colSpan={span} className="px-4 py-8 text-center whitespace-normal">
                 <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("kelish.errLoad")}</div>
                 <div className="mt-1 text-xs" style={{ color: "var(--text-3)" }}>{loadErr(weekQ.error)}</div>
                 <div className="mt-4 flex justify-center">
@@ -980,7 +1091,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
           )}
           {data && view.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
+              <td colSpan={span} className="px-4 py-10 text-center text-sm whitespace-normal" style={{ color: "var(--text-3)" }}>
                 {canRoster ? t("kelish.emptyList") : t("kelish.emptyListRO")}
                 {canRoster && (
                   <div className="mt-4 flex justify-center">
@@ -991,10 +1102,10 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
             </tr>
           )}
           {data && view.map((r, ri) => (
-            <FragmentRow key={r.key} divider={ri === firstLeft && firstLeft > 0 ? fill(t("kelish.leftGroup"), { n: view.length - firstLeft }) : null}>
+            <FragmentRow key={r.key} span={span} divider={ri === firstLeft && firstLeft > 0 ? fill(t("kelish.leftGroup"), { n: view.length - firstLeft }) : null}>
               <tr className="kelish-row" style={selecting && sel.has(r.key) ? { background: "var(--brand-bg)" } : undefined}>
                 {nameCell(r, ri)}
-                {days.map((d, i) => dayCell(r, ri, d, i))}
+                {shown.map((i) => dayCell(r, ri, days[i], i))}
               </tr>
             </FragmentRow>
           ))}
@@ -1002,7 +1113,7 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
         {data && view.length > 0 && selecting && (
           <tfoot style={dim}>
             <tr>
-              <td colSpan={8} className="p-0" style={STICK_BOTTOM}>{selectBar}</td>
+              <td colSpan={span} className="p-0" style={STICK_BOTTOM}>{selectBar}</td>
             </tr>
           </tfoot>
         )}
@@ -1011,12 +1122,12 @@ function CellWeek({ cell, weekFrom, autoOpen, onAway, toast, t, tl, tx }) {
             {/* One figure per day: how many are coming. The full split is on hover. */}
             <tr>
               <td className="px-2 sm:px-3 h-9 align-middle" style={STICK_BOTTOM}>
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--text-2)" }}>
+                <span className="inline-flex items-center gap-1.5 text-[11px] max-md:text-xs font-semibold" style={{ color: "var(--text-2)" }}>
                   <span aria-hidden="true" className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--status-ok)" }} />
                   {t("kelish.yes")}
                 </span>
               </td>
-              {days.map((d) => {
+              {shown.map((i) => days[i]).map((d) => {
                 const c = d.counts;
                 const any = c && c.yes + c.no > 0;
                 return (
@@ -1136,6 +1247,10 @@ export default function Kelish() {
   const toast = useToast();
   const { ready } = useFactory();
   const factorySection = useFactorySection();
+  // A leader on a phone reads today + tomorrow only (the operator's decision,
+  // 2026-11-20 — the rolling week stays everywhere else), so the week stepper
+  // has nothing to step and is not drawn.
+  const two = useLeaderPhone();
 
   const [week, setWeek] = useState(null);                 // the shown week's first day; null = today
   const [unitPick, setUnitPick] = usePersistentState("kelish.unit", null);
@@ -1179,7 +1294,7 @@ export default function Kelish() {
   // today is earlier keeps the same offset from its own, so «current» starts
   // every card on its own today. A dot on › says the open lists are that way.
   const today = cellsShown.reduce((m, c) => (c.today && c.today > m ? c.today : m), "");
-  const weekFrom = week && today && week < today ? week : today;
+  const weekFrom = !two && week && today && week < today ? week : today;
   const fromOf = (c) => (!week || !c.today || !today ? c.today : addDays(weekFrom, daysBetween(today, c.today)));
   const dotNext = weekFrom && today && addDays(weekFrom, 6) < addDays(today, 1) ? t("kelish.dotHere") : null;
   const pickWeek = (iso) => setWeek(iso >= today ? null : iso);
@@ -1261,8 +1376,9 @@ export default function Kelish() {
         <span id="kelish-kbd" className="sr-only">{t("kelish.kbdHint")}</span>
         {cellsShown.map((c) => (
           <CellWeek
-            key={c.id} cell={c} weekFrom={fromOf(c)} autoOpen={autoOpen}
+            key={c.id} cell={c} weekFrom={two ? c.today : fromOf(c)} autoOpen={autoOpen}
             onAway={onAway} toast={toast} t={t} tl={tl} tx={tx}
+            two={two} self={scopeKind === "leader"}
           />
         ))}
       </div>
@@ -1272,11 +1388,11 @@ export default function Kelish() {
   const awayCell = awayId != null ? cellsShown.find((c) => c.id === awayId) : null;
 
   return (
-    <Layout title={t("nav.kelish")} subtitle={awayCell ? cellTitleOf(awayCell, tl) : undefined}>
+    <Layout title={t("nav.kelish")} subtitle={awayCell ? (two && scopeKind === "leader" ? awayCell.code : cellTitleOf(awayCell, tl)) : undefined}>
       <div className="mx-auto w-full max-w-4xl flex flex-col gap-3">
-        {(cellsShown.length > 0 || sections.length > 0) && (
+        {((cellsShown.length > 0 && !two) || sections.length > 0) && (
           <div className="flex flex-wrap items-center gap-2">
-            {cellsShown.length > 0 && weekFrom && (
+            {cellsShown.length > 0 && weekFrom && !two && (
               <DayStepper
                 week rolling compactUntil="xl" value={weekFrom} onChange={pickWeek} max={today}
                 dotNext={dotNext}
@@ -1301,13 +1417,13 @@ export default function Kelish() {
 
 // A worker row, preceded — once — by the band that opens the «left the list
 // during the week» group.
-function FragmentRow({ divider, children }) {
+function FragmentRow({ divider, span = 8, children }) {
   return (
     <>
       {divider && (
         <tr>
           <td
-            colSpan={8}
+            colSpan={span}
             className="px-2 sm:px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider whitespace-normal"
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}
           >

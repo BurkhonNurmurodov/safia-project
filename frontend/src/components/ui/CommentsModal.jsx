@@ -872,9 +872,11 @@ export function CommentsThread({
           />
           {attachments && (
             <button type="button" onClick={open} disabled={addMutation.isPending}
-              className={`w-9 h-9 rounded-full grid place-items-center flex-shrink-0 transition-colors text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--hover-bg)] disabled:opacity-40 ${FOCUS}`}
+              className={`relative w-9 h-9 rounded-full grid place-items-center flex-shrink-0 transition-colors text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--hover-bg)] disabled:opacity-40 ${FOCUS}`}
               style={{ outlineColor: "var(--brand)" }}
               aria-label={t("ui.comments.attach")} title={t("ui.comments.attach")}>
+              {/* A finger's 44px on a phone, reaching into the field around it. */}
+              <span aria-hidden="true" className="hidden max-md:block absolute -inset-1" />
               <Paperclip size={20} strokeWidth={1.9} />
             </button>
           )}
@@ -948,7 +950,7 @@ export function CommentsButton({ count = 0, onClick, label }) {
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       title={label}
       aria-label={label}
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--brand)]"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] max-md:text-xs font-medium transition-colors hover:border-[var(--brand)]"
       style={{
         background: "var(--bg-card)",
         border: "1px solid var(--border-md)",

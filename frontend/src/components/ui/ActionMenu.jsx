@@ -160,7 +160,7 @@ export default function ActionMenu({ items, label, zIndex = 80, className = "" }
                   aria-disabled={it.disabled || undefined}
                   title={it.title || undefined}
                   onClick={() => pick(it)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 sm:py-2 text-sm text-left whitespace-nowrap outline-none transition-colors
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 max-md:min-h-[44px] sm:py-2 text-sm text-left whitespace-nowrap outline-none transition-colors
                     aria-disabled:cursor-not-allowed aria-disabled:opacity-50
                     ${danger
                       ? "hover:bg-[rgba(239,68,68,0.10)] focus-visible:bg-[rgba(239,68,68,0.10)] aria-disabled:hover:bg-transparent"

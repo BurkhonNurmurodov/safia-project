@@ -447,7 +447,7 @@ def _serialize(
         out["can_edit"] = manage
         out["can_set_status"] = set_status
         out["can_resolve"] = set_status                       # kept for the status dropdown
-        out["can_delete"] = ctx["admin"] or (_is_owner(ctx, c) and not is_leader)
+        out["can_delete"] = may_delete(ctx["role"]) and (ctx["admin"] or _is_owner(ctx, c))
         # Up: whoever manages the row — a leader only while they hold it, never
         # on a concern that already sits above them.
         out["can_escalate"] = (
@@ -595,6 +595,27 @@ def _viewer_ctx(db: Session, payload: dict) -> dict:
     elif role == "shift-manager":
         ctx["shift_units"] = set(_shift_unit_ids(db, payload.get("role_id")))
     return ctx
+
+
+# Why a leader's DELETE is refused, as the dialog prints it.
+LEADER_DELETE_REFUSED = (
+    "A leader cannot delete a concern. Resolve it, or raise it to the brigadir, "
+    "who can delete it."
+)
+
+
+def may_delete(role: Optional[str]) -> bool:
+    """May a caller of this ROLE delete a concern at all?
+
+    Everybody but a leader (the operator, 2026-11-20: «a leader may not delete a
+    worker's concern at all»). It was «supervisor and above» before too — a
+    delete is a resolve loophole for the person the concern is about — but the
+    page's admin grant (`page.admin.concerns`) let a leader through; it no
+    longer does. Identity, not a power, so no grant reopens it (the rule
+    docs/permissions.md keeps for an admin identity). The row's own check
+    (_assert_can_edit) still decides for everybody else.
+    """
+    return role != "leader"
 
 
 def _is_owner(ctx: dict, c: LeaderConcern) -> bool:
@@ -2343,12 +2364,13 @@ def delete_concern(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(*ROW_ACTION_PAGES)),
 ):
+    # A leader deletes no concern at all — see may_delete. Asked before the row
+    # is read, so the answer is the same whether the id exists or not.
+    if not may_delete(payload.get("role")):
+        raise HTTPException(status_code=403, detail=LEADER_DELETE_REFUSED)
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
-    # Deleting would be a resolve loophole for leaders — supervisor and above only.
-    if payload.get("role") == "leader" and not page_admin(db, payload, "concerns"):
-        raise HTTPException(status_code=403, detail="Leaders cannot delete concerns")
     _assert_can_edit(payload, c, db)
     # What is being destroyed, read before the row becomes unreadable.
     gone = {"id": c.id, "seq": c.seq, "cell": c.cell_code, "category": c.category,

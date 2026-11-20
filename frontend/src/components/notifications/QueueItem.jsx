@@ -117,7 +117,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
             /* The «Verifix» mark: a neutral tag — a live day is a source, not a
                status, so it borrows no traffic-light tone. */
             <span
-              className="flex-shrink-0 mt-0.5 inline-flex items-center text-[11px] font-medium px-1.5 py-px rounded-md whitespace-nowrap"
+              className="flex-shrink-0 mt-0.5 inline-flex items-center text-[11px] max-md:text-xs font-medium px-1.5 py-px rounded-md whitespace-nowrap"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
             >
               {tag}
@@ -139,7 +139,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
 
         {/* One fixed-height row for the controls AND the outcome that replaces
             them, so a decision changes nothing around it. */}
-        <div className="flex items-center gap-2 flex-wrap mt-2.5 sm:mt-2 min-h-[32px] max-sm:min-h-[38px]">
+        <div className="flex items-center gap-2 flex-wrap mt-2.5 sm:mt-2 min-h-[32px] max-sm:min-h-[38px] max-md:min-h-[44px]">
           {decided ? (
             <>
               <StatusChip tone={decided.action === "reject" ? "bad" : "ok"}
@@ -147,7 +147,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
                 {decided.action === "reject" ? t("notif.done.reject") : t("notif.done.approve")}
               </StatusChip>
               {decided.undo && (
-                <Button variant="ghost" size="md" className="max-sm:py-2.5" loading={busy === "undo"}
+                <Button variant="ghost" size="md" className="max-sm:py-2.5 max-md:min-h-[44px]" loading={busy === "undo"}
                   onClick={undo}>
                   {t("notif.undo")}
                 </Button>
@@ -161,7 +161,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
                   variant={a.tone === "danger" ? "danger" : "success"}
                   tint
                   size="md"
-                  className="max-sm:py-2.5"
+                  className="max-sm:py-2.5 max-md:min-h-[44px]"
                   loading={busy === a.id}
                   disabled={!!busy && busy !== a.id}
                   onClick={() => (a.confirm ? setConfirm(a) : run(a, false))}
@@ -170,7 +170,7 @@ export default function QueueItem({ item, decided, onDecided, onOpen }) {
                 </Button>
               ))}
               {item.link && (
-                <Button variant="secondary" tint size="md" className="max-sm:py-2.5"
+                <Button variant="secondary" tint size="md" className="max-sm:py-2.5 max-md:min-h-[44px]"
                   disabled={!!busy} onClick={open}>
                   {isChat ? t("notif.openChat") : t("notif.open")}
                 </Button>

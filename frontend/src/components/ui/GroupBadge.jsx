@@ -33,7 +33,7 @@ export default function GroupBadge({ group, title, tone = "neutral", className =
   return (
     <span
       title={title}
-      className={`inline-flex items-center justify-center font-mono text-[10px] font-bold leading-none rounded-md px-1.5 py-[3px] align-middle ${className}`}
+      className={`inline-flex items-center justify-center font-mono text-[10px] max-md:text-xs font-bold leading-none rounded-md px-1.5 py-[3px] align-middle ${className}`}
       style={{
         background: orphan ? "transparent" : tint(c, 0.16),
         border: `1px ${orphan ? "dashed" : "solid"} ${tint(c, orphan ? 0.75 : 0.3)}`,

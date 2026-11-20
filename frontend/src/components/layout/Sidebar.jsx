@@ -23,6 +23,10 @@ import { navName } from "../../utils/navLayout";
 import { useLauncher } from "../../hooks/useLauncher";
 import useLeaveRef from "../../hooks/useLeaveRef";
 import GlobalSearch from "./GlobalSearch";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
+import { useTheme } from "../../context/ThemeContext";
+import { jobActive, jobHref, leaderPhoneMenu, primeLeaderTab, useLeaderTab } from "./leaderPhoneNav";
+import { shellText } from "./shellPhoneText";
 
 // Grouped sidebar. ALL_LINKS (config/navLinks.js) stays THE register and
 // order — `group` points each link at a section of NAV_GROUPS (same file).
@@ -57,6 +61,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // needs the /staff link to reach the queue they were given.
   const { capPages, capTabs, deniedPages, can: capCan } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
+  // A leader's phone: the menu named for the job (config/navLinks.js
+  // LEADER_PHONE_JOBS, components/layout/leaderPhoneNav.js).
+  const leaderPhone = useLeaderPhone();
+  const leaderTab = useLeaderTab(location.search);
+  const { theme } = useTheme();
+  const sTxt = shellText(lang);
 
   const BADGE_ROLES = ["admin", "shift-manager"];
   const showBadge = BADGE_ROLES.includes(auth?.role);
@@ -148,7 +158,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const groupDefs = sections ?? NAV_GROUPS;
   const groupOf = (l) => (sections ? layout.tabOf.get(l.to) : l.group);
   const fallbackGroup = sections ? sections[0].id : "system";
-  const grouped = sections
+  // A leader's phone draws its own two-part list instead (`lpMenu`): the jobs,
+  // then the rest quieter — never folders.
+  const lpMenu = leaderPhone && !app ? leaderPhoneMenu(links) : null;
+  const grouped = lpMenu ? false : sections
     ? sections.some(s => !s.top && s.links.some(may))
     : links.length > GROUP_THRESHOLD;
   const byGroup = new Map(groupDefs.map(g => [g.id, []]));
@@ -208,7 +221,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     // items). On first appearance it snaps into place with no slide.
     setInd(p => ({ top: el.offsetTop, height: el.offsetHeight, show: true, anim: p.show }));
   }, []);
-  useLayoutEffect(measureInd, [measureInd, location.pathname, expanded, links.length, openGroup]);
+  useLayoutEffect(measureInd, [measureInd, location.pathname, expanded, links.length, openGroup, leaderTab]);
   // Links below a toggled group only reach their final offset once the .2s
   // grid collapse finishes — re-measure after it settles.
   useEffect(() => {
@@ -221,7 +234,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // `indent` steps a row under its folder header while expanded — as a margin
   // on the icon, not row padding, so the full-width active pill and hover wash
   // stay flush; on the icon rail it drops to 0 to keep icons centered.
-  const renderLink = ({ to, key, icon: Icon, danger }, indent = false) => {
+  // `label` names the row instead of its register key (a leader's phone calls
+  // /tasks «Rahbariyat vazifalari»). Rows are 44px on a phone (py-3 over the
+  // 20px line), the drawer's touch target.
+  const renderLink = ({ to, key, icon: Icon, danger }, indent = false, label = null) => {
     const badgeCount = badgeFor(to);
     const badge = badgeCount > 0;
     return (
@@ -230,8 +246,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         to={withSearch(to)}
         end={to === "/"}
         onClick={onClose}
-        title={!expanded ? t(key) : undefined}
-        className="nav-item flex items-center rounded-lg text-sm transition-colors px-2.5 py-2.5 md:py-2"
+        title={!expanded ? (label ?? t(key)) : undefined}
+        className="nav-item flex items-center rounded-lg text-sm transition-colors px-2.5 py-3 md:py-2"
         style={({ isActive }) => ({
           gap: "12px",
           position: "relative",
@@ -266,17 +282,48 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             display:  "block",
           }}
         >
-          {t(key)}
+          {label ?? t(key)}
         </span>
 
         {/* Count badge when expanded */}
         {badge && expanded && (
-          <span className="ml-auto flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+          <span className="ml-auto flex-shrink-0 text-[10px] max-md:text-xs font-bold px-1.5 py-0.5 rounded-full"
             style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
             {badgeCount}
           </span>
         )}
       </NavLink>
+    );
+  };
+
+  // One of a leader's five job entries (phone only). Lit by the page's TAB
+  // where two entries share «Lider nazorati», so it is a plain Link carrying
+  // its own `aria-current` (the sliding pill measures that). `leaderMenu` in
+  // the history state tells App.jsx this was the menu, so a second tap on the
+  // same page re-opens it on the entry's tab; `primeLeaderTab` makes the
+  // page's first frame and the bar's title agree with the entry at once.
+  // The job's identity hue sits on its icon only — the label stays ink, and
+  // gold stays the active row's (the action colour).
+  const renderJob = (job) => {
+    const active = jobActive(job, location.pathname, leaderTab);
+    const Icon = job.icon;
+    return (
+      <Link
+        key={job.id}
+        to={jobHref(job)}
+        state={{ leaderMenu: true }}
+        onClick={() => { if (job.tab) primeLeaderTab(job.tab); onClose?.(); }}
+        aria-current={active ? "page" : undefined}
+        className="nav-item flex items-center rounded-lg text-[15px] transition-colors px-2.5 py-3"
+        style={{
+          gap: "12px", position: "relative", zIndex: 1, fontWeight: 500,
+          color: active ? "var(--brand-text)" : "var(--text-1)",
+        }}
+      >
+        <Icon size={18} className="flex-shrink-0" aria-hidden="true"
+          style={{ color: theme === "light" ? job.light : job.hue }} />
+        <span className="flex-1 min-w-0 truncate">{sTxt.job[job.id]}</span>
+      </Link>
     );
   };
 
@@ -339,7 +386,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               <Link
                 to={withSearch("/")}
                 onClick={onClose}
-                className="flex items-center gap-2 flex-1 min-w-0 rounded-lg transition-opacity hover:opacity-80"
+                className="flex items-center gap-2 flex-1 min-w-0 max-md:min-h-[44px] rounded-lg transition-opacity hover:opacity-80"
               >
                 <BrandLogo className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
                 <div className="min-w-0 overflow-hidden">
@@ -349,8 +396,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                   >
                     Safia IMS
                   </div>
+                  {/* The brand's strapline is the desktop rail's; a phone's
+                      drawer keeps the name and gives the room to its close. */}
                   <div
-                    className="text-[11px] truncate"
+                    className="text-[11px] truncate max-md:hidden"
                     style={{ color: "var(--text-3)" }}
                     title={t("nav.appSubtitle")}
                   >
@@ -369,13 +418,15 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 {pinned ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
               </button>
 
-              {/* Mobile: close button */}
+              {/* Mobile: close button — a 44px target, named. */}
               <button
+                type="button"
                 onClick={onClose}
-                className="md:hidden p-1 rounded flex-shrink-0"
+                aria-label={t("notif.close")}
+                className="md:hidden w-11 h-11 -mr-1.5 grid place-items-center rounded-lg flex-shrink-0"
                 style={{ color: "var(--text-3)" }}
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </>
           )}
@@ -401,7 +452,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               not a button. A one-page app skips it: the row below says it. */}
           {app && links.length > 1 && (
             <div
-              className="app-label flex items-center rounded-lg text-[11px] font-semibold uppercase tracking-wider px-2.5 py-2.5 md:py-2"
+              className="app-label flex items-center rounded-lg text-[11px] max-md:text-xs font-semibold uppercase tracking-wider px-2.5 py-2.5 md:py-2"
               data-app-hue={app.hue}
               style={{ gap: "12px", color: "var(--text-3)", justifyContent: !expanded ? "center" : undefined }}
             >
@@ -414,7 +465,15 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               </span>
             </div>
           )}
-          {(grouped ? [] : links).map(l => renderLink(l))}
+          {lpMenu ? (
+            <>
+              {lpMenu.jobs.map(renderJob)}
+              {lpMenu.jobs.length > 0 && lpMenu.quiet.length > 0 && (
+                <div className="mx-2 my-2" style={{ borderTop: "1px solid var(--border)" }} />
+              )}
+              {lpMenu.quiet.map(l => renderLink(l, false, l.to === "/tasks" ? sTxt.job.tasks : null))}
+            </>
+          ) : (grouped ? [] : links).map(l => renderLink(l))}
 
           {grouped && groupDefs.map((g) => {
             const items = byGroup.get(g.id);
@@ -442,7 +501,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                     aria-expanded={!collapsed}
                     aria-controls={`nav-grp-${g.id}`}
                     title={!expanded ? headName(g) : undefined}
-                    className="nav-item w-full flex items-center rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors px-2.5 py-2.5 md:py-2"
+                    className="nav-item w-full flex items-center rounded-lg text-[11px] max-md:text-xs font-semibold uppercase tracking-wider transition-colors px-2.5 py-3 md:py-2"
                     style={{
                       gap: "12px",
                       marginTop: 8,
@@ -471,7 +530,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                             style={{ background: "var(--brand)" }} />
                         )}
                         {groupBadge > 0 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          <span className="text-[10px] max-md:text-xs font-bold px-1.5 py-0.5 rounded-full"
                             style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
                             {groupBadge}
                           </span>
@@ -560,17 +619,18 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 setTimeout(() => onClose?.(), 150);
               }}
               title={!expanded ? t("nav.support") : undefined}
-              className="nav-item flex items-center rounded-lg text-sm transition-colors"
+              className="nav-item flex items-center rounded-lg text-sm transition-colors p-2.5 max-md:py-3 max-md:min-h-[44px]"
               style={{
                 gap: "12px",
-                padding: "10px",
                 color: "var(--text-3)",
                 justifyContent: !expanded ? "center" : undefined,
               }}
             >
               <Headset size={16} className="flex-shrink-0" />
+              {/* A phone's drawer is always open and 256px wide: the label
+                  wraps there rather than end in «…». */}
               <span
-                className="truncate whitespace-nowrap transition-all duration-200"
+                className="truncate whitespace-nowrap max-md:whitespace-normal max-md:leading-snug transition-all duration-200"
                 style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden", display: "block" }}
               >
                 {t("nav.support")}

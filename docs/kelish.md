@@ -287,3 +287,7 @@ the task still wants its screenshot. Both switches are the operator's to throw.
 - **Consequence to know:** every tap is an action-register row
   (`kelish.mark_set`) — cheap while the page is admin-only; opened to ~100
   leaders it roughly triples the register's daily volume.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — «Ish grafigi» on a phone — today + tomorrow on a LEADER's phone (the 7-day rolling week stays on desktop and for other roles). md+ is unchanged.

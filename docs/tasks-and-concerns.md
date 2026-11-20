@@ -498,3 +498,7 @@ applied in the browser; «Tahlil» splits by status itself and never takes it.
   `factory_scope`), so the register and «Tahlil» stay one answer.
 - The search reaches «Tahlil» too (`q`, 300 ms after the last keystroke) and
   matches № · name · cell · text on both (`_search_text` is the twin).
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — /cell-concerns, /concerns and /tasks on a phone, and **a leader deletes no concern at all** (`concerns.may_delete`, every width). md+ is unchanged.

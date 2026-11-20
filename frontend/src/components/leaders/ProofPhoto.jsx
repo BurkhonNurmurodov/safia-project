@@ -65,11 +65,11 @@ export function ProxyPhoto({
           style={{ borderColor: "var(--border)", background: "var(--bg-inner)" }}>
           <ImageOff size={16} color="var(--text-4)" />
           {failCaption && (
-            <span className="text-[11px] leading-tight px-1 text-center" style={{ color: "var(--text-3)" }}>
+            <span className="text-[11px] max-md:text-[12px] leading-tight px-1 text-center" style={{ color: "var(--text-3)" }}>
               {T.photoFailed}
             </span>
           )}
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--brand-text)" }}>
+          <span className="inline-flex items-center gap-1 text-[11px] max-md:text-[12px] font-semibold" style={{ color: "var(--brand-text)" }}>
             <RefreshCw size={12} color="var(--brand)" />
             {failCaption && T.retry}
           </span>

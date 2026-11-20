@@ -468,3 +468,7 @@ SERVER's; the phone never authors it.
   renders a rehearsal day's bot report for anyone holding that link.
 
 Related memory: `leader-camera-proof-pilot`.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — /proof/camera on a phone (the refused-camera text by context, the transparent poster, one status line). md+ is unchanged.

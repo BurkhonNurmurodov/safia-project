@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { useLang } from "../context/LangContext";
+import useIsMobile from "../hooks/useIsMobile";
 import { useExam } from "../context/ExamContext";
 import api from "../utils/api";
 import Button from "../components/ui/Button";
@@ -65,6 +66,7 @@ function Ring({ value, color, label }) {
 
 export default function Exam() {
   const { t, lang } = useLang();
+  const phone = useIsMobile(768);
   const { tl } = useTranslit();
   const exam = useExam();
   const toast = useToast();
@@ -124,7 +126,7 @@ export default function Exam() {
     if (!attempt) {
       return (
         <Card icon={GraduationCap} title={t("exam.title")}>
-          <EmptyState icon={GraduationCap} title={t("exam.none.title")} message={t("exam.none.msg")} showUploadLink={false} height="h-32" />
+          <EmptyState icon={GraduationCap} title={t("exam.none.title")} message={phone ? "" : t("exam.none.msg")} showUploadLink={false} height="h-32" />
         </Card>
       );
     }
@@ -150,7 +152,7 @@ export default function Exam() {
             <li>{t("exam.rule.pause")}</li>
             <li>{fill(t("exam.rule.passMark"), { n: passMark })}</li>
           </ul>
-          <Button size="lg" className="w-full sm:w-auto" icon={<Play size={16} />} loading={start.isPending}
+          <Button size="lg" className="max-md:min-h-[44px] w-full sm:w-auto" icon={<Play size={16} />} loading={start.isPending}
                   onClick={() => start.mutate(attempt.id)}>
             {t("exam.start")}
           </Button>
@@ -174,9 +176,9 @@ export default function Exam() {
           </div>
           <div className="flex flex-wrap gap-2">
             {!(exam.on && exam.attemptId === attempt.id) && (
-              <Button size="lg" icon={<Play size={16} />} onClick={() => continueAttempt(attempt)}>{t("exam.continue")}</Button>
+              <Button size="lg" className="max-md:min-h-[44px]" icon={<Play size={16} />} onClick={() => continueAttempt(attempt)}>{t("exam.continue")}</Button>
             )}
-            <Button size="lg" variant="secondary" icon={<Flag size={16} />} onClick={() => setConfirm("submit")}>{t("exam.finish")}</Button>
+            <Button size="lg" className="max-md:min-h-[44px]" variant="secondary" icon={<Flag size={16} />} onClick={() => setConfirm("submit")}>{t("exam.finish")}</Button>
           </div>
         </Card>
       );
@@ -248,17 +250,17 @@ export default function Exam() {
 
   const practiceCard = () => (
     <Card icon={Dumbbell} title={t("exam.practice")}>
-      <p className="text-sm" style={{ color: "var(--text-3)" }}>{t("exam.practice.msg")}</p>
+      <p className="text-sm max-md:hidden" style={{ color: "var(--text-3)" }}>{t("exam.practice.msg")}</p>
       <div className="flex flex-wrap gap-2">
         {practice?.status === "running" ? (
           <>
             {!(exam.on && exam.attemptId === practice.id) && (
-              <Button size="lg" icon={<Play size={16} />} onClick={() => continueAttempt(practice)}>{t("exam.continue")}</Button>
+              <Button size="lg" className="max-md:min-h-[44px]" icon={<Play size={16} />} onClick={() => continueAttempt(practice)}>{t("exam.continue")}</Button>
             )}
-            <Button size="lg" variant="secondary" icon={<RotateCcw size={16} />} onClick={() => setConfirm("reset")}>{t("exam.practice.reset")}</Button>
+            <Button size="lg" className="max-md:min-h-[44px]" variant="secondary" icon={<RotateCcw size={16} />} onClick={() => setConfirm("reset")}>{t("exam.practice.reset")}</Button>
           </>
         ) : (
-          <Button size="lg" variant="secondary" icon={<Dumbbell size={16} />} loading={practiceStart.isPending}
+          <Button size="lg" className="max-md:min-h-[44px]" variant="secondary" icon={<Dumbbell size={16} />} loading={practiceStart.isPending}
                   onClick={() => practiceStart.mutate()}>{t("exam.practice.start")}</Button>
         )}
       </div>
@@ -299,7 +301,9 @@ export default function Exam() {
   return (
     <Layout title={t("nav.exam")}>
       <div className="max-w-[720px] mx-auto space-y-4" style={{ paddingBottom: exam.on ? 120 : 0 }}>
-        <p className="text-sm" style={{ color: "var(--text-3)" }}>{t("exam.subtitle")}</p>
+        {/* The lead paragraph is a note — on a phone the cards speak for
+            themselves (the leader-phone redesign, E2). */}
+        <p className="text-sm max-md:hidden" style={{ color: "var(--text-3)" }}>{t("exam.subtitle")}</p>
         {me.can_sit && assignmentCard()}
         {me.can_sit && taskList()}
         {practiceCard()}

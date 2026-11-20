@@ -18,14 +18,43 @@ import { UploadDropzone } from "../ui/UploadDropzone";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { CommentsThread } from "../ui/CommentsModal";
 import { useLang } from "../../context/LangContext";
+import useIsMobile from "../../hooks/useIsMobile";
 import { showReason } from "../../utils/leaderReason";
 import VerdictBlock from "./VerdictBlock";
 import { BotPhoto, ExamplePhoto, LateDraftPhoto, OwnRollPhoto, ReportPhoto } from "./ProofPhoto";
 import { hexA, pick } from "./DayReportView";
 import {
-  C_OK, C_BAD, C_WARN, C_WAIT, clock, disputeChip, lateChip, leftText, urgency, KIND_ICON,
+  C_OK, C_BAD, C_WARN, C_WAIT, clock, disputeChip, lateChip, leftText, urgency, KIND_ICON, cameraPath, ink,
 } from "./checklistShared";
 import { put, errText } from "./checklistText";
+import { useBugunT } from "./bugunText";
+
+// On a phone (below md) the sheet leads with what the task asks for — the
+// leader-phone redesign, 2026-11-20 (plan D2, C4–C6, C9): a camera task opens
+// on «Suratga olish», an upload task on «Rasm tanlash», and taking the photos
+// IS the «done» answer; «Bajarilmadi» is a quiet second; the explanatory
+// sentences stay on the desk. Every write is the same call it always was.
+const PHONE_BTN = { fontSize: 15, borderRadius: 12 };
+
+/** A big button that opens the device's photo picker — in the tap itself, so
+ *  no WebView can refuse it — and hands over what was picked. */
+function PickButton({ onFiles, label, primary = true, disabled = false }) {
+  const ref = useRef(null);
+  return (
+    <>
+      <Button size="lg" variant={primary ? "primary" : "secondary"} tint={!primary} className="w-full h-12"
+        style={PHONE_BTN} disabled={disabled} onClick={() => ref.current?.click()}>
+        <ImagePlus size={18} /> {label}
+      </Button>
+      <input ref={ref} type="file" accept="image/*" multiple className="hidden" tabIndex={-1} aria-hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (files.length) onFiles(files);
+        }} />
+    </>
+  );
+}
 
 /**
  * One task of the «Chek-list» tab, opened — everything that can be done with
@@ -96,12 +125,15 @@ function usePicked(max) {
 }
 
 /** The picked images, as a grid of removable thumbnails plus the drop area. */
-function PhotoPicker({ picked, max, T, onZoom, busy, extra = null }) {
+function PhotoPicker({
+  picked, max, T, onZoom, busy, extra = null, phone = false, B = null, onPicked = null, pickPrimary = false,
+}) {
   const [warn, setWarn] = useState("");
   const full = picked.items.length >= max;
   const onFiles = async (files) => {
     const left = await picked.add(files);
     setWarn(left > 0 ? put(T.tooMany, { max }) : "");
+    onPicked?.();
   };
   // A screenshot on a computer is pasted, not saved and picked — Ctrl+V anywhere
   // in the open sheet lands it here.
@@ -113,8 +145,16 @@ function PhotoPicker({ picked, max, T, onZoom, busy, extra = null }) {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   });
+  // A phone: the button FIRST and the photos under it, so a pick never pushes
+  // the button it was made with (nothing is inserted above what was tapped);
+  // it stays, dimmed, once the photos are at their maximum.
+  const pickBtn = phone ? (
+    <PickButton onFiles={onFiles} disabled={busy || full} primary={pickPrimary && !picked.items.length}
+      label={picked.items.length ? B.pickMore : B.pick} />
+  ) : null;
   return (
     <div className="space-y-2">
+      {pickBtn}
       {(picked.items.length > 0 || extra) && (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {extra}
@@ -133,12 +173,14 @@ function PhotoPicker({ picked, max, T, onZoom, busy, extra = null }) {
           ))}
         </div>
       )}
-      {!full && (
+      {/* A phone has no drag and no Ctrl+V: the button above, and no hint
+          about either (C4). */}
+      {!full && !phone && (
         <UploadDropzone accept={{ "image/*": [] }} multiple busy={busy} onFiles={onFiles}
           label={T.dropLabel} activeLabel={T.dropActive} busyLabel={T.dropBusy}
           hint={T.dropHint} className="[&>div]:py-5" />
       )}
-      {warn && <p className="text-[11px]" style={{ color: C_WARN }}>{warn}</p>}
+      {warn && <p className="text-[11px] max-md:text-[12px]" style={{ color: C_WARN }}>{warn}</p>}
     </div>
   );
 }
@@ -216,7 +258,7 @@ function AutoLive({ view, task, T }) {
   }
   return (
     <div className="rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: "var(--bg-inner)" }}>
-      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{T.autoLive}</p>
+      <p className="text-[10px] max-md:text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{T.autoLive}</p>
       {lines.map(([color, text]) => (
         <p key={text} className="text-[12px] flex items-start gap-1.5 leading-snug" style={{ color: "var(--text-2)" }}>
           {color === C_OK ? <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" style={{ color }} />
@@ -233,6 +275,9 @@ function AutoLive({ view, task, T }) {
 function LateSheet({ view, task, T, onClose, onView, toast }) {
   const nav = useNavigate();
   const qc = useQueryClient();
+  const { lang } = useLang();
+  const B = useBugunT();
+  const phone = useIsMobile(768);
   const cam = task.kind === "camera";
   const max = Math.max(1, task.maxMedia || 4);
   const picked = usePicked(max);
@@ -258,9 +303,7 @@ function LateSheet({ view, task, T, onClose, onView, toast }) {
     try {
       await api.post("/api/leader-checklist/late/start",
         { leader: view.leader?.id, cell: view.cell, task: task.id });
-      const back = `/leaders?tab=checklist&open=${task.id}&focus=late`;
-      nav(`/proof/camera?leader=${view.leader?.id}&task=${task.id}${view.cell ? `&cell=${view.cell}` : ""}`
-        + `&late=1&back=${encodeURIComponent(back)}`);
+      nav(cameraPath(view, task.id, true));
     } catch (e) {
       setErr(errText(e, T));
     }
@@ -292,43 +335,60 @@ function LateSheet({ view, task, T, onClose, onView, toast }) {
     }
   };
 
+  // The reason box, ONE element drawn first on a phone (C6/2.8: the text box
+  // first, no explanation above it) and last on the desk, as it always was.
+  const reasonField = (
+    <FormField label={T.lateReason} required>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={800}
+        placeholder={T.lateReasonPh}
+        className="w-full rounded-xl px-3 py-2 text-[16px] sm:text-sm outline-none resize-y"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
+    </FormField>
+  );
   return (
     <Modal open zIndex={60} onClose={() => onClose(false)} dismissable={!have && !reason}
-      title={T.lateT} subtitle={`№${task.id}`} icon={<Timer size={18} />}
-      footer={(
+      title={T.lateT}
+      // Which task (C5): «№2» alone named nothing on a phone.
+      subtitle={phone ? `№${task.id} · ${pick(task.name, lang) || ""}` : `№${task.id}`}
+      icon={<Timer size={18} />}
+      footer={phone ? (
+        <Button size="lg" className="w-full" onClick={send} disabled={!ok} loading={busy}>{T.lateSend}</Button>
+      ) : (
         <>
           <Button variant="secondary" onClick={() => onClose(false)} disabled={busy}>{T.cancel}</Button>
           <Button onClick={send} disabled={!ok} loading={busy}>{T.lateSend}</Button>
         </>
       )}>
-      <p className="text-[12px] leading-snug rounded-xl px-3 py-2.5"
-        style={{ background: hexA(C_WARN, 0.1), color: "var(--text-2)" }}>
-        {T.lateIntro}
-        {view.finishDay?.label && <> {put(T.lateUntil, { t: view.finishDay.label })}</>}
-      </p>
+      {/* The 24:00 rule, once per flow (C4): on a phone «Bugun» says it where
+          the late action is, so the form does not say it again. */}
+      {!phone && (
+        <p className="text-[12px] leading-snug rounded-xl px-3 py-2.5"
+          style={{ background: hexA(C_WARN, 0.1), color: "var(--text-2)" }}>
+          {T.lateIntro}
+          {view.finishDay?.label && <> {put(T.lateUntil, { t: view.finishDay.label })}</>}
+        </p>
+      )}
+      {phone && reasonField}
       <Section title={T.latePhotosLbl} icon={Images}>
         {cam && (
-          <Button variant="secondary" tint size="lg" className="w-full" onClick={shootInApp}>
-            <Camera size={15} /> {T.lateCam}
+          <Button variant="secondary" tint size="lg" className={phone ? "w-full h-12" : "w-full"}
+            style={phone ? PHONE_BTN : undefined} onClick={shootInApp}>
+            <Camera size={phone ? 18 : 15} /> {T.lateCam}
           </Button>
         )}
         <PhotoPicker picked={picked} max={Math.max(0, max - drafts.length)} T={T} onZoom={setZoom} busy={busy}
+          phone={phone} B={B}
           extra={drafts.map((d) => (
             <div key={`d${d.id}`} className="aspect-square">
               <LateDraftPhoto id={d.id} T={T} thumb className="" onClick={setZoom} />
             </div>
           ))} />
         {drafts.length > 0 && (
-          <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{put(T.lateShot, { n: drafts.length })}</p>
+          <p className="text-[11px] max-md:text-[12px]" style={{ color: "var(--text-3)" }}>{put(T.lateShot, { n: drafts.length })}</p>
         )}
-        {!have && <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{T.lateNeed}</p>}
+        {!have && <p className="text-[11px] max-md:text-[12px]" style={{ color: "var(--text-3)" }}>{T.lateNeed}</p>}
       </Section>
-      <FormField label={T.lateReason} required>
-        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={800}
-          placeholder={T.lateReasonPh}
-          className="w-full rounded-xl px-3 py-2 text-[16px] sm:text-sm outline-none resize-y"
-          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
-      </FormField>
+      {!phone && reasonField}
       {err && <p className="text-[12px]" style={{ color: C_BAD }} role="alert">{err}</p>}
       <Lightbox src={zoom} onClose={() => setZoom("")} />
     </Modal>
@@ -337,8 +397,14 @@ function LateSheet({ view, task, T, onClose, onView, toast }) {
 
 // ── the sheet ────────────────────────────────────────────────────────────────
 
-export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onView, onRefetch, toast }) {
+export default function ChecklistTaskSheet({
+  view, task, focus, T, onClose, onView, onRefetch, toast,
+  // Photos picked on «Bugun» before the sheet opened (its «Rasm tanlash»).
+  initialFiles = null,
+}) {
   const { lang, t } = useLang();
+  const B = useBugunT();
+  const phone = useIsMobile(768);
   const nav = useNavigate();
   const qc = useQueryClient();
   const rights = view.rights || {};
@@ -359,13 +425,23 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   const [err, setErr] = useState("");
   const [ask, setAsk] = useState(null);                   // submit | restart | reopen | empty
   const [zoom, setZoom] = useState("");
-  const [howOpen, setHowOpen] = useState(canAnswer);
+  // Open on the desk, where the rule sat beside the answer; folded on a phone,
+  // where the answer is the first thing and the rule is one tap below it.
+  const [howOpen, setHowOpen] = useState(canAnswer && !phone);
   // The sheet is short-lived; the moment it opened is the clock its one
   // countdown is read against.
   const [now] = useState(() => Date.now());
   const [lateOpen, setLateOpen] = useState(focus === "late" && !!task.late?.eligible);
   const objRef = useRef(null);
   const lateRef = useRef(null);
+
+  // Photos handed over by «Bugun»: they are the «done» answer.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !initialFiles?.length || !canAnswer || task.kind !== "screenshot") return;
+    seeded.current = true;
+    picked.add(initialFiles).then(() => setAnswer("yes"));
+  }, [initialFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = focus === "object" ? objRef.current : focus === "late" ? lateRef.current : null;
@@ -418,21 +494,19 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   const reopen = (wipe) => post(() => api.post("/admin/leader-tasks/task/reopen",
     { day_id: view.day?.id, task_id: task.id, wipe }), wipe ? T.admEmptyOk : T.admOk, false);
 
-  const openCamera = () => {
-    const back = `/leaders?tab=checklist&open=${task.id}`;
-    nav(`/proof/camera?leader=${view.leader?.id}&task=${task.id}${view.cell ? `&cell=${view.cell}` : ""}`
-      + `&back=${encodeURIComponent(back)}`);
-  };
+  const openCamera = () => nav(cameraPath(view, task.id));
 
   // ── what state it is in ────────────────────────────────────────────────────
   const banner = (() => {
     switch (task.state) {
+      // `short` is what a phone prints under the title: a fact (an hour, a
+      // name, the leader's own reason) — never the sentence explaining a rule.
       case "draft":
         return perTask
-          ? { color: C_WARN, Icon: PencilLine, title: T.bDraftT, message: T.bDraftM }
-          : { color: C_WAIT, Icon: PencilLine, title: T.bDraftDayT, message: T.bDraftDayM };
+          ? { color: C_WARN, Icon: PencilLine, title: T.bDraftT, message: T.bDraftM, short: "" }
+          : { color: C_WAIT, Icon: PencilLine, title: T.bDraftDayT, message: T.bDraftDayM, short: "" };
       case "pending":
-        return { color: C_WAIT, Icon: Loader2, spin: true, title: T.bPendingT, message: T.bPendingM };
+        return { color: C_WAIT, Icon: Loader2, spin: true, title: T.bPendingT, message: T.bPendingM, short: "" };
       case "passed":
         return task.admin?.done
           ? { color: C_OK, Icon: CheckCircle2, title: T.bPassedAdminT, message: task.admin.by || "" }
@@ -442,32 +516,33 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         return { color: C_OK, Icon: CheckCircle2, title: T.bAutoPassT };
       case "rejected":
         return { color: C_BAD, Icon: ShieldAlert, title: T.bRejectedT,
-                 message: task.objectable ? T.bRejectedM : "" };
+                 message: task.objectable ? T.bRejectedM : "", short: "" };
       case "autofail":
         return { color: C_BAD, Icon: XCircle, title: T.bAutoFailT,
-                 message: task.objectable ? T.bAutoFailM : "" };
-      case "expired":
-        return { color: C_BAD, Icon: TimerOff, title: T.bExpiredT,
-                 message: [showReason(task.reason, T.missedLine) || put(T.bExpiredM, { time: task.closesAt }),
-                   task.objectable ? T.bExpiredObj : ""].filter(Boolean).join(" ") };
+                 message: task.objectable ? T.bAutoFailM : "", short: "" };
+      case "expired": {
+        const when = showReason(task.reason, T.missedLine) || put(T.bExpiredM, { time: task.closesAt });
+        return { color: C_BAD, Icon: TimerOff, title: T.bExpiredT, short: when,
+                 message: [when, task.objectable ? T.bExpiredObj : ""].filter(Boolean).join(" ") };
+      }
       case "notdone":
         return { color: C_BAD, Icon: XCircle, title: T.bNotdoneT,
                  message: task.reason ? `${T.reasonShown}: ${task.reason}` : "" };
       case "missing":
         return { color: C_BAD, Icon: CircleSlash, title: T.bMissingT,
-                 message: task.objectable ? T.bExpiredObj : "" };
+                 message: task.objectable ? T.bExpiredObj : "", short: "" };
       case "ruledout":
-        return { color: C_BAD, Icon: Gavel, title: T.bRuledoutT,
+        return { color: C_BAD, Icon: Gavel, title: T.bRuledoutT, short: task.admin?.by || "",
                  message: [task.admin?.by, task.objectable ? T.bRuledoutM : ""].filter(Boolean).join(" · ") };
       case "open":
         if (task.kind === "auto") return null;
         if (task.notStarted) {
           return { color: C_WAIT, Icon: Lock, title: put(T.bNotStartedT, { time: clock(task.startsAt) }),
-                   message: T.bNotStartedM };
+                   message: T.bNotStartedM, short: T.bNotStartedM };
         }
         if (timeUp) {
           return { color: C_BAD, Icon: TimerOff, title: T.bTimeUpT,
-                   message: put(T.bTimeUpM, { time: task.closesAt }) };
+                   message: put(T.bTimeUpM, { time: task.closesAt }), short: "" };
         }
         return null;
       default:
@@ -503,7 +578,94 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
   const lc = lateChip(task.late?.proof, T);
   const camReady = task.kind === "camera" && isDraft;
 
-  const footer = canAnswer ? (
+  // ── a phone: the answer first ─────────────────────────────────────────────
+  // The task's hour and what its photos must be, as two short lines of state —
+  // the desk's four-fact grid repeated the weight the subtitle already gives.
+  const stateLine = (task.closesAt || ((task.kind === "screenshot" || task.kind === "camera") && task.minMedia > 0)) ? (
+    <div className="space-y-0.5">
+      {task.closesAt && (
+        <p className="text-[13px] font-semibold tabular-nums" style={{ color: isOpen ? ink(u.color) : "var(--text-2)" }}>
+          {isOpen && task.dueAt && !task.pastDue
+            ? `${put(T.by, { time: task.closesAt })} · ${put(T.left, { t: leftText(Date.parse(task.dueAt) - now, T) })}`
+            : put(T.by, { time: task.closesAt })}
+        </p>
+      )}
+      {(task.kind === "screenshot" || task.kind === "camera") && (
+        <p className="text-[12px]" style={{ color: "var(--text-3)" }}>
+          {[task.minMedia > 0 ? put(B.needPhotos, { n: task.minMedia }) : null,
+            task.dateCheck && photoRule
+              ? (task.dayCheck !== false && task.timeCheck !== false ? put(B.photoTime, { w: photoRule }) : photoRule)
+              : null].filter(Boolean).join(" · ")}
+        </p>
+      )}
+    </div>
+  ) : null;
+  // Back to «done» once «Bajarilmadi» is lifted: photos in hand, or a roll.
+  const doneAgain = () => (task.kind === "screenshot" ? (picked.items.length ? "yes" : null)
+    : task.kind === "camera" ? (task.roll?.count ? "yes" : null) : null);
+  const phoneAnswer = !canAnswer ? null : (
+    <div className="space-y-3">
+      {task.kind === "camera" && (
+        <>
+          <Button size="lg" className="w-full h-12" style={PHONE_BTN} onClick={openCamera}>
+            <Camera size={18} />
+            {task.roll?.count ? put(B.shootRoll, { k: task.roll.count, n: task.minMedia || 1 }) : B.shoot}
+          </Button>
+          {rollIds.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {rollIds.map((id) => (
+                <div key={id} className="aspect-square">
+                  <OwnRollPhoto id={id} T={T} thumb className="" onClick={setZoom} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {task.kind === "screenshot" && (
+        <PhotoPicker picked={picked} max={max} T={T} onZoom={setZoom} busy={busy} phone B={B} pickPrimary
+          onPicked={() => setAnswer("yes")} />
+      )}
+      {task.kind === "none" && answer !== "yes" && (
+        <Button size="lg" className="w-full h-12" style={PHONE_BTN}
+          onClick={() => { setAnswer("yes"); if (perTask) setAsk("submit"); }}>
+          <Check size={18} /> {T.yes}
+        </Button>
+      )}
+      {stateLine}
+      <Button size="lg" variant={answer === "no" ? "secondary" : "ghost"} tint={answer !== "no"}
+        className="w-full h-11" aria-pressed={answer === "no"}
+        onClick={() => setAnswer((a) => (a === "no" ? doneAgain() : "no"))}>
+        <X size={16} /> {T.no}
+      </Button>
+      {answer === "no" && (
+        <FormField label={T.reasonLbl} required>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={800}
+            placeholder={T.reasonPh}
+            className="w-full rounded-xl px-3 py-2 text-[16px] outline-none resize-y"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
+        </FormField>
+      )}
+    </div>
+  );
+
+  // A phone: ONE full-width button, and only where there is something to hand
+  // in — the ✕ (and a swipe) already close the sheet, so no «Yopish» /
+  // «Bekor qilish» repeats them (C9). A camera task's answer IS the camera.
+  const phoneFooter = canAnswer ? (
+    // One gold control at a time: «Rasm tanlash» until photos are in hand,
+    // then «Topshirish» (the pick button steps down to «Yana rasm qo'shish»).
+    ((task.kind === "screenshot" && picked.items.length > 0) || answer === "no"
+      || (task.kind === "none" && answer === "yes")) ? (
+      <Button size="lg" className="w-full" disabled={!valid || busy} loading={busy}
+        onClick={() => (perTask ? setAsk("submit") : sendAnswer())}>
+        {perTask ? T.submit : T.save}
+      </Button>
+    ) : null
+  ) : isDraft && fileable && perTask ? (
+    <Button size="lg" className="w-full" onClick={() => setAsk("submit")} loading={busy} disabled={busy}>{T.submit}</Button>
+  ) : null;
+  const footer = phone ? phoneFooter : canAnswer ? (
     <>
       <Button variant="secondary" onClick={() => onClose()} disabled={busy}>{T.cancel}</Button>
       <Button disabled={!valid || busy} loading={busy}
@@ -526,7 +688,12 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         title={`№${task.id} · ${name}`}
         subtitle={[kindLabel, task.weight ? `${T.ruleWeight} ${task.weight}%` : null].filter(Boolean).join(" · ")}
         icon={<KindIcon size={18} />} footer={footer}>
-        {banner && <Banner {...banner} />}
+        {/* A phone, a task to answer now: the answer is the first thing on the
+            sheet (D2) — nothing above it, nothing inserted above it later. */}
+        {phone && canAnswer && !task.notStarted && phoneAnswer}
+        {banner && <Banner {...banner} message={phone ? banner.short : banner.message} />}
+        {/* …except before its hour: then the hour comes first, and why. */}
+        {phone && canAnswer && task.notStarted && phoneAnswer}
 
         {/* What judged it — the AI's words, or the automatic check's hour and
             numbers. The reader decides whether to object on THIS. */}
@@ -539,12 +706,20 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {/* The objection — written right here, as the first message of the
             chat it opens with the brigadir and the admins. */}
         {task.objectable && objUid && (
-          <Section title={T.objT} icon={ShieldQuestion} innerRef={objRef}>
-            <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-              {ruled ? T.objIntroAdmin : deadline ? T.objIntroDeadline
-                : task.kind === "auto" ? T.objIntroAuto : T.objIntro}
-            </p>
-            <div className="rounded-xl overflow-hidden flex flex-col"
+          <Section title={phone ? null : T.objT} icon={ShieldQuestion} innerRef={objRef}>
+            {/* A phone: the box first, under one word (C6) — the three
+                sentences about who reads it stay on the desk, and so does the
+                empty chat's fourth (the box holding `[role=log]` is that
+                empty thread, 160px tall). */}
+            {phone ? (
+              <p className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>{B.objLbl}</p>
+            ) : (
+              <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+                {ruled ? T.objIntroAdmin : deadline ? T.objIntroDeadline
+                  : task.kind === "auto" ? T.objIntroAuto : T.objIntro}
+              </p>
+            )}
+            <div className="rounded-xl overflow-hidden flex flex-col max-md:[&_div:has(>[role=log])]:hidden"
               style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
               <CommentsThread
                 endpoint={`/api/leaders/report/${encodeURIComponent(objUid)}/dispute`}
@@ -568,7 +743,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
           <Section title={T.objT} icon={ShieldQuestion} innerRef={task.objectable ? null : objRef}>
             <div className="rounded-xl px-3 py-2.5 space-y-2" style={{ background: "var(--bg-inner)" }}>
               {dc && (
-                <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+                <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] max-md:text-[12px] font-semibold"
                   style={{ background: hexA(dc.color, 0.12), color: dc.color }}>
                   <ShieldQuestion size={11} />{dc.text}
                 </span>
@@ -577,7 +752,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>«{task.dispute.reason}»</p>
               )}
               {task.dispute.id && (
-                <Button size="md" tint variant={task.dispute.canAct ? "primary" : "secondary"} className="w-full"
+                <Button size="md" tint variant={task.dispute.canAct ? "primary" : "secondary"} className="w-full max-md:h-11"
                   onClick={() => nav(`/leaders/appeal/dispute/${task.dispute.id}`)}>
                   <MessagesSquare size={13} /> {task.dispute.canAct ? T.yourTurn : T.openChat}
                 </Button>
@@ -592,7 +767,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
             {task.late.proof ? (
               <div className="rounded-xl px-3 py-2.5 space-y-2" style={{ background: "var(--bg-inner)" }}>
                 {lc && (
-                  <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+                  <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] max-md:text-[12px] font-semibold"
                     style={{ background: hexA(lc.color, 0.12), color: lc.color }}>
                     <Timer size={11} />{lc.text}
                   </span>
@@ -601,22 +776,24 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                   <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>«{task.late.proof.reason}»</p>
                 )}
                 {task.late.proof.held && task.late.proof.status === "supervisor" && (
-                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                  <p className="text-[11px] max-md:text-[12px] leading-snug" style={{ color: "var(--text-3)" }}>
                     {put(T.lateHeldNote, { t: view.finishDay?.label || "24:00" })}
                   </p>
                 )}
-                <Button size="md" tint variant="secondary" className="w-full"
+                <Button size="md" tint variant="secondary" className="w-full max-md:h-11"
                   onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
                   <MessagesSquare size={13} /> {T.openChat}
                 </Button>
               </div>
             ) : (
               <>
-                <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
+                {/* The 24:00 rule is said once per flow (C4) — on a phone by
+                    «Bugun», where the late action is. */}
+                <p className="text-[12px] leading-snug max-md:hidden" style={{ color: "var(--text-2)" }}>
                   {T.lateIntro}
                   {view.finishDay?.label && <> {put(T.lateUntil, { t: view.finishDay.label })}</>}
                 </p>
-                <Button size="lg" variant="secondary" tint className="w-full" onClick={() => setLateOpen(true)}>
+                <Button size="lg" variant="secondary" tint className="w-full max-md:h-12" onClick={() => setLateOpen(true)}>
                   <Timer size={15} /> {T.lateOpen}
                 </Button>
               </>
@@ -653,11 +830,11 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {task.kind === "auto" && (
           <Section title={T.autoT} icon={Settings2}>
             <p className="text-[12px] leading-snug" style={{ color: "var(--text-2)" }}>
-              {put(T.autoM, { time: task.auto?.hour || task.closesAt })}
+              {put(phone ? T.autoAt : T.autoM, { time: task.auto?.hour || task.closesAt })}
             </p>
             {view.isToday && isOpen && <AutoLive view={view} task={task} T={T} />}
             {task.auto?.page && (
-              <Button size="lg" variant="secondary" tint className="w-full" onClick={() => nav(task.auto.page)}>
+              <Button size="lg" variant="secondary" tint className="w-full max-md:h-11" onClick={() => nav(task.auto.page)}>
                 <ExternalLink size={14} /> {t(task.auto.page === "/concerns" ? "nav.concerns" : "nav.production")}
               </Button>
             )}
@@ -665,7 +842,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         )}
 
         {/* The rule, at a glance. */}
-        {task.kind !== "auto" && (view.isToday || isDraft) && (
+        {phone && !canAnswer && isDraft && stateLine}
+        {!phone && task.kind !== "auto" && (view.isToday || isDraft) && (
           <div className="grid grid-cols-2 gap-3 rounded-xl px-3 py-3" style={{ background: "var(--bg-inner)" }}>
             {task.closesAt && (
               <Fact icon={Clock} label={T.ruleDeadline}
@@ -683,7 +861,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         )}
 
         {/* ── the answer ─────────────────────────────────────────────────── */}
-        {canAnswer && (
+        {canAnswer && !phone && (
           <Section title={T.q}>
             <SegmentedToggle fill value={answer} onChange={setAnswer}
               options={[
@@ -739,7 +917,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {isDraft && fileable && (
           <div className="flex items-center justify-between gap-2 flex-wrap">
             {camReady && <p className="text-[12px] font-semibold" style={{ color: C_OK }}>{T.camReady}</p>}
-            <Button size="md" variant="ghost" tint className="ml-auto" disabled={busy}
+            <Button size="md" variant="ghost" tint className="ml-auto max-md:h-11" disabled={busy}
               onClick={() => setAsk("restart")}>
               <RotateCcw size={13} /> {T.restart}
             </Button>
@@ -750,8 +928,8 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {task.kind !== "auto" && (task.description || task.examples?.length > 0) && (
           <Section>
             <button type="button" onClick={() => setHowOpen((o) => !o)} aria-expanded={howOpen}
-              className="w-full flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--text-4)" }}>
+              className="w-full flex items-center gap-1.5 text-[11px] max-md:text-[12px] max-md:min-h-[44px] font-bold uppercase tracking-wider"
+              style={{ color: phone ? "var(--text-3)" : "var(--text-4)" }}>
               {T.howTo}
               <ChevronDown size={13} className="transition-transform ml-auto"
                 style={{ transform: howOpen ? "rotate(180deg)" : "none" }} />
@@ -765,7 +943,7 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
                 )}
                 {task.examples?.length > 0 && (
                   <>
-                    <p className="text-[10px] font-bold uppercase tracking-wider pt-1" style={{ color: "var(--text-4)" }}>
+                    <p className="text-[10px] max-md:text-[12px] font-bold uppercase tracking-wider pt-1" style={{ color: "var(--text-4)" }}>
                       {T.examples}
                     </p>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -786,10 +964,10 @@ export default function ChecklistTaskSheet({ view, task, focus, T, onClose, onVi
         {rights.admin && view.day?.id && task.locked && task.kind !== "auto" && view.source === "bot" && (
           <Section title={T.adminT}>
             <div className="flex gap-2 flex-wrap">
-              <Button size="md" variant="secondary" tint onClick={() => setAsk("reopen")} disabled={busy}>
+              <Button size="md" variant="secondary" tint className="max-md:h-11" onClick={() => setAsk("reopen")} disabled={busy}>
                 <RotateCcw size={13} /> {T.admReopen}
               </Button>
-              <Button size="md" variant="danger" tint onClick={() => setAsk("empty")} disabled={busy}>
+              <Button size="md" variant="danger" tint className="max-md:h-11" onClick={() => setAsk("empty")} disabled={busy}>
                 <Trash2 size={13} /> {T.admEmpty}
               </Button>
             </div>

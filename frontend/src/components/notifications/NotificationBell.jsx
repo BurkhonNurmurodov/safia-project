@@ -16,6 +16,8 @@ import {
   useMarkAllRead, useMarkRead, useMarkSeen, useNotifSummary,
 } from "./useNotifCenter";
 import { pushSeen } from "../../utils/androidPush";
+import useIsMobile from "../../hooks/useIsMobile";
+import { shellText } from "../layout/shellPhoneText";
 
 const PANEL_Z = 900;   // above the page and its own popovers; dialogs sit higher
 
@@ -35,6 +37,9 @@ export default function NotificationBell() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const btnRef = useRef(null);
   const toast = useToast();
+  // On a phone the bell is a 44px target around the same chip (the header's
+  // other buttons do the same); from md up it is the chip itself, as before.
+  const phone = useIsMobile(768);
 
   // Swing the bell when something new lands — a silent cue, important in a
   // Telegram mini-app where nothing else moves. CSS honours reduced motion.
@@ -61,39 +66,52 @@ export default function NotificationBell() {
     ? `${t("notif.title")}, ${fmt(t("notif.waitingN"), { n: queue })}`
     : fresh > 0 ? `${t("notif.title")}, ${t("notif.newDot")}` : t("notif.title");
 
+  const chipStyle = {
+    background: open ? "var(--brand)" : "var(--bg-inner)",
+    border: `1px solid ${open ? "var(--brand)" : "var(--border)"}`,
+    color: open ? "#fff" : "var(--text-2)",
+  };
+  const marks = (
+    <>
+      <Bell size={phone ? 17 : 15} className={ring ? "bell-swing" : undefined} />
+      {queue > 0 ? (
+        <span
+          className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 max-md:min-w-[18px] max-md:h-[18px] px-1 rounded-full text-[10px] max-md:text-xs font-bold flex items-center justify-center ${ring ? "badge-pop" : ""}`}
+          style={{ background: "#ef4444", color: "#fff", border: "2px solid var(--bg-base)" }}
+          aria-hidden="true"
+        >
+          {queue > 99 ? "99+" : queue}
+        </span>
+      ) : fresh > 0 ? (
+        <span
+          className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${ring ? "badge-pop" : ""}`}
+          style={{ background: "var(--brand)", border: "2px solid var(--bg-base)" }}
+          aria-hidden="true"
+        />
+      ) : null}
+    </>
+  );
+
   return (
     <div className="relative flex-shrink-0">
       <button
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex items-center justify-center p-1.5 rounded-lg transition-colors"
-        style={{
-          background: open ? "var(--brand)" : "var(--bg-inner)",
-          border: `1px solid ${open ? "var(--brand)" : "var(--border)"}`,
-          color: open ? "#fff" : "var(--text-2)",
-        }}
+        className={phone
+          ? "relative w-11 h-11 grid place-items-center"
+          : "relative flex items-center justify-center p-1.5 rounded-lg transition-colors"}
+        style={phone ? undefined : chipStyle}
         title={label}
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <Bell size={15} className={ring ? "bell-swing" : undefined} />
-        {queue > 0 ? (
-          <span
-            className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${ring ? "badge-pop" : ""}`}
-            style={{ background: "#ef4444", color: "#fff", border: "2px solid var(--bg-base)" }}
-            aria-hidden="true"
-          >
-            {queue > 99 ? "99+" : queue}
+        {phone ? (
+          <span className="relative w-9 h-9 grid place-items-center rounded-lg transition-colors" style={chipStyle}>
+            {marks}
           </span>
-        ) : fresh > 0 ? (
-          <span
-            className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${ring ? "badge-pop" : ""}`}
-            style={{ background: "var(--brand)", border: "2px solid var(--bg-base)" }}
-            aria-hidden="true"
-          />
-        ) : null}
+        ) : marks}
       </button>
 
       {open && (
@@ -114,6 +132,9 @@ export default function NotificationBell() {
 
 function NotifPanel({ anchorRef, onClose, onSettings }) {
   const { t, lang } = useLang();
+  // On a phone: 44px targets in the head, and «mark all read» says what it
+  // does (components/layout/shellPhoneText.js).
+  const phone = useIsMobile(768);
   const panelRef = useRef(null);
   // Drops out of the bell and eases back when it closes (index.css `.pop`).
   const setPanel = useLeaveRef(panelRef);
@@ -246,20 +267,20 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
         <span className="flex items-center gap-0.5">
           {anyUnread && (
             <button type="button"
-              className="text-xs font-medium px-2 py-2 max-sm:py-3 rounded-lg hover:bg-[var(--bg-inner)]"
+              className="text-xs font-medium px-2 py-2 max-md:py-3.5 rounded-lg hover:bg-[var(--bg-inner)]"
               style={{ color: "var(--brand-text)" }}
               disabled={markAll.isPending}
               onClick={() => { setAllRead(true); markAll.mutate(); }}>
-              {t("notif.markAllRead")}
+              {phone ? shellText(lang).notif.markAllRead : t("notif.markAllRead")}
             </button>
           )}
           <button type="button" aria-label={t("notif.settings")} title={t("notif.settings")}
-            className="w-8 h-8 max-sm:w-10 max-sm:h-10 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)]"
+            className="w-8 h-8 max-md:w-11 max-md:h-11 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)]"
             style={{ color: "var(--text-3)" }} onClick={onSettings}>
             <Settings size={16} />
           </button>
           <button type="button" aria-label={t("notif.close")} title={t("notif.close")}
-            className="w-8 h-8 max-sm:w-10 max-sm:h-10 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)]"
+            className="w-8 h-8 max-md:w-11 max-md:h-11 flex items-center justify-center rounded-lg hover:bg-[var(--bg-inner)]"
             style={{ color: "var(--text-3)" }} onClick={() => onClose(true)}>
             <X size={16} />
           </button>
@@ -281,7 +302,7 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
           <>
             {(queue?.total ?? 0) > 0 ? (
               <section aria-label={t("notif.queueTitle")}>
-                <h3 className="px-4 pt-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider"
+                <h3 className="px-4 pt-3 pb-1.5 text-[11px] max-md:text-xs font-semibold uppercase tracking-wider"
                   style={{ color: "var(--text-3)" }}>
                   {t("notif.queueTitle")} · <span style={{ color: "var(--text-1)" }}>{queue.total}</span>
                 </h3>
@@ -312,7 +333,7 @@ function NotifPanel({ anchorRef, onClose, onSettings }) {
               </div>
             ) : days.map((d) => (
               <section key={d.day || "x"} aria-label={dayLabel(d.day, feed.today, t)}>
-                <h3 className="px-4 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider"
+                <h3 className="px-4 pt-4 pb-1.5 text-[11px] max-md:text-xs font-semibold uppercase tracking-wider"
                   style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}>
                   {dayLabel(d.day, feed.today, t)}
                 </h3>

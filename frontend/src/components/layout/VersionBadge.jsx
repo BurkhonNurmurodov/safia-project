@@ -57,10 +57,9 @@ export default function VersionBadge({ expanded = true }) {
         type="button"
         onClick={() => setOpen(true)}
         title={!expanded ? `v${APP_VERSION}${built ? ` · ${built}` : ""}` : undefined}
-        className="nav-item w-full flex items-center rounded-lg transition-colors"
+        className="nav-item w-full flex items-center rounded-lg transition-colors px-2.5 py-2 max-md:py-3 max-md:min-h-[44px]"
         style={{
           gap: "12px",
-          padding: "8px 10px",
           justifyContent: !expanded ? "center" : undefined,
         }}
       >
@@ -76,9 +75,8 @@ export default function VersionBadge({ expanded = true }) {
           }}
         />
         <div
-          className="text-[10px] leading-tight whitespace-nowrap transition-all duration-200 text-left"
+          className="text-[10px] max-md:text-xs leading-tight whitespace-nowrap transition-all duration-200 text-left [color:var(--text-4)] max-md:[color:var(--text-3)]"
           style={{
-            color: "var(--text-4)",
             opacity: expanded ? 1 : 0,
             maxWidth: expanded ? 200 : 0,
             overflow: "hidden",

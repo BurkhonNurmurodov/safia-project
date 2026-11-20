@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 
 // What the enclosing TableCard tells its header cells. A `pageScroll` table
@@ -165,6 +165,10 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   mobileMaxHeight – the phone list's own cap ("none" lets it grow with the
  *               page: a list whose rows open in place must not become a box
  *               scrolled inside the page). Defaults to `maxHeight`.
+ *   mobileUntil – "sm" (default) or "md": the width BELOW which `mobile`
+ *               replaces the table. "md" is the phone line the leader screens
+ *               are designed to (2026-11-20) — a 700px phone in landscape gets
+ *               the cards too; md+ always shows the table.
  *   mobileCards – render the `mobile` node OUTSIDE the card as a stack of
  *               standalone cards (each child styles itself as a card); the
  *               card keeps only the header/toolbar on phones and the stack
@@ -215,19 +219,36 @@ export default function TableCard({
   head,
   collapsed = false,
   scrollRef,
+  mobileUntil = "sm",
   className = "",
   children,
 }) {
   const detached = mobile != null && mobileCards;
+  const md = mobileUntil === "md";
+  // The visible width of the table, as `--tc-vw` on the card (its scroller is
+  // exactly as wide, and the variable is inherited), so an `EmptyRow` centres
+  // its message in the part of the table on screen — a colSpan cell is as wide
+  // as the TABLE, and on a phone a «nothing found» centred in an 841px table
+  // sat past the screen's right edge (audit T1).
+  const cardRef = useRef(null);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const set = () => el.style.setProperty("--tc-vw", `${el.clientWidth}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const card = (
-    <div className={`rounded-2xl ${pageScroll ? "overflow-clip" : "overflow-hidden"} ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+    <div ref={cardRef} className={`rounded-2xl ${pageScroll ? "overflow-clip" : "overflow-hidden"} ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {head ?? (title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} size={headSize} />)}
       {!collapsed && toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           {toolbar}
         </div>
       )}
-      {!collapsed && <div ref={scrollRef} className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? " hidden sm:block" : ""}`} style={pageScroll ? undefined : { maxHeight }}>
+      {!collapsed && <div ref={scrollRef} className={`${pageScroll ? "" : "overflow-auto"}${mobile != null ? (md ? " hidden md:block" : " hidden sm:block") : ""}`} style={pageScroll ? undefined : { maxHeight }}>
         <table
           className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)", ...(minWidth ? { minWidth } : {}) }}
@@ -236,7 +257,7 @@ export default function TableCard({
         </table>
       </div>}
       {!collapsed && mobile != null && !mobileCards && (
-        <div className="sm:hidden overflow-y-auto" style={{ maxHeight: mobileMaxHeight ?? maxHeight }}>
+        <div className={`${md ? "md:hidden" : "sm:hidden"} overflow-y-auto`} style={{ maxHeight: mobileMaxHeight ?? maxHeight }}>
           {mobile}
         </div>
       )}
@@ -251,7 +272,28 @@ export default function TableCard({
   return (
     <div className={className}>
       {card}
-      {!collapsed && <div className="sm:hidden mt-3 space-y-3">{mobile}</div>}
+      {!collapsed && <div className={`${md ? "md:hidden" : "sm:hidden"} mt-3 space-y-3`}>{mobile}</div>}
     </div>
+  );
+}
+
+/**
+ * The «nothing here» row of a TableCard table — ONE cell across every column
+ * whose content is centred in the part of the table ON SCREEN (`--tc-vw`, set
+ * by TableCard), not in the table's full width: a wide table on a phone put a
+ * centred «Mos vazifa topilmadi» past the right edge (2026-11-20, audit T1).
+ *   colSpan – the table's column count
+ *   className – the cell's padding (default "py-10")
+ */
+export function EmptyRow({ colSpan, className = "py-10", children }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className={className} style={{ whiteSpace: "normal" }}>
+        <div className="sticky left-0 flex justify-center px-4"
+          style={{ width: "var(--tc-vw, 100%)", maxWidth: "100%" }}>
+          <div className="min-w-0 max-w-full text-center">{children}</div>
+        </div>
+      </td>
+    </tr>
   );
 }

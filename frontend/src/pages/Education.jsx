@@ -95,9 +95,12 @@ export default function Education() {
   return (
     <Layout title={t("nav.education")}>
       <div className="space-y-4">
-        {/* Header. The primary action is the only filled button on the page. */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0">
+        {/* Header. The primary action is the only filled button on the page.
+            On a phone the bar already says «Ta'lim» and the line under it is a
+            note: a viewer who manages nothing sees no header at all there, a
+            manager keeps the button. */}
+        <div className={`flex flex-wrap items-center gap-3${canManage ? "" : " max-md:hidden"}`}>
+          <div className="min-w-0 max-md:hidden">
             <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>
               {t("nav.education")}
             </h2>

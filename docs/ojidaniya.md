@@ -1367,3 +1367,7 @@ page's twin (`canAnalyse` in `pages/IdleSolutions.jsx`) shows the
 «Muammolar / Tahlil» toggle to them alone. Brigadirs (refused since the tab
 was built) and now the cause owners (`idle-owner`) have «Muammolar» only.
 Test: `test_tahlil_is_the_managers`.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — «Kutish» (/idle-cell) on a phone. md+ is unchanged.

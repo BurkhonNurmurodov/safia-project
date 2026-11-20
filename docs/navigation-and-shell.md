@@ -484,3 +484,7 @@ on any screen, several colours with none of them taking the page over.
   (`SaveBar`). The header's always-present disabled button is gone, and with
   it the «is the header button on screen» observer. Still ONE save for the
   form and the login rename (`useSaveTarget`).
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — a leader's phone menu named for the job («Bugun · Havotirlar · Ish grafigi · Kutish · Natijam»), the «Bugun» landing, the app bar and the profile popover on a phone. md+ is unchanged.

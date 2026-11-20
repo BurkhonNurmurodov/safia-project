@@ -17,8 +17,13 @@ import { Flag } from "lucide-react";
  *   noLeader    – the words for a cell nobody leads
  *   leaderTitle – tooltip on the leader line (optional)
  *   extra       – a node beside the code chip (optional)
+ *   self        – the viewer IS this cell's leader (a leader reading their own
+ *                 cells): below md the leader line is not drawn — a leader's
+ *                 own name on every one of their own cards says nothing they
+ *                 do not know, and costs the row's second line (2026-11-20,
+ *                 the leader-phone redesign, «own name» rule). md+ unchanged.
  */
-export default function CellIdent({ code, leader, noLeader, leaderTitle, extra }) {
+export default function CellIdent({ code, leader, noLeader, leaderTitle, extra, self = false }) {
   return (
     <span className="min-w-0 flex-1 flex flex-col gap-0.5">
       <span className="flex items-center gap-2 min-w-0">
@@ -37,7 +42,7 @@ export default function CellIdent({ code, leader, noLeader, leaderTitle, extra }
         </span>
         {extra}
       </span>
-      <span className="flex items-center gap-1.5 min-w-0 text-[11px] leading-tight" title={leaderTitle}>
+      <span className={`flex items-center gap-1.5 min-w-0 text-[11px] max-md:text-xs leading-tight${self ? " max-md:hidden" : ""}`} title={leaderTitle}>
         <Flag size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
         <span className="truncate" style={{ color: leader ? "var(--text-3)" : "var(--text-4)" }}>
           {leader || noLeader}

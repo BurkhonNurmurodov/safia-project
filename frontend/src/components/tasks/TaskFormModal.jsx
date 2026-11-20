@@ -27,6 +27,7 @@ import DateRangePicker from "../ui/DateRangePicker";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import useIsMobile from "../../hooks/useIsMobile";
 import {
   KIND_LEADER, KIND_SUP, KIND_SM, ASSIGNEE_FIELD, endpointFor,
 } from "../../utils/taskTiers";
@@ -42,6 +43,9 @@ const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--bor
 export default function TaskFormModal({ kinds = [], initial = {}, showUnit = true, onClose, onSaved, zIndex }) {
   const { t } = useLang();
   const { tl } = useTranslit();
+  // Below md (2026-11-20): no explanatory hint, 16px fields (no iOS zoom on
+  // focus), 44px footer buttons. md and up is unchanged.
+  const phone = useIsMobile(768);
   const editing = !!initial.id;
   const offered = TOGGLE_ORDER.filter((k) => kinds.includes(k));
   const [form, setForm] = useState(() => ({
@@ -118,8 +122,8 @@ export default function TaskFormModal({ kinds = [], initial = {}, showUnit = tru
       title={editing ? t("tasks.editTitle") : t("tasks.addTitle")}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>{t("tasks.cancel")}</Button>
-          <Button loading={save.isPending} onClick={submit}>{t("tasks.save")}</Button>
+          <Button variant="secondary" onClick={onClose} className="max-md:min-h-[44px] max-md:flex-1">{t("tasks.cancel")}</Button>
+          <Button loading={save.isPending} onClick={submit} className="max-md:min-h-[44px] max-md:flex-1">{t("tasks.save")}</Button>
         </>
       }
     >
@@ -140,7 +144,7 @@ export default function TaskFormModal({ kinds = [], initial = {}, showUnit = tru
           value={form.task_text}
           onChange={(e) => set({ task_text: e.target.value })}
           rows={3}
-          className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+          className="w-full rounded-lg px-3 py-2 text-sm max-md:text-base outline-none resize-none"
           style={inputStyle}
         />
       </Field>
@@ -175,7 +179,7 @@ export default function TaskFormModal({ kinds = [], initial = {}, showUnit = tru
           row's own one-tap control — and its own right, so the edit form
           (open to the task's author) deliberately does not carry it. */}
       {!editing && (
-        <Field label={t("tasks.fieldUrgent")} hint={t("tasks.urgentHint")}>
+        <Field label={t("tasks.fieldUrgent")} hint={phone ? undefined : t("tasks.urgentHint")}>
           <SegmentedToggle
             fill
             value={!!form.urgent}
@@ -199,7 +203,7 @@ export default function TaskFormModal({ kinds = [], initial = {}, showUnit = tru
             value={form.comment}
             onChange={(e) => set({ comment: e.target.value })}
             rows={2}
-            className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+            className="w-full rounded-lg px-3 py-2 text-sm max-md:text-base outline-none resize-none"
             style={inputStyle}
           />
         </Field>

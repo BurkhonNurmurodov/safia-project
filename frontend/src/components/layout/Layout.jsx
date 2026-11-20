@@ -27,6 +27,10 @@ import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { usesLauncher } from "../../utils/launcherRoles";
 import { ScopedErrorBoundary } from "../ui/ErrorBoundary";
 import { LeaveGuardProvider } from "./LeaveGuard";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
+import { ALL_LINKS } from "../../config/navLinks";
+import { jobOfScreen, useLeaderTab } from "./leaderPhoneNav";
+import { shellText } from "./shellPhoneText";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +70,12 @@ function UserProfile() {
   const leaveConfirm = useLeaveRef();
   const { data: me } = useMyProfileDetails();
   const pwa = usePwaInstall();
+  // A leader's phone: adding a profile is rarely their need — kept, quieter,
+  // under the preferences rather than between their profile and them.
+  const leaderPhone = useLeaderPhone();
+  // Avatars a size up on a phone, so their initials reach 12px.
+  const phoneUi = useIsMobile(768);
+  const av = phoneUi ? 36 : 32;
 
   useEffect(() => {
     function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
@@ -103,15 +113,49 @@ function UserProfile() {
     onMouseLeave: (e) => { e.currentTarget.style.background = ""; },
   };
 
+  // Add new profile.
+  // In Telegram this runs the bot's register flow (language → web form
+  // → phone number): navigating to /login in-app would skip the bot's
+  // contact request, so open the bot deep link instead.
+  // In a BROWSER a profile is proven by its own username + password, so
+  // ask for the credential here and keep the current profile signed in
+  // beside it. On a leader's phone it is the quiet row under the
+  // preferences (muted ink); everywhere else it sits where it always did.
+  const addProfileRow = (
+    <button
+      onClick={() => {
+        setOpen(false);
+        if (webSession) {
+          setAddProfile({ username: "", expired: false });
+          return;
+        }
+        const tg = window.Telegram?.WebApp;
+        if (tg?.openTelegramLink && botUsername) {
+          tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
+        } else {
+          navigate("/login");
+        }
+      }}
+      className="w-full flex items-center gap-3 px-4 py-3 max-md:py-3.5 text-xs"
+      style={{ color: leaderPhone ? "var(--text-3)" : "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+      {...rowHover}
+    >
+      <UserPlus size={14} />
+      <span>{t("menu.addProfile") || "Add new profile"}</span>
+    </button>
+  );
+
   return (
     <div className="relative flex-shrink-0" ref={ref}>
-      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
+      <button onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 max-md:w-11 max-md:h-11 max-md:justify-center max-md:-mr-1.5"
+        aria-label={phoneUi ? name : undefined}>
         <div className="hidden md:block leading-tight text-right">
           <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{name}</div>
           <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{role}</div>
         </div>
         <ProfileAvatar name={name} colorKey={auth.full_name || ""}
-                       profileKey={me?.profile_key} photoVer={me?.photo_ver} size={32} />
+                       profileKey={me?.profile_key} photoVer={me?.photo_ver} size={av} />
       </button>
 
       {open && (
@@ -138,10 +182,13 @@ function UserProfile() {
           {/* Active profile at top */}
           <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
             <ProfileAvatar name={name} colorKey={auth.full_name || ""}
-                           profileKey={me?.profile_key} photoVer={me?.photo_ver} size={32} />
+                           profileKey={me?.profile_key} photoVer={me?.photo_ver} size={av} />
+            {/* On a phone the whole name wraps to a second line — a leader's
+                35-character name ended in «…» and it is the one place they
+                read it whole. */}
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
-              <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
+              <div className="text-xs font-semibold md:truncate max-md:line-clamp-2 max-md:break-words max-md:leading-snug" style={{ color: "var(--text-1)" }}>{name}</div>
+              <div className="text-[10px] max-md:text-xs truncate" style={{ color: "var(--text-3)" }}>{role}</div>
             </div>
             <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
           </div>
@@ -149,7 +196,7 @@ function UserProfile() {
           {/* My profile — the page itself */}
           <button
             onClick={() => { setOpen(false); navigate("/profile"); }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            className="w-full flex items-center gap-3 px-4 py-3 max-md:py-3.5 text-xs"
             style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
             {...rowHover}
           >
@@ -178,14 +225,14 @@ function UserProfile() {
                 onMouseLeave={e => { e.currentTarget.style.background = ""; }}
               >
                 <ProfileAvatar name={rName} colorKey={r.full_name || ""}
-                               profileKey={r.profile_key} photoVer={r.photo_ver} size={32} />
+                               profileKey={r.profile_key} photoVer={r.photo_ver} size={av} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
-                  <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+                  <div className="text-[10px] max-md:text-xs truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                     {rRole}
                     {isPending && (
                       <span
-                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                        className="text-[9px] max-md:text-[11px] font-semibold px-1.5 py-0.5 rounded-full"
                         style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
                       >
                         {t("roles.pending")}
@@ -220,10 +267,10 @@ function UserProfile() {
                 onMouseLeave={e => { e.currentTarget.style.background = ""; }}
               >
                 <ProfileAvatar name={pName} colorKey={p.full_name || ""}
-                               profileKey={p.profile_key} photoVer={p.photo_ver} size={32} />
+                               profileKey={p.profile_key} photoVer={p.photo_ver} size={av} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{pName}</div>
-                  <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
+                  <div className="text-[10px] max-md:text-xs truncate" style={{ color: "var(--text-3)" }}>
                     {pRole} · {p.username}
                   </div>
                 </div>
@@ -232,34 +279,7 @@ function UserProfile() {
             );
           })}
 
-          {/* Add new profile.
-              In Telegram this runs the bot's register flow (language → web form
-              → phone number): navigating to /login in-app would skip the bot's
-              contact request, so open the bot deep link instead.
-              In a BROWSER a profile is proven by its own username + password, so
-              ask for the credential here and keep the current profile signed in
-              beside it. */}
-          <button
-            onClick={() => {
-              setOpen(false);
-              if (webSession) {
-                setAddProfile({ username: "", expired: false });
-                return;
-              }
-              const tg = window.Telegram?.WebApp;
-              if (tg?.openTelegramLink && botUsername) {
-                tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
-              } else {
-                navigate("/login");
-              }
-            }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
-            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
-            {...rowHover}
-          >
-            <UserPlus size={14} />
-            <span>{t("menu.addProfile") || "Add new profile"}</span>
-          </button>
+          {!leaderPhone && addProfileRow}
 
           {/* Install as an app — the browser door only (usePwaInstall answers
               false for both inside Telegram). Chrome/Edge hand the page a
@@ -270,7 +290,7 @@ function UserProfile() {
           {pwa.canInstall && (
             <button
               onClick={() => { setOpen(false); pwa.install(); }}
-              className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+              className="w-full flex items-center gap-3 px-4 py-3 max-md:py-3.5 text-xs"
               style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
               {...rowHover}
             >
@@ -286,7 +306,7 @@ function UserProfile() {
               <Share size={14} className="mt-0.5 flex-shrink-0" />
               <span className="min-w-0">
                 <span className="block">{t("menu.installApp")}</span>
-                <span className="block mt-0.5 text-[10px]" style={{ color: "var(--text-3)" }}>
+                <span className="block mt-0.5 text-[10px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
                   {t("menu.installHintIos")}
                 </span>
               </span>
@@ -294,6 +314,7 @@ function UserProfile() {
           )}
 
           <PhonePrefs />
+          {leaderPhone && addProfileRow}
 
           {/* Sign out.
               In Telegram this is an UNREGISTER: it drops the profile binding
@@ -307,7 +328,7 @@ function UserProfile() {
               if (webSession) logout();
               else setConfirmLogout(true);
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            className="w-full flex items-center gap-3 px-4 py-3 max-md:py-3.5 text-xs"
             style={{ color: "var(--text-3)" }}
             onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
             onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
@@ -357,7 +378,7 @@ function UserProfile() {
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setConfirmLogout(false)}
-                className="px-4 py-2 rounded-lg text-xs font-medium"
+                className="px-4 py-2 max-md:py-3.5 rounded-lg text-xs font-medium"
                 style={{
                   background: "var(--bg-inner)",
                   color: "var(--text-2)",
@@ -368,7 +389,7 @@ function UserProfile() {
               </button>
               <button
                 onClick={() => { leaveRole(auth.active_role_ref); setConfirmLogout(false); }}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-white"
+                className="px-4 py-2 max-md:py-3.5 rounded-lg text-xs font-medium text-white"
                 style={{ background: "#ef4444" }}
               >
                 {t("nav.signOutConfirm")}
@@ -392,29 +413,29 @@ function PhonePrefs() {
   const { ghost, toggleGhost } = useGhost();
   const row = (Icon, label, control, hint) => (
     <div>
-      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold uppercase tracking-wider"
+      <div className="flex items-center gap-1.5 mb-1.5 text-xs font-semibold uppercase tracking-wider"
         style={{ color: "var(--text-3)" }}>
         <Icon size={12} className="flex-shrink-0" />{label}
       </div>
       {control}
-      {hint && <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs leading-snug" style={{ color: "var(--text-3)" }}>{hint}</p>}
     </div>
   );
   return (
     <div className="md:hidden px-4 py-3 space-y-3" style={{ borderBottom: "1px solid var(--border)" }}>
       {row(Globe, t("filter.language") || "Language",
-        <SegmentedToggle fill size="sm" value={lang} onChange={setLang}
+        <SegmentedToggle fill size="lg" value={lang} onChange={setLang}
           ariaLabel={t("filter.language") || "Language"}
           options={languages.map(({ code }) => ({ value: code, label: langLabel(code), title: LANG_NAMES[code] || code }))} />)}
       {row(theme === "dark" ? Moon : Sun, t("menu.theme"),
-        <SegmentedToggle fill size="sm" value={theme} onChange={(v) => { if (v !== theme) toggle(); }}
+        <SegmentedToggle fill size="lg" value={theme} onChange={(v) => { if (v !== theme) toggle(); }}
           ariaLabel={t("menu.theme")}
           options={[
             { value: "light", label: <><Sun size={13} />{t("theme.optLight")}</> },
             { value: "dark", label: <><Moon size={13} />{t("theme.optDark")}</> },
           ]} />)}
       {auth?.role === "admin" && row(Ghost, t("ghost.mode"),
-        <SegmentedToggle fill size="sm" value={ghost} onChange={(v) => { if (v !== ghost) toggleGhost(); }}
+        <SegmentedToggle fill size="lg" value={ghost} onChange={(v) => { if (v !== ghost) toggleGhost(); }}
           ariaLabel={t("ghost.mode")}
           options={[{ value: false, label: t("ghost.off") }, { value: true, label: t("ghost.on") }]} />,
         t("ghost.hint"))}
@@ -597,16 +618,35 @@ function ImpersonationBar() {
 // the page it would sit in `.page-enter`, whose transform makes a `fixed` box
 // the size of the content column instead of the screen.
 export default function Layout({ children, title, subtitle, bare = false, backdrop = null }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { auth } = useAuth();
   // Inside an app, the way back to the launcher sits beside the title — for
   // whoever has one (admins, top-managers: utils/apps.js LAUNCHER_ROLES).
   const showAppsButton = !bare && usesLauncher(auth?.role);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   useActivityPing(pathname); // heartbeat for the Users-Activity dashboard + the screens' heat
   const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const phone = useIsMobile(768);
+
+  // The bar's title on a phone. A leader's screens are named for the job, as
+  // their menu names them (components/layout/leaderPhoneNav.js — «Bugun» and
+  // «Natijam» are two tabs of one page, so the TAB decides), and a page that
+  // passes no title says its menu name rather than leave the bar blank
+  // (/cell-concerns). From md up the page's own title, as before.
+  const leaderPhone = useLeaderPhone();
+  const leaderTab = useLeaderTab(search);
+  let barTitle = title;
+  if (leaderPhone) {
+    const job = jobOfScreen(pathname, leaderTab);
+    if (job) barTitle = shellText(lang).job[job];
+  }
+  if (phone && !barTitle) {
+    const link = ALL_LINKS.find((l) => l.to === pathname);
+    if (link) barTitle = t(link.key);
+  }
+  // «Bugun» and «Natijam» share a path; each tab keeps its own scroll place.
+  const scrollKey = leaderPhone && pathname === "/leaders" ? `${pathname}#${leaderTab}` : pathname;
 
   // Restore the remembered position. Page data arrives async (skeletons are
   // shorter than the real content), so retry each frame until the container
@@ -614,7 +654,7 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
   // first, or clamping best-effort after 4s (content may have gotten shorter).
   useEffect(() => {
     const el = mainRef.current;
-    const target = scrollMemory.get(pathname) || 0;
+    const target = scrollMemory.get(scrollKey) || 0;
     if (!el || target <= 0) return undefined;
     let raf = 0;
     let done = false;
@@ -637,7 +677,7 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
       el.removeEventListener("wheel", stop);
       el.removeEventListener("touchstart", stop);
     };
-  }, [pathname]);
+  }, [scrollKey]);
   // Pinned by default on a real desktop viewport: the app arrived from a phone,
   // where a collapsed rail is right, but on a browser a permanently visible nav
   // is what makes the product legible — there is room for it and hiding it just
@@ -693,25 +733,44 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
             ? { paddingTop: "var(--tg-safe-top, 0px)" }
             : { background: "var(--bg-base)", borderBottom: "1px solid var(--border)", paddingTop: "var(--tg-safe-top, 0px)" }}
         >
+          {/* On a phone the bar's buttons are 44px targets, so its padding
+              gives the height back: 6 + 44 + 6 is the 12 + 32 + 12 it was. */}
           <div
-            className="flex items-center justify-between px-4 md:px-6 py-3 gap-3"
+            className="flex items-center justify-between px-4 md:px-6 py-3 max-md:py-1.5 gap-3"
             style={IS_TDESKTOP ? { paddingRight: "150px" } : undefined}
           >
             {/* Left: hamburger + title */}
             <div className="flex items-center gap-3 min-w-0">
+              {/* Phone only: a 44px target around the 36px chip it shows. */}
               {!bare && (
                 <button
+                  type="button"
                   onClick={() => setSidebarOpen(true)}
                   aria-label={t("menu.title")}
-                  className="md:hidden p-1.5 rounded-lg flex-shrink-0"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+                  className="md:hidden w-11 h-11 -ml-1 grid place-items-center flex-shrink-0"
                 >
-                  <Menu size={16} />
+                  <span className="w-9 h-9 grid place-items-center rounded-lg"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                    <Menu size={17} />
+                  </span>
                 </button>
               )}
               {/* With no sidebar, the brand would be nowhere on the screen. */}
               {bare && <BrandLogo className="w-8 h-8 rounded-full object-cover flex-shrink-0" />}
-              {showAppsButton && (
+              {/* On a phone a 44px target around the 36px chip, like ☰. */}
+              {showAppsButton && (phone ? (
+                <Link
+                  to="/"
+                  aria-label={t("apps.all")}
+                  title={t("apps.all")}
+                  className="w-11 h-11 -mx-1 grid place-items-center flex-shrink-0"
+                >
+                  <span className="hdr-apps w-9 h-9 grid place-items-center rounded-lg"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                    <LayoutGrid size={17} />
+                  </span>
+                </Link>
+              ) : (
                 <Link
                   to="/"
                   aria-label={t("apps.all")}
@@ -721,17 +780,19 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
                 >
                   <LayoutGrid size={16} />
                 </Link>
-              )}
+              ))}
               {/* `subtitle`: a page may name WHAT is on screen once its own
                   heading has scrolled away (the appeal chat puts the case —
                   leader, task, day — here), the iOS large-title → bar-title
                   hand-off. Keyed, so a change fades in rather than jumping. */}
-              <div key={`${title}|${subtitle || ""}`} className="min-w-0 brk-in">
-                <h1 className="text-sm md:text-base font-semibold truncate leading-tight" style={{ color: "var(--text-1)" }}>
-                  {title}
+              {/* A phone's title may take a second line rather than end in
+                  «…» — two lines fit inside the 44px row. */}
+              <div key={`${barTitle}|${subtitle || ""}`} className="min-w-0 brk-in">
+                <h1 className="text-sm md:text-base font-semibold md:truncate max-md:line-clamp-2 max-md:break-words leading-tight" style={{ color: "var(--text-1)" }}>
+                  {barTitle}
                 </h1>
                 {subtitle && (
-                  <p className="text-[11px] leading-tight truncate mt-0.5" style={{ color: "var(--text-3)" }}>
+                  <p className="text-[11px] max-md:text-xs leading-tight truncate mt-0.5" style={{ color: "var(--text-3)" }}>
                     {subtitle}
                   </p>
                 )}
@@ -748,8 +809,9 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
               </div>
             )}
 
-            {/* Right: bell · language · theme · ghost(admin) · account */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Right: bell · language · theme · ghost(admin) · account. On a
+                phone the 44px targets carry their own air, so no gap. */}
+            <div className="flex items-center gap-2 max-md:gap-0 flex-shrink-0">
               {/* The Android app fetching a newer build — a ring, only while it
                   runs, leftmost so the bell and the avatar never move for it. */}
               <UpdateRing />
@@ -786,7 +848,7 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
         <div className="relative flex-1 min-h-0">
           <main
             ref={mainRef}
-            onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
+            onScroll={(e) => rememberScroll(scrollKey, e.currentTarget.scrollTop)}
             // `--main-pad` IS the padding, named once so a page's sticky
             // element can reach past it: a sticky box stops at the scroll
             // container's padding edge, which left the appeal chat's composer

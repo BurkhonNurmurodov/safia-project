@@ -689,3 +689,7 @@ an objection to an AI rejection nor a late proof.
 - Deliberately NOT touched: `leader_late_requests` (the shift-1 late-DAY
   requests), whose approval IS the score, and the bell notifications already
   sent about the deleted rows.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — the late-proof and objection forms and the appeal queues on a phone, and «Barchasini ko'rsatish» no longer clearing the page period (every width). md+ is unchanged.

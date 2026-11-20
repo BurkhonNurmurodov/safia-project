@@ -25,32 +25,45 @@ const TXT = {
     hidden: "{n} ta yozuv sahifa filtrlaridan tashqarida.",
     todo: "Ulardan {k} tasi sizning javobingizni kutmoqda.",
     showAll: "Barchasini ko'rsatish",
+    shown: "Sahifa filtrlaridan tashqaridagi {n} ta yozuv ham ko'rsatilmoqda.",
+    back: "Filtrga qaytish",
   },
   uz_cyrl: {
     hidden: "{n} та ёзув саҳифа филтрларидан ташқарида.",
     todo: "Улардан {k} таси сизнинг жавобингизни кутмоқда.",
     showAll: "Барчасини кўрсатиш",
+    shown: "Саҳифа филтрларидан ташқаридаги {n} та ёзув ҳам кўрсатилмоқда.",
+    back: "Филтрга қайтиш",
   },
   ru: {
     hidden: "{n} записей вне фильтров страницы.",
     todo: "Из них {k} ждут вашего решения.",
     showAll: "Показать все",
+    shown: "Показаны и {n} записей вне фильтров страницы.",
+    back: "Вернуть фильтр",
   },
   en: {
     hidden: "{n} records fall outside the page filters.",
     todo: "{k} of them are waiting on you.",
     showAll: "Show all",
+    shown: "{n} records outside the page filters are shown too.",
+    back: "Back to the filters",
   },
 };
 
 const C_WAIT = "#eab308";
 
-export default function ScopeNotice({ hidden = 0, todo = 0, onClear }) {
+/* `showing` (2026-11-20): the list has set the page scope aside and lists the
+ * `hidden` rows too — said in the same place and the same shape, with the way
+ * back (`onBack`) where «show all» was, so nothing under it moves. A list that
+ * passes `showing` handles «show all» itself (`onClear`) instead of clearing
+ * the PAGE's period and filters, which reached every other tab unannounced. */
+export default function ScopeNotice({ hidden = 0, todo = 0, onClear, showing = false, onBack }) {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.uz;
   if (!hidden) return null;
 
-  const warn = todo > 0;
+  const warn = todo > 0 && !showing;
   return (
     <div
       className="rounded-2xl px-3 py-2 mb-3 flex items-center gap-2 flex-wrap text-xs"
@@ -61,14 +74,18 @@ export default function ScopeNotice({ hidden = 0, todo = 0, onClear }) {
       }}
     >
       <Filter size={13} className="flex-shrink-0" style={{ color: warn ? C_WAIT : "var(--text-4)" }} />
-      <span>{T.hidden.replace("{n}", hidden)}</span>
+      <span>{(showing ? T.shown : T.hidden).replace("{n}", hidden)}</span>
       {warn && (
         <span className="font-semibold" style={{ color: C_WAIT }}>
           {T.todo.replace("{k}", todo)}
         </span>
       )}
-      {onClear && (
-        <Button size="sm" variant="secondary" tint className="ml-auto" onClick={onClear}>
+      {showing ? (onBack && (
+        <Button size="sm" variant="secondary" tint className="ml-auto max-md:min-h-[44px]" onClick={onBack}>
+          {T.back}
+        </Button>
+      )) : onClear && (
+        <Button size="sm" variant="secondary" tint className="ml-auto max-md:min-h-[44px]" onClick={onClear}>
           {T.showAll}
         </Button>
       )}

@@ -10,13 +10,17 @@ import SegmentedToggle from "../ui/SegmentedToggle";
 import SearchInput from "../ui/SearchInput";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonBlock } from "../ui/Skeleton";
+import { SectionHead } from "../ui/DataTable";
 import ScopeNotice from "./ScopeNotice";
+import { NATIJA_T, shortDate, fill } from "./natijaText";
+import { useTaskCatalog, taskTitle } from "./appealTask";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtDuration } from "../../utils/formatters";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
 
 /**
  * «Norozliklar» and «Kechikkan isbotlar» — the two appeal queues on /leaders,
@@ -58,7 +62,7 @@ const when = (ts) => {
   const d = String(ts).slice(0, 10), at = String(ts).slice(11, 16);
   return `${d.slice(8, 10)}.${d.slice(5, 7)} ${at}`;
 };
-const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || o?.uz || "";
+
 
 const TXT = {
   uz: {
@@ -222,14 +226,147 @@ const inScope = (it, s) => {
 
 const isDone = (it) => ["approved", "rejected", "cancelled"].includes(it.status);
 
-function StateChip({ status, late, T }) {
+// `ink` — the label in the theme's status INK (`--status-*`, index.css), which
+// holds AA on a light card where the raw hue does not (amber on white is
+// ~2:1). The leader-phone rows use it; the queue's desktop cards are as before.
+const INK = { [C_OK]: "var(--status-ok)", [C_WAIT]: "var(--status-warn)", [C_BAD]: "var(--status-bad)", [C_OFF]: "var(--text-3)" };
+function StateChip({ status, late, T, ink = false }) {
   const st = STATE[status] || STATE.cancelled;
   const { color, Icon } = st;
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold flex-shrink-0"
-      style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color }}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg ${ink ? "text-[12px]" : "text-[11px]"} font-semibold flex-shrink-0`}
+      style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color: ink ? (INK[color] || color) : color }}>
       <Icon size={12} />{T[(late && st.lateKey) || st.key]}
     </span>
+  );
+}
+
+const lastAt = (it) => it.chat?.last?.at || it.at || it.date || "";
+
+/** One appeal as a LEADER reads it on a phone (2026-11-20): it leads with the
+ *  TASK — the leader knows whose appeal it is, it is theirs — then where it
+ *  stands as ONE chip and how many messages wait unread; the newest entry of
+ *  the conversation on one line under it. Every appeal of theirs, whichever
+ *  judge it argues with and whether an objection or a late proof, reads the
+ *  same, so «Bahslar» can list both kinds in one column. */
+export function AppealRow({ it, kind, cat, first }) {
+  const { lang } = useLang();
+  const { tl } = useTranslit();
+  const nav = useNavigate();
+  const T = TXT[lang] || TXT.uz;
+  const N = NATIJA_T[lang] || NATIJA_T.uz;
+  const late = kind === "late";
+  const tone = STATE[it.status] || STATE.cancelled;
+  const n = Number(it.chat?.unread || 0);
+  const last = it.chat?.last;
+  // The leader reads only their own appeals, so a «leader» author is the
+  // reader: «Siz», never their own name. Anybody else by surname.
+  const who = last ? (last.role === "leader" ? N.you : (tl(last.author) || "").split(/\s+/)[0]) : "";
+  const name = taskTitle(it, lang, cat) || fill(N.taskN, { n: it.taskId });
+  return (
+    <button type="button"
+      onClick={() => nav(`/leaders/appeal/${late ? "late" : "dispute"}/${it.id}`)}
+      className="w-full text-left flex min-h-[64px] transition-colors hover:bg-[var(--bg-inner)] focus-visible:outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--brand-ring)]"
+      style={first ? undefined : { borderTop: "1px solid var(--border)" }}>
+      <span aria-hidden="true" className="w-1 flex-shrink-0" style={{ background: tone.color }} />
+      <span className="flex-1 min-w-0 px-3 py-3 flex flex-col gap-1.5">
+        <span className="flex items-start gap-2 min-w-0">
+          <span className="flex-1 min-w-0 text-[15px] font-semibold leading-snug line-clamp-2 break-words" style={{ color: "var(--text-1)" }}>
+            {name}
+          </span>
+          {n > 0 && (
+            <span className="flex-shrink-0 mt-px inline-flex items-center px-2 py-0.5 rounded-md text-[12px] font-bold tabular-nums"
+              style={{ background: "var(--brand)", color: "var(--on-brand)" }}>
+              {fill(N.newN, { n })}
+            </span>
+          )}
+        </span>
+        <span className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
+          <StateChip status={it.status} late={late} T={T} ink />
+          {/* Which kind, by its icon (the one the queues wear); the words are
+              read out, the date is printed. */}
+          <span className="inline-flex items-center gap-1 text-[12px] tabular-nums" style={{ color: "var(--text-3)" }}>
+            {late ? <Clock size={12} aria-hidden="true" /> : <MessageSquareWarning size={12} aria-hidden="true" />}
+            <span className="sr-only">{late ? N.kindLate : N.kindDispute} · </span>
+            {shortDate(it.date, lang)}
+          </span>
+        </span>
+        {last && (last.text || last.files > 0) && (
+          <span className="text-[13px] leading-snug truncate" style={{ color: "var(--text-2)" }}>
+            <span className="font-semibold" style={{ color: "var(--text-1)" }}>{who}</span>
+            {": "}{last.text || T.files.replace("{n}", last.files)}
+          </span>
+        )}
+      </span>
+      <span aria-hidden="true" className="flex items-center pr-2" style={{ color: "var(--text-3)" }}>
+        <ChevronRight size={16} />
+      </span>
+    </button>
+  );
+}
+
+const DIGEST_STEP = 5;
+
+/** «Bahslar» — a leader's objections AND late proofs as ONE list, newest
+ *  activity first, an unread one ahead of them (Natijam, a leader's phone)
+ *  — what waits on the leader before what merely happened. The two queues the page keeps
+ *  as tabs read the same two payloads under the same keys, so opening either
+ *  costs nothing more. The server serves every OPEN appeal whatever its day and
+ *  the settled ones of the period; all of it is listed — an argument still
+ *  running is never «outside the period». Renders nothing once it knows there
+ *  is nothing: an empty heading at the foot of the page says only that. */
+export function AppealDigest({ from = "", to = "" }) {
+  const { lang } = useLang();
+  const N = NATIJA_T[lang] || NATIJA_T.uz;
+  const cat = useTaskCatalog();
+  const [shown, setShown] = useState(DIGEST_STEP);
+  const params = { ...(from && { from }), ...(to && { to }) };
+  const keyOf = (base) => (from || to ? [base, { from, to }] : [base]);
+  const disp = useQuery({
+    queryKey: keyOf("leader-disputes"),
+    queryFn: () => api.get("/api/leaders/disputes", { params }).then((r) => r.data),
+    refetchInterval: 60000,
+    placeholderData: keepPreviousData,
+  });
+  const lp = useQuery({
+    queryKey: keyOf("leader-late-proofs"),
+    queryFn: () => api.get("/api/leaders/late-proofs", { params }).then((r) => r.data),
+    refetchInterval: 60000,
+    placeholderData: keepPreviousData,
+  });
+  const items = useMemo(() => [
+    ...(disp.data?.items ?? []).map((it) => ({ it, kind: "dispute" })),
+    ...(lp.data?.items ?? []).map((it) => ({ it, kind: "late" })),
+  ].sort((a, b) => ((Number(b.it.chat?.unread || 0) > 0) - (Number(a.it.chat?.unread || 0) > 0))
+    || (lastAt(a.it) < lastAt(b.it) ? 1 : lastAt(a.it) > lastAt(b.it) ? -1 : b.it.id - a.it.id)),
+  [disp.data, lp.data]);
+
+  const loading = (disp.isLoading || lp.isLoading) && !items.length;
+  if (!loading && !items.length) return null;
+  const rest = items.length - shown;
+  return (
+    <section aria-label={N.appeals} className="rounded-2xl overflow-hidden mb-4"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SectionHead icon={MessagesSquare} title={N.appeals} />
+      {loading ? (
+        <div className="p-3 space-y-2">
+          {[0, 1].map((i) => <SkeletonBlock key={i} className="h-16 rounded-xl" />)}
+        </div>
+      ) : (
+        <>
+          {items.slice(0, shown).map(({ it, kind }, i) => (
+            <AppealRow key={`${kind}-${it.id}`} it={it} kind={kind} cat={cat} first={i === 0} />
+          ))}
+          {rest > 0 && (
+            <button type="button" onClick={() => setShown(items.length)}
+              className="w-full min-h-[48px] px-3 flex items-center justify-center gap-2 text-[14px] font-semibold transition-colors hover:bg-[var(--bg-inner)]"
+              style={{ borderTop: "1px solid var(--border)", color: "var(--brand-text)" }}>
+              <ChevronDown size={15} />{fill(N.more, { n: rest })}
+            </button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -241,6 +378,11 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   const nav = useNavigate();
   const late = thread === "late";
   const role = auth?.role;
+  // A leader on a phone reads their own appeals, task first (AppealRow), with
+  // no search over a list of one person and no «your turn» segment — the turn
+  // a leader takes is answering in the chat, which «Yangi xabar» already finds.
+  const leaderPhone = useLeaderPhone();
+  const cat = useTaskCatalog();
   // A leader reads their own appeals only; a split by stage hid them behind
   // the tab they did not open. Everybody else keeps the split, landing where
   // their work is.
@@ -252,6 +394,8 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
     `leaders_appeal_${thread}_stage_${role || "none"}`,
     role === "supervisor" ? "sup" : "adm");
   const [seg, setSeg] = usePersistentState(`leaders_appeal_${thread}_seg`, "all");
+  // A segment the leader's phone does not offer must not filter it unseen.
+  const segEff = leaderPhone && seg === "todo" ? "all" : seg;
   const [introOpen, setIntroOpen] = useState(false);
   const [q, setQ] = useState("");
 
@@ -274,7 +418,17 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   const canSupervise = !!data?.canSupervise;
 
   const all = useMemo(() => data?.items ?? [], [data]);
-  const items = useMemo(() => all.filter((it) => inScope(it, scope)), [all, scope]);
+  // «Barchasini ko'rsatish» sets the page scope aside for THIS queue only
+  // (2026-11-20). It used to clear the page's period and filters — for every
+  // tab, without a word: Monitoring came back on «Sanalarni tanlang». The
+  // scope stays exactly as picked; this list shows the rest too, says so in
+  // the same notice, and a new scope (another period, another filter) puts it
+  // back under the page's control.
+  const scopeKey = JSON.stringify(scope || {});
+  const [outFor, setOutFor] = useState(null);
+  const showOut = outFor === scopeKey;
+  const items = useMemo(() => (showOut ? all : all.filter((it) => inScope(it, scope))),
+    [all, scope, showOut]);
   const mine = (it) => !!it.canAct;
   const unread = (it) => Number(it.chat?.unread || 0);
 
@@ -285,11 +439,11 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const arr = staged.filter((it) => {
-      if (seg === "todo" && !mine(it)) return false;
-      if (seg === "unread" && !unread(it)) return false;
-      if (seg === "done" && !isDone(it)) return false;
+      if (segEff === "todo" && !mine(it)) return false;
+      if (segEff === "unread" && !unread(it)) return false;
+      if (segEff === "done" && !isDone(it)) return false;
       if (needle) {
-        const hay = `${tl(it.leader)} ${it.leader} ${tl(it.supervisor)} ${it.supervisor} ${pick(it.taskName, lang)} ${it.reason} ${it.chat?.last?.text || ""}`;
+        const hay = `${tl(it.leader)} ${it.leader} ${tl(it.supervisor)} ${it.supervisor} ${taskTitle(it, lang, cat)} ${it.reason} ${it.chat?.last?.text || ""}`;
         if (!hay.toLowerCase().includes(needle)) return false;
       }
       return true;
@@ -300,7 +454,7 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
       (mine(b) - mine(a))
       || ((unread(b) > 0) - (unread(a) > 0))
       || (lastAt(a) < lastAt(b) ? 1 : lastAt(a) > lastAt(b) ? -1 : b.id - a.id));
-  }, [staged, seg, q, tl, lang]);
+  }, [staged, segEff, q, tl, lang, cat]);
 
   const counts = useMemo(() => ({
     all: staged.length,
@@ -347,7 +501,9 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
           and a «Batafsil» on a phone: in full it was a seven-line card, a
           third of the first screen, standing between a regular and the queue
           they open this tab to work. */}
-      <div className="rounded-2xl p-3.5 sm:p-4 mb-3 flex items-start gap-3"
+      {/* Not on a phone (2026-11-20, the operator: no explanatory notes on a
+          phone page, ever) — the queue is what the tab is opened for. */}
+      <div className="rounded-2xl p-3.5 sm:p-4 mb-3 flex items-start gap-3 max-md:hidden"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
           style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
@@ -371,7 +527,11 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
         </div>
       </div>
 
-      {!isLoading && <ScopeNotice hidden={out.hidden} todo={out.todo} onClear={onClearScope} />}
+      {!isLoading && (
+        <ScopeNotice hidden={out.hidden} todo={showOut ? 0 : out.todo} showing={showOut}
+          onClear={onClearScope ? () => setOutFor(scopeKey) : undefined}
+          onBack={() => setOutFor(null)} />
+      )}
 
       {split && (
         <SegmentedToggle asTabs ariaLabel={late ? T.titleLate : T.titleDispute}
@@ -383,17 +543,25 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
       )}
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="flex-1 min-w-[180px] max-w-sm">
-          <SearchInput value={q} onChange={setQ} placeholder={T.searchPh} />
-        </div>
+        {!leaderPhone && (
+          <div className="flex-1 min-w-[180px] max-w-sm">
+            <SearchInput value={q} onChange={setQ} placeholder={T.searchPh} />
+          </div>
+        )}
         <SegmentedToggle
-          value={seg}
+          value={segEff}
           onChange={setSeg}
+          size={leaderPhone ? "lg" : "md"}
+          className={leaderPhone ? "w-full" : ""}
+          fill={leaderPhone}
+          // On a leader's phone only «Yangi xabar» keeps its count — the one
+          // that asks something of them; the list itself counts the rest, and
+          // three labelled counts do not fit 320px at a thumb's height.
           options={[
-            { value: "all", label: segLabel(T.segAll, counts.all) },
-            { value: "todo", label: segLabel(T.segTodo, counts.todo) },
-            { value: "unread", label: segLabel(T.segUnread, counts.unread) },
-            { value: "done", label: segLabel(T.segDone, counts.done) },
+            { value: "all", label: leaderPhone ? T.segAll : segLabel(T.segAll, counts.all) },
+            ...(leaderPhone ? [] : [{ value: "todo", label: segLabel(T.segTodo, counts.todo) }]),
+            { value: "unread", label: segLabel(leaderPhone ? (NATIJA_T[lang] || NATIJA_T.uz).segNew : T.segUnread, counts.unread) },
+            { value: "done", label: leaderPhone ? T.segDone : segLabel(T.segDone, counts.done) },
           ]}
         />
       </div>
@@ -410,6 +578,13 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
       ) : !shown.length ? (
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <EmptyState title={T.noMatchT} message={T.noMatchM} showUploadLink={false} />
+        </div>
+      ) : leaderPhone ? (
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          {shown.map((it, i) => (
+            <AppealRow key={it.id} it={it} kind={thread} cat={cat} first={i === 0} />
+          ))}
         </div>
       ) : (
         <div className="space-y-2">
@@ -463,7 +638,7 @@ export default function AppealQueue({ thread, scope, onClearScope }) {
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 mt-0.5"
                         style={{ color: "var(--text-4)" }}>№{it.taskId}</span>
                       <span className="font-semibold leading-snug" style={{ color: "var(--text-2)" }}>
-                        {pick(it.taskName, lang) || "—"}
+                        {taskTitle(it, lang, cat) || "—"}
                       </span>
                     </div>
 

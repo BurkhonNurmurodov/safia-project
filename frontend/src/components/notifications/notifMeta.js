@@ -96,6 +96,16 @@ export function dayLabel(day, today, t) {
 export const displayBody = (body) =>
   String(body ?? "").replace(/ \| /g, " · ").replace(/\n{2,}/g, "\n").trim();
 
+// The raw emoji the bot's copy carries into a notification («✅ Ish jadvalini
+// …», «🕐 00:19 · 20 noyabr»): the platform draws icons, never emoji, and the
+// row already wears its kind's icon. A phone renders the text without them
+// (the leader-phone redesign, 2026-11-20); the words stay exactly as sent.
+// Alternatives, not one character class: the joiners and modifiers cannot sit
+// in a class beside the pictographs they attach to (no-misleading-character-class).
+const EMOJI = /\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]|[\u{1F3FB}-\u{1F3FF}]|\u{FE0F}|\u{200D}|\u{20E3}/gu;
+export const noEmoji = (text) =>
+  String(text ?? "").replace(EMOJI, "").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+/gm, "").trim();
+
 // The reason a request failed, in words — never a status code.
 export function errText(e, t) {
   const d = e?.response?.data?.detail;

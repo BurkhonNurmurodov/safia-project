@@ -21,6 +21,10 @@ import useLeaveRef from "../../hooks/useLeaveRef";
 import { ALL_LINKS, NAV_GROUPS, adminPath } from "../../config/navLinks";
 import { usesLauncher } from "../../utils/launcherRoles";
 import { nameCase } from "../people/peopleUtil";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
+import { LEADER_PHONE_HIDDEN, LEADER_PHONE_JOBS } from "../../config/navLinks";
+import { jobHref, primeLeaderTab } from "./leaderPhoneNav";
+import { shellText } from "./shellPhoneText";
 
 /**
  * «Qidiruv» — the search across the platform: in the header from md up, and
@@ -81,7 +85,7 @@ function rank(items, q, cap) {
 }
 
 export default function GlobalSearch({ drawer = false, onPick }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { auth } = useAuth();
   const { access } = usePageAccess();
@@ -114,21 +118,39 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   });
 
   // ── what can be found, folded once per language / data change ──
+  // A leader's phone finds its screens by the menu's job names
+  // (leaderPhoneNav.js): «Bugun» and «Natijam» are both «Lider nazorati», and
+  // «Xavotirlar» is not on a leader's phone (decision 2). The old name stays a
+  // search term, so «Lider nazorati» still finds them.
+  const leaderPhone = useLeaderPhone();
   const pageItems = useMemo(() => {
     const groupLabel = Object.fromEntries(NAV_GROUPS.filter((g) => g.labelKey).map((g) => [g.id, t(g.labelKey)]));
+    const job = shellText(lang).job;
     return ALL_LINKS
       .filter((l) => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role) || (!!l.cap && capCan(l.cap))) : can(l.page)))
-      .map((l) => {
-        const label = t(l.key);
+      .filter((l) => !(leaderPhone && LEADER_PHONE_HIDDEN.includes(l.to)))
+      .flatMap((l) => {
+        const own = t(l.key);
+        const jobs = leaderPhone ? LEADER_PHONE_JOBS.filter((j) => j.to === l.to) : [];
+        if (jobs.length) {
+          return jobs.map((j) => ({
+            id: `p:${jobHref(j)}`, kind: "page", to: jobHref(j), tab: j.tab, Icon: j.icon,
+            label: job[j.id], sort: job[j.id], sub: "",
+            terms: [searchFold(job[j.id]), searchFold(own)],
+          }));
+        }
+        const label = leaderPhone && l.to === "/tasks" ? job.tasks : own;
         // A launcher's «/» is the app launcher; the overview is at /overview.
         const to = usesLauncher(auth?.role) ? adminPath(l.to) : l.to;
-        return {
+        return [{
           id: `p:${to}`, kind: "page", to, Icon: l.icon, label, sort: label,
           sub: groupLabel[l.group] || "",
-          terms: [searchFold(label), searchFold(l.to.replace(/[/-]/g, " "))],
-        };
+          terms: label === own
+            ? [searchFold(label), searchFold(l.to.replace(/[/-]/g, " "))]
+            : [searchFold(label), searchFold(own), searchFold(l.to.replace(/[/-]/g, " "))],
+        }];
       });
-  }, [t, isAdmin, auth?.role, access, capPages, deniedPages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t, lang, leaderPhone, isAdmin, auth?.role, access, capPages, deniedPages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const adminItems = useMemo(() => {
     const groupLabel = Object.fromEntries(ADMIN_GROUPS.map((g) => [g.id, t(g.labelKey)]));
@@ -255,6 +277,12 @@ export default function GlobalSearch({ drawer = false, onPick }) {
     setQ("");
     inputRef.current?.blur();
     onPick?.();
+    // A job entry of a leader's phone opens its tab like the menu does.
+    if (item.tab) {
+      primeLeaderTab(item.tab);
+      navigate(item.to, { state: { leaderMenu: true } });
+      return;
+    }
     navigate(item.to);
   };
 
@@ -304,7 +332,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
         placeholder={wide && !drawer ? t("search.placeholder") : t("search.short")}
         clearLabel={t("search.clear")}
         hint={drawer ? null : kbd}
-        inputClassName={drawer ? "text-base pl-8 pr-8 py-2" : "text-sm pl-8 pr-14 py-1.5"}
+        inputClassName={drawer ? "text-base pl-8 pr-8 py-2.5" : "text-sm pl-8 pr-14 py-1.5"}
         role="combobox"
         aria-label={t("search.aria")}
         aria-expanded={open}

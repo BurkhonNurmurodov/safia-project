@@ -62,6 +62,14 @@
 /* Hide scrollbar while keeping scroll functionality */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+/* FilterPanel's chip strip (2026-11-20, audit F1): below md the row it sits in
+   wraps, so chips that do not fit beside the period control and the trigger
+   take a line of their own instead of running off the screen. The strip only
+   renders while a filter is set, so an unfiltered row is untouched; md+ never. */
+@media (max-width: 767.98px) {
+  :has(> .fp-chips) { flex-wrap: wrap; row-gap: 8px; }
+  .fp-chips > * { max-width: 100%; }
+}
 
 /* ── Brand palette ────────────────────────────────── */
 /* Gold  #C8973F · Rose  #E8A0B0 · Cream  #FFF5EC     */
@@ -386,6 +394,30 @@ body.sidebar-open { overflow: hidden; }
 @media (min-width: 640px) {
   .sheet-card { animation: modalPop .2s var(--ease-out); }
 }
+/* `Modal` (2026-11-20): a centred card from md up, a BOTTOM SHEET below it —
+   full width, flush with the bottom edge (thumb reach), rounded on top, rising
+   like every other phone sheet and riding back down when it closes. The
+   paddings are here rather than inline because they differ by width. A footer
+   of three or more buttons stacks full-width in its own DOM order below md:
+   cancel above, the primary (last) action at the bottom. */
+.modal-shell {
+  padding: calc(var(--tg-safe-top, 0px) + 1rem) 1rem calc(var(--tg-safe-bottom, 0px) + 1rem);
+}
+@media (max-width: 767.98px) {
+  .modal-shell {
+    align-items: flex-end;
+    padding: calc(var(--tg-safe-top, 0px) + 2.5rem) 0 0;
+  }
+  .modal-shell > .modal-card {
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+    padding-bottom: var(--tg-safe-bottom, 0px);
+    animation: sheetUp .28s var(--ease-sheet);
+  }
+  .modal-foot:has(> :nth-child(3)) { flex-direction: column; align-items: stretch; }
+  .modal-foot:has(> :nth-child(3)) > * { width: 100%; min-height: 44px; margin: 0; justify-content: center; }
+}
 
 /* Side panel — in from the right edge and back out to it («Yordamchi», the
    action log's detail). A bar that rises from the bottom edge (the exam strip). */
@@ -423,6 +455,9 @@ body.sidebar-open { overflow: hidden; }
 [data-leaving] .sheet, [data-leaving] .sheet-card { animation: sheetDown .2s var(--ease-in) both !important; }
 @media (min-width: 640px) {
   [data-leaving] .sheet-card { animation: modalPopOut .15s var(--ease-in) both !important; }
+}
+@media (max-width: 767.98px) {
+  [data-leaving].modal-shell > .modal-card { animation: sheetDown .2s var(--ease-in) both !important; }
 }
 .pop[data-leaving] { animation: popOut .1s var(--ease-in) both !important; }
 .side-in[data-leaving] { animation: sideOut .2s var(--ease-in) both !important; }

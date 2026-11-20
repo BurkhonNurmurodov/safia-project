@@ -35,6 +35,12 @@ import {
   TrendingUp, PieChart, Layers, UserRound, UserPen, ArrowLeftRight,
   Hourglass, Inbox, CheckCheck, Building2, ChevronDown,
 } from "lucide-react";
+import ActionMenu from "../components/ui/ActionMenu";
+import StyledSelect from "../components/ui/StyledSelect";
+import EmptyState from "../components/ui/EmptyState";
+import useIsMobile from "../hooks/useIsMobile";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import { phoneText, phoneDay } from "./concernsPhoneText";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker, { ALL_TIME_FROM } from "../components/ui/DateRangePicker";
@@ -128,13 +134,22 @@ export default function Tasks() {
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const isLeader = auth?.role === "leader";
+  // Below md (2026-11-20, the leader-phone redesign) the register is a list of
+  // task cards grouped by status, each carrying its own status control; a
+  // leader's phone has no «Tahlil» (audit T1/T2). md and up is unchanged.
+  const phone = useIsMobile(768);
+  const leaderPhone = useLeaderPhone();
+  const P = phoneText(lang);
+  const [doneOpen, setDoneOpen] = useState(false);
 
   const statusLabel = (s) => t(`tasks.status.${s}`);
   const tierLabel = (k) => t(`tasks.tier.${k}`);
   const roleLabel = (r) => (r && ROLE_LABEL_KEYS[r] ? t(ROLE_LABEL_KEYS[r]) : null);
 
   // ── page state ─────────────────────────────────────────────────────────────
-  const [view, setView] = usePersistentState("tasks_view", "list");
+  const [savedView, setView] = usePersistentState("tasks_view", "list");
+  // A leader's phone shows the register alone — «Tahlil» answers a manager.
+  const view = leaderPhone ? "list" : savedView;
   const [startDate, setStartDate] = usePersistentState("tasks_date_from", () => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = usePersistentState("tasks_date_to", () => localTodayIso());
   const [fTier, setFTier] = usePersistentState("tasks_tier", null);          // null = both | supervisor | leader
@@ -913,6 +928,153 @@ export default function Tasks() {
     </div>
   );
 
+  // ── the phone list (below md) ─────────────────────────────────────────────
+  // One card per task: what to do first, then the day it is due and who set
+  // it; the status is changed IN the card (the leader's progress), the rest of
+  // a row's actions sit behind its ⋮, and a tap on the task opens its thread —
+  // the one surface that shows a task whole (a notification opens the same).
+  // Grouped by status in the board's own order; the finished ones fold.
+  const statusOpts = (r) => [...new Set([r.status, ...(r.status_options || STATUSES)])]
+    .filter((x) => STATUSES.includes(x))
+    .map((x) => ({
+      value: x,
+      label: (
+        <span className="inline-flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: STATUS_COLOR[x] }} />
+          {statusLabel(x)}
+        </span>
+      ),
+      title: statusLabel(x),
+    }));
+  const phoneCard = (r) => {
+    const overdue = isOverdue(r);
+    const who = tl(r.created_by_name || "");
+    return (
+      <div key={r.id} className="px-4 py-3.5 flex flex-col gap-2.5 border-t border-[var(--border)]"
+           style={{ opacity: r.status === "done" ? 0.8 : 1 }}>
+        <button
+          type="button" onClick={() => setCommentsTask(r)}
+          className="w-full text-left flex flex-col gap-1.5 press-none"
+        >
+          <span className="text-[15px] leading-snug line-clamp-3 break-words" style={{ color: "var(--text-1)" }}>
+            {isUrgent(r) && (
+              <Flame size={15} className="inline -mt-0.5 mr-1" style={{ color: CHART_OVERDUE }} aria-label={P.urgent} />
+            )}
+            {tx(r.task_text)}
+          </span>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+            {r.due_date && (
+              <span className="inline-flex items-center gap-1 tabular-nums"
+                    style={overdue ? { color: CHART_OVERDUE, fontWeight: 600 } : undefined}>
+                {overdue ? <AlertTriangle size={12} /> : <CalendarClock size={12} />}
+                {phoneDay(r.due_date, lang)}
+              </span>
+            )}
+            {!isLeader && r.assignee_name && (
+              <span className="inline-flex items-center gap-1 min-w-0">
+                <UserCheck size={12} className="shrink-0" />
+                <span className="truncate">{shortPerson(tl(r.assignee_name))}</span>
+              </span>
+            )}
+            {who && (
+              <span className="inline-flex items-center gap-1 min-w-0" title={roleLabel(r.creator_role) || undefined}>
+                <span className="truncate">{P.setBy}: {shortPerson(who)}</span>
+              </span>
+            )}
+            {r.comment_count > 0 && (
+              <span className="inline-flex items-center gap-1 tabular-nums" aria-label={`${P.comments}: ${r.comment_count}`}>
+                <MessageSquare size={12} /> {r.comment_count}
+              </span>
+            )}
+          </span>
+        </button>
+        <div className="flex items-center gap-2">
+          {r.can_status ? (
+            <StyledSelect
+              value={r.status}
+              onChange={(st) => st !== r.status && statusMutation.mutate({ row: r, status: st })}
+              options={statusOpts(r)}
+              disabled={savingStatusId === r.id}
+              className="min-w-[11rem]"
+              triggerClassName="px-3 h-11 text-sm"
+            />
+          ) : (
+            <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full"
+                  style={{ background: `${STATUS_COLOR[r.status]}24`, color: STATUS_COLOR[r.status] }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: STATUS_COLOR[r.status] }} />
+              {statusLabel(r.status)}
+            </span>
+          )}
+          <div className="ml-auto">
+            <ActionMenu
+              label={`${t("concerns.actions")}: ${tx(r.task_text).slice(0, 40)}`}
+              items={[
+                r.can_reorder && {
+                  key: "urgent", icon: Flame,
+                  label: isUrgent(r) ? P.unmarkUrgent : P.markUrgent,
+                  disabled: savingUrgentId === r.id,
+                  onSelect: () => urgentMutation.mutate({ row: r, urgent: !isUrgent(r) }),
+                },
+                r.can_edit && { key: "edit", icon: Pencil, label: t("tasks.edit"), onSelect: () => openEdit(r) },
+                r.can_edit && { key: "delete", icon: Trash2, label: t("tasks.delete"), tone: "danger", onSelect: () => setConfirmDelete(r) },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+  const phoneList = (() => {
+    if (isLoading) {
+      return Array.from({ length: 3 }).map((_, i) => (
+        <div key={`sk-${i}`} className="px-4 py-3.5 space-y-2 border-t border-[var(--border)] first:border-t-0">
+          <SkeletonBlock className="h-4 w-3/4" />
+          <SkeletonBlock className="h-3 w-1/2" />
+          <SkeletonBlock className="h-10 w-40" />
+        </div>
+      ));
+    }
+    if (!sorted.length) {
+      return (
+        <div className="py-8">
+          <EmptyState icon={Inbox} showUploadLink={false} message=""
+            title={allRows.length === 0 ? t("tasks.empty") : t("tasks.noMatch")} />
+        </div>
+      );
+    }
+    const groups = STATUSES.map((st) => [st, sorted.filter((r) => r.status === st)]).filter(([, rows]) => rows.length);
+    return groups.map(([st, rows]) => {
+      const fold = st === "done";
+      const shown = !fold || doneOpen;
+      const head = (
+        <>
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: STATUS_COLOR[st] }} />
+          <span>{statusLabel(st)}</span>
+          <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{rows.length}</span>
+        </>
+      );
+      return (
+        <section key={st} className="border-t border-[var(--border)] first:border-t-0">
+          {fold ? (
+            <button
+              type="button" aria-expanded={doneOpen} onClick={() => setDoneOpen((v) => !v)}
+              className="w-full min-h-[48px] px-4 flex items-center gap-2 text-sm font-semibold transition-colors hover:bg-[var(--bg-inner)]"
+              style={{ color: "var(--text-2)" }}
+            >
+              {head}
+              <ChevronDown size={16} className="ml-auto transition-transform" style={{ transform: doneOpen ? "rotate(180deg)" : "none" }} />
+            </button>
+          ) : (
+            <h3 className="px-4 pt-3 pb-1 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-2)" }}>
+              {head}
+            </h3>
+          )}
+          {shown && <div className="[&>*:first-child]:border-t-0">{rows.map(phoneCard)}</div>}
+        </section>
+      );
+    });
+  })();
+
   return (
     <Layout title={t("tasks.title")}>
       {/* ONE-ROW filter bar: period inline; the org chain, tier, creator and
@@ -930,11 +1092,14 @@ export default function Tasks() {
       </div>
 
       {/* Page view tabs — register vs chart board. Only the text search
-          follows the view (on the register it sits in the table toolbar). */}
+          follows the view (on the register it sits in the table toolbar).
+          A leader's phone has the register alone, so no tabs at all. */}
+      {!leaderPhone && (
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <SegmentedToggle
           value={view}
           onChange={setView}
+          size={phone ? "lg" : "md"}
           options={[["list", t("tasks.viewList")], ["analytics", t("tasks.viewAnalytics")]]}
         />
         {view === "analytics" && (
@@ -944,6 +1109,7 @@ export default function Tasks() {
           </>
         )}
       </div>
+      )}
 
       {/* ── Analysis — every board is computed from the fully filtered rows. */}
       {view === "analytics" && (
@@ -1115,20 +1281,25 @@ export default function Tasks() {
         <TableCard
           className="mb-8"
           icon={ClipboardList}
-          title={t("tasks.listTitle")}
+          // A phone's bar already says «Vazifalar», and each status group
+          // counts its own cards: the card opens on its search instead.
+          title={phone ? null : t("tasks.listTitle")}
           wrap
           right={
             <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
               {sorted.length}{sorted.length !== allRows.length ? ` / ${allRows.length}` : ""}
             </span>
           }
+          mobile={phoneList}
+          mobileUntil="md"
+          mobileMaxHeight="none"
           toolbar={
             <>
               <SearchInput
                 value={search}
                 onChange={setSearch}
                 placeholder={t("tasks.search")}
-                className="w-44"
+                className={phone ? "flex-1 min-w-[10rem]" : "w-44"}
               />
               {canCreate && (
                 <Button size="lg" icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>

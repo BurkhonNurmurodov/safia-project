@@ -11,6 +11,10 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
+import useIsMobile from "../hooks/useIsMobile";
+import { inAndroidApp, inTelegram } from "../utils/session";
+import { fill, shellText } from "../components/layout/shellPhoneText";
 import { enqueue, flush, newKey, pending } from "../utils/proofQueue";
 import {
   announceNeed, answerPresence, askOthers, beatHolder, cameraList, createRecorder, deviceEnv, otherHolders,
@@ -210,6 +214,16 @@ async function useMainLens(track) {
 }
 
 const tgApp = () => window.Telegram?.WebApp;
+
+// WHERE the page is running, for the copy that tells a person what to switch
+// on or close (2026-11-20, plan D3): «Telegram uchun kamerani yoqing» read
+// inside the Safia IMS Android app sent a leader to the wrong settings screen.
+// Telegram keeps the platform's own `proof.cam.*Msg` strings, written for it.
+const camPlace = () => (inTelegram() ? "telegram" : inAndroidApp() ? "android" : "browser");
+
+// A 1×1 transparent GIF: a <video> with no poster is drawn by Android's
+// WebView as a giant grey «play» glyph until the first frame (plan D4).
+const NO_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 // Telegram's own name for where the mini app is running. A leader who opened a
 // camera proof on one of these has a screen to read, not a camera to fix, so
@@ -488,7 +502,12 @@ function Roll({ photos, queued, need, cap, active, onPick, onCancelRetake, onAdd
 /* ── the page ─────────────────────────────────────────────────────────────── */
 
 export default function ProofCamera() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { auth } = useAuth();
+  // A phone (below md) — where the leader-phone redesign applies: the place's
+  // own copy, one status line, a quieter header. From md up, as before.
+  const phone = useIsMobile(768);
+  const sTxt = shellText(lang);
   const toast = useToast({ position: "bottom" });
   // `t` answers with the KEY when a string is missing, which on a server-detail
   // key ("day_closed") would put a raw identifier in front of a leader. `tf`
@@ -1773,6 +1792,17 @@ export default function ProofCamera() {
   // reported at all.
   const noCamera = camErr === "none" && devices.length === 0;
   const notAFault = camErr === "held" || noCamera;
+  // What a PHONE draws differently (the leader-phone redesign; null/false
+  // from md up): the failure copy for the place, the header's day, the one
+  // status line.
+  const { placeMsg, ownPhone, dayWords, phoneLine } = phoneChrome({
+    phone, sTxt, t, role: auth?.role, day: data.day?.date || "",
+    lateMode, late, mode, online, queued: queued.length, task,
+  });
+  const errMsg = (err) => placeMsg?.[`${err}Msg`] ?? t(`proof.cam.${err}Msg`);
+  // No stream yet (opening, refused, failed): the shutter is drawn OFF — a
+  // grey disc, not the gold of a live one (phones; md up dims it as before).
+  const shutterOff = !!camErr || camBusy || !camAR;
 
   return (
     <div className="fixed inset-0 flex flex-col select-none"
@@ -1784,18 +1814,23 @@ export default function ProofCamera() {
       {/* Header — who am I shooting for, and how far along. Always visible, in
           every state, because "wrong task" is the one mistake this page could
           make that nobody would notice until the score came out. */}
-      <header className="flex items-center gap-3 px-3 h-14 shrink-0"
+      <header className="flex items-center gap-3 px-3 h-14 max-md:h-auto max-md:min-h-14 max-md:py-1.5 shrink-0"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
+        {/* A 44px target on a phone, around the same 36px disc. */}
         <button type="button" onClick={exit}
           aria-label={t("proof.gate.close")}
-          className="grid place-items-center rounded-full shrink-0"
-          style={{ width: 36, height: 36, background: "rgba(255,255,255,0.10)" }}>
-          <X size={18} />
+          className="grid place-items-center rounded-full shrink-0 max-md:w-11 max-md:h-11 max-md:-ml-1">
+          <span className="grid place-items-center rounded-full"
+            style={{ width: 36, height: 36, background: "rgba(255,255,255,0.10)" }}>
+            <X size={18} />
+          </span>
         </button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-semibold leading-tight">{task.name}</div>
-          <div className="text-[11px] leading-tight" style={{ color: "rgba(255,255,255,0.6)" }}>
-            {data.leader?.name} · {data.day?.date}
+          {/* The task's whole name on a phone (two lines) — «wrong task» is
+              the mistake this header exists to catch. */}
+          <div className="md:truncate max-md:line-clamp-2 max-md:break-words text-[15px] font-semibold leading-tight">{task.name}</div>
+          <div className="text-[11px] max-md:text-xs leading-tight" style={{ color: "rgba(255,255,255,0.6)" }}>
+            {ownPhone ? dayWords : `${data.leader?.name} · ${data.day?.date}`}
           </div>
         </div>
         <div className="shrink-0 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums"
@@ -1825,7 +1860,7 @@ export default function ProofCamera() {
               the floor: React built a fresh <video> on the way back to live,
               nothing re-attached the stream to it, and the second shot was
               being aimed at a black rectangle. */}
-          <video ref={setVideoEl} playsInline muted autoPlay
+          <video ref={setVideoEl} playsInline muted autoPlay poster={NO_POSTER}
             className="absolute inset-0 w-full h-full object-contain"
             style={{
               transform: facing === "user" ? "scaleX(-1)" : undefined,
@@ -1898,8 +1933,8 @@ export default function ProofCamera() {
                 {noCamera && onDesktop()
                   ? t("proof.cam.noneDesktopMsg")
                   : camErr === "hung" && reloadNote
-                    ? t("proof.cam.hungAgainMsg")
-                    : t(`proof.cam.${camErr}Msg`)}
+                    ? (placeMsg?.hungAgainMsg ?? t("proof.cam.hungAgainMsg"))
+                    : errMsg(camErr)}
               </p>
               {/* On a device with NO camera — a leader who opened the proof
                   from Telegram on a computer — «Qayta urinish» is a button that
@@ -1908,22 +1943,22 @@ export default function ProofCamera() {
                   just plugged in. */}
               {noCamera ? (
                 <div className="space-y-2">
-                  <Button size="lg" className="w-full" onClick={exit}>
+                  <Button size="lg" className="max-md:min-h-[44px] w-full" onClick={exit}>
                     <X size={16} /> {t("proof.gate.close")}
                   </Button>
-                  <Button size="md" variant="ghost" className="w-full" onClick={retry}>
+                  <Button size="md" variant="ghost" className="max-md:min-h-[44px] w-full" onClick={retry}>
                     <RefreshCw size={15} /> {t("proof.cam.retry")}
                   </Button>
                 </div>
               ) : (
-                <Button size="lg" onClick={retry} loading={reloading}>
+                <Button className="max-md:min-h-[44px]" size="lg" onClick={retry} loading={reloading}>
                   <RefreshCw size={16} /> {t("proof.cam.retry")}
                 </Button>
               )}
               {/* Said only once the server HAS the report: reassurance for a
                   send that has not happened is a promise the page cannot keep. */}
               {reported ? (
-                <p className="mt-3 text-[11px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                <p className="mt-3 text-[11px] max-md:text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
                   {t("proof.cam.reported")}
                 </p>
               ) : null}
@@ -1934,7 +1969,12 @@ export default function ProofCamera() {
         {/* Standing warnings. Both are ABOUT THE NEXT SHOT, so they sit on the
             viewfinder where the decision is made — not in a toast that is gone
             by the time the shutter is pressed. */}
-        <div className="absolute top-2 left-0 right-0 flex flex-col items-center gap-1.5 px-3">
+        {phoneLine ? (
+          <div className="absolute top-2 left-0 right-0 flex justify-center px-3">
+            <Banner tone={phoneLine.tone} icon={phoneLine.icon} text={phoneLine.text} />
+          </div>
+        ) : null}
+        <div className="absolute top-2 left-0 right-0 flex flex-col items-center gap-1.5 px-3 max-md:hidden">
           {!online ? (
             <Banner tone="warn" icon={<WifiOff size={13} />} text={t("proof.offline")} />
           ) : null}
@@ -1985,11 +2025,18 @@ export default function ProofCamera() {
               {/* `capture` returns without a word when no frame has arrived,
                   so a shutter that still looks armed is a button that silently
                   does nothing — the exact complaint this screen produced. */}
-              <button type="button" onClick={capture} disabled={!!camErr || camBusy || !camAR}
+              <button type="button" onClick={capture} disabled={shutterOff}
                 aria-label={t("proof.shoot")}
-                className="justify-self-center grid place-items-center rounded-full transition-transform active:scale-95 disabled:opacity-30"
-                style={{ width: 72, height: 72, background: "#fff", boxShadow: "0 0 0 4px rgba(255,255,255,0.22)" }}>
-                <span className="rounded-full" style={{ width: 56, height: 56, background: "var(--brand)" }} />
+                className={`justify-self-center grid place-items-center rounded-full transition-transform active:scale-95 ${phone ? "disabled:opacity-60" : "disabled:opacity-30"}`}
+                style={{
+                  width: 72, height: 72,
+                  background: phone && shutterOff ? "rgba(255,255,255,0.18)" : "#fff",
+                  boxShadow: `0 0 0 4px ${phone && shutterOff ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.22)"}`,
+                }}>
+                <span className="rounded-full" style={{
+                  width: 56, height: 56,
+                  background: phone && shutterOff ? "rgba(255,255,255,0.22)" : "var(--brand)",
+                }} />
               </button>
 
               <button type="button" onClick={() => setShowRule(true)}
@@ -1999,7 +2046,11 @@ export default function ProofCamera() {
                 <Info size={20} />
               </button>
             </div>
-            <p className="pb-2 text-center text-[11px] px-4"
+            {/* A phone keeps only the retake STATE here (what the shutter will
+                replace); «N more needed» is the header's counter, and the late
+                instructions are notes. */}
+            {(!phone || retakeSlot != null) && (
+            <p className="pb-2 text-center text-[11px] max-md:text-xs px-4"
               style={{ color: "rgba(255,255,255,0.55)" }}>
               {retakeSlot != null
                 ? t("proof.retakingSlot").replace("{n}", retakeSlot + 1)
@@ -2008,6 +2059,7 @@ export default function ProofCamera() {
                   : done ? t("proof.doneHint")
                     : t("proof.needHint").replace("{n}", Math.max(0, need - photos.length - queued.length))}
             </p>
+            )}
             {lateMode ? (
               photos.length ? (
                 <div className="px-4 pb-3">
@@ -2017,7 +2069,7 @@ export default function ProofCamera() {
                       «Tayyor», which would read as «submitted». No sibling
                       hop either — leaving now with the reason unwritten would
                       strand the shots. */}
-                  <Button size="lg" variant="success" className="w-full"
+                  <Button size="lg" variant="success" className="max-md:min-h-[44px] w-full"
                     onClick={exit}>
                     <Check size={17} /> {t("proof.late.finish")}
                   </Button>
@@ -2031,7 +2083,7 @@ export default function ProofCamera() {
                     unfinished camera task is offered where they finish the last
                     one. */}
                 {nextTask ? (
-                  <Button size="lg" variant="secondary" className="w-full justify-between"
+                  <Button size="lg" variant="secondary" className="max-md:min-h-[44px] w-full justify-between"
                     onClick={() => goTask(nextTask.id)}>
                     <span className="truncate">
                       {t("proof.nextTask")}: {nextTask.name} ({nextTask.have}/{nextTask.min_media})
@@ -2039,7 +2091,7 @@ export default function ProofCamera() {
                     <ArrowRight size={16} />
                   </Button>
                 ) : null}
-                <Button size="lg" variant="success" className="w-full"
+                <Button size="lg" variant="success" className="max-md:min-h-[44px] w-full"
                   onClick={exit}>
                   <Check size={17} /> {t("proof.finish")}
                 </Button>
@@ -2048,27 +2100,27 @@ export default function ProofCamera() {
           </>
         ) : mode === "review" ? (
           <div className="flex items-center gap-2 px-4 py-3">
-            <Button size="lg" variant="secondary" className="flex-1"
+            <Button size="lg" variant="secondary" className="max-md:min-h-[44px] flex-1"
               onClick={discardShot} disabled={saving}>
               <RotateCcw size={17} /> {t("proof.retake")}
             </Button>
-            <Button size="lg" className="flex-[1.4]" loading={saving} onClick={saveShot}>
+            <Button size="lg" className="max-md:min-h-[44px] flex-[1.4]" loading={saving} onClick={saveShot}>
               <Check size={17} /> {t("proof.save")}
             </Button>
           </div>
         ) : (
           <div className="flex items-center gap-2 px-4 py-3">
-            <Button size="lg" variant="secondary" className="flex-1"
+            <Button size="lg" variant="secondary" className="max-md:min-h-[44px] flex-1"
               onClick={() => { setViewing(null); setMode("live"); }}>
               {t("proof.back")}
             </Button>
             {viewing && viewing.slot >= need ? (
-              <Button size="lg" variant="danger" tint
+              <Button className="max-md:min-h-[44px]" size="lg" variant="danger" tint
                 onClick={() => setConfirm({ photo: viewing })}>
                 <Trash2 size={16} />
               </Button>
             ) : null}
-            <Button size="lg" className="flex-[1.2]" disabled={!viewing}
+            <Button size="lg" className="max-md:min-h-[44px] flex-[1.2]" disabled={!viewing}
               onClick={() => {
                 setRetakeSlot(viewing?.slot ?? null);
                 setViewing(null);
@@ -2100,15 +2152,16 @@ export default function ProofCamera() {
               </p>
             ) : null}
             <ul className="text-[13px] space-y-1.5 mb-4" style={{ color: "var(--text-2)" }}>
-              <li>📸 {t("proof.rule.count").replace("{n}", need).replace("{cap}", cap)}</li>
+              {/* A phone draws icons, never emoji (md up unchanged). */}
+              <li>{phone ? <Camera size={14} className="inline -mt-0.5 mr-1.5" aria-hidden="true" /> : "📸 "}{t("proof.rule.count").replace("{n}", need).replace("{cap}", cap)}</li>
               {task.date_check && task.time_check ? (
-                <li>🕒 {t("proof.rule.window").replace("{lo}", task.window[0]).replace("{hi}", task.window[1])}</li>
+                <li>{phone ? <Clock size={14} className="inline -mt-0.5 mr-1.5" aria-hidden="true" /> : "🕒 "}{t("proof.rule.window").replace("{lo}", task.window[0]).replace("{hi}", task.window[1])}</li>
               ) : (
-                <li>🕒 {t("proof.rule.noWindow")}</li>
+                <li>{phone ? <Clock size={14} className="inline -mt-0.5 mr-1.5" aria-hidden="true" /> : "🕒 "}{t("proof.rule.noWindow")}</li>
               )}
-              <li>🔒 {t("proof.rule.stamp")}</li>
+              <li>{phone ? <Lock size={14} className="inline -mt-0.5 mr-1.5" aria-hidden="true" /> : "🔒 "}{t("proof.rule.stamp")}</li>
             </ul>
-            <Button size="lg" className="w-full" onClick={() => setShowRule(false)}>
+            <Button size="lg" className="max-md:min-h-[44px] w-full" onClick={() => setShowRule(false)}>
               {t("proof.rule.ok")}
             </Button>
           </div>
@@ -2130,12 +2183,43 @@ export default function ProofCamera() {
   );
 }
 
+/**
+ * The camera's phone chrome (below md — the leader-phone redesign, 2026-11-20).
+ *  - `placeMsg`: the failure copy for WHERE the page runs — the Safia IMS
+ *    Android app or a browser; Telegram keeps the platform strings (null).
+ *  - `ownPhone` / `dayWords`: the person filing IS the leader (`?leader=` must
+ *    be a profile this account holds), so on their phone the header's second
+ *    line is just the day in words — «20 noyabr» — not their own name beside
+ *    an ISO date.
+ *  - `phoneLine`: the stacked banners as ONE status line at most, the one that
+ *    matters most for the next shot: a late filing, a shot about to be marked
+ *    late, no connection, shots still sending.
+ */
+function phoneChrome({ phone, sTxt, t, role, day, lateMode, late, mode, online, queued, task }) {
+  const place = camPlace();
+  const placeMsg = phone && place !== "telegram" ? sTxt.cam[place] : null;
+  const ownPhone = phone && role === "leader";
+  const dayWords = /^\d{4}-\d{2}-\d{2}$/.test(day)
+    ? `${Number(day.slice(8, 10))} ${t(`cal.mg${Number(day.slice(5, 7)) - 1}`)}`
+    : day;
+  const phoneLine = !phone ? null
+    : lateMode ? { tone: "warn", icon: <Clock size={14} />,
+      text: task?.late_until ? fill(sTxt.camLine.lateUntil, { t: task.late_until }) : sTxt.camLine.late }
+    : late && mode === "live" ? { tone: "warn", icon: <Clock size={14} />,
+      text: fill(sTxt.camLine.outside, { lo: task.window[0], hi: task.window[1] }) }
+    : !online ? { tone: "warn", icon: <WifiOff size={14} />, text: t("proof.offline") }
+    : queued ? { tone: "info", icon: <Loader2 size={14} className="animate-spin" />,
+      text: t("proof.queuedN").replace("{n}", queued) }
+    : null;
+  return { placeMsg, ownPhone, dayWords, phoneLine };
+}
+
 function Banner({ tone, icon, text }) {
   const c = tone === "warn"
     ? { bg: "rgba(234,179,8,0.20)", fg: "#fde047", bd: "rgba(234,179,8,0.45)" }
     : { bg: "rgba(59,130,246,0.20)", fg: "#93c5fd", bd: "rgba(59,130,246,0.45)" };
   return (
-    <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+    <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] max-md:text-xs max-md:py-1.5 font-medium"
       style={{ background: c.bg, color: c.fg, border: `1px solid ${c.bd}` }}>
       {icon}<span>{text}</span>
     </div>

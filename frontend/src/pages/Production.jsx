@@ -49,6 +49,10 @@ import StaffingProofModal from "../components/production/StaffingProofModal";
 import HourlyContainers from "../components/production/HourlyContainers";
 import PriorityOrderModal, { teamKeyOf } from "../components/production/PriorityOrderModal";
 import { ddmm, hhmm } from "../components/production/staffingClock";
+import ActionMenu from "../components/ui/ActionMenu";
+import useIsMobile from "../hooks/useIsMobile";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import { useFloorText, fill as fillF } from "./floorPhoneText";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 // Timezone-safe: build/shift dates from calendar parts, never via toISOString()
@@ -375,14 +379,14 @@ function Kpi({ label, value, icon: Icon, accent, bar, barColor, primary, title, 
   return (
     <div
       title={title}
-      className={`rounded-2xl px-4 py-3.5 flex-1 min-w-[150px] ${className}`}
+      className={`rounded-2xl px-4 py-3.5 flex-1 min-w-[150px] max-md:min-w-0 max-md:px-3 ${className}`}
       style={{
         background: primary ? "var(--brand-bg)" : "var(--bg-card)",
         border: `1px solid ${primary ? "var(--brand-border)" : "var(--border)"}`,
       }}
     >
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{label}</span>
+        <span className="text-[10px] max-md:text-xs uppercase tracking-wider max-md:tracking-wide font-semibold text-[var(--text-4)] max-md:text-[var(--text-3)]">{label}</span>
         {Icon && <Icon size={15} style={{ color: accent || "var(--text-4)", opacity: 0.85 }} />}
       </div>
       <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: accent || "var(--text-1)" }}>{value}</div>
@@ -425,6 +429,17 @@ const moveCell = (el, dCol, dRow) => {
 // the editor FILLS the cell instead of floating a small box inside it. Enter
 // commits and drops to the cell below, Tab commits and steps right, Escape
 // cancels, Delete clears the override.
+// What a typed quantity means: «+20» adds 20 to what the cell holds, «50+20»
+// sums as typed, a blank clears (null). `undefined` = not a number — nothing
+// is saved. ONE reading for the table's cell and the phone card's field.
+const parseQty = (draft, value) => {
+  const raw = String(draft ?? "").trim();
+  const parts = raw.replace(/,/g, ".").split("+");
+  if (parts[0].trim() === "") parts[0] = String(value ?? 0);
+  const num = raw === "" ? null : parts.reduce((s, p) => s + Number(p), 0);
+  return raw !== "" && Number.isNaN(num) ? undefined : num;
+};
+
 function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = false, decimals = 0 }) {
   const { t } = useLang();
   const tdRef = useRef(null);
@@ -457,12 +472,9 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     nav.current = where ?? null;
     setEditing(false);
     if (!save) return;
-    const raw = draft.trim();
     // «+20» adds 20 to what the cell holds; «50+20» sums as typed.
-    const parts = raw.replace(/,/g, ".").split("+");
-    if (parts[0].trim() === "") parts[0] = String(value ?? 0);
-    const num = raw === "" ? null : parts.reduce((s, p) => s + Number(p), 0);
-    if (raw !== "" && Number.isNaN(num)) return;
+    const num = parseQty(draft, value);
+    if (num === undefined) return;
     if (num !== (value ?? null)) onSave(num);
   };
 
@@ -578,6 +590,69 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
         />
       )}
     </td>
+  );
+}
+
+// ── a quantity on a phone card (the positions list below md) ─────────────────
+// The table's QtyCell is a spreadsheet cell — a <td> opened by a second tap.
+// On a card it is a labelled 44px field: ONE tap opens the number keyboard on
+// the whole value, Enter or leaving the field saves through the very same
+// `onSave` (and `parseQty`), Escape puts it back. A closed day draws the
+// figure alone, like the table's read-only cell.
+function QtyField({ label, value, onSave, readOnly = false, aria, decimals = 0 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const closed = useRef(false);
+  const open = () => {
+    if (readOnly || editing) return;
+    closed.current = false;
+    setDraft(value === null || value === undefined ? "" : String(value));
+    setEditing(true);
+  };
+  const finish = (save) => {
+    if (closed.current) return;
+    closed.current = true;
+    setEditing(false);
+    if (!save) return;
+    const num = parseQty(draft, value);
+    if (num === undefined) return;
+    if (num !== (value ?? null)) onSave(num);
+  };
+  const box = "w-full min-h-[44px] rounded-lg px-2.5 text-base tabular-nums text-left";
+  return (
+    <label className="flex flex-col gap-1 min-w-0">
+      <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{label}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          inputMode="decimal"
+          aria-label={aria}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={() => finish(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); finish(true); }
+            else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+          }}
+          className={`${box} outline-none`}
+          style={{ background: "var(--bg-card)", border: "2px solid var(--brand)", color: "var(--text-1)" }}
+        />
+      ) : readOnly ? (
+        <span className={`${box} flex items-center`} style={{ color: "var(--text-1)" }}>{fmt(value, decimals)}</span>
+      ) : (
+        <button
+          type="button"
+          onClick={open}
+          aria-label={aria}
+          className={`${box} flex items-center justify-between gap-1`}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+        >
+          <span>{fmt(value, decimals)}</span>
+          <Pencil size={13} aria-hidden="true" style={{ color: "var(--text-4)" }} />
+        </button>
+      )}
+    </label>
   );
 }
 
@@ -1223,7 +1298,7 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
       style={{ color: typed ? "var(--brand-text)" : "var(--text-3)", fontWeight: typed ? 700 : 400 }}
     >
       {fmt(value, digits)}
-      {!typed && mark && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+      {!typed && mark && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
     </span>
   );
   // A LOCKED row's «Кол-во»: no input, because no headcount is entered on a work
@@ -1445,7 +1520,7 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
                         style={{ color: "var(--text-3)" }}
                       >
                         {fmt(gp.value, 0)}
-                        {!gp.complete && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                        {!gp.complete && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
                       </span>
                     ) : canEdit ? (
                       pinInput(d.people, setCell(w.work_center, "people"), fmt(null, 0))
@@ -1508,7 +1583,7 @@ function PeopleTab({ wcs, constants, verifix, date, managerParam, loading, canEd
               <tr className={PT_ROW}>
                 <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
                 <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>
-                  {fmt(totalActPeople, 0)}{!allTyped && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                  {fmt(totalActPeople, 0)}{!allTyped && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
                 </td>
                 <td className="px-3 py-2 text-center tabular-nums font-bold"
                   title={vfxRead ? t("production.vfxStaffCell") : t("production.vfxNotRead")}
@@ -1627,6 +1702,14 @@ export default function Production() {
   const { tl, tx } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
+  // The phone layout (below md, 2026-11-20 — the leader-phone redesign,
+  // docs/plan-leader-mobile.md): `phone` for what every phone gets (the
+  // positions toolbar's ⋮, no notes), `leaderPhone` for what only a LEADER's
+  // phone gets (their cells by code as the page's one switch, the positions as
+  // cards, no «Odamlar soni» tab). md+ is untouched for everybody.
+  const phone = useIsMobile(768);
+  const leaderPhone = useLeaderPhone();
+  const F = useFloorText();
   // Before every persisted filter below: a scope link writes them first.
   useUrlScope(readLinkScope);
   const [date, setDate] = usePersistentState("production_date", todayISO());
@@ -1648,7 +1731,10 @@ export default function Production() {
   // The pick is PERSISTED, so anyone who chose фаза before this rule — or whose
   // role changed since — would land on a tab that no longer exists beside a
   // panel nothing renders. Fall back to the dashboard instead.
-  const view = !canSeeRaw && RAW_VIEWS.includes(viewPref) ? "zagruzka" : viewPref;
+  // «Odamlar soni» is a manager's tool and is not offered on a leader's phone
+  // (the operator's decision, 2026-11-20); a persisted pick falls back too.
+  const view = (!canSeeRaw && RAW_VIEWS.includes(viewPref)) || (leaderPhone && viewPref === "people")
+    ? "zagruzka" : viewPref;
   const [unknownOpen, setUnknownOpen] = useState(false);
   // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
   const [search, setSearch] = usePersistentState("production_search", "");
@@ -2791,6 +2877,16 @@ export default function Production() {
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
   const noSapData = !loading && rows.length > 0 &&
     (totals.total_plan_labor || 0) === 0 && (totals.total_actual_labor || 0) === 0;
+  // …the same day as the KPI cards see it (no catalog rows needed): nothing
+  // planned and nothing done. For everybody but an admin the cards then read
+  // «—» instead of the engine's 0 / 0 = 0% (see the KPI row).
+  const blankDay = !loading && !prodAdmin
+    && !((totals.total_plan_labor || 0) > 0) && !((totals.total_actual_labor || 0) > 0);
+  // The page is cut below the team level — a lettered work centre shows fewer
+  // of its cells' letters than it holds (a picked cell, or a leader running one
+  // letter of it) — while the KPI cards stay the work centre's.
+  const teamCut = cellScope != null && wcs.some((w) => isGrouped(w)
+    && (w.cells_n ?? 0) > (w.groups || []).filter((g) => !g.orphan).length);
 
   // `qty_key` is what pp_daily is keyed by for this line — the SAP code, or a
   // name-derived token for a code-less line (several of those can share one
@@ -3583,6 +3679,16 @@ export default function Production() {
     ),
   } : null;
 
+  // A LEADER's phone: their cells ARE the page's one switch — «Hammasi ·
+  // 7213 · A · 7214 · B» as one segmented toggle, by verifix code and letter
+  // (a cell is its CODE, never the work centre «A2723» the strip used to
+  // print). It replaces both the «Faqat sizning yacheykalaringiz» strip and the
+  // filter button's cell section, and is drawn in BOTH states, so picking a
+  // cell moves nothing above the page (audit F6). One cell: a quiet line names it.
+  const cellTag = (c) => `${c.code}${c.group ? ` · ${c.group}` : ""}`;
+  const leaderCellToggle = leaderPhone && cellPinned && unitCells.length > 1;
+  const leaderOneCell = leaderPhone && cellPinned && unitCells.length === 1 ? unitCells[0] : null;
+
   const pageSections = !canPickManager ? [...leaderSections, ...(cellSection ? [cellSection] : [])] : [
     ...(factorySection ? [factorySection] : []),
     {
@@ -3620,8 +3726,99 @@ export default function Production() {
     ...(cellSection ? [cellSection] : []),
   ];
 
+  // ── the positions as phone CARDS (a leader's phone, below md) ─────────────
+  // The table opened on №, Navbat, SAP kod and Faza with the product's name off
+  // screen (audit P2). A card leads with the NAME, then the two figures the
+  // leader types — REJA and FAKT, editable in place through the table's own
+  // saves — and the line's completion. Which of the leader's cells a line
+  // belongs to («7214 · B») is printed only while the list holds lines of more
+  // than one cell; otherwise it would repeat on every card.
+  const lineCell = (r) => {
+    if (r.wc_group) {
+      const g = groupOf[gKey(r.work_center, r.wc_group)];
+      return { key: `${r.work_center}|${r.wc_group}`, code: g?.cell?.verifix_code || r.work_center, group: r.wc_group, orphan: !!g?.orphan, id: g?.cell?.id };
+    }
+    const w = wcs.find((x) => x.work_center === r.work_center);
+    const one = w && !isGrouped(w) && (w.cells_n ?? 1) <= 1 ? w.cell : null;
+    return { key: r.work_center || "", code: one?.verifix_code || r.work_center, group: null, id: one?.id };
+  };
+  const cardTags = leaderPhone ? new Set(viewRows.map((r) => lineCell(r).key)).size > 1 : false;
+  const posCards = !leaderPhone ? undefined : loading ? (
+    <ul>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <li key={`pc-sk-${i}`} className="px-3 py-3" style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+          <SkeletonBlock className="h-4 w-2/3 mb-3" />
+          <div className="grid grid-cols-3 gap-2">
+            {[0, 1, 2].map((j) => <SkeletonBlock key={j} className="h-11 w-full" />)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  ) : viewRows.length === 0 ? (
+    <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>
+      {rows.length === 0 ? t("production.noDataForDate") : t("production.noMatch")}
+    </div>
+  ) : (
+    <ul>
+      {viewRows.map((r, i) => {
+        const vyp = rowVyp(r);
+        const tag = cardTags ? lineCell(r) : null;
+        const nm = r.name || r.sap_code || "—";
+        return (
+          <li key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`} className="px-3 py-3"
+            style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
+            <div className="flex items-start gap-2">
+              <span className="flex-1 min-w-0 text-sm font-medium leading-snug line-clamp-2" style={{ color: "var(--text-1)" }}>
+                {nm}
+              </span>
+              {tag && (
+                <span className="inline-flex items-center gap-1 flex-shrink-0">
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {tag.code}
+                  </span>
+                  {tag.group && <GroupBadge group={tag.group} tone={tag.orphan ? "warn" : "neutral"} />}
+                </span>
+              )}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 items-end">
+              <QtyField label={F.plan} value={shownQty(r, "plan")} readOnly={!dayOpen}
+                aria={fillF(F.editQty, { what: F.plan, name: nm })} onSave={saveOverride(r, "plan")} />
+              <QtyField label={F.fact} value={shownQty(r, "actual")} readOnly={!dayOpen}
+                aria={fillF(F.editQty, { what: F.fact, name: nm })} onSave={saveOverride(r, "actual")} />
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{F.vyp}</span>
+                <span className="min-h-[44px] flex items-center text-base font-semibold tabular-nums"
+                  style={{ color: vyp == null ? "var(--text-4)" : vypColor(vyp) }}>
+                  {vyp == null ? "—" : pct(vyp)}
+                </span>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+  // The positions toolbar's secondary actions on a PHONE: one ⋮ instead of a
+  // second and third row of buttons, and the Excel export quiet in it instead
+  // of a big green button (green is a status colour) — md+ keeps its buttons.
+  const posMenu = [
+    canAddLine && { key: "add", label: t("production.addRow"), icon: Plus, onSelect: openCreate },
+    dayOpen && rows.length > 0 && { key: "order", label: t("production.priority.order"), icon: GripVertical, onSelect: () => setOrderOpen(true) },
+    dayOpen && rows.length > 0 && {
+      key: "copy", label: t("production.priority.copy"), icon: ListOrdered,
+      disabled: priorityCopy.isPending,
+      onSelect: () => {
+        setCopyErr(null);
+        if (rows.some((r) => r.priority != null)) setCopyAsk(true);
+        else priorityCopy.mutate(undefined, { onError: (e) => toast.error(writeErr(e)) });
+      },
+    },
+    { key: "xlsx", label: F.exportExcel, icon: Download, disabled: loading || exporting || viewRows.length === 0, onSelect: exportExcel },
+  ];
+
   return (
-    <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
+    <Layout title={leaderPhone ? t("production.title")
+      : `${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
       {toast.node}
       {/* ONE page bar: the day stepper (its calendar dots the days that hold
           an upload, and offers «Bugun» itself), then the consolidated filter
@@ -3630,13 +3827,16 @@ export default function Production() {
           select beside the stepper was the same question asked twice. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DayStepper value={date} onChange={setDate} max={null} marked={markedDates} />
-        {pageSections.length > 0 && (
+        {pageSections.length > 0 && !leaderCellToggle && (
           // A leader's unit switch has nothing to clear (the page always
           // reads one of their units), so it never counts: only the cell pick
           // does, and «clear all» clears that alone.
           <FilterPanel sections={pageSections} chipsWrap
             {...(canPickManager ? {} : { activeCount: cellPick != null ? 1 : 0, anyActive: cellPick != null })} />
         )}
+        {/* A leader's phone whose cells stand in two units: the unit switch
+            alone stays in the panel — the cell pick has its own toggle below. */}
+        {leaderCellToggle && leaderSections.length > 0 && <FilterPanel sections={leaderSections} chipsWrap />}
         {/* Undo / redo for the day's writes. It appears only once there IS a
             history — an always-visible pair of dead buttons says the page can
             take something back when there is nothing to take back. */}
@@ -3648,8 +3848,10 @@ export default function Production() {
           way out as /idle-cell — the two pages are shut by one closing, so they
           must not explain it two different ways. */}
       {dayLock && !dayOpen && (
+        // Below md ONE line: the state and who shut it — the «read-only, re-open
+        // to change» sentence is a note, and the cells already read as read-only.
         <div
-          className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl text-xs mb-3"
+          className="flex flex-wrap max-md:flex-nowrap items-center gap-2 px-3 py-2 rounded-xl text-xs mb-3"
           style={{
             background: "rgba(100,116,139,0.14)",
             border: "1px solid rgba(100,116,139,0.35)",
@@ -3657,15 +3859,15 @@ export default function Production() {
           }}
         >
           <Lock size={14} style={{ color: "#94a3b8", flexShrink: 0 }} />
-          <span className="font-semibold">{t("production.dayClosedTitle")}</span>
-          {dayLock.closed_by && <span style={{ color: "var(--text-3)" }}>· {tl(dayLock.closed_by)}</span>}
-          <span className="w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
+          <span className="font-semibold whitespace-nowrap">{t("production.dayClosedTitle")}</span>
+          {dayLock.closed_by && <span className="max-md:truncate max-md:min-w-0" style={{ color: "var(--text-3)" }}>· {tl(dayLock.closed_by)}</span>}
+          <span className="max-md:hidden w-full sm:w-auto sm:ml-1" style={{ color: "var(--text-3)" }}>
             {t("production.dayClosedHint")}
           </span>
           {dayLock.can_reopen && (
             <Button
               size="sm" variant="secondary" tint icon={<Unlock size={13} />}
-              className="ml-auto"
+              className="ml-auto max-md:flex-shrink-0 max-md:min-h-[44px]"
               onClick={() => { setReopenErr(""); setReopen(true); }}
             >
               {t("production.reopenDay")}
@@ -3695,7 +3897,29 @@ export default function Production() {
       ) : (<>
       {/* The page is pinned to the leader's own cells — say so and name them, so
           a short «Позиции» list reads as scope rather than as missing data. */}
-      {cellScope && cellScope.kind !== "pick" && (
+      {leaderCellToggle && (
+        <SegmentedToggle
+          size="lg"
+          fill
+          asTabs
+          ariaLabel={t("production.cell")}
+          value={cellPick == null ? "all" : String(cellPick)}
+          onChange={(v) => setCellPick(v === "all" ? null : Number(v))}
+          options={[["all", F.cellsAll], ...unitCells.map((c) => [String(c.id), cellTag(c)])]}
+          className="mb-4"
+        />
+      )}
+      {leaderOneCell && (
+        <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-4 text-xs"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+          <Boxes size={14} style={{ color: "var(--brand)" }} className="flex-shrink-0" />
+          <span>{F.cell}</span>
+          <CellLink id={leaderOneCell.id} className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>
+            {cellTag(leaderOneCell)}
+          </CellLink>
+        </div>
+      )}
+      {cellScope && cellScope.kind !== "pick" && !leaderCellToggle && !leaderOneCell && (
         <div className="flex items-center gap-2 flex-wrap rounded-xl px-3 py-2 mb-4 text-xs"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
           <Users size={14} style={{ color: "var(--brand)" }} className="flex-shrink-0" />
@@ -3715,7 +3939,7 @@ export default function Production() {
 
       {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок
           (the two raw file views are admin-only) */}
-      <div className="mb-4">
+      {!leaderPhone && <div className="mb-4">
         <SegmentedToggle
           value={view}
           onChange={setView}
@@ -3728,7 +3952,7 @@ export default function Production() {
             ] : []),
           ]}
         />
-      </div>
+      </div>}
 
       {RAW_VIEWS.includes(view) && (
         <RawView fileType={view} date={date} managerParam={managerParam} ready={managerReady} />
@@ -3759,32 +3983,71 @@ export default function Production() {
       )}
 
       {view === "zagruzka" && (<>
-      {noSapData && (
+      {/* The upload instruction is an ADMIN's task; everybody else is told the
+          state only — no plan for the day — in a neutral line, never an order
+          to go to an admin page they cannot open (audit S2). */}
+      {noSapData && prodAdmin && (
         <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 mb-4 text-xs"
           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
           <AlertTriangle size={14} />
           {t("production.noSapData")}
         </div>
       )}
+      {noSapData && !prodAdmin && (
+        <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 mb-4 text-xs"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+          <ClipboardList size={14} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+          {F.noPlan}
+        </div>
+      )}
 
-      {/* KPI row — the five tiles everybody has always had, unchanged. */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      {/* The cards are the TEAM's (the work centre's) figures — the engine's
+          for the brigadir, never recomputed over a slice — while the team
+          cards and positions below are cut to the picked cell's or the
+          leader's own letter. Where that cut hides a sibling letter, a phone
+          says whose the cards are (audit F5), rather than leaving «100% · 12
+          people» above a team card reading «91% · 3». */}
+      {!loading && teamCut && (
+        <p className="md:hidden text-xs mb-2 flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+          <Users size={13} className="flex-shrink-0" aria-hidden="true" />
+          {F.kpiTeamScope}
+        </p>
+      )}
+
+      {/* KPI row — the five tiles everybody has always had, unchanged. Below
+          md a two-column grid, completion across the top: five tiles one per
+          row were a screen and a half for five numbers on a narrow phone. */}
+      <div className="flex flex-wrap gap-3 mb-4 max-md:grid max-md:grid-cols-2">
         {loading ? Array.from({ length: 5 }).map((_, i) => (
-          <div key={`kpi-sk-${i}`} className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
+          <div key={`kpi-sk-${i}`} className={`rounded-2xl px-4 py-3.5 flex-1 min-w-[150px] max-md:min-w-0${i ? "" : " max-md:col-span-2"}`}
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SkeletonBlock className="h-3 w-20 mb-3" />
             <SkeletonBlock className="h-7 w-24" />
           </div>
         )) : (<>
+          {/* A day with NOTHING planned or done reads «—» on every card but the
+              headcount for whoever is not an admin, at every width (audit S2):
+              the engine answers 0 / 0 as a 0% completion and a 0% load, which
+              painted five red zeros over a day that simply has no file yet.
+              Admins keep the engine's figures — their banner says why. */}
+          {blankDay ? (<>
+            <Kpi label={t("production.kpiVyp")} value="—" icon={Target} primary className="max-md:col-span-2" />
+            <Kpi label={t("production.kpiPeople")} icon={Users}
+              value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>} />
+            <Kpi label={t("production.kpiTotalLabor")} value="—" icon={Clock} />
+            <Kpi label={t("production.kpiActualLabor")} value="—" icon={ClipboardList} />
+            <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} value="—" />
+          </>) : (<>
           <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
-            bar={totals.completion} barColor={vypColor(totals.completion)} primary />
+            bar={totals.completion} barColor={vypColor(totals.completion)} primary className="max-md:col-span-2" />
           <Kpi label={t("production.kpiPeople")} icon={Users}
-            value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>} />
+            value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>} />
           <Kpi label={t("production.kpiTotalLabor")} value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
           <Kpi label={t("production.kpiActualLabor")} value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
           <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} accent={loadColor(totals.avg_load)}
-            value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
+            value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>}
             bar={totals.avg_load ?? undefined} barColor={loadColor(totals.avg_load)} />
+          </>)}
         </>)}
       </div>
 
@@ -3812,7 +4075,7 @@ export default function Production() {
               <Kpi label={t("production.kpiAvgLoadSap")} icon={Gauge} accent={loadColor(totals.sap_avg_load)}
                 title={t("production.kpiAvgLoadSapHint")} className="col-start-5"
                 value={<>{pct(totals.sap_avg_load)}{peopleUntyped > 0 && totals.sap_avg_load != null
-                  && <sup style={{ color: "var(--text-4)" }}>*</sup>}</>}
+                  && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>}
                 bar={totals.sap_avg_load ?? undefined} barColor={loadColor(totals.sap_avg_load)} />
             </>)}
           </div>
@@ -3829,7 +4092,7 @@ export default function Production() {
           landed. --text-3 at 11px, never --text-4: this is the line that says
           the number above it is not a fact. */}
       {!loading && peopleUntyped > 0 && (
-        <p className="text-[11px] leading-relaxed mb-4 -mt-2" style={{ color: "var(--text-3)" }}>
+        <p className="max-md:hidden text-[11px] leading-relaxed mb-4 -mt-2" style={{ color: "var(--text-3)" }}>
           {t("production.peopleTypedOnly")
             .replace("{typed}", String(peopleCountable.length - peopleUntyped))
             .replace("{total}", String(peopleCountable.length))}
@@ -3837,7 +4100,9 @@ export default function Production() {
       )}
 
       {/* warnings */}
-      {(missingLabor > 0 || unknown.length > 0) && (
+      {/* Data-quality warnings are the catalog keeper's, not a leader's: off a
+          leader's phone (they stay on every wider screen). */}
+      {(missingLabor > 0 || unknown.length > 0) && !leaderPhone && (
         <div className="flex flex-col gap-2 mb-4">
           {missingLabor > 0 && (
             <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
@@ -3886,7 +4151,7 @@ export default function Production() {
         <SectionHead icon={Users} title={t("production.teams")} right={
           <span className="flex items-center gap-3">
             <span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{loading ? "" : `${teamCards.filter(({ g }) => !g?.orphan).length} ${t("production.unitsCount")}`}</span>
-            <SegmentedToggle size="sm" value={teamsView} onChange={setTeamsView}
+            <SegmentedToggle size={phone ? "lg" : "sm"} value={teamsView} onChange={setTeamsView}
               options={[["load", t("production.teams.load")], ["containers", t("production.teams.containers")],
                 ...(showHourly ? [["hourly", t("production.teams.hourly")]] : [])]} />
           </span>
@@ -3973,7 +4238,9 @@ export default function Production() {
                     <span className="flex items-center gap-1.5 min-w-0">
                       {/* Links to the cell carrying this letter only — an orphan
                           has none, so its chip stays inert. */}
-                      <CellLink id={g.orphan ? undefined : g.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={title} style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                      {/* A leader's phone names the CELL («7214» + its letter), not
+                          the work centre the leader never says (audit P1). */}
+                      <CellLink id={g.orphan ? undefined : g.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={title} style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}`, textDecorationColor: "currentColor" }}>{leaderPhone && !g.orphan && g.cell?.verifix_code ? g.cell.verifix_code : w.work_center}</CellLink>
                       <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={title} />
                     </span>
                     {!g.orphan && (
@@ -4004,13 +4271,13 @@ export default function Production() {
                   ) : (
                     <>
                       <Bar value={g.load} color={gc} height={6} track="var(--bg-card)" />
-                      <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                      <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
                         <span className="truncate">
                           {t("production.oSoni")} <b className="tabular-nums"
                             title={g.people_overridden ? undefined : groupUntypedTitle(t, w, g)}
                             style={{ color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>
                             {fmt(g.people, 1)}
-                            {!g.people_overridden && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                            {!g.people_overridden && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
                           </b>
                           {" · "}
                           {t("production.shtatka")} <b className="tabular-nums"
@@ -4029,7 +4296,7 @@ export default function Production() {
             return (
               <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <CellLink id={w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcTitle(w.work_center)} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
+                  <CellLink id={w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcTitle(w.work_center)} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}`, textDecorationColor: "currentColor" }}>{leaderPhone && !isGrouped(w) && (w.cells_n ?? 1) <= 1 && w.cell?.verifix_code ? w.cell.verifix_code : w.work_center}</CellLink>
                   {/* The staffing pin governs BOTH numbers below, so its control sits
                       in the header — above the pair — not appended to one of them. */}
                   <span className="flex items-center gap-2 shrink-0">
@@ -4049,7 +4316,7 @@ export default function Production() {
                   </span>
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
-                <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
                   {/* a pinned staffing value goes brand-gold + bold. The Факт/ПЛАН
                       cells deliberately no longer do: a quantity somebody typed IS the
                       day’s quantity, while a pinned headcount overrides a figure the
@@ -4069,7 +4336,7 @@ export default function Production() {
                       // centres typed per group only; any other untyped one reads «—».
                       style={{ color: typedCentre(w) ? "var(--brand-text)" : "var(--text-3)" }}>
                       {fmt(w.people, 0)}
-                      {typesPerGroup(w) && !typedCentre(w) && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                      {typesPerGroup(w) && !typedCentre(w) && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
                     </b>
                     {" · "}
                     {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
@@ -4081,7 +4348,7 @@ export default function Production() {
                     the same typed-gold / blank-muted vocabulary. An orphan-only
                     centre shows them too, display-only, under its own figure. */}
                 {isGrouped(w) && (
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5 text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
                     {w.groups.map((g) => (
                       <span key={g.group} className="inline-flex items-center gap-1">
                         <GroupBadge group={g.group} tone={g.orphan ? "warn" : "neutral"} title={groupTitle(t, g, tl)} />
@@ -4093,7 +4360,7 @@ export default function Production() {
                           title={g.people_overridden ? undefined : groupUntypedTitle(t, w, g)}
                           style={{ color: g.people_overridden ? "var(--brand-text)" : "var(--text-3)" }}>
                           {fmt(g.people, 1)}
-                          {!g.people_overridden && !g.orphan && <sup style={{ color: "var(--text-4)" }}>*</sup>}
+                          {!g.people_overridden && !g.orphan && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}
                         </b>
                       </span>
                     ))}
@@ -4126,9 +4393,12 @@ export default function Production() {
         className="mb-4"
         icon={Boxes}
         title={t("production.positions")}
+        mobile={posCards}
+        mobileUntil="md"
+        mobileMaxHeight="none"
         right={
           <div className="flex items-center gap-2.5">
-            <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            <span className="text-[11px] max-md:text-xs tabular-nums whitespace-nowrap max-md:text-[var(--text-3)]" style={phone ? undefined : { color: "var(--text-4)" }}>
               {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
             </span>
             <Button
@@ -4138,7 +4408,7 @@ export default function Production() {
               loading={exporting}
               disabled={loading || viewRows.length === 0}
               onClick={exportExcel}
-              className="whitespace-nowrap"
+              className="whitespace-nowrap max-md:hidden"
               title={t("production.exportExcelHint")}
             >
               {t("production.exportExcel")}
@@ -4151,18 +4421,29 @@ export default function Production() {
               value={search}
               onChange={setSearch}
               placeholder={t("production.filterPlaceholder")}
-              className="w-52 sm:w-64"
+              className="w-52 sm:w-64 max-md:w-auto max-md:flex-1 max-md:min-w-0"
             />
-            <FilterPanel
-              sections={filterSections}
-              activeCount={filterActiveCount}
-              anyActive={wcSel.length > 0}
-              onClearAll={() => setWcSel([])}
-            />
+            {/* A phone draws the Команда filter only where it can narrow
+                something (two or more teams, or one picked). */}
+            {(!phone || wcOptions.length > 1 || wcSel.length > 0) && (
+              <FilterPanel
+                sections={filterSections}
+                activeCount={filterActiveCount}
+                anyActive={wcSel.length > 0}
+                onClearAll={() => setWcSel([])}
+              />
+            )}
+            {phone && (
+              <ActionMenu
+                items={posMenu}
+                label={`${F.actions}: ${t("production.positions")}`}
+                className="!w-[38px] !h-[38px] !border-[var(--border)] !bg-[var(--bg-inner)]"
+              />
+            )}
             {canAddLine && (
               <Button
                 size="lg"
-                className="flex-1 sm:flex-none whitespace-nowrap"
+                className="flex-1 sm:flex-none whitespace-nowrap max-md:hidden"
                 icon={<Plus size={14} />}
                 onClick={openCreate}
               >
@@ -4176,7 +4457,7 @@ export default function Production() {
               <Button
                 size="lg"
                 variant="secondary"
-                className="whitespace-nowrap"
+                className="whitespace-nowrap max-md:hidden"
                 icon={<GripVertical size={14} />}
                 onClick={() => setOrderOpen(true)}
               >
@@ -4187,7 +4468,7 @@ export default function Production() {
               <Button
                 size="lg"
                 variant="secondary"
-                className="whitespace-nowrap"
+                className="whitespace-nowrap max-md:hidden"
                 icon={<ListOrdered size={14} />}
                 loading={priorityCopy.isPending && !copyAsk}
                 title={t("production.priority.copyHint")}
@@ -4220,7 +4501,7 @@ export default function Production() {
               </div>
             )}
             <ColumnsPicker
-              className="ml-auto"
+              className={`ml-auto${leaderPhone ? " hidden" : ""}`}
               columns={COLS.filter((c) => !absentCols.includes(c.key))
                 .map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}

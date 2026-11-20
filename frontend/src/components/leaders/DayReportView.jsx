@@ -16,6 +16,8 @@ import api from "../../utils/api";
 import { showReason } from "../../utils/leaderReason";
 import { autoResultLines } from "../../utils/autoResult";
 import StaffListAtCheckButton, { hasStaffList } from "./StaffListAtCheck";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
+import { shortDate } from "./natijaText";
 
 /**
  * One leader's day, verified — the body of `/leaders/report/:uid`, and of every
@@ -344,7 +346,7 @@ function StateChip({ state, T, size = "sm" }) {
   const label = T[`st${key[0].toUpperCase()}${key.slice(1)}`] || key;
   return (
     <span className={`inline-flex items-center gap-1 font-semibold rounded-md flex-shrink-0
-      ${size === "sm" ? "text-[10px] px-1.5 py-0.5" : "text-xs px-2 py-1"}`}
+      ${size === "sm" ? "text-[10px] max-md:text-[12px] px-1.5 py-0.5" : "text-xs px-2 py-1"}`}
       style={{ background: hexA(color, 0.14), color, border: `1px solid ${hexA(color, 0.3)}` }}>
       <Icon size={size === "sm" ? 11 : 13} /> {label}
     </span>
@@ -378,7 +380,7 @@ function stampOf(iso) {
  * phone, and burying the three that failed under ten that did not is how the
  * page stops answering its own question. */
 function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDispute,
-                    onChat }) {
+                    onChat, ownPhone = false }) {
   // Both open stages count as live: neither has produced a ruling, so neither
   // may be objected to a second time.
   const dOpen = disputeOpen(t.dispute);
@@ -411,14 +413,14 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                border: `1px solid ${bad ? hexA(C_BAD, 0.35) : "var(--border)"}` }}>
       <button type="button" onClick={onToggle} aria-expanded={open}
         className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left">
-        <span className="text-[11px] font-bold tabular-nums flex-shrink-0 mt-0.5"
+        <span className="text-[11px] max-md:text-[12px] font-bold tabular-nums flex-shrink-0 mt-0.5"
           style={{ color: "var(--text-4)" }}>№{t.id}</span>
         <span className="flex-1 min-w-0">
           <span className="block text-[13px] font-semibold leading-snug"
             style={{ color: "var(--text-1)" }}>{name}</span>
           <span className="flex items-center gap-1.5 flex-wrap mt-1">
             <StateChip state={st} T={T} />
-            <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
+            <span className="text-[10px] max-md:text-[12px]" style={{ color: "var(--text-4)" }}>
               {t.answered === false ? T.noAnswer : t.done ? T.answerYes : T.answerNo}
               {t.weight ? ` · ${T.weight} ${t.weight}%` : ""}
             </span>
@@ -457,7 +459,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
 
           {photos.length > 0 && (
             <div className="pt-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
+              <p className="text-[10px] max-md:text-[12px] font-semibold uppercase tracking-wider mb-1.5"
                 style={{ color: "var(--text-4)" }}>
                 <Camera size={11} className="inline mr-1" />{T.photos} ({photos.length})
               </p>
@@ -466,7 +468,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                   useful thing a reviewer can know about it before opening it —
                   so it is stated once for the set, not repeated per thumbnail. */}
               {shotInApp && (
-                <p className="text-[10px] mb-1.5 flex items-center gap-1 flex-wrap"
+                <p className="text-[10px] max-md:text-[12px] mb-1.5 flex items-center gap-1 flex-wrap"
                   style={{ color: "var(--text-3)" }}>
                   <span className="rounded px-1.5 py-px font-semibold"
                     style={{ background: "rgba(200,151,63,0.14)", color: "var(--brand)",
@@ -500,14 +502,14 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
           {rev && (rev.status === "ok" || rev.status === "flagged") && (
             <div className="rounded-lg px-2.5 py-2"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
+              <p className="text-[10px] max-md:text-[12px] font-bold uppercase tracking-wider flex items-center gap-1"
                 style={{ color: "var(--text-4)" }}>
                 <Sparkles size={11} />{T.aiVerdict}
               </p>
               {(rev.flags || []).length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {rev.flags.map((f) => (
-                    <span key={f} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                    <span key={f} className="text-[10px] max-md:text-[12px] font-semibold px-1.5 py-0.5 rounded"
                       style={{ background: hexA(C_BAD, 0.14), color: C_BAD }}>
                       {T[`f_${f}`] || f}
                     </span>
@@ -515,7 +517,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                 </div>
               )}
               {pick(rev.reason, lang) && (
-                <p className="text-[11px] leading-snug mt-1.5" style={{ color: "var(--text-2)" }}>
+                <p className="text-[11px] max-md:text-[12px] leading-snug mt-1.5" style={{ color: "var(--text-2)" }}>
                   {pick(rev.reason, lang)}
                 </p>
               )}
@@ -524,7 +526,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               {dateFlagged && (
                 <>
                   {pick(rev.dateReason, lang) && (
-                    <p className="text-[11px] leading-snug mt-1.5" style={{ color: "var(--text-2)" }}>
+                    <p className="text-[11px] max-md:text-[12px] leading-snug mt-1.5" style={{ color: "var(--text-2)" }}>
                       {pick(rev.dateReason, lang)}
                     </p>
                   )}
@@ -532,7 +534,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                       the task is judged by the day alone, and the bare CLOCK
                       when only the hour was judged — the leader must be able to
                       read which rule they were measured by. */}
-                  <p className="text-[10px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
+                  <p className="text-[10px] max-md:text-[12px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
                     style={{ color: "var(--text-4)" }}>
                     {rev.dayCheck === false
                       ? <><Clock size={10} />{T.needTime}: {rev.expected}</>
@@ -547,7 +549,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
           )}
 
           {rev?.status === "error" && (
-            <p className="text-[11px] leading-snug rounded-lg px-2.5 py-2"
+            <p className="text-[11px] max-md:text-[12px] leading-snug rounded-lg px-2.5 py-2"
               style={{ background: hexA(C_MID, 0.1), color: "var(--text-2)" }}>
               {T.errNote}
             </p>
@@ -559,7 +561,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               admin's triage «rejected» on the AI verdict itself, which costs
               the task its weight even where the AI had passed it. */}
           {ruledBy ? (
-            <p className="text-[11px] leading-snug rounded-lg px-2.5 py-2 flex items-start gap-1.5"
+            <p className="text-[11px] max-md:text-[12px] leading-snug rounded-lg px-2.5 py-2 flex items-start gap-1.5"
               style={{ background: hexA(C_BAD, 0.08), border: `1px solid ${hexA(C_BAD, 0.25)}`,
                        color: "var(--text-2)" }}>
               <ShieldX size={13} className="flex-shrink-0 mt-px" style={{ color: C_BAD }} />
@@ -570,7 +572,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               </span>
             </p>
           ) : t.admin_done != null && (
-            <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
+            <p className="text-[11px] max-md:text-[12px]" style={{ color: "var(--text-3)" }}>
               {fill(T.adminRuled, { v: t.admin_done ? T.ruledDone : T.ruledNot })}
               {t.admin_by ? ` — ${t.admin_by}` : ""}
             </p>
@@ -580,7 +582,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               longer says anything about the score, and painting it red would
               read as «refused» — the one outcome it is not. */}
           {t.dispute && (
-            <div className="rounded-lg px-2.5 py-2 text-[11px] leading-snug space-y-1.5"
+            <div className="rounded-lg px-2.5 py-2 text-[11px] max-md:text-[12px] leading-snug space-y-1.5"
               style={{ ...(t.dispute.status === "cancelled"
                 ? { background: "var(--bg-inner)", border: "1px solid var(--border)" }
                 : { background: hexA(dOpen ? C_MID
@@ -607,7 +609,9 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                   {" · "}
                   {t.dispute.byRole === "leader" || !t.dispute.byRole
                     ? T.noteLead : T.noteLeadSup}
-                  {`: ${t.dispute.by || "—"}`}
+                  {/* The leader's own note, read by that leader: not their name. */}
+                  {ownPhone && (t.dispute.byRole === "leader" || !t.dispute.byRole)
+                    ? "" : `: ${t.dispute.by || "—"}`}
                 </span>
               </div>
               {t.dispute.sup && (
@@ -639,7 +643,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               ruling is THIS reader's to make. */}
           {t.dispute?.id && (
             <Button size="md" variant={t.dispute.canAct ? "primary" : "secondary"} tint
-              onClick={onChat} className="w-full">
+              onClick={onChat} className="w-full max-md:min-h-[44px]">
               <MessagesSquare size={13} /> {t.dispute.canAct ? T.chatYourTurn : T.chatOpen}
             </Button>
           )}
@@ -651,7 +655,7 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
               objection is WRITTEN as the first message of its chat. */}
           {canDispute && (t.objectable ?? t.ai_rejected) && !dOpen && (
             <Button size="md" variant="secondary" tint onClick={onDispute}
-              className="w-full">
+              className="w-full max-md:min-h-[44px]">
               <MessageSquareWarning size={13} /> {T.dispute}
             </Button>
           )}
@@ -665,6 +669,10 @@ export default function DayReportView({ uid, embedded = false }) {
   const nav = useNavigate();
   const { lang } = useLang();
   const T = T_ALL[lang] || T_ALL.ru;
+  // A leader reading their OWN day on a phone (2026-11-20): the card does not
+  // print their own name back to them, nor the brigadir, shift and source
+  // they know — it is a day, so the DAY titles it.
+  const leaderPhone = useLeaderPhone();
 
   const [openIds, setOpenIds] = useState(null);   // null = "use the default"
   const [zoom, setZoom] = useState("");
@@ -731,17 +739,40 @@ export default function DayReportView({ uid, embedded = false }) {
   // its badge: the number is still what the day was worth, but it is no
   // longer a verdict on anybody, and the traffic light is for verdicts.
   const tone = data.voided || data.excluded ? "var(--text-4)" : scoreColor(data.score);
+  const ownPhone = leaderPhone && data.viewerRole === "leader";
 
   return (
     <>
       <div className={embedded ? "space-y-2.5" : "space-y-3 mx-auto"}
         style={embedded ? undefined : { maxWidth: 760 }}>
         {/* ── who and when ──────────────────────────────────────────────── */}
-        {!embedded && (
+        {!embedded && ownPhone && (
+          <div className="rounded-2xl px-4 pt-1.5 pb-3.5"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <button type="button" onClick={() => nav(-1)}
+              className="-ml-2 inline-flex items-center gap-1 min-h-[44px] pl-1 pr-3 rounded-lg text-[14px] font-semibold transition-colors hover:bg-[var(--hover-bg)]"
+              style={{ color: "var(--text-2)" }}>
+              <ArrowLeft size={16} /> {T.back}
+            </button>
+            <h1 className="text-xl font-bold leading-tight flex items-center gap-2 flex-wrap"
+              style={{ color: "var(--text-1)" }}>
+              <CalendarDays size={18} style={{ color: "var(--text-3)" }} />
+              {shortDate(data.date, lang)}
+              {data.cell && (
+                <span className="px-1.5 py-0.5 rounded text-[13px] font-semibold tabular-nums"
+                  style={{ background: "rgba(59,130,246,0.12)", color: "#3b82f6",
+                           border: "1px solid rgba(59,130,246,0.30)" }}>
+                  {data.cell}
+                </span>
+              )}
+            </h1>
+          </div>
+        )}
+        {!embedded && !ownPhone && (
           <div className="rounded-2xl px-4 py-3.5"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <button type="button" onClick={() => nav(-1)}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold mb-2"
+              className="inline-flex items-center gap-1 text-[11px] max-md:text-[12px] font-semibold mb-2"
               style={{ color: "var(--text-4)" }}>
               <ArrowLeft size={13} /> {T.back}
             </button>
@@ -749,7 +780,7 @@ export default function DayReportView({ uid, embedded = false }) {
               style={{ color: "var(--text-1)" }}>
               <User size={18} style={{ color: "var(--brand)" }} />{data.leader || "—"}
             </h1>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px]"
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] max-md:text-[12px]"
               style={{ color: "var(--text-3)" }}>
               <span className="inline-flex items-center gap-1">
                 <Users size={12} style={{ color: "var(--text-4)" }} />{data.supervisor || "—"}
@@ -797,7 +828,7 @@ export default function DayReportView({ uid, embedded = false }) {
         <div className={embedded ? "rounded-xl px-3 py-3" : "rounded-2xl px-4 py-4"}
           style={{ background: embedded ? "var(--bg-inner)" : "var(--bg-card)",
                    border: `1px solid ${hexA(tone, 0.3)}` }}>
-          <p className="text-[11px] font-semibold uppercase tracking-wider"
+          <p className="text-[11px] max-md:text-[12px] font-semibold uppercase tracking-wider"
             style={{ color: "var(--text-4)" }}>{T.verified}</p>
           <div className="flex items-end gap-2.5 mt-1">
             <span className={`${embedded ? "text-2xl" : "text-4xl"} font-extrabold tabular-nums leading-none`}
@@ -819,14 +850,14 @@ export default function DayReportView({ uid, embedded = false }) {
 
           {/* An unfinished check must never look like a final answer. */}
           {running && (
-            <p className="text-[11px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
+            <p className="text-[11px] max-md:text-[12px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
               style={{ background: hexA(C_MID, 0.1), color: "var(--text-2)" }}>
               <strong>{T.checking}.</strong>{" "}
               {fill(T.chkNote, { done: c.checked, total: c.total })}
             </p>
           )}
           {data.excluded && (
-            <p className="text-[11px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
+            <p className="text-[11px] max-md:text-[12px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
               style={{ background: embedded ? "var(--bg-card)" : "var(--bg-inner)",
                        color: "var(--text-2)" }}>
               {/* Two decisions, one banner and one arithmetic — but a reader
@@ -844,13 +875,13 @@ export default function DayReportView({ uid, embedded = false }) {
             </p>
           )}
           {data.voided && (
-            <p className="text-[11px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
+            <p className="text-[11px] max-md:text-[12px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
               style={{ background: hexA(C_BAD, 0.1), color: "var(--text-2)" }}>
               <strong>{T.voided}.</strong> {T.voidedNote}
             </p>
           )}
           {!data.auto && (
-            <p className="text-[11px] leading-snug mt-2.5 rounded-lg px-2.5 py-2"
+            <p className="text-[11px] max-md:text-[12px] leading-snug mt-2.5 rounded-lg px-2.5 py-2 max-md:hidden"
               style={{ background: embedded ? "var(--bg-card)" : "var(--bg-inner)",
                        color: "var(--text-3)" }}>
               <strong>{T.notAuto}.</strong> {fill(T.notAutoNote, { date: data.autoFrom })}
@@ -861,14 +892,14 @@ export default function DayReportView({ uid, embedded = false }) {
         {/* ── the tasks, worst first ───────────────────────────────────── */}
         {GROUP_ORDER.filter((g) => groups[g]?.length).map((g) => (
           <div key={g} className="space-y-2">
-            <p className="text-[11px] font-bold uppercase tracking-wider px-1 pt-1"
+            <p className="text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider px-1 pt-1"
               style={{ color: "var(--text-4)" }}>
               {T[`g${g[0].toUpperCase()}${g.slice(1)}`]} · {groups[g].length}
             </p>
             {groups[g].map((t) => (
               <div key={t.id}>
                 <TaskCard t={t} T={T} lang={lang} uid={data.uid} open={isOpen(t)} onToggle={() => toggle(t)}
-                  onPhoto={setZoom} canDispute={data.canDispute}
+                  onPhoto={setZoom} canDispute={data.canDispute} ownPhone={ownPhone}
                   onDispute={() => nav(`/leaders/appeal/dispute/new?uid=${encodeURIComponent(data.uid)}&task=${t.id}`)}
                   onChat={() => nav(`/leaders/appeal/dispute/${t.dispute.id}`)} />
               </div>
@@ -885,7 +916,7 @@ export default function DayReportView({ uid, embedded = false }) {
 
 export function Pill({ color, text, plain = false }) {
   return (
-    <span className="text-[10px] font-semibold px-2 py-1 rounded-md"
+    <span className="text-[10px] max-md:text-[12px] font-semibold px-2 py-1 rounded-md"
       style={plain
         ? { color: "var(--text-4)", border: "1px solid var(--border)" }
         : { background: hexA(color.startsWith("#") ? color : "#94a3b8", 0.14), color }}>

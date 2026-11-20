@@ -16,12 +16,13 @@
 // Uplifting moves the level, which is what makes the row LEAVE this page — it
 // belongs to the brigadir on /concerns from that moment (the operator's ruling,
 // 2026-09-04). Nothing here re-implements any of it.
-import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   MessageSquarePlus, ListChecks, ChartNoAxesColumn, Check, AlertTriangle,
   Trash2, ArrowUp, Loader2, Inbox, UserRound, CircleDot, Clock, CheckCheck,
-  Users, LayoutGrid, TrendingUp, Info, Layers, Tag,
+  Users, LayoutGrid, TrendingUp, Info, Layers, Tag, MessageSquare, Pencil, ChevronDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -49,6 +50,10 @@ import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCateg
 // A cell is its CODE; where a code alone is too thin the second fact is its
 // LEADER — never the workshop name (utils/cellName.js).
 import { cellLabel } from "../utils/cellName";
+import useIsMobile from "../hooks/useIsMobile";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+// The phone-only words and THE date a phone prints here (2026-11-20).
+import { phoneText, phoneDay } from "./concernsPhoneText";
 
 // Traffic light, the platform's own semantics: "not started" is GREY (it is not
 // a fault), doing is amber, done is green. Red is reserved for OVERDUE, which
@@ -107,7 +112,13 @@ const initials = (n) =>
   String(n || "").trim().split(/\s+/).slice(0, 2).map((p) => p[0] || "").join("").toUpperCase();
 
 export default function CellConcerns() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  // Below md (2026-11-20, the leader-phone redesign) the register is a list of
+  // cards, the dialog a bottom sheet with nothing said twice, and no note
+  // explains the page. md and up is exactly what it was.
+  const phone = useIsMobile(768);
+  const leaderPhone = useLeaderPhone();
+  const P = phoneText(lang);
   const qc = useQueryClient();
   // position="bottom" — this page is a dense editing surface, and a toast at
   // the top would sit behind the entry form the worker is looking at.
@@ -117,6 +128,15 @@ export default function CellConcerns() {
   const factorySection = useFactorySection();
 
   const [tab, setTab] = usePersistentState("cellConcerns.tab", "write");
+  // A link may name the tab — `?tab=register|write|analysis` («Bugun»'s «open
+  // worker concerns» row opens the register). Read when the page opens and
+  // whenever the address's query changes, before the first paint; otherwise
+  // the remembered tab stands, and a tap on another tab is never undone.
+  const { search } = useLocation();
+  useLayoutEffect(() => {
+    const want = new URLSearchParams(search).get("tab");
+    if (want === "write" || want === "register" || want === "analysis") setTab(want);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
   // The period is remembered for the DAY it was picked, never longer: kept
   // forever, a range picked once hid every concern filed after it (the page
   // opened on October in mid-November and said nothing). A new day starts on
@@ -178,10 +198,12 @@ export default function CellConcerns() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [chainCells, tl]);
   const supF = chain && supOpts.some((o) => o.value === fSup) ? fSup : "";
+  // A leader's phone lists their cells by code alone — the name beside each
+  // would be the reader's own (2026-11-20, the own-name rule).
   const cellOpts = useMemo(() => chainCells
     .filter((c) => !supF || String(c.manager_id) === supF)
-    .map((c) => ({ value: c.code, label: cellLabel(c.code, tl(c.leader_name || "")) })),
-  [chainCells, supF, tl]);
+    .map((c) => ({ value: c.code, label: cellLabel(c.code, leaderPhone ? "" : tl(c.leader_name || "")) })),
+  [chainCells, supF, tl, leaderPhone]);
   const canCell = cells.length > 1;
   const cellF = canCell && cellOpts.some((o) => o.value === fCell) ? fCell : "";
   // A level above changed and a pick fell off its list: drop it — a control
@@ -217,10 +239,15 @@ export default function CellConcerns() {
   }, [q]);
 
   const listKey = ["cell-concerns", "list", params];
-  const { data: list, isPending } = useQuery({
+  const { data: list } = useQuery({
     queryKey: listKey,
     queryFn: () => api.get("/api/cell-concerns", { params }).then((r) => r.data),
     enabled: ready,
+    // A filter changes the key: the rows on screen stay until the new answer
+    // lands. A skeleton in their place unmounted the card holding the
+    // FilterPanel, and the phone's filter sheet closed under the finger on
+    // every pick (audit F7). The skeleton is the FIRST load's alone.
+    placeholderData: keepPreviousData,
   });
   const { data: stats } = useQuery({
     queryKey: ["cell-concerns", "stats", params, qStats],
@@ -228,6 +255,7 @@ export default function CellConcerns() {
       params: qStats ? { ...params, q: qStats } : params,
     }).then((r) => r.data),
     enabled: ready && tab === "analysis",
+    placeholderData: keepPreviousData,
   });
 
   // Search first, then the status view — counted in between, so each pill
@@ -250,7 +278,14 @@ export default function CellConcerns() {
   const [detail, setDetail] = useState(null);
   const [comments, setComments] = useState(null);
 
-  const tabs = [
+  // A phone draws the three tabs as the page's own navigation: 44px segments
+  // across the width, words only («Yozish» — the bar already names the page),
+  // so the three fit a 320px screen without scrolling.
+  const tabs = phone ? [
+    { value: "write",    label: P.tabWrite },
+    { value: "register", label: t("cellConcerns.tab.register") },
+    { value: "analysis", label: t("cellConcerns.tab.analysis") },
+  ] : [
     { value: "write",    label: <span className="inline-flex items-center gap-1.5"><MessageSquarePlus size={15} />{t("cellConcerns.tab.write")}</span> },
     { value: "register", label: <span className="inline-flex items-center gap-1.5"><ListChecks size={15} />{t("cellConcerns.tab.register")}</span> },
     { value: "analysis", label: <span className="inline-flex items-center gap-1.5"><ChartNoAxesColumn size={15} />{t("cellConcerns.tab.analysis")}</span> },
@@ -332,20 +367,27 @@ export default function CellConcerns() {
         compactLabel triggerClassName="px-3 py-2 text-sm"
       />
       <FilterPanel sections={sections} />
-      {register && (
+      {/* A phone lists the open concerns first and folds the resolved ones
+          under them (RegisterTab), so it needs no open / resolved switch —
+          three counted pills never fitted a 320px row. */}
+      {register && !phone && (
         <SegmentedToggle value={view} onChange={setView} options={viewOpts}
           ariaLabel={t("cellConcerns.f.status")} />
       )}
-      <div className="flex-1 min-w-0" />
-      <SearchInput value={q} onChange={setQ} placeholder={t("cellConcerns.searchPh")} />
+      <div className="flex-1 min-w-0 max-md:hidden" />
+      <SearchInput value={q} onChange={setQ} placeholder={t("cellConcerns.searchPh")}
+        className={phone ? "w-full" : undefined} />
     </>
   );
   const anyFilter = !!(shiftF || supF || cellF || fCat || q.trim());
 
+  // On a phone the bar carries the title (Layout names the page as the menu
+  // does — «Havotirlar» for a leader) and the heading with its sentence about
+  // who writes here goes: the page explains nothing (the operator, 2026-11-20).
   return (
     <Layout>
       <div className="space-y-4">
-        <div>
+        <div className="max-md:hidden">
           <h1 className="text-xl font-semibold" style={{ color: "var(--text-1)" }}>
             {t("cellConcerns.title")}
           </h1>
@@ -356,6 +398,7 @@ export default function CellConcerns() {
 
         <SegmentedToggle
           value={tab} onChange={setTab} options={tabs} asTabs
+          size={phone ? "lg" : "md"} fill={phone}
           ariaLabel={t("cellConcerns.title")}
         />
 
@@ -371,7 +414,8 @@ export default function CellConcerns() {
 
         {tab === "register" && (
           <RegisterTab
-            t={t} rows={rows} loading={isPending} toolbar={toolbar(true)}
+            t={t} rows={rows} loading={!list} toolbar={toolbar(true)}
+            lang={lang} P={P} phone={phone} found={found}
             onOpen={setDetail} onComments={setComments}
             anyFilter={anyFilter}
             noneOpen={view === "open" && !rows.length && found.length > 0}
@@ -382,13 +426,17 @@ export default function CellConcerns() {
         )}
 
         {tab === "analysis" && (
-          <AnalysisTab t={t} stats={stats} toolbar={toolbar(false)} />
+          <AnalysisTab t={t} stats={stats} toolbar={toolbar(false)} phone={phone} lang={lang} />
         )}
       </div>
 
       {detail && (
         <DetailModal
           t={t} row={detail} onClose={() => setDetail(null)}
+          phone={phone} lang={lang} P={P}
+          // A leader deletes no concern (the operator, 2026-11-20; the server
+          // refuses it too — concerns.may_delete). Everybody else keeps it.
+          canDelete={!!meta && meta.role !== "leader"}
           onComments={() => setComments(detail)}
           onDone={(msg, tone = "success") => { refresh(); setDetail(null); show(msg, tone); }}
           onError={(msg) => show(msg, "error")}
@@ -487,7 +535,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
         <div>
           <Button size="lg" onClick={reset}>{t("cellConcerns.done.again")}</Button>
         </div>
-        <div className="text-[11px] mt-4" style={{ color: "var(--text-4)" }}>
+        <div className="text-[11px] max-md:text-xs mt-4" style={{ color: "var(--text-4)" }}>
           {tp(t, "cellConcerns.done.countdown", { n: left })}
         </div>
       </div>
@@ -568,7 +616,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
                   }}
                 >
                   <span className="text-2xl font-bold tabular-nums">{c.code}</span>
-                  <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                  <span className="text-[11px] max-md:text-xs" style={{ color: "var(--text-4)" }}>
                     {t("cellConcerns.cellWord")}
                   </span>
                 </button>
@@ -592,7 +640,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
             border: `1px solid ${errs.name ? "#ef4444" : "var(--border-md)"}`,
           }}
         />
-        <div className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>
+        <div className="text-[11px] mt-1.5 max-md:hidden" style={{ color: "var(--text-3)" }}>
           {t("cellConcerns.nameHint")}
         </div>
         {errs.name && <Err text={t("cellConcerns.err.name")} />}
@@ -621,7 +669,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
                       style={{ background: rgba(col, 0.13), color: col }}>
                   <Icon size={16} />
                 </span>
-                <span className="truncate">{t(`concerns.category.${k}`)}</span>
+                <span className="md:truncate max-md:leading-tight max-md:break-words min-w-0">{t(`concerns.category.${k}`)}</span>
               </button>
             );
           })}
@@ -641,7 +689,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
             border: `1px solid ${errs.text ? "#ef4444" : "var(--border-md)"}`,
           }}
         />
-        <div className="text-[11px] mt-1.5" style={{ color: "var(--text-3)" }}>
+        <div className="text-[11px] mt-1.5 max-md:hidden" style={{ color: "var(--text-3)" }}>
           {t("cellConcerns.textHint")}
         </div>
         {errs.text && <Err text={t("cellConcerns.err.text")} />}
@@ -665,9 +713,9 @@ const Card = ({ children }) => (
 );
 
 const Step = ({ n, label, required }) => (
-  <div className="flex items-center gap-2 mb-3 text-[11px] font-bold uppercase tracking-[0.07em]"
+  <div className="flex items-center gap-2 mb-3 text-[11px] max-md:text-xs font-bold uppercase tracking-[0.07em]"
        style={{ color: "var(--text-3)" }}>
-    <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] tracking-normal"
+    <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] max-md:text-xs tracking-normal"
           style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}>{n}</span>
     {label}
     {required && <span style={{ color: "#ef4444" }}>*</span>}
@@ -682,7 +730,7 @@ const Err = ({ text }) => (
 
 const Receipt = ({ k, v }) => (
   <div>
-    <div className="text-[10.5px] font-bold uppercase tracking-[0.07em]" style={{ color: "var(--text-4)" }}>{k}</div>
+    <div className="text-[10.5px] max-md:text-xs font-bold uppercase tracking-[0.07em]" style={{ color: "var(--text-4)" }}>{k}</div>
     <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{v}</div>
   </div>
 );
@@ -694,7 +742,7 @@ function StatusChip({ row, t }) {
   const col = over ? "#ef4444" : ST[row.status]?.color || "#94a3b8";
   const Icon = over ? AlertTriangle : ST[row.status]?.icon || CircleDot;
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] max-md:text-xs font-medium whitespace-nowrap"
           style={{ background: rgba(col, 0.13), color: col, border: `1px solid ${rgba(col, 0.28)}` }}>
       <Icon size={12} />
       {over ? t("cellConcerns.st.overdue") : t(`cellConcerns.st.${row.status}`)}
@@ -713,16 +761,116 @@ function CatChip({ k, t }) {
   );
 }
 
-function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter, noneOpen, onClearFilters }) {
+// One concern on a phone (2026-11-20, audit K2): what the worker wrote comes
+// first — it is what the leader acts on — then who wrote it and where, the
+// status, and the day it was filed and the day it is due. The whole card opens
+// the dialog; the thread's count rides along as a fact (the dialog's
+// «Izohlar» button opens it — a button inside this one would be nested).
+function ConcernCard({ r, t, lang, P, onOpen }) {
+  const Icon = CATEGORY_ICON[r.category];
+  const col = CATEGORY_COLOR[r.category] || "#94a3b8";
+  const due = r.status !== "done" && r.due_date;
+  return (
+    <button
+      type="button" onClick={() => onOpen(r)}
+      className="w-full text-left px-4 py-3.5 flex flex-col gap-2 transition-colors hover:bg-[var(--bg-inner)] border-t border-[var(--border)]"
+    >
+      <span className="text-[15px] leading-snug line-clamp-3 break-words" style={{ color: "var(--text-1)" }}>
+        {r.concern_text}
+      </span>
+      <span className="flex items-center gap-2 min-w-0 text-[13px]" style={{ color: "var(--text-2)" }}>
+        <span className="truncate min-w-0">{r.worker_name || "—"}</span>
+        <span className="ml-auto shrink-0"><StatusChip row={r} t={t} /></span>
+      </span>
+      <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+        <span className="tabular-nums font-semibold text-[13px]" style={{ color: "var(--text-1)" }}>{r.cell_code}</span>
+        <span className="inline-flex items-center gap-1.5 min-w-0" style={{ color: col }}>
+          {Icon && <Icon size={13} className="shrink-0" />}
+          <span className="truncate">{t(`concerns.category.${r.category}`)}</span>
+        </span>
+        <span className="tabular-nums">{phoneDay(r.entry_date, lang)}</span>
+        {due && <span className="tabular-nums">{P.due}: {phoneDay(r.due_date, lang)}</span>}
+        {r.comment_count > 0 && (
+          <span className="inline-flex items-center gap-1 ml-auto tabular-nums" aria-label={`${P.comments}: ${r.comment_count}`}>
+            <MessageSquare size={13} /> {r.comment_count}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+// The register on a phone (2026-11-20): the open concerns, then the resolved
+// ones folded under a 44px row that names their count — no open / resolved
+// switch to work first, and opening the fold moves nothing above it.
+function PhoneList({ t, lang, P, found, empty, doneOpen, setDoneOpen, onOpen }) {
+  if (!found.length) return <div className="py-8">{empty}</div>;
+  const open = found.filter((r) => r.status !== "done");
+  const done = found.filter((r) => r.status === "done");
+  return (
+    <div className="[&>*:first-child]:border-t-0">
+      {open.length ? open.map((r) => <ConcernCard key={r.id} r={r} t={t} lang={lang} P={P} onOpen={onOpen} />) : (
+        <div className="flex items-center justify-center gap-2 px-4 py-6 text-sm" style={{ color: "var(--text-3)" }}>
+          <CheckCheck size={16} style={{ color: ST.done.color }} />
+          {t("cellConcerns.empty.noneOpen")}
+        </div>
+      )}
+      {done.length > 0 && (
+        <>
+          <button
+            type="button" aria-expanded={doneOpen} onClick={() => setDoneOpen((v) => !v)}
+            className="w-full min-h-[48px] px-4 flex items-center gap-2 text-sm font-medium transition-colors hover:bg-[var(--bg-inner)]"
+            style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}
+          >
+            <CheckCheck size={16} style={{ color: ST.done.color }} />
+            {t("cellConcerns.st.done")}
+            <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{done.length}</span>
+            <ChevronDown size={16} className="ml-auto transition-transform" style={{ transform: doneOpen ? "rotate(180deg)" : "none" }} />
+          </button>
+          {doneOpen && done.map((r) => <ConcernCard key={r.id} r={r} t={t} lang={lang} P={P} onOpen={onOpen} />)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RegisterTab({ t, lang, P, phone, found, rows, loading, toolbar, onOpen, onComments, anyFilter, noneOpen, onClearFilters }) {
+  // The phone's resolved concerns stay folded until asked for: the leader
+  // opens this list for what still waits on them.
+  const [doneOpen, setDoneOpen] = useState(false);
   if (loading) return <SkeletonBlock className="h-80" />;
+
+  const empty = (
+    <EmptyState
+      icon={Inbox}
+      title={t(noneOpen ? "cellConcerns.empty.noneOpen"
+        : anyFilter ? "cellConcerns.empty.filtered" : "cellConcerns.empty.title")}
+      message={t(noneOpen ? "cellConcerns.empty.noneOpenBody"
+        : anyFilter ? "cellConcerns.empty.filteredBody" : "cellConcerns.empty.body")}
+      showUploadLink={false}
+      action={anyFilter ? (
+        <Button variant="secondary" onClick={onClearFilters}>
+          {t("cellConcerns.clearFilters")}
+        </Button>
+      ) : null}
+    />
+  );
 
   return (
     <TableCard
       icon={ListChecks}
-      title={t("cellConcerns.registerTitle")}
-      right={tp(t, "cellConcerns.nRows", { n: rows.length })}
+      // A phone's tab above already says «Reyestr»: the card opens on its
+      // controls instead of a heading repeating the tab.
+      title={phone ? null : t("cellConcerns.registerTitle")}
+      // The count says what the «Ochiq · Hal qilindi» pill beside the rows
+      // already says; a phone has no room to say it twice.
+      right={<span className="max-md:hidden">{tp(t, "cellConcerns.nRows", { n: rows.length })}</span>}
       toolbar={toolbar}
       wrap
+      mobileUntil="md"
+      mobileMaxHeight="none"
+      mobile={<PhoneList t={t} lang={lang} P={P} found={found} empty={empty}
+                         doneOpen={doneOpen} setDoneOpen={setDoneOpen} onOpen={onOpen} />}
     >
       <thead>
         <tr>
@@ -740,19 +888,7 @@ function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter,
         {rows.length === 0 && (
           <tr>
             <td colSpan={8} className="py-10">
-              <EmptyState
-                icon={Inbox}
-                title={t(noneOpen ? "cellConcerns.empty.noneOpen"
-                  : anyFilter ? "cellConcerns.empty.filtered" : "cellConcerns.empty.title")}
-                message={t(noneOpen ? "cellConcerns.empty.noneOpenBody"
-                  : anyFilter ? "cellConcerns.empty.filteredBody" : "cellConcerns.empty.body")}
-                showUploadLink={false}
-                action={anyFilter ? (
-                  <Button variant="secondary" onClick={onClearFilters}>
-                    {t("cellConcerns.clearFilters")}
-                  </Button>
-                ) : null}
-              />
+              {empty}
             </td>
           </tr>
         )}
@@ -791,7 +927,7 @@ function RegisterTab({ t, rows, loading, toolbar, onOpen, onComments, anyFilter,
 
 /* ── the detail modal — status, text, uplift, delete ───────────────────── */
 
-function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
+function DetailModal({ t, row, onClose, onComments, onDone, onError, phone, lang, P, canDelete }) {
   const [status, setStatus] = useState(row.status);
   const [text, setText] = useState(row.concern_text);
   const [solution, setSolution] = useState("");
@@ -803,6 +939,13 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
   const [reason, setReason] = useState("");
   const [del, setDel] = useState(false);
   const [err, setErr] = useState(null);
+  // A phone shows the worker's text ONCE — the quote — and opens the field
+  // only when the leader asks to change it (audit K3). md+ shows both.
+  const [editing, setEditing] = useState(false);
+  const textRef = useRef(null);
+  useEffect(() => { if (editing) textRef.current?.focus(); }, [editing]);
+  // ISO on the desktop as before; the phone's one date form below md.
+  const day = (iso) => (phone ? phoneDay(iso, lang) : iso);
 
   const closing = status === "done" && row.status !== "done";
   const starting = status === "doing" && row.status !== "doing";
@@ -814,8 +957,8 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
   const dueHint = days === ""
     ? t("concerns.deadlineAsk")
     : dueFrom === localISO(new Date())
-      ? t("concerns.dueFromToday").replace("{date}", plusDays(dueFrom, Number(days)))
-      : t("concerns.dueFromDay").replace("{from}", dueFrom).replace("{date}", plusDays(dueFrom, Number(days)));
+      ? t("concerns.dueFromToday").replace("{date}", day(plusDays(dueFrom, Number(days))))
+      : t("concerns.dueFromDay").replace("{from}", day(dueFrom)).replace("{date}", day(plusDays(dueFrom, Number(days))));
   const fail = (e, fallback) => e?.response?.data?.detail || t(fallback);
 
   const save = useMutation({
@@ -862,28 +1005,45 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
       <Modal
         onClose={onClose}
         title={tp(t, "cellConcerns.detailTitle", { no: row.seq })}
-        subtitle={`${row.cell_code} · ${row.entry_date}`}
+        subtitle={`${row.cell_code} · ${day(row.entry_date)}`}
         maxWidth="max-w-2xl"
+        // A phone's footer keeps the three answers (cancel · raise · save),
+        // stacked; the rare destructive one sits behind the header's ⋮.
+        phoneMenu={canDelete ? [
+          { key: "delete", label: t("common.delete"), icon: Trash2, tone: "danger", onSelect: () => setDel(true) },
+        ] : null}
         footer={
           <>
-            <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-            <Button variant="danger" tint icon={Trash2} onClick={() => setDel(true)}>
-              {t("common.delete")}
-            </Button>
-            <div className="flex-1" />
-            <Button variant="secondary" tint icon={ArrowUp} onClick={() => setUplift(true)}>
+            <Button variant="secondary" onClick={onClose} className="max-md:min-h-[44px]">{t("common.cancel")}</Button>
+            {canDelete && (
+              <Button variant="danger" tint icon={Trash2} onClick={() => setDel(true)} className="max-md:hidden">
+                {t("common.delete")}
+              </Button>
+            )}
+            <div className="flex-1 max-md:hidden" />
+            <Button variant="secondary" tint icon={ArrowUp} onClick={() => setUplift(true)} className="max-md:min-h-[44px]">
               {t("cellConcerns.uplift")}
             </Button>
-            <Button onClick={submit} loading={save.isPending}>{t("common.save")}</Button>
+            <Button onClick={submit} loading={save.isPending} className="max-md:min-h-[44px]">{t("common.save")}</Button>
           </>
         }
       >
-        <div className="rounded-r-xl px-4 py-3.5 text-[14.5px] leading-relaxed"
+        <div className={`relative rounded-r-xl px-4 py-3.5 text-[14.5px] leading-relaxed max-md:pr-12 ${editing ? "max-md:hidden" : ""}`}
              style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-1)" }}>
           {row.concern_text}
           <div className="mt-3 text-xs flex items-center gap-2" style={{ color: "var(--text-3)" }}>
             <UserRound size={13} /> {tp(t, "cellConcerns.filedBy", { name: row.worker_name || "—" })}
           </div>
+          {phone && (
+            <button
+              type="button" onClick={() => setEditing(true)}
+              aria-label={P.editText} title={P.editText}
+              className="absolute top-1 right-1 w-11 h-11 rounded-xl grid place-items-center transition-colors hover:bg-[var(--bg-card)]"
+              style={{ color: "var(--text-3)" }}
+            >
+              <Pencil size={16} />
+            </button>
+          )}
         </div>
 
         <Field label={t("cellConcerns.col.status")}>
@@ -895,7 +1055,10 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
         </Field>
 
         {status === "doing" && (
-          <Field label={t("concerns.fieldDeadline")} required={starting} hint={dueHint}>
+          // A phone drops the «how many days?» prompt (the label asks it)
+          // and keeps the line that names the due day once one is typed.
+          <Field label={t("concerns.fieldDeadline")} required={starting}
+                 hint={phone && days === "" ? undefined : dueHint}>
             <input
               type="number" inputMode="numeric" min={0} max={MAX_DEADLINE_DAYS}
               value={days}
@@ -905,7 +1068,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
                 const n = Math.floor(Number(v));
                 if (Number.isFinite(n)) setDays(String(Math.min(MAX_DEADLINE_DAYS, Math.max(0, n))));
               }}
-              className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+              className="w-full px-3 py-2 rounded-xl text-sm max-md:text-base max-md:min-h-[44px] outline-none"
               style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
             />
           </Field>
@@ -913,35 +1076,51 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
 
         {closing && (
           <Field label={t("cellConcerns.solution")} required
-                 hint={t("cellConcerns.solutionHint")}>
+                 hint={phone ? undefined : t("cellConcerns.solutionHint")}>
             <textarea
               value={solution} onChange={(e) => setSolution(e.target.value)}
               rows={3} placeholder={t("cellConcerns.solutionPh")}
-              className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-y"
+              className="w-full px-3 py-2 rounded-xl text-sm max-md:text-base outline-none resize-y"
               style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
             />
           </Field>
         )}
 
-        <Field label={t("cellConcerns.col.text")} hint={t("cellConcerns.editHint")}>
-          <textarea
-            value={text} onChange={(e) => setText(e.target.value)} rows={3}
-            className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-y"
-            style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
-          />
-        </Field>
+        {(!phone || editing) && (
+          <Field label={t("cellConcerns.col.text")} hint={phone ? undefined : t("cellConcerns.editHint")}>
+            <textarea
+              ref={textRef}
+              value={text} onChange={(e) => setText(e.target.value)} rows={phone ? 5 : 3}
+              className="w-full px-3 py-2 rounded-xl text-sm max-md:text-base outline-none resize-y"
+              style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
+            />
+          </Field>
+        )}
 
         <div className="flex flex-wrap gap-6 pt-1">
-          <Meta k={t("cellConcerns.deadlineWord")}
-                v={row.due_date
-                  ? `${tp(t, "cellConcerns.days", { n: row.deadline_days })} · ${row.due_date}`
-                  : "—"} />
+          {/* The deadline once: while it is being set the field above says it,
+              and a phone prints no «—» for one never set. */}
+          {(!phone || (row.due_date && status !== "doing")) && (
+            <Meta k={t("cellConcerns.deadlineWord")}
+                  v={row.due_date
+                    ? `${tp(t, "cellConcerns.days", { n: row.deadline_days })} · ${day(row.due_date)}`
+                    : "—"} />
+          )}
           <Meta k={t("cellConcerns.brigadir")} v={row.brigadir_name || "—"} />
-          <Meta k={t("cellConcerns.col.comments")}
-                v={<Button size="sm" variant="ghost" onClick={onComments}>
-                     {tp(t, "cellConcerns.openThread", { n: row.comment_count || 0 })}
-                   </Button>} />
+          {!phone && (
+            <Meta k={t("cellConcerns.col.comments")}
+                  v={<Button size="sm" variant="ghost" onClick={onComments}>
+                       {tp(t, "cellConcerns.openThread", { n: row.comment_count || 0 })}
+                     </Button>} />
+          )}
         </div>
+        {/* The thread as a real button on a phone, its count on it. */}
+        {phone && (
+          <Button variant="secondary" size="lg" className="w-full min-h-[44px]" icon={MessageSquare} onClick={onComments}>
+            {P.comments}
+            <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{row.comment_count || 0}</span>
+          </Button>
+        )}
       </Modal>
 
       {uplift && (
@@ -968,17 +1147,17 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
             </>
           }
         >
-          <div className="flex gap-2.5 px-3.5 py-3 rounded-xl text-[13px] leading-relaxed"
+          <div className="flex gap-2.5 px-3.5 py-3 rounded-xl text-[13px] leading-relaxed max-md:hidden"
                style={{ background: rgba("#3b82f6", 0.09), border: `1px solid ${rgba("#3b82f6", 0.25)}`, color: "var(--text-2)" }}>
             <Info size={16} style={{ color: "#3b82f6", flex: "none", marginTop: 2 }} />
             <span>{t("cellConcerns.upliftWarn")}</span>
           </div>
-          <Field label={t("cellConcerns.reason")} required hint={t("cellConcerns.reasonHint")}
+          <Field label={t("cellConcerns.reason")} required hint={phone ? undefined : t("cellConcerns.reasonHint")}
                  error={err}>
             <textarea
               value={reason} onChange={(e) => { setReason(e.target.value); setErr(null); }}
               rows={4} placeholder={t("cellConcerns.reasonPh")}
-              className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-y"
+              className="w-full px-3 py-2 rounded-xl text-sm max-md:text-base outline-none resize-y"
               style={{ background: "var(--bg-inner)", color: "var(--text-1)", border: "1px solid var(--border-md)" }}
             />
           </Field>
@@ -1003,14 +1182,14 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError }) {
 
 const Meta = ({ k, v }) => (
   <div className="flex flex-col gap-1">
-    <span className="text-[10.5px] font-bold uppercase tracking-[0.07em]" style={{ color: "var(--text-4)" }}>{k}</span>
+    <span className="text-[10.5px] max-md:text-xs font-bold uppercase tracking-[0.07em]" style={{ color: "var(--text-4)" }}>{k}</span>
     <span className="text-[13.5px]" style={{ color: "var(--text-1)" }}>{v}</span>
   </div>
 );
 
 /* ── Tab 3 · analysis ──────────────────────────────────────────────────── */
 
-function AnalysisTab({ t, stats, toolbar }) {
+function AnalysisTab({ t, stats, toolbar, phone, lang }) {
   if (!stats) return <SkeletonBlock className="h-80" />;
   const s = stats;
   const maxCat = Math.max(1, ...s.by_category.map((c) => c.n));
@@ -1021,7 +1200,9 @@ function AnalysisTab({ t, stats, toolbar }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">{toolbar}</div>
 
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(168px,1fr))" }}>
+      {/* Two figures a row on a phone — six one per row took a screen and a
+          half (audit K7). */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: phone ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(168px,1fr))" }}>
         <Kpi label={t("cellConcerns.kpi.total")} value={s.total} rail="var(--brand)"
              sub={tp(t, "cellConcerns.kpi.workers", { n: s.workers })} />
         <Kpi label={t("cellConcerns.st.todo")} value={s.by_status.todo} rail={ST.todo.color} color={ST.todo.color} />
@@ -1030,14 +1211,14 @@ function AnalysisTab({ t, stats, toolbar }) {
              sub={tp(t, "cellConcerns.kpi.pct", { n: s.resolved_pct })} />
       </div>
 
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: phone ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(180px,1fr))" }}>
         <Kpi small label={t("cellConcerns.kpi.avgDays")}
              value={s.avg_days == null ? "—" : s.avg_days} sub={t("cellConcerns.kpi.days")} />
         <Kpi small label={t("cellConcerns.kpi.overdue")} value={s.overdue}
              color={s.overdue ? "#ef4444" : undefined} sub={t("cellConcerns.kpi.overdueSub")} />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(400px,1fr))" }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: phone ? "minmax(0,1fr)" : "repeat(auto-fit,minmax(400px,1fr))" }}>
         <Panel icon={LayoutGrid} title={t("cellConcerns.chart.byCategory")}>
           {s.by_category.length === 0 ? <NoData t={t} /> : s.by_category.map((c) => (
             <Bar key={c.key} label={t(`concerns.category.${c.key}`)} n={c.n}
@@ -1046,7 +1227,8 @@ function AnalysisTab({ t, stats, toolbar }) {
         </Panel>
 
         <Panel icon={TrendingUp} title={t("cellConcerns.chart.trend")}>
-          <Trend data={s.trend} max={maxTrend} />
+          <Trend data={s.trend} max={maxTrend} compact={phone}
+                 fmt={phone ? (d) => phoneDay(d, lang) : undefined} />
           <Legend items={[
             [t("cellConcerns.legend.filed"), "#3b82f6"],
             [t("cellConcerns.legend.done"), ST.done.color],
@@ -1075,7 +1257,7 @@ function AnalysisTab({ t, stats, toolbar }) {
             <Bar key={w.name} label={w.name} n={w.n} pct={(w.n / maxWorker) * 100}
                  color="var(--brand)" />
           ))}
-          <div className="flex gap-2.5 px-3.5 py-3 mt-4 rounded-xl text-xs leading-relaxed"
+          <div className="flex gap-2.5 px-3.5 py-3 mt-4 rounded-xl text-xs leading-relaxed max-md:hidden"
                style={{ background: rgba("#eab308", 0.09), border: `1px solid ${rgba("#eab308", 0.25)}`, color: "var(--text-2)" }}>
             <AlertTriangle size={15} style={{ color: "#eab308", flex: "none", marginTop: 1 }} />
             <span>{t("cellConcerns.workerCaveat")}</span>
@@ -1087,11 +1269,11 @@ function AnalysisTab({ t, stats, toolbar }) {
 }
 
 const Kpi = ({ label, value, sub, rail, color, small }) => (
-  <div className="relative rounded-2xl px-5 py-4 overflow-hidden"
+  <div className="relative rounded-2xl px-5 py-4 max-md:px-4 max-md:py-3 overflow-hidden"
        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
     {rail && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: rail }} />}
-    <div className="text-[10.5px] font-bold uppercase tracking-[0.07em]" style={{ color: "var(--text-3)" }}>{label}</div>
-    <div className={small ? "text-lg font-semibold tabular-nums" : "text-3xl font-semibold tabular-nums"}
+    <div className="text-[10.5px] max-md:text-xs font-bold uppercase tracking-[0.07em] max-md:tracking-[0.03em] max-md:break-words" style={{ color: "var(--text-3)" }}>{label}</div>
+    <div className={small ? "text-lg font-semibold tabular-nums" : "text-3xl max-md:text-2xl font-semibold tabular-nums"}
          style={{ color: color || "var(--text-1)", lineHeight: 1.15 }}>{value}</div>
     {sub && <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{sub}</div>}
   </div>
@@ -1134,8 +1316,11 @@ const NoData = ({ t }) => (
 // Small inline trend — two lines on one scale, every gridline naming a value
 // the chart actually reaches. Deliberately not ApexCharts: two 14-point series
 // need no chart engine, and no engine means no tooltip wrapper to strip.
-function Trend({ data, max }) {
-  const W = 480, H = 160, L = 26, R = 8, T = 10, B = 22;
+// `compact` (a phone): a narrower drawing, so its numbers render at a readable
+// size once the 480-wide one is scaled down to a 300px card.
+function Trend({ data, max, compact = false, fmt = (d) => d.slice(5) }) {
+  const W = compact ? 320 : 480, H = compact ? 150 : 160, L = compact ? 30 : 26, R = 8, T = 10, B = compact ? 24 : 22;
+  const fs = compact ? 12 : 10;
   const iw = W - L - R, ih = H - T - B, n = data.length;
   const x = (i) => L + (n <= 1 ? iw / 2 : (i * iw) / (n - 1));
   const y = (v) => T + ih - (v / max) * ih;
@@ -1147,16 +1332,16 @@ function Trend({ data, max }) {
       {ticks.map((v) => (
         <g key={v}>
           <line x1={L} y1={y(v)} x2={W - R} y2={y(v)} stroke="var(--border)" strokeWidth="1" />
-          <text x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize="10" fill="var(--text-4)">{v}</text>
+          <text x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize={fs} fill="var(--text-4)">{v}</text>
         </g>
       ))}
       <path d={path("filed")} fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinejoin="round" />
       <path d={path("done")} fill="none" stroke="#22c55e" strokeWidth="2.2" strokeLinejoin="round" />
       {data.length > 0 && (
         <>
-          <text x={L} y={H - 6} fontSize="10" fill="var(--text-4)">{data[0].d.slice(5)}</text>
-          <text x={W - R} y={H - 6} textAnchor="end" fontSize="10" fill="var(--text-4)">
-            {data[data.length - 1].d.slice(5)}
+          <text x={L} y={H - 6} fontSize={fs} fill="var(--text-4)">{fmt(data[0].d)}</text>
+          <text x={W - R} y={H - 6} textAnchor="end" fontSize={fs} fill="var(--text-4)">
+            {fmt(data[data.length - 1].d)}
           </text>
         </>
       )}

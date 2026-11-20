@@ -1043,3 +1043,7 @@ starts at 1. Like the catalog number it belongs to the line, not to the
 screen — a search or a sort never renumbers it, and sorting on «№» still
 gives catalog order. No filter → the catalog number, as before. The ABC
 Excel has no «№» column (Excel's own row numbers), so the file is unchanged.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — «Zagruzka fayli» on a phone (cells by code, positions as cards, «Odamlar soni» hidden for leaders) and the «—» empty day for non-admins (every width). md+ is unchanged.

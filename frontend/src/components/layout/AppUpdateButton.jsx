@@ -65,10 +65,9 @@ function UpdateRow({ expanded }) {
         onClick={() => setOpen(true)}
         title={!expanded ? spoken : undefined}
         aria-label={spoken}
-        className="nav-item w-full flex items-center rounded-lg text-sm transition-colors"
+        className="nav-item w-full flex items-center rounded-lg text-sm transition-colors p-2.5 max-md:py-3 max-md:min-h-[44px]"
         style={{
           gap: "12px",
-          padding: "10px",
           color: "var(--text-3)",
           justifyContent: !expanded ? "center" : undefined,
         }}
@@ -87,7 +86,7 @@ function UpdateRow({ expanded }) {
         </span>
         {expanded && downloading && (
           <span
-            className="flex-shrink-0 text-[11px] font-semibold tabular-nums text-right"
+            className="flex-shrink-0 text-[11px] max-md:text-xs font-semibold tabular-nums text-right"
             style={{ color: "var(--brand)", minWidth: 34 }}
           >
             {pct}%

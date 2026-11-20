@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardCheck, ClipboardList, ShieldAlert, XCircle, Hourglass, CheckCircle2,
-  Circle, Lock, PencilLine, TimerOff, CircleSlash, Gavel, ShieldQuestion,
+  Lock, PencilLine, CircleSlash, ShieldQuestion,
   ImagePlus, Settings2, ChevronRight, ChevronDown, MessagesSquare,
   Timer, Info, UserSearch, Flag,
 } from "lucide-react";
@@ -18,9 +18,12 @@ import { useLang } from "../../context/LangContext";
 import { useClT, put, errText } from "./checklistText";
 import { hexA, pick, scoreColor } from "./DayReportView";
 import ChecklistTaskSheet from "./ChecklistTaskSheet";
+import BugunDay from "./BugunDay";
+import { useBugunT } from "./bugunText";
+import useLeaderPhone from "../../hooks/useLeaderPhone";
 import {
   C_OK, C_BAD, C_WARN, C_WAIT, GROUP_OF, groupOfTask, KIND_ICON, DISPUTE_OPEN, leftText,
-  urgency, disputeChip, lateChip, rowMeta, clock,
+  urgency, disputeChip, lateChip, rowMeta, clock, STATE_LOOK, filedByLeader,
 } from "./checklistShared";
 
 /**
@@ -54,22 +57,19 @@ const GROUPS = [
   { id: "done", label: "gDone", Icon: CheckCircle2, color: C_OK },
 ];
 
-// One icon and one colour per state. Every state carries an ICON as well as a
-// colour (see verifyState.js): a red dot beside a green one is not a message a
-// colour-blind reader can receive.
-const STATE_LOOK = {
-  open: { Icon: Circle, color: C_WAIT },
-  draft: { Icon: PencilLine, color: C_WARN },
-  pending: { Icon: Hourglass, color: C_WAIT },
-  passed: { Icon: CheckCircle2, color: C_OK },
-  autopass: { Icon: CheckCircle2, color: C_OK },
-  rejected: { Icon: ShieldAlert, color: C_BAD },
-  autofail: { Icon: XCircle, color: C_BAD },
-  expired: { Icon: TimerOff, color: C_BAD },
-  notdone: { Icon: XCircle, color: C_BAD },
-  missing: { Icon: CircleSlash, color: C_BAD },
-  ruledout: { Icon: Gavel, color: C_BAD },
-};
+// The per-state icon and colour (STATE_LOOK) live in checklistShared.js, which
+// «Bugun» (BugunDay.jsx) reads too.
+
+/** Two renderings of one slot: the phone's (below md) and the desk's. Desktop
+ *  stays exactly as it was (the leader-phone redesign is phones only). */
+function Both({ phone, desk }) {
+  return (
+    <>
+      <span className="md:hidden">{phone}</span>
+      <span className="max-md:hidden">{desk}</span>
+    </>
+  );
+}
 function haptic(kind) {
   // Inside Telegram a verdict arriving is felt as well as seen. The SDK call
   // goes through the index.html bridge shim, so a torn-down bridge is not a
@@ -81,7 +81,7 @@ function haptic(kind) {
 
 function Chip({ color, children, icon: Icon }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] max-md:text-[12px] font-semibold"
       style={{ background: hexA(color, 0.12), color }}>
       {Icon && <Icon size={11} />}{children}
     </span>
@@ -90,6 +90,7 @@ function Chip({ color, children, icon: Icon }) {
 
 function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
   const { lang } = useLang();
+  const B = useBugunT();
   const total = view.tasks.length || 1;
   const closed = !!view.day && !view.day.open;
   const score = view.score;
@@ -97,6 +98,15 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
   // «Submitted» means LOCKED on a unit that submits task by task; on one that
   // closes whole days an answer is all there is until the day closes.
   const submitted = view.tasks.filter((t) => (view.perTask ? t.locked : t.answered)).length;
+  // …except that a closed day locks every task, and the deadline sweep and the
+  // automatic check write locked entries nobody filed: «13 / 13 topshirildi»
+  // stood over three tasks never handed in (C3). On a phone the count is what
+  // the LEADER handed in (`filedByLeader`); the desk keeps its old count until
+  // the operator rules the same there.
+  // Out of the tasks the leader files: the system's own checks are nobody's to
+  // hand in, and «9 / 13» read as four tasks missed.
+  const filed = view.tasks.filter((t) => filedByLeader(t, view.perTask)).length;
+  const fileable = view.tasks.filter((t) => t.kind !== "auto").length;
   const next = view.isToday && !closed
     ? view.tasks
       .filter((t) => GROUP_OF[t.state] === "todo" && t.kind !== "auto" && t.dueAt
@@ -120,7 +130,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
           <ClipboardCheck size={20} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-bold leading-tight truncate" style={{ color: "var(--text-1)" }}>
+          <p className="text-[15px] font-bold leading-tight truncate max-md:whitespace-normal max-md:break-words" style={{ color: "var(--text-1)" }}>
             {isLeader ? T.mine : nm(view.leader?.name || "")}
           </p>
           {/* Separators BETWEEN parts, never before the first: a leader
@@ -130,7 +140,8 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
             style={{ color: "var(--text-3)" }}>
             {[
               !isLeader && view.unit?.name ? <span key="u" className="truncate">{nm(view.unit.name)}</span> : null,
-              view.shift != null ? <span key="s">S{view.shift}</span> : null,
+              view.shift != null
+                ? <span key="s"><Both phone={put(B.shiftN, { n: view.shift })} desk={`S${view.shift}`} /></span> : null,
               view.cell && view.cells?.length > 0
                 ? <span key="c" className="tabular-nums">{view.cells.find((c) => c.id === view.cell)?.code}</span> : null,
             ].filter(Boolean).flatMap((el, i) => (i ? [<span key={`d${i}`} aria-hidden>·</span>, el] : [el]))}
@@ -152,7 +163,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
           <div className="mt-4 flex items-end justify-between gap-3 flex-wrap">
             {closed && score ? (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                <p className="text-[11px] max-md:text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
                   {T.resultLbl}
                 </p>
                 <div className="flex items-end gap-2 mt-0.5">
@@ -169,7 +180,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
               </div>
             ) : running ? (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                <p className="text-[11px] max-md:text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
                   {T.runningLbl}
                 </p>
                 <div className="flex items-end gap-1.5 mt-0.5">
@@ -184,15 +195,16 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
             ) : (
               <div>
                 <span className="text-4xl font-extrabold tabular-nums leading-none" style={{ color: "var(--text-1)" }}>
-                  {submitted}
+                  <Both phone={filed} desk={submitted} />
                 </span>
                 <span className="text-[15px] font-semibold tabular-nums" style={{ color: "var(--text-3)" }}>
-                  {" "}/ {view.tasks.length}
+                  {" "}/ <Both phone={fileable} desk={view.tasks.length} />
                 </span>
               </div>
             )}
             <span className="text-[12px] font-semibold tabular-nums pb-0.5" style={{ color: "var(--text-3)" }}>
-              {put(T.submittedOf, { n: submitted, total: view.tasks.length })}
+              <Both phone={put(T.submittedOf, { n: filed, total: fileable })}
+                desk={put(T.submittedOf, { n: submitted, total: view.tasks.length })} />
             </span>
           </div>
           {/* Under the row, not inside the score block: at full width the
@@ -200,7 +212,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
               topshirildi» onto a line of its own on every phone and severed it
               from the number it qualifies. */}
           {running && (
-            <p className="text-[11px] mt-1.5" style={{ color: "var(--text-4)" }}>
+            <p className="text-[11px] mt-1.5 max-md:hidden" style={{ color: "var(--text-4)" }}>
               {put(T.runningNote, { total: running.total })}
             </p>
           )}
@@ -216,7 +228,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
           </div>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {bars.filter((b) => b[1] > 0).map(([k, n, color, label]) => (
-              <span key={k} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+              <span key={k} className="inline-flex items-center gap-1.5 text-[11px] max-md:text-[12px]" style={{ color: "var(--text-3)" }}>
                 <span className="w-2 h-2 rounded-full" style={{ background: color }} />
                 {label} <b className="tabular-nums" style={{ color: "var(--text-2)" }}>{n}</b>
               </span>
@@ -235,7 +247,7 @@ function Summary({ view, counts, T, isLeader, nm, now, onOpen }) {
                 gets the card's whole width instead of what a right-hand
                 countdown leaves of it. */}
             <span className="flex items-baseline justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+              <span className="text-[11px] max-md:text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
                 {T.nextLbl}
               </span>
               <span className="text-[12px] font-semibold tabular-nums flex-shrink-0" style={{ color: urgency(next, now).color }}>
@@ -298,13 +310,13 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
   let action = null;
   if (task.objectable) {
     action = (
-      <Button size="sm" variant="primary" tint className="max-sm:h-9" onClick={() => onOpen(task.id, "object")}>
+      <Button size="sm" variant="primary" tint className="max-md:h-11" onClick={() => onOpen(task.id, "object")}>
         <ShieldQuestion size={12} /> {T.object}
       </Button>
     );
   } else if (task.late?.eligible && !task.late?.proof) {
     action = (
-      <Button size="sm" variant="secondary" tint className="max-sm:h-9" onClick={() => onOpen(task.id, "late")}>
+      <Button size="sm" variant="secondary" tint className="max-md:h-11" onClick={() => onOpen(task.id, "late")}>
         <Timer size={12} /> {T.late}
       </Button>
     );
@@ -321,7 +333,7 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-1.5">
-            <span className="text-[11px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
+            <span className="text-[11px] max-md:text-[12px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
               №{task.id}
             </span>
             <span className="text-[14px] font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
@@ -329,7 +341,8 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
             </span>
           </span>
           <span className="mt-0.5 flex items-start gap-1.5 text-[12px] leading-snug" style={{ color: meta.color }}>
-            <KindIcon size={12} className="flex-shrink-0 mt-[2px]" style={{ color: "var(--text-4)" }} />
+            {/* Camera or upload must read at a glance on a phone (C9): 16px there. */}
+            <KindIcon size={12} className="flex-shrink-0 mt-[2px] max-md:w-4 max-md:h-4 max-md:mt-0 max-md:text-[var(--text-3)]!" style={{ color: "var(--text-4)" }} />
             {meta.Icon && meta.Icon !== PencilLine && (
               <meta.Icon size={12} className={`flex-shrink-0 mt-[2px] ${meta.spin ? "animate-spin" : ""}`} />
             )}
@@ -360,12 +373,12 @@ function TaskRow({ task, T, now, onOpen, rights, perTask }) {
         <div className="flex flex-wrap gap-2 pb-3 -mt-1 pl-[58px] sm:pl-[60px] pr-4">
           {action}
           {task.dispute?.id && (
-            <Button size="sm" variant="ghost" tint className="max-sm:h-9" onClick={() => nav(`/leaders/appeal/dispute/${task.dispute.id}`)}>
+            <Button size="sm" variant="ghost" tint className="max-md:h-11" onClick={() => nav(`/leaders/appeal/dispute/${task.dispute.id}`)}>
               <MessagesSquare size={12} /> {T.openChat}
             </Button>
           )}
           {task.late?.proof?.id && (
-            <Button size="sm" variant="ghost" tint className="max-sm:h-9" onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
+            <Button size="sm" variant="ghost" tint className="max-md:h-11" onClick={() => nav(`/leaders/appeal/late/${task.late.proof.id}`)}>
               <MessagesSquare size={12} /> {T.openChat}
             </Button>
           )}
@@ -385,18 +398,18 @@ function Group({ group, tasks, T, now, onOpen, rights, perTask, collapsible, def
       aria-label={T[group.label]}>
       <button type="button" disabled={!collapsible} onClick={() => setOpen((o) => !o)}
         aria-expanded={collapsible ? open : undefined}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left disabled:cursor-default"
+        className="w-full flex items-center gap-2 px-4 py-2.5 max-md:min-h-[44px] text-left disabled:cursor-default"
         style={{ borderBottom: open ? "1px solid var(--border)" : "none", background: "var(--bg-inner)" }}>
         <Icon size={14} style={{ color: group.color }} />
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
+        <span className="text-[11px] max-md:text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
           {T[group.label]}
         </span>
-        <span className="text-[11px] font-bold tabular-nums rounded-full px-1.5"
+        <span className="text-[11px] max-md:text-[12px] font-bold tabular-nums rounded-full px-1.5"
           style={{ background: "var(--bg-card)", color: "var(--text-3)" }}>
           {tasks.length}
         </span>
         {collapsible && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] max-md:text-[12px] font-semibold" style={{ color: "var(--text-3)" }}>
             {open ? T.hide : T.show}
             <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none" }} className="transition-transform" />
           </span>
@@ -425,9 +438,12 @@ export default function Checklist({
 }) {
   const T = useClT();
   const qc = useQueryClient();
+  // The leader on a phone files their own day on «Bugun» (BugunDay.jsx);
+  // everybody else, and every desk, keeps the tab below.
+  const leaderPhone = useLeaderPhone();
   const toast = useToast();
   const [cell, setCell] = useState(null);
-  const [sheet, setSheet] = useState(null);          // {id, focus}
+  const [sheet, setSheet] = useState(null);          // {id, focus, files}
   const [closeAsk, setCloseAsk] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeErr, setCloseErr] = useState("");
@@ -561,6 +577,9 @@ export default function Checklist({
   const today = view.isToday;
   const task = sheet ? view.tasks.find((t) => t.id === sheet.id) : null;
   const anyAbove = counts.todo + counts.rejected + counts.failed + counts.checking > 0;
+  // «Bugun»: the leader themself, today, on a day still being filed.
+  const bugun = leaderPhone && isLeader && today && !!rights.file
+    && !view.noLoad && !view.notOwed && !view.noCell;
 
   const closeDay = async () => {
     setClosing(true);
@@ -631,6 +650,11 @@ export default function Checklist({
             message={rights.file || isLeader ? T.noCellMine : T.noCellOther}
             showUploadLink={false} height="h-56" />
         </div>
+      ) : bugun ? (
+        <BugunDay view={view} T={T} now={now}
+          onOpen={(id, focus = null, files = null) => setSheet({ id, focus, files })}
+          onFinish={() => { setFinishErr(""); setFinishAsk(true); }}
+          onCloseDay={() => { setCloseErr(""); setCloseAsk(true); }} />
       ) : (
         // `grid-cols-1` below lg is load-bearing: an implicit grid track is
         // sized `auto`, and `auto` grows to the min-content of whatever sits in
@@ -665,13 +689,13 @@ export default function Checklist({
                   </p>
                 ) : null}
                 {fin.held > 0 && (
-                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+                  <p className="text-[11px] max-md:text-[12px] leading-snug" style={{ color: "var(--text-3)" }}>
                     {put(T.finishHeld, { n: fin.held })}
                   </p>
                 )}
                 {fin.can && (
                   <>
-                    <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>{T.finishHint}</p>
+                    <p className="text-[11px] leading-snug max-md:hidden" style={{ color: "var(--text-3)" }}>{T.finishHint}</p>
                     <Button size="lg" className="w-full" onClick={() => { setFinishErr(""); setFinishAsk(true); }}>
                       <Flag size={15} /> {T.finishBtn}
                     </Button>
@@ -686,7 +710,7 @@ export default function Checklist({
                   {T.closeDay}
                 </Button>
                 {!view.closeDay.ready && (
-                  <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--text-3)" }}>
+                  <p className="text-[11px] max-md:text-[12px] mt-2 leading-snug" style={{ color: "var(--text-3)" }}>
                     {put(T.closeDayNeed, { n: view.closeDay.missing.length })}
                   </p>
                 )}
@@ -708,7 +732,8 @@ export default function Checklist({
       )}
 
       {task && (
-        <ChecklistTaskSheet view={view} task={task} focus={sheet.focus} T={T}
+        <ChecklistTaskSheet key={`${task.id}|${sheet.files ? "f" : ""}`} view={view} task={task}
+          focus={sheet.focus} initialFiles={sheet.files} T={T}
           onClose={() => setSheet(null)} onView={setView} onRefetch={() => refetch()}
           toast={toast} />
       )}

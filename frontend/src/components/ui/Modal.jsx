@@ -3,6 +3,7 @@ import { createElement, isValidElement, useCallback, useEffect, useEffectEvent, 
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import ConfirmDialog from "./ConfirmDialog";
+import ActionMenu from "./ActionMenu";
 import useLeaveRef from "../../hooks/useLeaveRef";
 import { DialogDraftContext, isTopLayer, trapTab, useDialogLayer } from "./dialogLayers";
 
@@ -39,6 +40,18 @@ const iconEl = (icon, size) =>
  *                 or while the caller holds a draft it must not lose)
  *   dirty       – does this dialog hold unsaved work? Leave it out and the
  *                 Modal works it out (below); pass true/false to decide.
+ *   phoneMenu   – ActionMenu `items` shown as a ⋮ in the header BELOW md only
+ *                 (2026-11-20, the leader-phone audit D1): a destructive or rare
+ *                 footer action moves there on a phone, where a fourth footer
+ *                 button ran off the card. The caller hides that footer button
+ *                 below md (`max-md:hidden`) itself — md+ is unchanged.
+ *
+ * On a phone (below md, 2026-11-20) the same card is a BOTTOM SHEET: it rises
+ * from the screen's bottom edge (thumb reach), full width, rounded on top, and
+ * a footer of three or more buttons stacks full-width in its own order —
+ * cancel above, the primary action (last) at the bottom, under the thumb — so
+ * no button is cut and no label wraps. `.modal-shell` in index.css does it; the
+ * md+ dialog is exactly the centred card it always was.
  *
  * Accessibility (every caller gets it, nothing to wire):
  *   role="dialog" + aria-modal, labelled by the title (described by the
@@ -71,6 +84,7 @@ export default function Modal({
   bodyClassName = "px-5 py-4 space-y-3",
   dismissable = true,
   dirty,
+  phoneMenu = null,
   children,
 }) {
   const lang = useLang();
@@ -177,8 +191,10 @@ export default function Modal({
       {createPortal(
         <div
           ref={setBackdrop}
-          className="modal-backdrop fixed inset-0 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
+          // Paddings live in `.modal-shell` (index.css): a phone's sheet sits on
+          // the bottom edge, so they differ by width — an inline style cannot.
+          className="modal-backdrop modal-shell fixed inset-0 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)", zIndex }}
           onClick={() => dismissable && onClose?.()}
         >
           <div
@@ -203,6 +219,10 @@ export default function Modal({
             onInputCapture={noteEdit}
           >
             <DialogDraftContext.Provider value={markDraft}>
+              {/* The sheet's grab handle, like the filter sheet's — a phone only. */}
+              <div aria-hidden="true" className="md:hidden flex justify-center pt-2.5 -mb-1.5 flex-shrink-0">
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-md)" }} />
+              </div>
               {title != null && (
                 <div
                   className="flex items-center justify-between gap-3 px-5 py-4 flex-shrink-0"
@@ -219,16 +239,29 @@ export default function Modal({
                       )}
                     </div>
                   </div>
-                  {onClose && (
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      aria-label={say("ui.modal.close", "Close")}
-                      className="hover:text-red-400 transition-colors flex-shrink-0"
-                      style={{ color: "var(--text-3)" }}
-                    >
-                      <X size={18} />
-                    </button>
+                  {(onClose || phoneMenu) && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {phoneMenu && phoneMenu.filter(Boolean).length > 0 && (
+                        <div className="md:hidden">
+                          <ActionMenu items={phoneMenu} zIndex={zIndex + 30}
+                            label={say("ui.modal.more", "More actions")} />
+                        </div>
+                      )}
+                      {onClose && (
+                        <button
+                          type="button"
+                          onClick={onClose}
+                          aria-label={say("ui.modal.close", "Close")}
+                          // md+: the bare 18px ✕ it always was. A phone gets a
+                          // round 32px chip with a 44px tap pad around it.
+                          className="relative hover:text-red-400 transition-colors flex-shrink-0 max-md:w-8 max-md:h-8 max-md:rounded-full max-md:flex max-md:items-center max-md:justify-center max-md:bg-[var(--bg-inner)]"
+                          style={{ color: "var(--text-3)" }}
+                        >
+                          <span aria-hidden="true" className="hidden max-md:block absolute -inset-1.5" />
+                          <X size={18} className="max-md:w-4 max-md:h-4" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -239,7 +272,7 @@ export default function Modal({
 
               {footer && (
                 <div
-                  className="flex justify-end gap-2 px-5 py-3 flex-shrink-0"
+                  className="modal-foot flex justify-end gap-2 px-5 py-3 flex-shrink-0"
                   style={{ borderTop: "1px solid var(--border)" }}
                 >
                   {footer}

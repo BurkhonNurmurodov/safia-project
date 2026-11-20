@@ -354,3 +354,7 @@ uses `_dm_report`.** Layout test: `tests/test_admin_report.py`.
 
 Known, unchanged: a step that cannot settle (a `warn`) tells the admins again on
 every start, because it retries — it is the step's flag that stops it.
+
+## On a phone (2026-11-20)
+
+See `docs/leader-phone.md` — the notification centre on a phone (no raw emojis in the text). md+ is unchanged.

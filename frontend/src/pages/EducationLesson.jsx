@@ -145,7 +145,7 @@ export default function EducationLesson() {
                 failures and says why inside the frame, and Loom's own player is
                 offered to nobody (the operator's call, 2026-09-11). */}
             {lesson.provider !== "loom" && (
-              <p className="text-[11px]" style={{ color: "var(--text-4)" }}>
+              <p className="text-[11px] max-md:text-xs [color:var(--text-4)] max-md:[color:var(--text-3)]">
                 {t("education.player.trouble")}{" "}
                 <a
                   href={lesson.watch}
@@ -278,7 +278,7 @@ export default function EducationLesson() {
                        style={{ color: "var(--text-1)" }}>
                       {o.title}
                     </p>
-                    <p className="mt-0.5 text-[10px]" style={{ color: "var(--text-4)" }}>
+                    <p className="mt-0.5 text-[10px] max-md:text-xs [color:var(--text-4)] max-md:[color:var(--text-3)]">
                       {lessonDate(o.created_at, lang)}
                     </p>
                   </div>

@@ -1,11 +1,12 @@
 // Shared per-column table-filter primitives.
 // Used by the Staff "Requests"/Workers tables and the Overview supervisor table.
-import { useState, useRef, useEffect, useLayoutEffect, isValidElement } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, isValidElement, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
 import { SlidersHorizontal, X, ChevronDown, Check } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
 import useLeaveRef from "../../hooks/useLeaveRef";
+import Button from "./Button";
 
 // A column header with a popover filter. Pass `label` to render it next to the
 // trigger, or omit it when the header already renders its own (sortable) label.
@@ -111,6 +112,22 @@ export function ColFilter({ label, active, children, quiet = false, align = "lef
 const autoFocusOk = () =>
   typeof window === "undefined" || !window.matchMedia?.("(pointer: coarse)").matches;
 
+// TRUE inside the phone filter sheet (FilterSheet), where the list controls
+// below behave as a phone needs (2026-11-20, the leader-phone audit F2–F4):
+// nothing appears, disappears or changes height because of a tick (the sheet
+// is anchored to the bottom edge, so any growth moved every row above it under
+// the finger), the per-list «clear» footers give way to the sheet header's ONE
+// «Hammasini tozalash», a search box shows only over a list long enough to need
+// it, and footer text is readable (12px, not 10px). Every other surface — the
+// md+ dropdowns, a ColFilter popover — is exactly as before.
+const InSheet = createContext(false);
+// A search box helps from about this many options; under it, it is one more
+// field between the reader and a list they can see whole.
+const SHEET_SEARCH_MIN = 8;
+// The first option is the list's «off» value («Barchasi», «All supervisors») by
+// convention — it narrows nothing, so it is not counted as a choice.
+const isAllOpt = (o) => o && (o.value === "" || o.value == null || o.value === "All" || o.value === "all" || o.value === "*");
+
 export function TxtFilter({ value, onChange, placeholder }) {
   const { t } = useLang();
   return (
@@ -142,8 +159,10 @@ export function TxtFilter({ value, onChange, placeholder }) {
 // tooltip when `render` returns a node AND the option itself is an opaque id
 // (a category uuid rendered as «name · count») — without it the search box
 // would match the id, never the name.
-export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null, note = null, empty = null }) {
+export function OptsFilter({ opts, sel, onChange, render, searchable: searchableProp = false, groupBy = null, labelOf = null, note = null, empty = null }) {
   const { t } = useLang();
+  const inSheet = useContext(InSheet);
+  const searchable = searchableProp && (!inSheet || opts.length >= SHEET_SEARCH_MIN);
   const [q, setQ] = useState("");
   // `render` may return a node (chips, icons) — fall back to `labelOf`, then
   // the raw option, so search and the row tooltip stay meaningful instead of
@@ -212,7 +231,9 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
     </label>
   );
   return (
-    <div>
+    // `data-opt-few`: a list with at most one option cannot narrow anything —
+    // the phone sheet leaves such a section out (FilterSheet).
+    <div data-opt-few={opts.length <= 1 ? "" : undefined}>
       {/* Same contract as PickFilter's: a list narrowed by something OUTSIDE
           it says so above itself, or a short list reads as a dimension with
           nothing in it. */}
@@ -252,6 +273,17 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
           {shown.length} / {opts.length}
         </p>
       )}
+      {inSheet ? (
+        // ONE footer row that never comes or goes: «select all» stays where it
+        // is, dimmed once everything is ticked; clearing is the sheet header's.
+        opts.length > 1 && (
+          <button onClick={() => onChange([...opts])} disabled={sel.length >= opts.length}
+            className="text-xs w-full text-center pt-2 pb-1 border-t min-h-[36px] disabled:opacity-40"
+            style={{ color: "var(--text-3)", borderColor: "var(--border)" }}>
+            {t("staff.selectAll")}
+          </button>
+        )
+      ) : (<>
       {opts.length > 0 && sel.length < opts.length && (
         <button onClick={() => onChange([...opts])} className="text-[10px] w-full text-center pt-1 border-t"
           style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
@@ -264,12 +296,14 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
           {t("staff.clearAll")}
         </button>
       )}
+      </>)}
     </div>
   );
 }
 
 export function RngFilter({ minV, maxV, onMin, onMax }) {
   const { t } = useLang();
+  const inSheet = useContext(InSheet);
   const s = {
     background: "var(--bg-inner)", border: "1px solid var(--border-md)",
     color: "var(--text-1)", borderRadius: 6, padding: "4px 8px",
@@ -285,7 +319,9 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
         <label className="text-[10px] block mb-0.5" style={{ color: "var(--text-4)" }}>{t("staff.max")}</label>
         <input type="number" step="any" value={maxV} onChange={e => onMax(e.target.value)} style={s} />
       </div>
-      {(minV || maxV) && (
+      {/* In the phone sheet the header's «Hammasini tozalash» clears it — a
+          row appearing under the fields would lift the sheet. */}
+      {!inSheet && (minV || maxV) && (
         <button onClick={() => { onMin(""); onMax(""); }}
           className="text-[10px] w-full text-center pt-1 border-t"
           style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
@@ -309,15 +345,21 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
 // shortened list reads as missing data. `empty` replaces the generic "nothing
 // here" when the narrowing itself emptied it, so the page can offer the way out
 // (clear the parent) right where the dead end is.
-export function PickFilter({ opts, value, onChange, searchable = false, close, note = null, empty = null }) {
+export function PickFilter({ opts, value, onChange, searchable: searchableProp = false, close, note = null, empty = null }) {
   const { t } = useLang();
+  const inSheet = useContext(InSheet);
+  const searchable = searchableProp && (!inSheet || opts.length >= SHEET_SEARCH_MIN);
+  const choices = opts.length - (isAllOpt(opts[0]) ? 1 : 0);
   const [q, setQ] = useState("");
   const label = (o) => o.title ?? (typeof o.label === "string" ? o.label : String(o.value ?? ""));
   const shown = searchable && q.trim()
     ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
     : opts;
   return (
-    <div>
+    // `data-opt-few`: «all» plus at most ONE real choice narrows nothing — a
+    // leader's own name as the only «Lider» — and the phone sheet leaves the
+    // section out (FilterSheet).
+    <div data-opt-few={choices <= 1 ? "" : undefined}>
       {note && (
         <p className="text-[11px] leading-snug mb-1.5" style={{ color: "var(--text-3)" }}>{note}</p>
       )}
@@ -467,6 +509,18 @@ function FilterChip({ s, onOpen, className = "", wide = false }) {
   const inert = !!s.static;
   const text = s.display || s.label;
   const clearable = !inert && !!s.onClear;
+  // Below md the chip says WHAT it narrows, not only by how much (2026-11-20,
+  // audit F8): «2 tanlangan» behind an icon was a count with no subject. A
+  // phone prints «Holat: 2» — the section's name, then the value, a bare count
+  // where the value was only «N tanlangan». md+ is unchanged.
+  const phoneText = (() => {
+    if (typeof s.label !== "string" || typeof text !== "string" || text === s.label) return null;
+    const tpl = t("filter.selected");
+    const m = typeof tpl === "string" && tpl.includes("{n}")
+      ? text.match(new RegExp("^" + tpl.split("{n}").map(x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("(\\d+)") + "$"))
+      : null;
+    return `${s.label}: ${m ? m[1] : text}`;
+  })();
   return (
     <span
       className={`inline-flex items-center rounded-full flex-shrink-0 ${className}`}
@@ -495,7 +549,9 @@ function FilterChip({ s, onOpen, className = "", wide = false }) {
         {/* `wide`: the chip sits on a line of its own below md (see
             `chipsWrap`), so a person's name gets room to be read rather than
             the 130px a chip squeezed beside the trigger can spare. */}
-        <span className={`truncate whitespace-nowrap ${wide ? "max-w-[130px] max-md:max-w-[240px]" : "max-w-[130px]"}`}>{text}</span>
+        <span className={`truncate whitespace-nowrap ${wide ? "max-w-[130px] max-md:max-w-[240px]" : "max-w-[130px]"}`}>
+          {phoneText ? <><span className="md:hidden">{phoneText}</span><span className="max-md:hidden">{text}</span></> : text}
+        </span>
         {!inert && (
           <span aria-hidden="true" className={`absolute inset-x-0 ${
             wide === "always" ? "-top-[7px] -bottom-[7px]"
@@ -528,6 +584,21 @@ function FilterChip({ s, onOpen, className = "", wide = false }) {
 }
 
 // Mobile slide-up sheet listing every filter expanded.
+// Phone rules (2026-11-20, the leader-phone audit F2–F4, F9):
+//   · NOTHING moves under the finger. The sheet hangs from the bottom edge, so
+//     any growth of its content lifted every row above it — a tick that added a
+//     «Tozalash» row moved the next option 40px. So: ONE «Hammasini tozalash»,
+//     in the header, always there (disabled while nothing is set); no
+//     per-section clear; the lists themselves add no rows on a tick (`InSheet`);
+//     and once open, the sheet keeps the height it opened at — a list that
+//     grows scrolls inside it, one that shrinks leaves room at the bottom.
+//   · A section that cannot narrow anything (its list offers at most one real
+//     choice — `data-opt-few`) is left out unless it is set, and a group caption
+//     over a single remaining section is dropped: two headings over one list
+//     said nothing twice.
+//   · «Tayyor» at the bottom closes it under the thumb; the ✕ is named and
+//     carries a 44px target. A pick never closes the sheet: setting two
+//     filters is one visit.
 function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
   const { t } = useLang();
   // The dimmer fades and the sheet rides up from the bottom edge — and back
@@ -535,6 +606,10 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
   // own element because it BLURS the page: a blur cannot see through a parent
   // that is fading, so the root (`sheet-root`) only keeps time for the two.
   const leaveRef = useLeaveRef();
+  const panelRef = useRef(null);
+  // Sections left out, decided ONCE when the sheet opens (null = not yet): a
+  // section appearing or vanishing mid-visit would move the rows around it.
+  const [hidden, setHidden] = useState(null);
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     document.addEventListener("keydown", onKey);
@@ -544,11 +619,31 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
+  // Both run before the first paint: the first commit renders every section,
+  // this reads which lists are too short, the second commit drops them, and
+  // the height is fixed from what is then on screen.
+  useLayoutEffect(() => {
+    const root = panelRef.current;
+    if (!root) return;
+    const out = new Set();
+    root.querySelectorAll("[data-fs-section]").forEach(el => {
+      if (el.dataset.active === "1") return;
+      if (el.querySelector("[data-opt-few]")) out.add(el.dataset.fsSection);
+    });
+    // Never an empty sheet: if nothing would remain, show what there is.
+    setHidden(out.size >= sections.length ? new Set() : out);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (hidden === null || !el) return;
+    el.style.height = `${el.offsetHeight}px`;
+  }, [hidden]);
+  const shown = hidden ? sections.filter(s => !hidden.has(s.key)) : sections;
   return createPortal(
     <div ref={leaveRef} className="sheet-root" style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose} className="fade-in"
         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
-      <div className="sheet" style={{
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t("filter.filters")} className="sheet" style={{
         position: "relative", background: "var(--bg-card)", borderRadius: "20px 20px 0 0",
         maxHeight: "82vh", display: "flex", flexDirection: "column",
         paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
@@ -559,48 +654,47 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
         <div className="flex items-center justify-between px-4 pb-3 pt-1" style={{ borderBottom: "1px solid var(--border)" }}>
           <span className="text-base font-semibold" style={{ color: "var(--text-1)" }}>{t("filter.filters")}</span>
           <div className="flex items-center gap-2">
-            {anyActive && (
-              <button onClick={onClearAll} className="text-xs px-3 py-1.5 rounded-lg"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
-                {t("staff.clearAll")}
-              </button>
-            )}
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full"
+            <button onClick={onClearAll} disabled={!anyActive}
+              className="text-xs px-3 rounded-lg min-h-[36px] disabled:opacity-40"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
+              {t("staff.clearAll")}
+            </button>
+            <button onClick={onClose} aria-label={t("ui.modal.close")}
+              className="relative w-9 h-9 flex items-center justify-center rounded-full"
               style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-              <X size={15} />
+              <span aria-hidden="true" className="absolute -inset-1" />
+              <X size={16} />
             </button>
           </div>
         </div>
-        <div style={{ overflowY: "auto", flex: 1 }}>
-          {groupSections(sections).map((g, gi) => (
-            <div key={g.key}>
-              {/* No border of its own — the previous section's bottom rule is
-                  already there, and two hairlines meeting read as a defect. The
-                  extra top padding is what separates one group from the next. */}
-              {g.label && (
-                <div className={`px-4 pb-1 ${gi ? "pt-5" : "pt-4"}`}>
-                  <GroupCaption label={g.label} first />
-                </div>
-              )}
-              {g.items.map(s => (
-                <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{s.label}</p>
-                    {/* Clears THIS section only — «Hammasini tozalash» is the
-                        header's button, and the same words on both read as one
-                        action offered twice. */}
-                    {s.active && s.onClear && (
-                      <button onClick={s.onClear} className="text-[11px] flex items-center gap-0.5 min-h-[32px] px-1"
-                        style={{ color: "var(--text-3)" }}>
-                        <X size={11} /> {t("filter.clear")}
-                      </button>
-                    )}
+        <InSheet.Provider value={true}>
+          <div style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
+            {groupSections(shown).map((g, gi) => (
+              <div key={g.key}>
+                {/* No border of its own — the previous section's bottom rule is
+                    already there, and two hairlines meeting read as a defect. The
+                    extra top padding is what separates one group from the next.
+                    A caption over ONE section is that section's label twice. */}
+                {g.label && g.items.length > 1 && (
+                  <div className={`px-4 pb-1 ${gi ? "pt-5" : "pt-4"}`}>
+                    <GroupCaption label={g.label} first />
                   </div>
-                  {s.render({ close: () => {} })}
-                </div>
-              ))}
-            </div>
-          ))}
+                )}
+                {g.items.map(s => (
+                  <div key={s.key} data-fs-section={s.key} data-active={s.active ? "1" : "0"}
+                    className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>{s.label}</p>
+                    {s.render({ close: () => {} })}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </InSheet.Provider>
+        <div className="px-4 pt-3 flex-shrink-0">
+          <Button variant="primary" size="lg" className="w-full min-h-[44px]" onClick={onClose}>
+            {t("filter.done")}
+          </Button>
         </div>
       </div>
     </div>,
@@ -739,7 +833,6 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   const restAny = restCnt > 0;
   const clearAll = onClearAll ?? (() => real.forEach(s => s.onClear && s.onClear()));
   const chips = real.filter(s => s.active);
-  const hasChips = statics.length + chips.length > 0;
   // A chip tap re-opens whichever collapsed surface this viewport uses.
   const openPanel = () => {
     if (window.matchMedia("(min-width: 768px)").matches) setOpen(true);
@@ -847,8 +940,11 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   // scope, and dropping them would leave the toolbar silent about it.
   if (real.length === 0) {
     if (!statics.length) return null;
+    // Below md a static chip is not drawn at all (2026-11-20, the operator's
+    // ruling on audit F10): a locked viewer's plant or brigadir carries no
+    // action and cost the phone row its width. md+ keeps the inert chip.
     return (
-      <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center">
+      <div className="max-md:hidden flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center">
         {statics.map(s => <FilterChip key={s.key} s={s} />)}
       </div>
     );
@@ -869,7 +965,9 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
         }}
       >
         <SlidersHorizontal size={14} style={{ color: any ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
-        {!hasChips && <span>{t("filter.filters")}</span>}
+        {/* Below md a static chip is not drawn, so only a real chip speaks
+            for the trigger. */}
+        {!chips.length && <span>{t("filter.filters")}</span>}
         {cnt > 0 && <CountBadge n={cnt} />}
       </button>
 
@@ -972,22 +1070,28 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
           into; md+ is untouched either way — unless it is `"always"`, for a
           page whose column is narrow enough that even on a laptop the
           collapsed chips do not fit beside its controls (/kelish). */}
-      {hasChips && (
+      {/* Below md the chips ALWAYS wrap (2026-11-20, audit F1 — it was opt-in
+          and four leader pages had not opted in, so the active filter was cut
+          at the screen edge or hidden under the Excel button). The strip's
+          `fp-chips` class makes its row wrap there too (index.css), so chips
+          that do not fit beside the controls take a line of their own. A
+          static chip is not drawn below md (audit F10). md+ is unchanged. */}
+      {(chips.length > 0 || statics.length > 0) && (
         <div
           // A wrapping strip is NOT a scroller: `overflow-x-auto` beside
           // `overflow-visible` still made it one (one axis scrolling turns the
           // other's `visible` into `auto`), which clipped the chips' 44 px tap
           // pads to the strip's own height.
-          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 no-scrollbar self-center ${
+          className={`fp-chips ${collapsed ? "flex" : "flex md:hidden"} ${chips.length ? "" : "max-md:hidden"} items-center gap-1.5 flex-1 min-w-0 no-scrollbar self-center ${
             chipsWrap === "always" ? "flex-auto flex-wrap overflow-visible"
-              : chipsWrap ? "overflow-x-auto max-md:flex-auto max-md:flex-wrap max-md:overflow-visible" : "overflow-x-auto"}`}
+              : "md:overflow-x-auto max-md:flex-auto max-md:flex-wrap max-md:overflow-visible"}`}
         >
-          {statics.map(s => <FilterChip key={s.key} s={s} wide={chipsWrap} />)}
+          {statics.map(s => <FilterChip key={s.key} s={s} className="max-md:hidden" wide={chipsWrap === "always" ? "always" : true} />)}
           {/* A pinned section carries its state in its own trigger from md+ —
               its chip would be the same fact twice. It stays below md, where
               the filter itself lives in the sheet. */}
           {chips.map(s => (
-            <FilterChip key={s.key} s={s} onOpen={openPanel} className={s.pinned ? "md:hidden" : ""} wide={chipsWrap} />
+            <FilterChip key={s.key} s={s} onOpen={openPanel} className={s.pinned ? "md:hidden" : ""} wide={chipsWrap === "always" ? "always" : true} />
           ))}
         </div>
       )}

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import useIsMobile from "../../hooks/useIsMobile";
 import { CATS, catColor } from "./categories";
 import { packLanes, overlapBands, timelineWindow, fmtHHMM, fmtDur, spanOf } from "../../utils/idleTime";
 
@@ -43,6 +44,9 @@ function catOf(name) {
 // is drawn is the caller that renames it. Default = the stopped reading, which
 // is what /idle-cell has always shown.
 export default function DayTimeline({ intervals, summary, t, onPick, unionLabel }) {
+  // Below md the hour labels are 12px (no text under 12px on a phone), so the
+  // axis steps wider to keep them apart: 1 · 3 · 6 hours instead of 1 · 2 · 3.
+  const phone = useIsMobile(768);
   // Only the register is drawn. Rejected rows are not here at all: this tab is
   // the day as it was, and a refused claim was never part of it; it stays
   // readable on «Kutish» with its reason.
@@ -62,7 +66,9 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
 
   // One label every 1h / 2h / 3h depending on how much day is on screen — a
   // tick every hour across a 14-hour night shift is unreadable on a phone.
-  const stepH = total <= 6 * 60 ? 1 : total <= 12 * 60 ? 2 : 3;
+  const stepH = phone
+    ? (total <= 6 * 60 ? 1 : total <= 12 * 60 ? 3 : 6)
+    : (total <= 6 * 60 ? 1 : total <= 12 * 60 ? 2 : 3);
   const ticks = [];
   for (let m = lo; m <= hi; m += stepH * 60) ticks.push(m);
 
@@ -90,8 +96,8 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
           return (
             <span
               key={m}
-              className="absolute text-[10px] tabular-nums"
-              style={{ left: `${p}%`, transform: `translateX(${tx})`, color: "var(--text-4)" }}
+              className="absolute text-[10px] max-md:text-xs tabular-nums text-[var(--text-4)] max-md:text-[var(--text-3)]"
+              style={{ left: `${p}%`, transform: `translateX(${tx})` }}
             >
               {fmtHHMM(m)}
             </span>
@@ -114,7 +120,7 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
                   one mark, on both views. "D2" is the widest code and measures
                   ~23px against the 28px the gutter leaves. */}
               <span
-                className="text-[10px] font-bold px-1 py-0.5 rounded leading-none"
+                className="text-[10px] max-md:text-xs font-bold px-1 py-0.5 rounded leading-none"
                 style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
               >
                 {code}
@@ -155,7 +161,7 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
                 key={iv.id}
                 type="button"
                 onClick={() => onPick?.(iv)}
-                className="absolute rounded-md text-[10px] font-semibold overflow-hidden whitespace-nowrap px-1 text-left transition-transform hover:z-10 focus-visible:z-10"
+                className="absolute rounded-md text-[10px] max-md:text-xs font-semibold overflow-hidden whitespace-nowrap px-1 text-left transition-transform hover:z-10 focus-visible:z-10"
                 style={{
                   left: `${pct(span[0])}%`,
                   width: `max(4px, ${w}%)`,
@@ -221,7 +227,7 @@ export default function DayTimeline({ intervals, summary, t, onPick, unionLabel 
             not-stopped swatch says in words why those minutes sit outside the
             slate bar underneath. The overlap swatch appears only when the day
             actually has one. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" style={{ color: "var(--text-4)" }}>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] max-md:text-xs text-[var(--text-4)] max-md:text-[var(--text-3)]">
           <span className="inline-flex items-center gap-1.5">
             <span className="rounded-sm flex-shrink-0" style={{ width: 12, height: 8, background: "var(--text-3)" }} />
             {t("idleCell.stopped")}

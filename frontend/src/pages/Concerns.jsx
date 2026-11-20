@@ -49,6 +49,10 @@ import { bucketTrend, bucketTick, bucketTitle } from "../utils/trendBuckets";
 import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCategories";
 import { shortPerson } from "../utils/personName";
 import { cellLabel } from "../utils/cellName";
+import ActionMenu from "../components/ui/ActionMenu";
+import useIsMobile from "../hooks/useIsMobile";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import { phoneText, phoneDay } from "./concernsPhoneText";
 
 const STATUSES = ["todo", "doing", "done"];
 
@@ -244,7 +248,7 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
                 key={s}
                 type="button"
                 onClick={() => pick(s)}
-                className="w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors"
+                className="w-full text-left px-2 py-1.5 max-md:py-3 rounded-md text-xs max-md:text-sm flex items-center gap-2 transition-colors"
                 style={{ background: isSel ? `${c}1f` : "transparent", color: "var(--text-1)" }}
                 onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "var(--bg-inner)"; }}
                 onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
@@ -266,9 +270,11 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
         ref={triggerRef}
         type="button"
         onClick={toggle}
-        className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap"
+        className="relative inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap"
         style={{ background: `${color}24`, color, cursor: saving || disabled ? "default" : "pointer" }}
       >
+        {/* A phone's finger gets 44px around the 28px pill (2026-11-20). */}
+        <span aria-hidden="true" className="hidden max-md:block absolute -inset-y-2 -inset-x-1" />
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
         {label}
         {saving
@@ -347,7 +353,7 @@ function CategoryIconChip({ category, size = 24 }) {
 function MobField({ label, children }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+      <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "var(--text-3)" }}>
         {label}
       </div>
       <div className="text-xs break-words" style={{ color: "var(--text-1)" }}>{children}</div>
@@ -564,6 +570,18 @@ export default function Concerns() {
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
   const levelLabel = (l) => t(`concerns.level.${l}`);
+  // Below md (2026-11-20, the leader-phone redesign): the register's cards
+  // replace the table, Excel and the deck move into the bar's ⋮, a card opens
+  // its concern and offers the rest behind its own ⋮. A leader's phone drops
+  // the three insight cards and every fact that only repeats the leader
+  // (their own name, «Daraja: Lider» on a concern that is with them). md and
+  // up is unchanged.
+  const phone = useIsMobile(768);
+  const leaderPhone = useLeaderPhone();
+  const P = phoneText(lang);
+  const fold = (x) => tl(x || "").toLowerCase().replace(/[^\p{L}]/gu, "");
+  const myName = fold(auth?.full_name);
+  const isMe = (name) => leaderPhone && !!myName && fold(name) === myName;
   const categoryLabel = (c) => (c ? t(`concerns.category.${c}`) : "");
   // Owner-column position (= the creator's role). Chain roles + leader reuse
   // the level labels; admin has its own key.
@@ -1878,7 +1896,8 @@ export default function Concerns() {
             return (
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 <span className="tabular-nums flex-shrink-0">{v}</span>
-                {leader && <span className="truncate" style={{ color: "var(--text-4)" }}>{shortOwner(leader)}</span>}
+                {/* A leader's phone: the name beside each of their cells would be their own. */}
+                {leader && !isMe(leader) && <span className="truncate" style={{ color: "var(--text-4)" }}>{shortOwner(leader)}</span>}
               </span>
             );
           }}
@@ -2436,6 +2455,17 @@ export default function Concerns() {
     </>
   );
 
+  // The same actions as ActionMenu items — a phone card's ⋮ (2026-11-20). The
+  // card itself opens «Ko'rish», so the menu starts with what changes the row.
+  const rowMenu = (r) => [
+    { key: "view", icon: Eye, label: t("concerns.view"), onSelect: () => setViewRow(r) },
+    r.can_edit && { key: "edit", icon: Pencil, label: t("concerns.edit"), onSelect: () => openEdit(r) },
+    r.can_escalate && { key: "up", icon: ArrowUp, label: t("concerns.uplift"), onSelect: () => openEscalate(r, "up") },
+    r.can_deescalate && { key: "down", icon: ArrowDown, label: t("concerns.sendBack"), onSelect: () => openEscalate(r, "down") },
+    { key: "history", icon: History, label: t("concerns.history"), onSelect: () => setHistoryRow(r) },
+    r.can_delete && { key: "delete", icon: Trash2, label: t("concerns.delete"), tone: "danger", onSelect: () => setConfirmDelete(r) },
+  ];
+
   // ONE cell per column key — the register's <td>s live here so the
   // ColumnsPicker's hide/reorder needs no markup change of its own.
   const listCell = (key, r) => {
@@ -2641,7 +2671,9 @@ export default function Concerns() {
         return (
           <div
             key={r.id}
-            onClick={() => setExpandedId(expanded ? null : r.id)}
+            // The card opens its concern (2026-11-20) — its actions are
+            // behind the ⋮ below, never a second tap on «Amallar».
+            onClick={() => setViewRow(r)}
             className="rounded-xl p-3 flex flex-col gap-2.5 cursor-pointer"
             style={{
               border: "1px solid var(--border)",
@@ -2655,11 +2687,12 @@ export default function Concerns() {
                 desktop register. */}
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-baseline gap-1.5 min-w-0">
-                <span className="font-mono text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
+                <span className="font-mono text-xs tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
                   {concernNo(r)}.
                 </span>
-                <span className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
-                  {fmtDate(rowDay(r), lang)}
+                <span className="text-xs truncate" style={{ color: "var(--text-3)" }}>
+                  {/* The phone's one date form (no year inside this one). */}
+                  {phoneDay(rowDay(r), lang)}
                   {/* …and its clock, same as the table's date column: the move,
                       or the minute it was raised. */}
                   {rowStamp(r) && <span className="tabular-nums">, {fmtTime(rowStamp(r))}</span>}
@@ -2683,7 +2716,7 @@ export default function Concerns() {
               {tx(r.concern_text)}
             </div>
             {r.solution && (
-              <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-[11px] leading-snug"
+              <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
                    style={{ background: `${STATUS_COLOR.done}14` }}>
                 <Check size={12} className="flex-shrink-0 mt-px" style={{ color: STATUS_COLOR.done }} />
                 <span>
@@ -2697,38 +2730,48 @@ export default function Concerns() {
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <MobField label={t("concerns.colCell")}>
                 {r.cell_code ? <CellLink id={r.cell_id}>{r.cell_code}</CellLink> : "—"}
-                {r.cell_leader_name && (
-                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(r.cell_leader_name)}</div>
+                {/* On a leader's phone the cell's leader is the reader. */}
+                {r.cell_leader_name && !isMe(r.cell_leader_name) && (
+                  <div className="text-xs" style={{ color: "var(--text-3)" }}>{shortOwner(r.cell_leader_name)}</div>
                 )}
               </MobField>
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "var(--text-3)" }}>
                   {t("concerns.colCategory")}
                 </div>
                 <CategoryChip category={r.category} label={categoryLabel(r.category)} />
               </div>
-              <MobField label={t("concerns.colOwner")}>
-                {shortOwner(r.owner_name)}
-                {r.owner_role && (
-                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{roleLabel(r.owner_role)}</div>
-                )}
-              </MobField>
-              <MobField label={t("concerns.responsible")}>
-                {r.responsible_name ? shortOwner(r.responsible_name) : levelLabel(r.level || "supervisor")}
-              </MobField>
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
-                  {t("concerns.colLevel")}
-                </div>
-                <LevelChip
-                  level={r.level || "supervisor"}
-                  label={levelLabel(r.level || "supervisor")}
-                  title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
-                />
-              </div>
+              {!isMe(r.owner_name) && (
+                <MobField label={t("concerns.colOwner")}>
+                  {shortOwner(r.owner_name)}
+                  {r.owner_role && (
+                    <div className="text-xs" style={{ color: "var(--text-3)" }}>{roleLabel(r.owner_role)}</div>
+                  )}
+                </MobField>
+              )}
+              {/* Who holds it and on which step — left out on a leader's
+                  phone while it is with the leader («Daraja: Lider», their own
+                  name), the case of nearly every card there. */}
+              {!(leaderPhone && (r.level === "leader" || isMe(r.responsible_name))) && (
+                <>
+                  <MobField label={t("concerns.responsible")}>
+                    {r.responsible_name ? shortOwner(r.responsible_name) : levelLabel(r.level || "supervisor")}
+                  </MobField>
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "var(--text-3)" }}>
+                      {t("concerns.colLevel")}
+                    </div>
+                    <LevelChip
+                      level={r.level || "supervisor"}
+                      label={levelLabel(r.level || "supervisor")}
+                      title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
+                    />
+                  </div>
+                </>
+              )}
               {daysLeft != null && (
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  <div className="text-xs uppercase tracking-wide font-semibold mb-0.5" style={{ color: "var(--text-3)" }}>
                     {t("concerns.deadline")}
                   </div>
                   {overdue ? (
@@ -2759,36 +2802,24 @@ export default function Concerns() {
               {r.received_at && r.entry_date && (
                 <MobField label={t("concerns.createdAt")}>
                   <span className="tabular-nums">
-                    {fmtDate(r.entry_date, lang)}{r.created_at ? `, ${fmtTime(r.created_at)}` : ""}
+                    {phoneDay(r.entry_date, lang)}{r.created_at ? `, ${fmtTime(r.created_at)}` : ""}
                   </span>
                 </MobField>
               )}
             </div>
 
-            {/* explicit actions affordance — the whole card toggles too, but
-                older users need a button that says so. The thread sits on the
-                same row: the phone has no Comments column to carry it. */}
-            <div className="flex items-center justify-between gap-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-              <span onClick={(e) => e.stopPropagation()}>
-                <CommentsButton
-                  count={r.comment_count}
-                  label={t("concerns.commentsTitle")}
-                  onClick={() => setCommentsRow(r)}
-                />
-              </span>
-              <span
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
-              >
-                {t("concerns.actions")}
-                <ChevronDown size={13} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
-              </span>
+            {/* The thread and the row's ⋮ on one row: the phone has no
+                Comments column to carry the one, and the ⋮ holds what the
+                desktop's expanded row offers. */}
+            <div className="flex items-center justify-between gap-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}
+                 onClick={(e) => e.stopPropagation()}>
+              <CommentsButton
+                count={r.comment_count}
+                label={t("concerns.commentsTitle")}
+                onClick={() => setCommentsRow(r)}
+              />
+              <ActionMenu label={`${t("concerns.actions")}: №${concernNo(r)}`} items={rowMenu(r)} />
             </div>
-            {expanded && (
-              <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                {rowActions(r)}
-              </div>
-            )}
           </div>
         );
       })}
@@ -2819,7 +2850,7 @@ export default function Concerns() {
         <Button
           size="lg"
           variant="secondary"
-          className="ml-auto"
+          className="ml-auto max-md:hidden"
           loading={exporting}
           disabled={isLoading || sorted.length === 0}
           icon={!exporting ? <FileSpreadsheet size={14} /> : null}
@@ -2837,6 +2868,7 @@ export default function Concerns() {
           <Button
             size="lg"
             variant="secondary"
+            className="max-md:hidden"
             loading={deckBusy}
             icon={!deckBusy ? <Presentation size={14} /> : null}
             onClick={() => { setDeckErr(""); setDeckAsk(true); }}
@@ -2851,6 +2883,9 @@ export default function Concerns() {
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
           pluralised ("1 day" / "3 days"; invariant in uz, abbreviated in ru)
           and accent colours come from theme-aware --kpi-* variables. */}
+      {!leaderPhone && (
+      <>
+      <p className="md:hidden text-xs mb-1.5" style={{ color: "var(--text-3)" }}>{P.insightScope}</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         {/* 1 ─ longest-running unresolved problem */}
         <InsightCard icon={Hourglass} tint="#ef4444" label={t("concerns.kpiLongestOpen")}>
@@ -2888,6 +2923,8 @@ export default function Concerns() {
           )}
         </InsightCard>
       </div>
+      </>
+      )}
 
       {/* Page view tabs — register vs chart board. Filtering lives in the ONE
           page-level bar above; only the text search follows the view (on the
@@ -2896,8 +2933,31 @@ export default function Concerns() {
         <SegmentedToggle
           value={view}
           onChange={setView}
+          size={phone ? "lg" : "md"}
           options={[["list", t("concerns.viewList")], ["analytics", t("concerns.viewAnalytics")]]}
         />
+        {/* A phone keeps the filter row for the period, the filters and their
+            chips; the reports (Excel, the deck) sit behind this ⋮ on the view
+            row, where a 320px screen has room for it (audit F3b). */}
+        {phone && (
+          <div className="ml-auto">
+            <ActionMenu
+              label={t("concerns.actions")}
+              items={[
+                {
+                  key: "excel", icon: FileSpreadsheet, label: t("concerns.export"),
+                  disabled: exporting || isLoading || sorted.length === 0,
+                  onSelect: exportExcel,
+                },
+                pageAdmin && {
+                  key: "deck", icon: Presentation, label: t("concerns.deck.btn"),
+                  disabled: deckBusy,
+                  onSelect: () => { setDeckErr(""); setDeckAsk(true); },
+                },
+              ]}
+            />
+          </div>
+        )}
         {view === "analytics" && (
           <>
             <div className="flex-1" />
@@ -3104,6 +3164,7 @@ export default function Concerns() {
         wrap
         mobile={mobileList}
         mobileCards
+        mobileUntil="md"
         right={
           <div className="flex items-center gap-2">
             {/* "My level only" — chain roles narrow the table to the concerns
@@ -3116,7 +3177,7 @@ export default function Concerns() {
                 options={[[false, t("general.all")], [true, t("concerns.myLevelOnly")]]}
               />
             )}
-            <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            <span className="text-[11px] max-md:text-xs tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
               {filtered.length}
             </span>
           </div>
@@ -3136,7 +3197,7 @@ export default function Concerns() {
             {!readOnly && (
               <Button
                 size="lg"
-                className="flex-1 sm:flex-none whitespace-nowrap"
+                className="flex-1 sm:flex-none whitespace-nowrap max-md:min-h-[44px]"
                 icon={<Plus size={14} />}
                 onClick={openCreate}
               >
@@ -3147,7 +3208,7 @@ export default function Concerns() {
                 the stacked cards, and a picker over a table nobody can see is a
                 control with no effect. */}
             <ColumnsPicker
-              className="ml-auto hidden sm:block"
+              className="ml-auto hidden md:block"
               columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
               order={colCfg.order}
               hidden={colCfg.hidden}

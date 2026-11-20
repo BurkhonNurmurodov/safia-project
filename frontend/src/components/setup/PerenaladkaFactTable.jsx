@@ -449,6 +449,9 @@ export default function PerenaladkaFactTable({
   title,
   sort,
   onSort,
+  // The card's subtitle: left out = the «type the minutes — saved on Enter…»
+  // hint; `null` = none (a phone, which has no Enter — /idle-cell, 2026-11-20).
+  subtitle,
 }) {
   const qc = useQueryClient();
   const { lang } = useLang();
@@ -733,7 +736,7 @@ export default function PerenaladkaFactTable({
       <TableCard
         icon={icon}
         title={title || T.secFact}
-        subtitle={T.autosave}
+        subtitle={subtitle === undefined ? T.autosave : subtitle || undefined}
         right={
           <div className="flex items-center gap-3 flex-wrap justify-end">
             {!isLoading && rows.length > 0 && (

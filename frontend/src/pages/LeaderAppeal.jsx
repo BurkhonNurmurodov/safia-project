@@ -23,6 +23,10 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtDuration } from "../utils/formatters";
 import api from "../utils/api";
+import useLeaderPhone from "../hooks/useLeaderPhone";
+import useIsMobile from "../hooks/useIsMobile";
+import { useTaskCatalog, taskTitle } from "../components/leaders/appealTask";
+import { shortDate } from "../components/leaders/natijaText";
 
 /**
  * One appeal's CHAT — `/leaders/appeal/:kind/:id` (kind = dispute | late), and
@@ -303,7 +307,7 @@ function StateChip({ status, late, T }) {
   const st = STATE[status] || STATE.cancelled;
   const { color, Icon } = st;
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold flex-shrink-0"
+    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] max-md:text-[12px] font-semibold flex-shrink-0"
       style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color }}>
       <Icon size={12} />{T[(late && st.lateKey) || st.key]}
     </span>
@@ -347,7 +351,7 @@ function ProofTile({ render, caption, big, T, onZoom }) {
         )}
       </div>
       {caption && (
-        <figcaption className={`mt-1.5 flex items-center gap-1.5 min-w-0 ${big ? "text-[12px]" : "text-[11px]"}`}
+        <figcaption className={`mt-1.5 flex items-center gap-1.5 min-w-0 ${big ? "text-[12px]" : "text-[11px] max-md:text-[12px]"}`}
           style={{ color: "var(--text-2)" }}>
           <caption.Icon size={big ? 13 : 12} className="flex-shrink-0" style={{ color: caption.tone }} />
           <span className="truncate">{caption.text}</span>
@@ -414,7 +418,7 @@ function LatePhotos({ item, T, onZoom }) {
 function Fact({ label, value, tone }) {
   return (
     <div className="min-w-0">
-      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="text-[11px] max-md:text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</div>
       <div className="mt-0.5 text-[14px] font-semibold tabular-nums" style={{ color: tone || "var(--text-1)" }}>{value}</div>
     </div>
   );
@@ -447,16 +451,29 @@ const roleLabelFor = (T) => (role) =>
  *  the PERSON, which is what a reader scanning several appeals tells apart.
  *  `idRef` marks the name block: once it scrolls away, the app header takes
  *  over naming the case (see AppealView). */
-function Header({ T, item, late, onBack, lang, tl, idRef, turn, onToRuling, report }) {
+function Header({ T, item, late, onBack, lang, tl, idRef, turn, onToRuling, report, own = false, taskName = "" }) {
   const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]";
   return (
     <Card>
       <div className="px-3 sm:px-6 pt-2 pb-4">
         <button type="button" onClick={onBack}
-          className={`-ml-1.5 mb-1 inline-flex items-center gap-0.5 h-9 pl-0.5 pr-2.5 rounded-lg text-[13px] font-semibold transition-colors hover:bg-[var(--hover-bg)] ${focus}`}
+          className={`-ml-1.5 mb-1 inline-flex items-center gap-0.5 h-9 max-md:h-11 pl-0.5 pr-2.5 rounded-lg text-[13px] font-semibold transition-colors hover:bg-[var(--hover-bg)] ${focus}`}
           style={{ color: "var(--text-2)" }}>
           <ChevronLeft size={18} />{T.back}
         </button>
+        {/* The leader's own case on their phone (2026-11-20): the TASK is the
+            title — they know whose appeal it is, it is theirs — and the day
+            under it; no brigadir, no shift, no second task box. */}
+        {own ? (
+          <div ref={idRef}>
+            <h2 className="text-lg font-semibold leading-snug break-words" style={{ color: "var(--text-1)" }}>
+              {taskName || T.task}
+            </h2>
+            <p className="mt-0.5 text-[13px] leading-snug tabular-nums" style={{ color: "var(--text-3)" }}>
+              {shortDate(item.date, lang)}
+            </p>
+          </div>
+        ) : (
         <div ref={idRef}>
           <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
             {tl(item.leader) || "—"}
@@ -466,17 +483,20 @@ function Header({ T, item, late, onBack, lang, tl, idRef, turn, onToRuling, repo
             {item.shift ? ` · ${T[`shift${item.shift}`] || ""}` : ""}
           </p>
         </div>
+        )}
         {item.status && (
           <div className="mt-2.5"><StateChip status={item.status} late={late} T={T} /></div>
         )}
+        {!own && (
         <div className="mt-3 flex items-start gap-2.5 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
           <span className="text-[12px] font-bold tabular-nums flex-shrink-0 mt-[2px]" style={{ color: "var(--text-3)" }}>
             №{item.taskId}
           </span>
           <span className="text-[14px] font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
-            {pick(item.taskName, lang) || T.task}
+            {taskName || T.task}
           </span>
         </div>
+        )}
         {turn && (
           <button type="button" onClick={onToRuling}
             className={`mt-3 w-full flex items-center gap-3 rounded-xl px-3 py-2.5 min-h-[52px] text-left transition-[filter] hover:brightness-110 ${focus}`}
@@ -529,6 +549,9 @@ function AppealView({ thread, path, id, onCompact }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
+  const leaderPhone = useLeaderPhone();
+  const phone = useIsMobile(768);
+  const cat = useTaskCatalog();
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast({ position: "bottom" });
@@ -580,7 +603,8 @@ function AppealView({ thread, path, id, onCompact }) {
 
   const back = () => {
     if ((window.history.state?.idx ?? 0) > 0) nav(-1);
-    else nav(`/leaders?tab=${late ? "lateproof" : "disputes"}`);
+    // A leader's phone keeps its appeals on «Natijam» («Bahslar»).
+    else nav(leaderPhone ? "/leaders?tab=monitor" : `/leaders?tab=${late ? "lateproof" : "disputes"}`);
   };
 
   const settle = (msg) => {
@@ -605,10 +629,17 @@ function AppealView({ thread, path, id, onCompact }) {
   });
 
   const it = data?.item;
-  const compact = useMemo(() => (it ? {
+  // The leader's own case, read on their phone (not a chat an admin brought
+  // them into): named by its task, never by their own name.
+  const own = leaderPhone && !!it && !data?.invited;
+  const tName = it ? taskTitle(it, lang, cat) : "";
+  const compact = useMemo(() => (it ? (own ? {
+    title: tName || T.titleDispute,
+    subtitle: shortDate(it.date, lang),
+  } : {
     title: twoWords(tl(it.leader)) || T.titleDispute,
-    subtitle: [`№${it.taskId}`, pick(it.taskName, lang), day(it.date).slice(0, 5)].filter(Boolean).join(" · "),
-  } : null), [it, tl, lang, T]);
+    subtitle: [`№${it.taskId}`, tName, day(it.date).slice(0, 5)].filter(Boolean).join(" · "),
+  }) : null), [it, tl, lang, T, own, tName]);
   useCompactTitle(idRef, compact, onCompact, !!it);
 
   // The «your turn» row's jump: the ruling sits at the end of the discussion,
@@ -721,7 +752,8 @@ function AppealView({ thread, path, id, onCompact }) {
     <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
       {/* 1 · The case. */}
       <Header T={T} item={item} late={late} onBack={back} lang={lang} tl={tl}
-        idRef={idRef} turn={canRule} onToRuling={toRuling} report={report} />
+        idRef={idRef} turn={canRule} onToRuling={toRuling} report={report}
+        own={own} taskName={tName} />
 
       {/* 2 · The evidence. */}
       <Card>
@@ -754,11 +786,12 @@ function AppealView({ thread, path, id, onCompact }) {
 
       {/* 3 · The chat — and 4 · the ruling, at its end, above the composer. */}
       <Card>
-        <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={T.chatHint}
+        {/* Who reads the chat is a note — not on a phone. */}
+        <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={phone ? undefined : T.chatHint}
           // Beside the title from sm; on a phone the facts right above already
           // say how late it was, and this chip only wrapped under the title.
           right={late && item.lateMin != null ? (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] max-md:text-[12px] font-semibold"
               style={{ background: hexA(C_WAIT, 0.12), color: C_WAIT }}>
               <Timer size={11} />{lateText(item.lateMin)}
             </span>
@@ -847,6 +880,8 @@ function NewObjection({ uid, taskId, onCompact }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
+  const leaderPhone = useLeaderPhone();
+  const phone = useIsMobile(768);
   const nav = useNavigate();
   const qc = useQueryClient();
   const kinds = useKinds(T, false);
@@ -866,10 +901,14 @@ function NewObjection({ uid, taskId, onCompact }) {
   };
 
   const task = (rep?.tasks || []).find((t) => Number(t.id) === Number(taskId));
-  const compact = useMemo(() => (rep && task ? {
+  const own = leaderPhone && rep?.viewerRole === "leader";
+  const compact = useMemo(() => (rep && task ? (own ? {
+    title: pick(task.name, lang) || T.titleNew,
+    subtitle: shortDate(rep.date, lang),
+  } : {
     title: twoWords(tl(rep.leader)) || T.titleNew,
     subtitle: [`№${task.id}`, pick(task.name, lang), day(rep.date).slice(0, 5)].filter(Boolean).join(" · "),
-  } : null), [rep, task, tl, lang, T]);
+  }) : null), [rep, task, tl, lang, T, own]);
   useCompactTitle(idRef, compact, onCompact, !!(rep && task));
 
   if (isLoading) {
@@ -909,9 +948,15 @@ function NewObjection({ uid, taskId, onCompact }) {
     taskId: task.id, taskName: task.name, status: null,
   };
 
+  // On a phone the objection's TEXT BOX comes first (2026-11-20): the chat card
+  // is drawn right under the case, the evidence under it — the reader came to
+  // write, and the photos and the reason are one scroll away, not a wall to
+  // read before the box. Flex `order`, so the desktop order is untouched.
   return (
-    <div className="space-y-3 mx-auto" style={{ maxWidth: 760 }}>
-      <Header T={T} item={item} late={false} onBack={back} lang={lang} tl={tl} idRef={idRef} />
+    <div className="flex flex-col gap-3 mx-auto" style={{ maxWidth: 760 }}>
+      <Header T={T} item={item} late={false} onBack={back} lang={lang} tl={tl} idRef={idRef}
+        own={own} taskName={pick(task.name, lang)} />
+      <div className="max-md:order-2">
       <Card>
         <SectionHead size="lg" icon={Images} title={T.photos}
           subtitle={(photos.length === 1 ? T.photosOne : T.photosMany).replace("{n}", photos.length)} />
@@ -923,8 +968,13 @@ function NewObjection({ uid, taskId, onCompact }) {
             ruling={against === "admin" ? { by: task.admin_by, at: task.admin_at } : null} />
         </div>
       </Card>
+      </div>
+      <div className="max-md:order-1">
       <Card>
-        <SectionHead size="lg" icon={MessageCircle} title={T.chat} subtitle={allowed ? T.newIntro : T.newNot} />
+        {/* How an objection travels is a note — not on a phone; that it cannot
+            be raised at all is the state, and stays. */}
+        <SectionHead size="lg" icon={MessageCircle} title={T.chat}
+          subtitle={allowed ? (phone ? undefined : T.newIntro) : T.newNot} />
         {allowed && (
           <CommentsThread
             layout="page"
@@ -950,6 +1000,7 @@ function NewObjection({ uid, taskId, onCompact }) {
           />
         )}
       </Card>
+      </div>
       <Lightbox src={zoom} onClose={() => setZoom("")} />
     </div>
   );
