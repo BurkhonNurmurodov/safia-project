@@ -380,11 +380,13 @@ should be able to go to the page of that metric to see in detail info». Every
 figure of the report is one another page already prints, so each row is now a
 LINK to that page — in every table, not only Key figures.
 
-- **What is pressed.** The figure's NAME (the platform's pressable look,
-  `.cell-link`) opens the page on the PICKED month; each month's NUMBER opens it
-  on its own column's month — October's 96 opens October. A number fills its
-  cell as the target and shows itself on hover only, so the table still reads
-  as figures. A «—» opens nothing; while «Tartib» is armed nothing navigates.
+- **What is pressed.** The figure's NAME opens the page on the PICKED month;
+  each month's NUMBER opens it on its own column's month — October's 96 opens
+  October. **A name is NOT underlined** (the operator, the same day: «dont
+  need underlines for metrics names» — it wore the dotted `.cell-link` look
+  for an hour): name and number are plain until the pointer is on them, then
+  brand-coloured (a number fills its cell as the target), so the table still
+  reads as figures. A «—» opens nothing; while «Tartib» is armed nothing navigates.
   The hint says where: «"Plan Bajarish" sahifasida ochish — Oktyabr 2026»
   (`T.openOn`). The downloaded document is unchanged.
 - **Which page** — `components/reports/figureLinks.js` (`TARGETS`, keyed

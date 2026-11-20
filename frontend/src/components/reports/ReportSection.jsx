@@ -24,10 +24,12 @@
 // name, and each month's number — the name on the picked month, a number on
 // its own column's month, so October's figure opens October. `link` decides
 // (`figureLinks.js`): a figure no page prints, a «—», and a page the viewer
-// may not open stay plain text. The name wears the platform's pressable look
-// (`.cell-link`, visible without a hover); a number fills its cell as the
-// target and shows itself on hover only, so the table still reads as figures.
-// While the rows are being arranged nothing navigates.
+// may not open stay plain text. NEITHER is underlined at rest (the operator,
+// the same day: «dont need underlines for metrics names» — the names wore the
+// dotted `.cell-link` look for an hour): a link shows itself under the pointer
+// — the name turns brand-coloured, a number too, filling its cell as the
+// target — so the table still reads as a report. While the rows are being
+// arranged nothing navigates.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpDown, Check, GripVertical, RotateCcw } from "lucide-react";
@@ -89,6 +91,10 @@ function MonthHead({ m, T, t }) {
 
 const sameKeys = (a, b) => a.length === b.length && a.every((k, i) => k === b[i]);
 
+// A figure's name as a link: plain text until the pointer is on it — never
+// underlined — with the keyboard's focus ring.
+const NAME_LINK = "rounded-sm transition-colors hover:text-[var(--brand-text)] "
+  + "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]";
 // A number's link fills its cell (the cell's own padding moved onto it), so
 // the target is the cell and the row keeps its height.
 const NUM_LINK = "block -mx-3 -my-2 px-3 py-2 rounded-sm underline-offset-[3px] "
@@ -261,7 +267,7 @@ function PeriodsBlock({ block, months, T, t, caption, saved, onOrder, secKey, li
                 </button>
               )}
               {open
-                ? <Link to={open.to} className="cell-link" title={open.hint}>{name}</Link>
+                ? <Link to={open.to} className={NAME_LINK} title={open.hint}>{name}</Link>
                 : name}
             </td>
             <td className="px-3 py-2 whitespace-nowrap text-xs" style={{ color: "var(--text-3)" }}>
