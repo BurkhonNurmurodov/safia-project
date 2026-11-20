@@ -124,7 +124,7 @@ def _units(db: Session) -> list:
     from app.routers import production
     configured = production._configured_manager_ids(db)
     return [{"id": m.id, "name": m.name, "shift": m.shift}
-            for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all()
+            for m in flow.flow_units(db).all()
             if m.id in configured]
 
 
@@ -392,9 +392,10 @@ def get_logistics(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
 
 @router.get("/units")
 def get_all_units(db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
-    """Every brigadir a request can be split to (not archived)."""
+    """Every brigadir a request can be split to — not archived, and not in
+    another plant (`flow.flow_units`)."""
     return {"units": [{"id": m.id, "name": m.name, "shift": m.shift}
-                      for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all()]}
+                      for m in flow.flow_units(db).all()]}
 
 
 class RequestBody(BaseModel):

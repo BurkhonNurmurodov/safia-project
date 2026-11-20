@@ -155,6 +155,46 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(access(), [])
             self.assertEqual(dm.call_count, 2)           # one note each, the first time only
 
+    def test_another_plants_brigadir_is_not_served(self):
+        """20 Nov: the flow is Uchtepa's (resolved by name). A unit placed in
+        another plant (Keles) is not offered, not counted and cannot be split
+        to; a unit with no plant yet stays; no Uchtepa by name → no narrowing."""
+        from app.models import Factory, ProfilePermission, RoleProfile
+        for t in ("container_request_parts", "container_requests", "profile_permissions"):
+            self.db.execute(flow.text(f"DELETE FROM {t}"))
+        self.db.execute(flow.text("UPDATE managers SET factory_id = NULL"))
+        self.db.execute(flow.text("DELETE FROM factories"))
+        self.db.commit()
+        self.assertIn(1, flow.flow_unit_ids(self.db))         # no plants at all: nothing narrowed
+        uch, kel = Factory(code="Uchtepa", name_uz="Uchtepa"), Factory(code="KELES", name_uz="Keles")
+        self.db.add_all([uch, kel])
+        self.db.flush()
+        for i, fid in ((8801, uch.id), (8802, kel.id), (8803, None)):
+            self.db.merge(Manager(id=i, name=f"Plant unit {i}", shift=1, factory_id=fid))
+        self.db.commit()
+        ids = flow.flow_unit_ids(self.db)
+        self.assertIn(8801, ids)
+        self.assertIn(8803, ids)                               # unplaced: stays
+        self.assertNotIn(8802, ids)                            # Keles: out
+        lp = RoleProfile(role="idle-owner", name="Logistics")
+        self.db.add(lp)
+        self.db.flush()
+        nk = f"idle-owner:{lp.id}"
+        self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 5}, "", "axo", "guest:1")
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as e:
+            flow.assign_request(self.db, r.id, [{"manager_id": 8802, "counts": {"yellow": 5}}],
+                                None, None, "a", "admin:1", True)
+        self.assertEqual(e.exception.code, "unit")
+        self.db.rollback()
+        self.db.execute(flow.text("DELETE FROM container_requests"))
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        self.db.execute(flow.text("DELETE FROM managers WHERE id IN (8801, 8802, 8803)"))
+        self.db.execute(flow.text("DELETE FROM factories"))
+        self.db.commit()
+
     def test_brigadir_card_and_the_bot_button(self):
         """A split request tells each brigadir who may open «Qabul» (switch on);
         «Hammasi keldi» in the bot confirms only for a holder of that unit's
@@ -1541,9 +1581,9 @@ class PlantHoursTest(unittest.TestCase):
         from app.routers import production
         dashes = {1: ({9: {"yellow": 18}, 25: {"box": 2}}, {}), 2: ({9: {"yellow": 6, "round": 3}}, {})}
         db = m.MagicMock()
-        db.query.return_value.filter.return_value.all.return_value = [(1,), (2,), (3,)]
         flow._hours_cache.clear()
-        with m.patch.object(production, "_configured_manager_ids", return_value={1, 2}), \
+        with m.patch.object(flow, "flow_unit_ids", return_value=[1, 2, 3]), \
+             m.patch.object(production, "_configured_manager_ids", return_value={1, 2}), \
              m.patch.object(production, "_build_dashboard", side_effect=lambda db, mid, day: mid), \
              m.patch.object(flow.hourly_containers, "unit_hours", side_effect=lambda mid: dashes[mid]) as uh:
             got = flow.plant_hours(db, DAY)

@@ -858,6 +858,31 @@ other seven bugs» (the eighth, the day dispatch round at 06:00, was fixed by
    whole next production day plus requests made ahead for tomorrow: 23,333
    dispatch containers at 00:09.
 
+### The flow is Uchtepa's — another plant's brigadirs are left out (2026-11-20)
+
+The operator: «remove Axmedova Munisa from the container page — she is in
+another factory, and we are in another factory». Her «Цех» sits in Keles,
+which has its own AXO; these containers move inside Uchtepa.
+
+- **`container_flow.flow_units` is THE list of brigadirs the flow serves**:
+  not archived, and not placed in another plant. Every place that used to
+  read «every non-archived unit» goes through it — logistics' split picker
+  and the extras' unit list (`GET /units`), the configured units, the
+  readiness check, the hours behind «Yangi so'rov»'s default and the
+  brigadirs' limits (`units_hours`), and the day's need (`day_need`).
+- **The split refuses such a unit** (`assign_request` → `unit`), so a tab
+  still listing her cannot send her containers; an archived unit is refused
+  the same way.
+- **The plant is resolved by NAME** — `FLOW_FACTORY = "Uchtepa"` against
+  `code` and the four name columns, the weekly deck's rule (ids differ
+  between a checkout and production).
+- **A unit with no plant set stays**, as everywhere in `factory_scope` — an
+  unplaced row is never silently dropped. If a brigadir from another plant
+  still shows, their unit has no plant: set it on «Tashkiliy tuzilma» /
+  the units register. No plant named «Uchtepa» at all → nothing is narrowed.
+- Past requests and their parts keep their names; only what is offered and
+  counted from now on changes.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

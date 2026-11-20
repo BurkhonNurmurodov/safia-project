@@ -235,7 +235,7 @@ def readiness(db: Session, day: date) -> list:
     from app.routers import production
     out = []
     configured = production._configured_manager_ids(db)
-    for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
+    for m in flow_units(db).all():
         if m.id not in configured:
             continue
         try:
@@ -267,6 +267,42 @@ LOGISTICS_CAP = "page.view.container-logistics"
 # key and name over it — and the other one finds it taken. A request no
 # longer waits on one person who is off shift.
 ALL_KEY = "*"
+
+
+# The flow is ONE plant's (2026-11-20, the operator: «remove Axmedova Munisa
+# from the container page — she is in another factory»). Keles has its own AXO
+# and its own floor; these containers move inside Uchtepa. Resolved by NAME,
+# never by id (ids differ between a checkout and production — the weekly
+# deck's `DECK_FACTORY` rule). A unit placed in ANOTHER plant is never offered,
+# split to, or counted in a need; a unit no plant was set for yet stays — as
+# everywhere in `factory_scope`, an unplaced row is never silently dropped. No
+# plant by that name → nothing is narrowed.
+FLOW_FACTORY = "Uchtepa"
+
+
+def flow_factory_id(db: Session) -> Optional[int]:
+    from app.models import Factory
+    wanted = FLOW_FACTORY.casefold()
+    for f in db.query(Factory).filter(Factory.archived.is_(False)).all():
+        if any((n or "").strip().casefold() == wanted
+               for n in (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en)):
+            return f.id
+    return None
+
+
+def flow_units(db: Session):
+    """THE brigadirs the flow serves: not archived, and not in another plant
+    (a query, ordered by name — callers add `.all()` or read ids)."""
+    from sqlalchemy import or_
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    fid = flow_factory_id(db)
+    if fid is not None:
+        q = q.filter(or_(Manager.factory_id == fid, Manager.factory_id.is_(None)))
+    return q.order_by(Manager.name)
+
+
+def flow_unit_ids(db: Session) -> list:
+    return [m.id for m in flow_units(db).with_entities(Manager.id).all()]
 
 
 def profile_name(db: Session, key: str) -> Optional[str]:
@@ -368,12 +404,15 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
         raise FlowError("not_yours")
     given: dict = {}
     clean = []
+    served = None
     for p in parts or []:
         mid = int(p.get("manager_id") or 0)
         c = _clean_counts(p.get("counts"))
         if not c:
             continue
-        if db.get(Manager, mid) is None:
+        if served is None:
+            served = set(flow_unit_ids(db))
+        if mid not in served:   # no such unit, archived, or another plant's
             raise FlowError("unit")
         for k, n in c.items():
             if k not in r.lines:
@@ -801,7 +840,7 @@ def day_need(db: Session, d_from: date, d_to: date) -> dict:
     the part the hours can place."""
     from app.services import pp_containers, zagruzka_source
     keys = pp_containers.keys()
-    ids = [mid for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all()]
+    ids = flow_unit_ids(db)
     out: dict = {}
     if not ids:
         return out
@@ -1894,7 +1933,7 @@ def units_hours(db: Session, day: date) -> dict:
     configured = production._configured_manager_ids(db)
     out: dict = {}
     by_cell: dict = {}
-    for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all():
+    for mid in flow_unit_ids(db):
         if mid not in configured:
             continue
         try:
