@@ -335,6 +335,44 @@ rule — every section reads the whole plant). `services/reports.py` folds,
   (the document is tables), and any figure the platform does not already
   print.
 
+## «Hisobotlar» — «ARC xizmat so'rovlari», the requests filed in the month (2026-11-20)
+
+The operator, on the Executive summary: «we should add the metric of the
+number of ARC service requests». One row, `arc.filed`, the last of «Boshqaruv
+xulosasi» and of «Asosiy ko'rsatkichlar» (a reader's saved order puts a new
+figure at the end anyway); a count («ta»), a month TOTAL — its change is
+withheld while the picked month runs (`CUMULATIVE`) — and no colour: more
+requests is a fact, not a verdict.
+
+- **It is the /arc page's own count**, read through that page's filter set
+  (`routers/reports._arc_by_month` → `arc_legacy._apply_filters` over `_R()`):
+  the number «Barcha so'rovlar» prints above its table with the month picked.
+  Both apps' tickets, by the day they were FILED (`created_at`, Tashkent
+  days; the running month to today), whatever their status — a cancelled one
+  was still filed — the tickets the API no longer returns left out, as on the
+  page.
+- **Scope.** IT's register names no plant, shift or brigadir; a ticket reaches
+  one only through the cell its division names. So the whole-plant report
+  counts the WHOLE register, cell-less tickets included; a narrowed one is
+  the page's own org narrowing — `shift`, and the units of the plant or the
+  brigadir pick (`scoped_manager_ids`, the viewer's lock applied) as its
+  brigadir pick — the tickets on those units' cells, so a cell-less ticket is
+  in no narrowed count. Every unit of the scope, not only the загрузка's (a
+  washing cell's tickets count).
+- «—» where the mirror holds nothing at all (never 0); a read that fails costs
+  this figure, never the report. `reports.BUILT_ONLY` carries `arc` — built,
+  lifted, never a section.
+- **It opens `/arc`** on the month («Barcha so'rovlar», `arcLink`, the page's
+  new `useUrlScope` reader: span, shift, brigadirs; every other filter
+  cleared, the table / charts mode left alone). The link carries the units
+  the count was narrowed to — the payload's `scope.arc_managers`, null on the
+  whole plant — because /arc has no plant filter; the page drops the ones with
+  no ticket, which changes no count.
+- A month's part gained `arc`, so `FORMAT` is 2: the months stored before are
+  not read, and the first open after the deploy builds them.
+- Tests: `tests/test_reports_arc.py` (the fold; and, with a Postgres, the
+  count by period, shift, units, the running month, an empty mirror).
+
 ## «Hisobotlar» — a figure opens the page it is read from (2026-11-20)
 
 The operator, on «Asosiy ko'rsatkichlar»: «when these figures are clicked, we
@@ -357,7 +395,8 @@ LINK to that page — in every table, not only Key figures.
   `/leaders-kpi`, «Qo'nimsizlik» tab; waiting minutes, % of worked time, per
   day → `/downtime` «Tahlil» (the stopped half); cost of waiting → `/downtime`
   «Xarajat»; complaints → `/quality` «Soch bilan», the closure rate →
-  `/quality` «Sochsiz»; concerns → `/concerns`; on-time → `/ontime`; «Faol
+  `/quality` «Sochsiz»; concerns → `/concerns`; on-time → `/ontime`; ARC
+  requests → `/arc`; «Faol
   yacheykalar» → `/cells`; shift managers · brigadirs · leaders →
   `/panel/orgchart` (the last four are registers with no period, opened as
   they stand today — their hint names no month).

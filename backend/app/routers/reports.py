@@ -165,6 +165,45 @@ def _ontime_by_month(db: Session, months: list[dict]) -> dict:
     return out
 
 
+def _arc_by_month(db: Session, months: list[dict], shift, scoped) -> dict:
+    """Per month: how many ARC service requests were FILED in it — the /arc
+    page's own count for that period (the operator, 2026-11-20). Counted
+    through that page's filter set (`routers/arc_legacy._apply_filters` over
+    its register `_R()`), so it is the number «Barchasi» shows above its table
+    with the month picked: both apps' tickets, by the day they were created,
+    whatever their status (a cancelled one was still filed), IT's test
+    categories and the tickets the API no longer returns left out.
+
+    IT's register names no plant, shift or brigadir — a ticket reaches one only
+    through the cell its division names. So the whole-plant report counts the
+    WHOLE register, cell-less tickets included; a narrowed one is the page's
+    own org narrowing: `shift`, and `scoped` (the units of the plant / the
+    brigadir pick, the viewer's lock applied) as its brigadir pick — the
+    tickets on those units' cells.
+
+    None where the mirror holds nothing at all (not connected) — «no answer»,
+    never a 0. A read that fails costs this figure, never the report."""
+    from sqlalchemy import func
+
+    from app.routers import arc_legacy as arc
+    out: dict = {}
+    for m0 in months:
+        try:
+            with db.begin_nested():
+                R, D = arc._R(), arc._derived()
+                f = {"date_from": m0["from"].isoformat(), "date_to": m0["to"].isoformat(),
+                     "shift": [str(shift)] if shift else [],
+                     "manager": [] if scoped is None else [str(i) for i in sorted(scoped)]}
+                n = int(arc._apply_filters(db.query(func.count(R.id)), f, D, db).scalar() or 0)
+                if not n and db.query(R.id).limit(1).first() is None:
+                    n = None
+                out[m0["ym"]] = n
+        except Exception:  # noqa: BLE001
+            log.exception("reports: the ARC request count for %s failed", m0["ym"])
+            out[m0["ym"]] = None
+    return out
+
+
 def _idle_share_by_month(db: Session, payload: dict, months: list[dict],
                          ids: list[int]) -> dict:
     """Per month: idle time as a share of worked time — `idle_share.build`,
@@ -302,8 +341,9 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
     `brigadir_board`'s heatmap twins, `/api/workers/headcount` itself,
     `plan_fulfillment.build`, `routers/downtime._downtime`, `idle_share.build`,
     `ojidaniya_cost.build`, the Quality register as the shift dashboard reads
-    it, the /concerns register as the leaders' KPI counts it, and
-    `turnover.month_payload`. Nothing is measured in this file or in
+    it, the /concerns register as the leaders' KPI counts it,
+    `turnover.month_payload`, and the /arc register through its own filter
+    set. Nothing is measured in this file or in
     `services/reports.py`, which only folds what is handed to it.
 
     A month is built ON ITS OWN (2026-11-05), so a finished one is computed
@@ -337,6 +377,7 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
     idle_pct = {m0["ym"]: None for m0 in months}
     vkinds: dict = {}
     ontime_pct: dict = {}
+    arc_n: dict = {}
     # None = not this viewer's section (`_sees_cost`), and `services/reports`
     # then leaves «Xarajat» out of the payload; {} per month = theirs, empty.
     cost: Optional[dict] = {m0["ym"]: {} for m0 in months} if _sees_cost(db, payload) else None
@@ -364,6 +405,10 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
             with clock("ontime"):
                 ontime_pct = _ontime_by_month(db, months)
         verifix_month_kinds.want([m0["ym"] for m0 in months])
+        # ARC service requests filed in the month — the /arc register's own
+        # count, narrowed the way that page narrows (`_arc_by_month`).
+        with clock("arc"):
+            arc_n = _arc_by_month(db, months, shift, scoped)
         with clock("concerns"):
             xav = bb.concerns(db, ids, months)
         # The complaint COUNT includes hair (the operator, 2026-11-02: «the
@@ -411,7 +456,8 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
     return {
         "ym": mo["ym"], "built_at": built_at, "timings": timings,
         "plan": plan_tot, "eff": eff, "sload": sload, "att": att, "vkinds": vkinds,
-        "ontime": ontime_pct, "turnover": turn, "idle": idle, "idle_share": idle_pct,
+        "ontime": ontime_pct, "arc": arc_n, "turnover": turn, "idle": idle,
+        "idle_share": idle_pct,
         "cost": cost, "qual": qual, "qual_n": qual_n, "xav": xav, "vfx_scope": vfx_scope,
     }
 
@@ -419,7 +465,7 @@ def _month_part(db: Session, payload: dict, mo: dict, factory, shift, mids: list
 # What `compose` reads per UNIT (unit → {field: [one figure per month]}) and
 # per MONTH ({ym: …}) — how two months built apart become one input.
 _BY_UNIT = ("eff", "sload", "att", "xav", "qual", "qual_n")
-_BY_MONTH = ("plan", "idle", "idle_share", "vkinds", "ontime", "turnover", "vfx_scope")
+_BY_MONTH = ("plan", "idle", "idle_share", "vkinds", "ontime", "arc", "turnover", "vfx_scope")
 
 
 def _merge(parts: list[dict]) -> dict:
@@ -478,7 +524,8 @@ def _merge(parts: list[dict]) -> dict:
 # when a release renames or re-shapes what `_month_part` returns. (A stored
 # part `compose` fails on is dropped and built in the request — `_report` — so
 # a forgotten bump costs one slow open, never a broken page.)
-FORMAT = 1
+# 2 (2026-11-20): a part carries `arc`, the month's ARC request count.
+FORMAT = 2
 _FINISHED_DAYS = 45
 _RUNNING_DAYS = 3            # its key carries the day: a row is of use for one
 _FINISHED = KeptAnswers("reports-month", ttl=1800, stale=_FINISHED_DAYS * 86400, max_keys=48,
@@ -569,6 +616,11 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
         came.append(src)
 
     ids = {u.id for u in units}
+    # The units the ARC count was narrowed to (`_arc_by_month`): None while the
+    # report reads the whole plant. The page's link to /arc carries them, so
+    # the register it opens counts the tickets the figure counted — IT's
+    # register knows no plant, only the units whose cells its tickets name.
+    scoped = scoped_manager_ids(db, payload, factory, mids)
 
     def composed() -> dict:
         return reports.compose({
@@ -576,7 +628,8 @@ def _report(db: Session, payload: dict, m: date, factory, shift, mids: list[int]
             "unit_ids": ids,
             **_merge(parts),
             "scope": {"factory": factory, "shift": shift, "managers": mids,
-                      "units": len(units)},
+                      "units": len(units),
+                      "arc_managers": None if scoped is None else sorted(scoped)},
         })
 
     try:

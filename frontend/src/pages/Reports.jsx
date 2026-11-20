@@ -135,7 +135,9 @@ export default function Reports() {
   const brigRaw = useMemo(() => brig
     .map((id) => (data?.options?.brigadirs || []).find((b) => b.id === id)?.name)
     .filter(Boolean), [brig, data]);
-  const figureLink = useFigureLinks({ shift, units: brig, unitNames: brigRaw });
+  const figureLink = useFigureLinks({
+    shift, units: brig, unitNames: brigRaw, arcUnits: data?.scope?.arc_managers,
+  });
 
   const shifts = data?.options?.shifts?.length ? data.options.shifts : [1, 2];
   const sections = [

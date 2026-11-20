@@ -34,6 +34,10 @@ section:
 * **Xavotirlar** — the /concerns register through `brigadir_board.concerns`:
   of the concerns filed WITH the unit in the period, the share resolved; one
   handed above the brigadir is out of the count.
+* **ARC** — how many service requests were filed in the month: the /arc
+  register's own count for that period, through its own filter set
+  (`routers/reports._arc_by_month`). One figure, in the summary and Key
+  figures only.
 
 **A figure the platform has no source for is NOT in this report.** TopSim's
 financial half — equity, WACC, NOPAT, EVA, the cash-flow statement, the balance
@@ -81,7 +85,7 @@ SECTIONS = ("summary", "production", "personnel", "figures")
 # «we dont need section called Cost of Waiting, Quality and Concerns»; and
 # 2026-11-03 the Idle Time one too): their headline figures still reach the
 # Executive summary and Key figures, which lift rows out of them.
-BUILT_ONLY = ("idle", "cost", "quality", "concerns")
+BUILT_ONLY = ("idle", "cost", "quality", "concerns", "arc")
 
 # The headline rows that are a TOTAL over the period rather than a rate. A
 # month still running holds fewer days than the one before it, so the change
@@ -100,6 +104,7 @@ CUMULATIVE = {
     "idle.idleMin", "idle.idlePersonMin", "idle.workedMin",
     "cost.costSum", "quality.complaints", "quality.actionable", "quality.resolved",
     "concerns.filed", "concerns.counted", "concerns.resolved",
+    "arc.filed",
 }
 
 # What a management report of this shape usually also carries and this platform
@@ -393,6 +398,18 @@ def _concerns(inp: dict, n: int) -> list[dict]:
     return blocks
 
 
+def _arc(inp: dict, n: int) -> list[dict]:
+    """ARC service requests FILED in the month (the operator, 2026-11-20) —
+    the /arc register's own count for the period, in the report's scope
+    (`routers/reports._arc_by_month`). One figure, lifted into the Executive
+    summary and Key figures; never a section of its own. A month the mirror
+    cannot answer for is «—»."""
+    arc = inp.get("arc") or {}
+    return [periods_block("total", [
+        prow("filed", "int", [arc.get(y) for y in inp["yms"]], bold=True),
+    ])]
+
+
 def _headline_row(section: str, key: str, r: dict, partial: bool) -> dict:
     """A figure lifted into the summary or the key-figures table, with its
     change against the month before — withheld on a TOTAL while the picked
@@ -435,6 +452,7 @@ def _figures(inp: dict, n: int, built: dict) -> list[dict]:
         ("quality", "total", "complaints"),
         ("quality", "total", "closure"),
         ("concerns", "total", "closure"),
+        ("arc", "total", "filed"),
     ]
     rows = []
     for section, block, key in want:
@@ -466,7 +484,10 @@ def _summary(inp: dict, n: int, built: dict) -> list[dict]:
                                 # How many complaints came in — the count, not
                                 # the share resolved (the operator, 2026-11-02).
                                 ("quality", "total", "complaints"),
-                                ("concerns", "total", "closure")):
+                                ("concerns", "total", "closure"),
+                                # How many ARC service requests were filed
+                                # (the operator, 2026-11-20).
+                                ("arc", "total", "filed")):
         r = val(section, block, key)
         if r:
             rows.append(_headline_row(section, key, r, inp["partial"]))
@@ -493,7 +514,7 @@ def compose(inp: dict) -> dict:
 
     `inp` carries, all already scoped and already period-bucketed by the
     router: `months` (the `months_for` list), `unit_ids`, `plan`, `eff`, `att`,
-    `turnover`, `idle`, `idle_share`, `cost`, `qual`, `xav`, `scope`. `idle` arrives through the viewer's category lock and
+    `turnover`, `idle`, `idle_share`, `cost`, `qual`, `xav`, `arc`, `scope`. `idle` arrives through the viewer's category lock and
     `cost` is None for a viewer the «Xarajat» section is not for — both the
     router's decisions; nothing here knows a role.
     """
@@ -509,6 +530,7 @@ def compose(inp: dict) -> dict:
     built["cost"] = _cost(inp, n)
     built["quality"] = _quality(inp, n)
     built["concerns"] = _concerns(inp, n)
+    built["arc"] = _arc(inp, n)
     built["summary"] = _summary(inp, n, built)
     built["figures"] = _figures(inp, n, built)
 

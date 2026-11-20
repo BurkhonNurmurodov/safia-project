@@ -23,12 +23,12 @@ import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 import {
   planLink, zagruzkaLink, attendanceLink, downtimeLink, qualityLink,
-  concernsSpanLink, leadersKpiLink, ontimeLink,
+  concernsSpanLink, leadersKpiLink, ontimeLink, arcLink,
 } from "../../utils/scopeLinks";
 
 // `page` — the access key the viewer must hold («tab:<id>» = an admin tab);
 // `label` — the page's own name, as the menu spells it; `to(scope)` — the URL.
-// `scope`: { from, to, ym, shift, units, unitNames }.
+// `scope`: { from, to, ym, shift, units, unitNames, arcUnits }.
 const PLAN = { page: "plan", label: "nav.planFulfillment", to: planLink };
 const ZAGRUZKA = { page: "zagruzka", label: "nav.zagruzka", to: zagruzkaLink };
 const ATTENDANCE = { page: "workers", label: "nav.workers", to: attendanceLink };
@@ -58,6 +58,15 @@ const CONCERNS = { page: "concerns", label: "nav.concerns", to: concernsSpanLink
 // The logistics sheet names no brigade — the figure is printed only while the
 // report reads the whole plant, so there is no scope to hand over but the span.
 const ONTIME = { page: "ontime", label: "nav.ontime", to: ontimeLink };
+// The requests FILED in the month — the register with the period set, on the
+// report's shift and on the units the server narrowed the count to
+// (`scope.arc_managers`: the brigadir picks, or every unit of the plant picked
+// — IT's register knows no plant, only the units whose cells its tickets
+// name). None while the report reads the whole plant.
+const ARC = {
+  page: "arc", label: "nav.arc",
+  to: (s) => arcLink({ from: s.from, to: s.to, shift: s.shift, units: s.arcUnits ?? s.units }),
+};
 // «Qamrov» counts what STANDS (a month's last day) — registers with no period,
 // opened as they are today; `timeless` keeps the month out of the link's hint.
 const CELLS = { page: "cells", label: "nav.cells", to: () => "/cells", timeless: true };
@@ -112,6 +121,7 @@ const TARGETS = {
   "concerns.openLeft": CONCERNS,
 
   "ontime.pct": ONTIME,
+  "arc.filed": ARC,
 
   "summary.vfxCells": CELLS,
   "summary.vfxShiftManagers": ORG,
@@ -129,9 +139,10 @@ export const targetOf = (row, secKey) =>
  * column pressed; `page` is the target's name in the reader's language, for
  * the link's «opens on …» hint, which names the month unless `timeless`.
  *
- * `scope` is the report's own narrowing: `{ shift, units, unitNames }`.
+ * `scope` is the report's own narrowing: `{ shift, units, unitNames }`, plus
+ * `arcUnits` — the units the server narrowed the ARC count to.
  */
-export function useFigureLinks({ shift, units, unitNames }) {
+export function useFigureLinks({ shift, units, unitNames, arcUnits }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const { access } = usePageAccess();
@@ -146,10 +157,10 @@ export function useFigureLinks({ shift, units, unitNames }) {
       const target = targetOf(row, secKey);
       if (!target || !month || !may(target.page)) return null;
       return {
-        to: target.to({ from: month.from, to: month.to, ym: month.ym, shift, units, unitNames }),
+        to: target.to({ from: month.from, to: month.to, ym: month.ym, shift, units, unitNames, arcUnits }),
         page: t(target.label),
         timeless: !!target.timeless,
       };
     };
-  }, [role, access, capPages, deniedPages, capTabs, shift, units, unitNames, t]);
+  }, [role, access, capPages, deniedPages, capTabs, shift, units, unitNames, arcUnits, t]);
 }

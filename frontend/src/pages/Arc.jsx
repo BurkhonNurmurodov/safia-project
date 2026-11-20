@@ -43,6 +43,8 @@ import { SkeletonBlock, SkeletonCard } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { useUrlScope } from "../hooks/useUrlScope";
+import { dayParam, idsParam, shiftParam } from "../utils/scopeLinks";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -199,6 +201,41 @@ function Fact({ label, children, full = false }) {
   );
 }
 
+// A link that opens this page on the tickets FILED over a span
+// (utils/scopeLinks.js `arcLink` — «Hisobotlar»'s «ARC xizmat so'rovlari»
+// figure, a month, 2026-11-20): the register («Barcha so'rovlar»), the span,
+// the shift and the brigadirs the figure was counted over — none named means
+// every one — and every other filter cleared, so the count above the table
+// is the figure that was pressed. The table / charts mode is left as the
+// reader had it. Read by `useUrlScope`.
+const readLinkScope = (q) => {
+  const from = dayParam(q, "from");
+  const to = dayParam(q, "to");
+  if (!from || !to || from > to) return null;
+  const shift = shiftParam(q);
+  const sups = idsParam(q, "sups");
+  return {
+    arcl_tab: "all",
+    arcl_date_from: from,
+    arcl_date_to: to,
+    arcl_shift: shift ? String(shift) : null,
+    arcl_sups: sups ? sups.map(String) : null,
+    arcl_leaders: null,
+    arcl_cell: null,
+    arcl_state: null,
+    arcl_status: null,
+    arcl_category2: null,
+    arcl_branch: null,
+    arcl_master2: null,
+    arcl_source: null,
+    arcl_urgent: null,
+    arcl_overdue: null,
+    arcl_sap: null,
+    arcl_q: null,
+    arcl_page: null,
+  };
+};
+
 export default function Arc() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -213,6 +250,8 @@ export default function Arc() {
   // like a thin one. Both bounds empty = every ticket ever filed.
   // Which VIEW is on screen — the register («all») or the same tickets read by
   // the production cell their warehouse names («cells»).
+  // Before every persisted filter below: a scope link writes them first.
+  useUrlScope(readLinkScope);
   const [tab, setTab] = usePersistentState("arcl_tab", "all");
   // «Yacheykalar bo'yicha» opens on the cells a brigadir is on («manager»);
   // «leader» reads one level down, «all» lifts the narrowing (/arc's rule).

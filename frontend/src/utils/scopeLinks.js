@@ -136,3 +136,9 @@ export const leadersKpiLink = ({ tab, month, shift, units }) =>
 // «O'z vaqtida yetkazish» over a span (the sheet names no brigade or shift).
 export const ontimeLink = ({ from, to }) =>
   `/ontime${query({ from: isoDay(from), to: isoDay(to) })}`;
+
+// «ARC» — the register («Barcha so'rovlar») over the days the tickets were
+// filed, on one shift and the brigadirs named (unit ids); IT's register knows
+// no plant.
+export const arcLink = ({ from, to, shift, units }) =>
+  `/arc${query({ from: isoDay(from), to: isoDay(to), shift, sups: units })}`;

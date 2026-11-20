@@ -66,6 +66,11 @@ tickets in the same table but «stop the old app's sync». So:
   `ProxyPhoto`, which gained `zoomLabel` (the photo is a real button) and
   `failCaption` (a large thumb says what failed). The deploy-log probe that
   confirmed `/base` (`deploy/diag_arc_files.py`) was removed on 2026-10-23.
+- **A link can open the page on the tickets FILED over a span** (2026-11-20,
+  `utils/scopeLinks.js` `arcLink`, read by `useUrlScope`): `/arc?from=…&to=…`
+  with `shift` and `sups` — «Barcha so'rovlar», that period and org scope,
+  every other filter cleared. «Hisobotlar»'s «ARC xizmat so'rovlari» figure
+  is the count that view prints (`docs/reports-and-ontime.md`).
 - The two sections below describe each app's mirror and are still accurate for
   it; where they talk about «the page», read `/arc`.
 
