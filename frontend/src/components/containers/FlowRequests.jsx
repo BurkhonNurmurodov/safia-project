@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, Ban, Building2, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Truck, Wand2,
+  Activity, AlertTriangle, ArrowRight, Ban, Building2, CalendarClock, Check, ClipboardList, Eye, EyeOff, MessageSquareText, Pencil, Plus, Sparkles, Split, Trash2, Truck, Users, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -128,6 +128,57 @@ function AreaLine({ r, t, tx }) {
   );
 }
 
+// WHO SENT IT → TO WHOM (2026-11-20, the operator: «add by who its sending to
+// who»): the AXO author, an arrow, the logistics person (or «everybody»). One
+// line — the author is cut with «…» before the addressee is.
+function FromTo({ r, t, tl, className = "" }) {
+  const from = tl(r.created_by) || "—";
+  const to = toName(t, tl, r);
+  return (
+    <span className={`inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap ${className}`}
+      title={`${t("cflow.req.fromX").replace("{x}", from)} → ${t("cflow.req.toX").replace("{x}", to)}`}>
+      <span className="truncate min-w-0 max-w-[150px]" style={{ color: "var(--text-2)" }}>{from}</span>
+      <ArrowRight size={13} className="shrink-0" aria-hidden style={{ color: "var(--text-4)" }} />
+      <span className="shrink-0 font-medium inline-flex items-center gap-1" style={{ color: "var(--text-1)" }}>
+        {r.logistics_key === ALL_KEY && <Users size={12} className="shrink-0" aria-hidden style={{ color: "var(--text-3)" }} />}
+        {to}
+      </span>
+    </span>
+  );
+}
+
+// The counts a request asks, as ONE line of compact tags — only the types it
+// asks (seven columns of «—» were most of the old row). A type split short
+// reads «given / asked» in red.
+function CountTags({ r, t }) {
+  const given = { ...(r.given ?? {}) };
+  for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
+  const keys = ALL_KEYS.filter((k) => r.lines[k]);
+  if (!keys.length) return <span style={{ color: "var(--text-4)" }}>—</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {keys.map((k) => {
+        const ask = r.lines[k];
+        const short = r.status === "assigned" && (given[k] ?? 0) < ask;
+        return (
+          <span key={k} className="inline-flex items-center gap-1.5 rounded-md pl-1.5 pr-2 py-[3px] text-xs leading-none"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+            title={short ? `${t(`production.cont.${k}`)} — ${t("cflow.req.gaveOf").replace("{n}", given[k] ?? 0).replace("{of}", ask)}`
+              : t(`production.cont.${k}`)}>
+            {isSend(k)
+              ? <Truck size={11} className="shrink-0" aria-hidden style={{ color: TYPE_COLORS[k] }} />
+              : <span className="w-2 h-2 rounded-full shrink-0" aria-hidden style={{ background: TYPE_COLORS[k] }} />}
+            <b className="tabular-nums font-semibold" style={{ color: short ? "var(--status-bad)" : "var(--text-1)" }}>
+              {short ? <>{fmt(given[k] ?? 0)}<span style={{ color: "var(--text-3)", fontWeight: 500 }}> / {fmt(ask)}</span></> : fmt(ask)}
+            </b>
+            <span style={{ color: "var(--text-3)" }}>{t(`cflow.ct.${k}`).toLowerCase()}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export function RequestsTab({ t, day, roles, toast, onNew }) {
   const { tl, tx } = useTranslit();
   const now = useNow();
@@ -220,10 +271,9 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
           <thead>
             <tr>
               <Th label={t("cflow.hour")} />
-              <Th label={t("cflow.req.to")} />
-              {ALL_KEYS.map((k) => <Th key={k} label={t(`cflow.ct.${k}`)} icon={isSend(k) ? Truck : undefined}
-                hint={isSend(k) ? `${t(`production.cont.${k}`)} — ${t("cflow.snd.icon")}` : t(`production.cont.${k}`)} align="right" />)}
-              <Th label={t("cflow.status")} align="center" />
+              <Th label={t("cflow.req.fromTo")} hint={t("cflow.req.fromToHint")} />
+              <Th label={t("cflow.req.counts")} hint={t("cflow.req.countsHint")} />
+              <Th label={t("cflow.status")} />
               <Th label={t("cflow.req.units")} />
               <Th label={t("cflow.due")} hint={t("cflow.req.dueHint")} />
               <Th label="" cls="w-px" />
@@ -231,9 +281,9 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
           </thead>
           <tbody>
             {q.isLoading ? Array.from({ length: 4 }).map((_, i) => (
-              <tr key={i}><td colSpan={ALL_KEYS.length + 6} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
+              <tr key={i}><td colSpan={7} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
             )) : !list.length ? (
-              <tr><td colSpan={ALL_KEYS.length + 6} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{empty}</td></tr>
+              <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>{empty}</td></tr>
             ) : list.map((r) => <RequestRow key={r.id} r={r} {...ctx} />)}
           </tbody>
         </TableCard>
@@ -353,9 +403,6 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
   const fresh = isFresh(r, me, logi);
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const area = r.area_id != null;
-  // what left for this request: the brigadirs' parts plus what went to dispatch
-  const given = { ...(r.given ?? {}) };
-  for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
   const lumpGiven = !area && r.given && sum(r.given) > 0 ? r.given : null;
   const title = area ? [tx(r.area), r.given && countsText(t, r.given)].filter(Boolean).join(": ")
     : [...r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`),
@@ -365,24 +412,21 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
       style={fresh ? { background: "color-mix(in srgb, var(--brand) 17%, transparent)" } : undefined}>
       <td className="px-3 py-2 tabular-nums whitespace-nowrap font-medium" title={fresh ? t("cflow.req.freshHint") : undefined}
         style={{ color: "var(--text-1)", boxShadow: fresh ? "inset 3px 0 0 var(--brand)" : undefined }}>{span(r.hour)}</td>
-      <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-1)" }} title={r.note || undefined}>
-        <span className="inline-flex items-center gap-2">
-          {toName(t, tl, r)}
+      <td className="px-3 py-2 whitespace-nowrap font-normal">
+        <span className="flex items-center gap-2.5 min-w-0">
+          <FromTo r={r} t={t} tl={tl} />
           {!addressee && <SeenMark r={r} t={t} now={now} />}
+          {r.note && (
+            <span className="inline-flex shrink-0" title={r.note} aria-label={r.note}>
+              <MessageSquareText size={13} style={{ color: "var(--text-3)" }} />
+            </span>
+          )}
         </span>
       </td>
-      {ALL_KEYS.map((k) => {
-        const ask = r.lines[k];
-        if (ask == null) return <td key={k} className="px-3 py-2 text-right" style={{ color: "var(--text-4)" }}>—</td>;
-        const short = r.status === "assigned" && (given[k] ?? 0) < ask;
-        return (
-          <td key={k} className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}
-            title={short ? t("cflow.req.gaveOf").replace("{n}", given[k] ?? 0).replace("{of}", ask) : undefined}>
-            {short ? <>{fmt(given[k] ?? 0)}<span style={{ color: "var(--status-bad)" }}> / {fmt(ask)}</span></> : fmt(ask)}
-          </td>
-        );
-      })}
-      <td className="px-3 py-2 text-center">
+      <td className="px-3 py-2">
+        <CountTags r={r} t={t} />
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
         <span className="inline-flex items-center gap-1">
           {fresh && <Chip tone="fresh" icon={Sparkles} title={t("cflow.req.freshHint")}>{t("cflow.req.fresh")}</Chip>}
           <ExtraTag r={r} t={t} />
@@ -466,9 +510,7 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
         )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
-          {addressee
-            ? <span>{t("cflow.req.fromX").replace("{x}", tl(r.created_by) || "—")}</span>
-            : <span>{t("cflow.req.toX").replace("{x}", toName(t, tl, r))}</span>}
+          <FromTo r={r} t={t} tl={tl} className="max-w-full" />
           {!addressee && <SeenMark r={r} t={t} now={now} />}
         </div>
         {r.note && (
