@@ -11875,29 +11875,86 @@ def _lost_workers_fix(db) -> dict:
     return {"removed": removed, "documents": [d for _n, _l, d, _w in _LWF_DOUBLES], "added": row.id}
 
 
-def fix_lost_workers_nov20() -> None:
+# …and document 4027 the same evening (the operator: «Yes, clear it»):
+# Sayfullayeva, 11 Sep, sent home after 46 minutes — the same unrecorded
+# blanking, with nothing doubled yet: the page called her «lost» and a repair
+# would have doubled her. Her 0.76 h are nameless row 147516 (147512 beside it,
+# 0 h, is document 4023's). Only the document's record is written.
+LOST_WORKERS_DOC_FLAG = "oneshot:lost_workers_doc4027_nov20"
+
+
+def _mark_sent_home_doc(db) -> dict:
+    """Every check first, then the one write; the caller commits."""
+    import copy
+    from decimal import Decimal
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    day, unit, left_id = date(2026, 9, 11), 20, 147516
+    name = "SAYFULLAYEVA SHOXSANAM XAYRULLAYEVNA"
+
+    def need(ok, why):
+        if not ok:
+            raise ValueError(why)
+
+    doc, left = db.get(HrDocument, 4027), db.get(Attendance, left_id)
+    need(doc is not None and (doc.doc_type, doc.status, doc.manager_id, doc.date)
+         == ("people_exchange", "approved", unit, day), "document 4027 changed")
+    payload = copy.deepcopy(doc.payload or {})
+    emps = [e for e in payload.get("employees") or [] if (e or {}).get("worker_name") == name]
+    need(payload.get("target_type") == "task" and len(emps) == 1 and not emps[0].get("applied"),
+         "document 4027 already records its effect")
+    need(left is not None
+         and (left.manager_id, left.date, left.worker_name, left.verifix_code, left.hours_worked)
+         == (unit, day, None, emps[0].get("old_verifix_code"), Decimal("0.76")),
+         f"leftover {left_id} changed")
+    need(not db.query(Attendance).filter(Attendance.date == day,
+                                         Attendance.worker_name == name).count(),
+         "the worker has a named row on the day")
+    for other in db.query(HrDocument).filter(HrDocument.doc_type == "people_exchange",
+                                             HrDocument.date == day).all():
+        for e in (other.payload or {}).get("employees") or []:
+            need(((e or {}).get("applied") or {}).get("leftover_id") != left_id,
+                 f"row {left_id} belongs to document {other.id}")
+
+    emps[0]["applied"] = {"side": "below_min", "leftover_id": left_id,
+                          "recv_leftover_id": None, "task_blanked": True}
+    doc.payload = payload   # a NEW object, as above
+    flag_modified(doc, "payload")
+    db.flush()
+    return {"document": doc.id, "leftover": left_id}
+
+
+def _lost_workers_once(flag: str, core, label: str) -> None:
     import json
 
     db = SessionLocal()
     try:
-        if db.query(AppSetting).filter_by(key=LOST_WORKERS_FIX_FLAG).first():
+        if db.query(AppSetting).filter_by(key=flag).first():
             return
         try:
-            record = {"done": _lost_workers_fix(db)}
+            record = {"done": core(db)}
         except ValueError as why:
             db.rollback()
             record = {"refused": str(why)}
         # The flag rides the same transaction: both land or neither does.
-        db.add(AppSetting(key=LOST_WORKERS_FIX_FLAG,
-                          value=json.dumps(record, default=str, ensure_ascii=False)))
+        db.add(AppSetting(key=flag, value=json.dumps(record, default=str, ensure_ascii=False)))
         db.commit()
-        print("[startup] lost-workers fix: "
+        print(f"[startup] {label}: "
               + ("done" if "done" in record else f"REFUSED — {record['refused']}"))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        print(f"[startup] lost-workers fix failed: {exc}")
+        print(f"[startup] {label} failed: {exc}")
     finally:
         db.close()
+
+
+def fix_lost_workers_nov20() -> None:
+    _lost_workers_once(LOST_WORKERS_FIX_FLAG, _lost_workers_fix, "lost-workers fix")
+
+
+def mark_sent_home_doc_nov20() -> None:
+    _lost_workers_once(LOST_WORKERS_DOC_FLAG, _mark_sent_home_doc, "lost-workers document 4027")
 
 
 def add_equipment_responsible_column() -> None:

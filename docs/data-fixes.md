@@ -366,10 +366,15 @@ record: the three removed rows in full (the undo), the documents, the new id.
   day was closed at 11:28 before the cell was saved. Her file row (batch row
   60822: 14:43–18:43, 4.0 h) is copied in the way a Save writes one. Not
   through Save itself, which rebuilds the unit's whole day from the file.
-- **Left as they are**: her 12 Sep (absent — nothing to count), the cell's
-  `pending` mark in the 12 and 13 Sep files, and document 4027 (Sayfullayeva,
-  11 Sep, 0.76 h) — the same unrecorded blanking, still listed as «lost» with
-  nothing doubled; **do not press repair on it**. The 12 workers of 30 Jun
+- **Document 4027 the same evening** (`startup.mark_sent_home_doc_nov20`, flag
+  `oneshot:lost_workers_doc4027_nov20`, the operator: «Yes, clear it»):
+  Sayfullayeva, 11 Sep, sent home after 46 minutes (0.76 h) — the same
+  unrecorded blanking, with nothing doubled yet. The document gets the same
+  record, naming her nameless row 147516 BY ID (147512 beside it in the cell,
+  0 h, is document 4023's); no roster row is touched. The page then lists
+  nobody as «lost».
+- **Left as they are**: her 12 Sep (absent — nothing to count) and the cell's
+  `pending` mark in the 12 and 13 Sep files. The 12 workers of 30 Jun
   (document 875) have no stored hours and wait on a Verifix read. Both days
   were closed and stay closed; nobody was notified; September's figures for
   the two units move by 3 people / 5.26 h down and 1 person / 4 h up.
