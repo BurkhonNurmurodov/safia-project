@@ -682,6 +682,11 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
 // areas' containers and lids by «Jo'natish jadvali», filled together for the
 // hour. A dispatch area's own request (the morning's first design) is no longer
 // made here; editing one of those keeps it as it is — its area and two types.
+// WHAT IS LEFT (2026-11-20, the operator: «when he sends a request for half of
+// them, after reopening it should show how many left for this hour»): the
+// counts fill with the hour's figure LESS what the hour's requests already ask
+// — the same sum «Tayyor so'rovlar» takes off (`prepared`) — and the line over
+// them says how many requests the hour has and what each type needed / got.
 export function NewRequestModal({ t, day, initialHour = null, edit = null, onClose, onDone, onFail }) {
   const { tx } = useTranslit();
   // to every logistics person at once by default (2026-11-18) — or one of them
@@ -722,16 +727,46 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
     return Object.keys(out).length ? out : null;
   };
   const hourNeed = needOf(need.data);
+  // the day's requests, read fresh on open (a request sent a moment ago counts)
+  const reqs = useQuery({
+    queryKey: ["cflow-requests", day],
+    queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
+    ...LIVE_LIST,
+  });
+  // what the hour's requests already ask — not cancelled, a brigadir's approved
+  // extra aside (past the limit, never the figure's), the one being edited aside;
+  // an area's own request counts for that area only
+  const askedOf = (h) => {
+    const out = {};
+    let n = 0;
+    for (const r of reqs.data?.requests ?? []) {
+      if (r.status === "cancelled" || r.extra || r.hour !== h || (edit && r.id === edit.id)) continue;
+      if (send && r.area_id !== area) continue;
+      n += 1;
+      for (const [k, v] of Object.entries(r.lines ?? {})) out[k] = (out[k] ?? 0) + v;
+    }
+    return { counts: out, n };
+  };
   const slot = `${kind}:${send ? area : ""}:${hour}`;
   // editing: the request's own counts stand until another slot is picked
   const [filledFor, setFilledFor] = useState(edit ? `${edit.area_id != null ? "send" : "in"}:${edit.area_id ?? ""}:${edit.hour}` : null);
+  // what the counts were filled from — the figure, what was asked, what is left
+  const [base, setBase] = useState(null);
+  const listReady = reqs.isFetchedAfterMount || reqs.isError;
   useEffect(() => {
-    if (!need.data || filledFor === slot || (send && area == null)) return;
+    if (!need.data || !listReady || filledFor === slot || (send && area == null)) return;
     setFilledFor(slot);
     const src = needOf(need.data);
-    setCounts(Object.fromEntries(keys.map((k) => [k, src?.[k] ?? null])));
-  }, [need.data, slot, filledFor]);      // eslint-disable-line react-hooks/exhaustive-deps
-  const changed = hourNeed != null && keys.some((k) => (counts[k] ?? 0) !== (hourNeed[k] ?? 0));
+    const a = askedOf(hour);
+    const left = src ? Object.fromEntries(keys.map((k) => [k, Math.max(0, (src[k] ?? 0) - (a.counts[k] ?? 0))])) : null;
+    setBase({ slot, need: src, asked: a.counts, n: a.n, left });
+    setCounts(Object.fromEntries(keys.map((k) => [k, src?.[k] != null ? left[k] : null])));
+  }, [need.data, listReady, slot, filledFor]);      // eslint-disable-line react-hooks/exhaustive-deps
+  const cur = base?.slot === slot ? base : null;   // a fill of another hour never speaks for this one
+  const ref = cur?.left ?? hourNeed;               // what the counts are compared with
+  const changed = ref != null && keys.some((k) => (counts[k] ?? 0) !== (ref[k] ?? 0));
+  const askedN = cur?.need ? cur.n : 0;
+  const allAsked = askedN > 0 && keys.every((k) => !(cur.left[k] > 0));
   const [note, setNote] = useState(() => edit?.note ?? "");
   const any = keys.some((k) => counts[k] > 0);
   const m = useMutation({
@@ -747,7 +782,9 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
     onSuccess: (...a) => { if (!edit) pick.remember(); onDone(...a); },
     onError: onFail,
   });
-  const needLine = need.isLoading ? t("cflow.req.needLoading")
+  const needLine = need.isLoading || (!edit && !listReady) ? t("cflow.req.needLoading")
+    : askedN > 0 ? (allAsked && !changed ? t("cflow.req.allAsked")
+      : t(changed ? "cflow.req.needEdited" : "cflow.req.leftFilled")).replace("{span}", span(hour)).replace("{n}", askedN)
     : send ? (area == null ? t("cflow.req.pickArea")
       : hourNeed ? t(changed ? "cflow.req.sendEdited" : "cflow.req.sendFilled").replace("{span}", span(hour))
       : t("cflow.req.sendNone").replace("{span}", span(hour)))
@@ -799,7 +836,9 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
             {group.map((k) => (
               <FormField key={k} label={<TypeName t={t} k={k} long />}
                 hint={extraCap ? t("cflow.ex.askedN").replace("{n}", extraCap[k] ?? 0)
-                  : hourNeed && (counts[k] ?? 0) !== (hourNeed[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", hourNeed[k] ?? 0) : undefined}>
+                  : askedN > 0 && cur.need?.[k] != null && cur.asked[k] > 0
+                    ? t("cflow.req.needAsked").replace("{need}", fmt(cur.need[k])).replace("{asked}", fmt(cur.asked[k]))
+                  : ref && (counts[k] ?? 0) !== (ref[k] ?? 0) ? t("cflow.req.wasNeed").replace("{n}", ref[k] ?? 0) : undefined}>
                 <CountStepper min={0} max={extraCap ? (extraCap[k] ?? 0) : undefined} value={counts[k] ?? null} placeholder="0"
                   disabled={!!extraCap && !extraCap[k]} onChange={(n) => setCounts((c) => ({ ...c, [k]: n }))} />
               </FormField>
