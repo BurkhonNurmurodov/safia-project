@@ -20,6 +20,11 @@ behind one box. Archived units and archived cells are left out, as they are
 from every other list. A cell is labelled by its CODE (CLAUDE.md «A cell is
 its CODE»): the workshop names ride along ONLY so typing «яблоки» still finds
 1612, exactly as the /cells search does — the client never prints them.
+
+A brigadir and a leader carry `photo`, their profile photo's VERSION
+(`identity.photo_versions`), so the box draws a person with their face
+(`ProfileAvatar`); a profile with no photo carries None and is never asked
+for bytes.
 """
 from typing import Optional
 
@@ -27,6 +32,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.identity import photo_versions, profile_key
 from app.models import Cell, Manager, RoleProfile
 from app.security import require_auth
 from app.services.factory_scope import empty_scope, scoped_manager_ids
@@ -104,6 +110,10 @@ def search_index(db: Session = Depends(get_db), payload: dict = Depends(require_
             if in_scope(c.manager_id):
                 runs_here.add(c.leader_id)
 
+    # Every profile that HAS a photo → its version, in one read of two small
+    # columns (never the bytes).
+    photos = photo_versions(db)
+
     return {
         "cells": [
             {
@@ -127,6 +137,7 @@ def search_index(db: Session = Depends(get_db), payload: dict = Depends(require_
                 "shift": u.shift,
                 "factory_id": u.factory_id,
                 "aliases": _names(u.name_aliases if isinstance(u.name_aliases, list) else []),
+                "photo": photos.get(profile_key("supervisor", u.id)),
             }
             for u in unit_rows
         ],
@@ -139,6 +150,7 @@ def search_index(db: Session = Depends(get_db), payload: dict = Depends(require_
                 "unit_id": l.manager_id,
                 "unit": unit_name.get(l.manager_id),
                 "cells": runs.get(l.id, []),
+                "photo": photos.get(profile_key("leader", l.id)),
             }
             for l in leaders
             if in_scope(l.manager_id) or l.id in runs_here

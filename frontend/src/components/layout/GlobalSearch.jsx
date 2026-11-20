@@ -4,6 +4,7 @@ import { Grid3x3, UsersRound, UserRound, Settings2, AlertTriangle, Contact } fro
 import api from "../../utils/api";
 import SearchInput from "../ui/SearchInput";
 import GroupBadge from "../ui/GroupBadge";
+import ProfileAvatar from "../ui/ProfileAvatar";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { hasOpenDialog } from "../ui/dialogLayers";
 import { useLang } from "../../context/LangContext";
@@ -26,7 +27,7 @@ import { nameCase } from "../people/peopleUtil";
  * at the top of the ☰ drawer on a phone (`drawer`, mounted by Sidebar.jsx),
  * whose header stays the title, the bell and the avatar.
  *
- * One box finds FIVE kinds of thing, each opening where it lives:
+ * One box finds SIX kinds of thing, each opening where it lives:
  *   pages          → the page (the sidebar's own list, by the viewer's access)
  *   admin pages    → /panel/<id> (the admin app's own list, by capability)
  *   cells          → /cells/:id — labelled by CODE and leader, never the
@@ -47,6 +48,11 @@ import { nameCase } from "../people/peopleUtil";
  * Matching is `utils/searchFold.js` — Cyrillic, Latin and a code typed on the
  * Russian layout all find the same thing.
  *
+ * A PERSON is drawn with their face (`person` on the item → `ProfileAvatar`,
+ * initials while there is no photo): a brigadir and a leader by their profile
+ * photo (the index carries its version), a worker by the Verifix photo the
+ * «Xodim kartasi» shows (`photo` on the search row says there is one).
+ *
  * Keyboard: Ctrl/⌘ K or «/» focuses the header's box from anywhere (not while
  * a dialog is up, and «/» not while somebody is typing), ↑↓ walk the results,
  * Enter opens, Esc closes.
@@ -58,6 +64,8 @@ import { nameCase } from "../people/peopleUtil";
  */
 
 const CAP = { pages: 6, admin: 5, cells: 6, units: 5, leaders: 6, workers: 6 };
+// A person's face, in the slot the other kinds' icon chip takes.
+const AVATAR = 28;
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
 
 // The best `cap` items of one kind, best first; `top` is the best score, which
@@ -149,6 +157,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
     const units = seeUnits ? (d.units || []).map((u) => ({
       id: `u:${u.id}`, kind: "unit", to: `/brigadir/${u.id}`, Icon: UsersRound,
       label: tl(u.name), sort: u.name,
+      person: { name: u.name, profileKey: `supervisor:${u.id}`, photoVer: u.photo },
       sub: u.shift ? t("search.shift").replace("{n}", u.shift) : "",
       terms: [searchFold(u.name), ...(u.aliases || []).map(searchFold)],
     })) : [];
@@ -160,6 +169,7 @@ export default function GlobalSearch({ drawer = false, onPick }) {
         return {
           id: `l:${l.id}`, kind: "leader", to, Icon: UserRound,
           label: tl(l.name), sort: l.name,
+          person: { name: l.name, profileKey: `leader:${l.id}`, photoVer: l.photo },
           sub: [l.unit ? tl(l.unit) : null, codes.length ? codes.join(", ") : null].filter(Boolean).join(" · "),
           terms: [searchFold(l.name), ...(l.names || []).map(searchFold), ...codes.map(searchFold)],
         };
@@ -178,7 +188,9 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   }, [q]);
   const wantWorkers = seeWorkers && wq.replace(/\s+/g, "").length >= 2;
   const workersQ = useQuery({
-    queryKey: ["people-search", wq],
+    // The limit is part of the key: /people asks the same words for 30 rows,
+    // and neither answer may stand in for the other.
+    queryKey: ["people-search", wq, CAP.workers],
     queryFn: () => api.get("/api/people/search", { params: { q: wq, limit: CAP.workers } }).then((r) => r.data),
     enabled: wantWorkers,
     staleTime: 60_000,
@@ -186,6 +198,10 @@ export default function GlobalSearch({ drawer = false, onPick }) {
   const workerItems = useMemo(() => (wantWorkers ? workersQ.data?.rows || [] : []).map((w) => ({
     id: `w:${w.employee_id}`, kind: "worker", to: `/people/${encodeURIComponent(w.employee_id)}`, Icon: Contact,
     label: nameCase(tl(w.name)), sort: w.name,
+    person: {
+      name: w.name,
+      photoUrl: w.photo ? `/api/people/${encodeURIComponent(w.employee_id)}/photo?size=96` : undefined,
+    },
     sub: [w.job || null, w.code || null].filter(Boolean).join(" · "),
     terms: [searchFold(w.name)],
   })), [wantWorkers, workersQ.data, tl]);
@@ -346,11 +362,20 @@ export default function GlobalSearch({ drawer = false, onPick }) {
                       className={`mx-1 flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer ${drawer ? "min-h-[44px]" : ""}`}
                       style={{ background: on ? "var(--bg-inner)" : "transparent" }}
                     >
-                      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
-                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
-                                 color: it.danger ? "#ef4444" : on ? "var(--brand-text)" : "var(--text-2)" }}>
-                        <Icon size={14} />
-                      </span>
+                      {it.person ? (
+                        // The name is beside it: the face adds nothing to read out.
+                        <span aria-hidden="true" className="flex flex-shrink-0">
+                          <ProfileAvatar muted size={AVATAR} name={it.label} colorKey={it.person.name}
+                            profileKey={it.person.profileKey} photoVer={it.person.photoVer}
+                            photoUrl={it.person.photoUrl} />
+                        </span>
+                      ) : (
+                        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
+                          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)",
+                                   color: it.danger ? "#ef4444" : on ? "var(--brand-text)" : "var(--text-2)" }}>
+                          <Icon size={14} />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <span className={`truncate text-sm ${it.kind === "cell" ? "font-semibold tabular-nums" : "font-medium"}`}

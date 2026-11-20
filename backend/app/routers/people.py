@@ -123,10 +123,15 @@ def search(q: str = Query(default=""), limit: int = Query(default=30, ge=1, le=6
             hits.append((0 if r["status"] == "W" else 1,
                          0 if r["folded"].startswith(words[0]) else 1, r))
         hits.sort(key=lambda h: (h[0], h[1]))
+    # `photo`: Verifix holds a photo of this person, so a list may draw the
+    # face (`/{eid}/photo`) and never asks for one that is not there.
+    emps = _org_emps(db) if hits else {}
     return {
         "rows": [{"employee_id": r["employee_id"], "name": r["name"], "job": r["job"],
                   "unit": r["unit"], "code": r["code"], "status": r["status"],
-                  "dismissed": _iso(r["dismissed"])} for _, _, r in hits[:limit]],
+                  "dismissed": _iso(r["dismissed"]),
+                  "photo": bool((emps.get(str(r["employee_id"])) or {}).get("photo"))}
+                 for _, _, r in hits[:limit]],
         "more": len(hits) > limit,
         "directory": people.directory_state(db),
     }
@@ -182,10 +187,16 @@ def photo(eid: str, size: int = Query(default=96, ge=32, le=960),
                     headers={"Cache-Control": "private, max-age=3600"})
 
 
-def _has_photo(db: Session, eid: str) -> bool:
+def _org_emps(db: Session) -> dict:
+    """{employee id: their record} of the stored Verifix org read — the one
+    place a person's photo hash is kept."""
     from app.services import verifix_org
     org, _ = verifix_org.stored(db)
-    return bool((((org or {}).get("emps") or {}).get(str(eid)) or {}).get("photo"))
+    return (org or {}).get("emps") or {}
+
+
+def _has_photo(db: Session, eid: str) -> bool:
+    return bool((_org_emps(db).get(str(eid)) or {}).get("photo"))
 
 
 # ── the fold ──────────────────────────────────────────────────────────────────

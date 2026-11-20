@@ -40,6 +40,21 @@ whoever manages profiles, else the cell they run.
   viewer who may open `people` — asked of `GET /api/people/search` (the Verifix
   directory, folded on the SERVER, within the viewer's reach) from 2 letters
   on, 250 ms after typing stops; up to 6, opening `/people/:employee_id`.
+- **A person is drawn with their face** (2026-11-20, the operator: «when I am
+  searching a person, they should appear with their images»). A brigadir, a
+  leader and a worker row carry `person` and draw a 28px `ProfileAvatar` in
+  the slot the other kinds' icon chip takes — `muted` initials while there is
+  no photo, so a row never changes size. A brigadir (`supervisor:<id>`) and a
+  leader (`leader:<id>`) show their PROFILE photo: the index carries its
+  version as `photo` (`identity.photo_versions`, every profile in one read),
+  None where there is none. A worker shows the Verifix photo of «Xodim
+  kartasi» (`/api/people/:id/photo?size=96`): each `/api/people/search` row
+  says `photo` true / false (the stored org read's hash), so nobody without
+  one is asked for. The avatar is `aria-hidden` — the name is beside it. The
+  header's people query is keyed with its limit (`["people-search", q, 6]`):
+  /people asks the same words for 30 rows, and under one key the header could
+  have drawn 30 faces. `tests/test_search_photos.py` holds both payloads.
+  /people's own result list still shows names only.
 - Not built: concerns or tasks by text.
 
 ## «Ilovalar» — the app launcher (admins 2026-11-02, top-managers 2026-11-04)
