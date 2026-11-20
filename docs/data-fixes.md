@@ -478,6 +478,36 @@ nothing changes and the step tries again on the next start. It runs once (flag
 `oneshot:davron_no_idle_time_nov18`). It reopens like any personal entry: lift
 the deny on his «Shaxsiy vakolatlar».
 
+## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
+
+The operator: «Maksudov Alisher can you add the container page for him». He
+is a brigadir («Снабжение 2-смена»), so he already had «Qabul». Asked which
+page, the operator picked «Logistics, like Davron» over «Konteynerlar» and both.
+
+The step is Davron's, with the same grants: Nuriddin aka's personal
+`page.view.container-*` grants, the Logistics page always among them
+(`_nuriddin_container_grants`, which Davron's step now shares). So he becomes
+an addressee AXO can pick and one of the people a request «to everyone»
+reaches. He gets their Telegram messages, since logistics messages are on.
+His brigadir role and «Qabul» are unchanged.
+
+How the profile is found:
+- A brigadir's profile is his UNIT: `supervisor:<managers.id>`, named on
+  `managers`, not a role profile. A first version looked only at role
+  profiles; its test printed the logistics name as «supervisor:6», which is
+  how the gap showed. So the step searches live units (not archived) AND live
+  role profiles (no `ended_on`).
+- It takes the one whose name has BOTH a «Maksud…» word (Maqsudov and
+  Максудов fold to it) and an «Alisher…» word. A bare «Alisher» is never
+  enough, because there are many.
+- With two such, take the one that is not a leader (Verifix's twin).
+
+If nothing settles on one profile, nothing changes. The admins get the list
+of names that matched, and the step runs again on the next start. On success
+the admins' DM gives the profile, its Telegram accounts and the logistics
+people AXO can now choose from. It runs once (flag
+`oneshot:alisher_container_logistics_nov20`).
+
 ## Davron Kuldimirodov → «Konteyner berish» like Nuriddin aka (`startup.davron_container_logistics`, 2026-11-18)
 
 The operator: «I added Davron Kuldimirodov, make the container app the same as

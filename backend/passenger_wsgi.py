@@ -293,6 +293,8 @@ try:
     davron_container_logistics()
     from app.startup import davron_no_idle_time
     davron_no_idle_time()          # after it: no ojidaniya for him
+    from app.startup import alisher_container_logistics
+    alisher_container_logistics()
     from app.startup import seed_container_send_areas
     seed_container_send_areas()
     from app.startup import container_flow_notify_on, containers_tv_managers

@@ -10907,6 +10907,21 @@ def _davron_profile(db):
     return None, pool
 
 
+def _nuriddin_container_grants(db) -> dict:
+    """Nuriddin aka's own container grants — the Logistics page always among
+    them — to copy onto another logistics person (Davron, Alisher)."""
+    from app import capabilities
+    from app.services import container_flow as flow
+    grants = {flow.LOGISTICS_CAP: "all"}
+    held = {p["key"] for p in flow.logistics_people(db)}
+    nur = [k for k in (f"idle-owner:{p.id}" for p in _nuriddin_profiles(db)) if k in held]
+    if len(nur) == 1:
+        for cap, v in capabilities.perms_for_profile(db, nur[0]).items():
+            if cap.startswith("page.view.container") and v["mode"] == "grant":
+                grants[cap] = v["scope"]
+    return grants
+
+
 def davron_container_logistics() -> None:
     from app import capabilities
     from app.identity import profile_holders
@@ -10927,14 +10942,7 @@ def davron_container_logistics() -> None:
                        open=_REPORT_PERMS)
             return
         key = f"{prof.role}:{prof.id}"
-        # Nuriddin's own container grants, the Logistics page always among them
-        grants = {flow.LOGISTICS_CAP: "all"}
-        held = {p["key"] for p in flow.logistics_people(db)}
-        nur = [k for k in (f"idle-owner:{p.id}" for p in _nuriddin_profiles(db)) if k in held]
-        if len(nur) == 1:
-            for cap, v in capabilities.perms_for_profile(db, nur[0]).items():
-                if cap.startswith("page.view.container") and v["mode"] == "grant":
-                    grants[cap] = v["scope"]
+        grants = _nuriddin_container_grants(db)
         capabilities.apply_profile_perms(
             db, [key], grants=grants, actor_name="system (one-shot 2026-11-18)")
         db.add(AppSetting(key=DAVRON_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
@@ -11035,6 +11043,87 @@ def davron_no_idle_time() -> None:
         db.rollback()
         print(f"[startup] Davron idle time failed: {exc}")
         _dm_report("fail", "Davron Kuldimirodov · «Ojidaniya» yopilmadi", error=exc)
+    finally:
+        db.close()
+
+
+# ── 20 Nov: Maksudov Alisher → «Konteyner berish» like Davron ───────────────
+# The operator, 2026-11-20: «Maksudov Alisher can you add the container page
+# for him» — asked which, he picked «Logistics, like Davron». Nuriddin aka's
+# personal container grants (`_nuriddin_container_grants`) are copied onto
+# his profile, which makes him an addressee AXO can pick and one of «Hammasi».
+# He is a brigadir («Снабжение 2-смена»), so his «Qabul» stays as it is.
+# A brigadir's profile is his UNIT (`supervisor:<managers.id>`, the name on
+# `managers`), so he is looked for among live units AND live role profiles: the
+# ONE whose name carries both «Maksudov» (any spelling: Maqsudov, Максудов) and
+# «Alisher» — Verifix's leaders last; no match or several change nothing, the
+# admins are told, and the step tries again on the next start. Never a bare
+# «Alisher»: there are many.
+ALISHER_LOGISTICS_FLAG = "oneshot:alisher_container_logistics_nov20"
+
+
+def _alisher_profile(db):
+    """(profile, candidates): the one profile to grant — a brigadir's unit as
+    role «supervisor» with the unit's id, else a role profile — or None + who
+    matched («name · key»)."""
+    from types import SimpleNamespace
+
+    from app.services.people import fold_name
+
+    def named(*names):
+        ts = {t for n in names if n for t in fold_name(n).split()}
+        return (any(t.startswith("alisher") for t in ts)
+                and any(t.replace("q", "k").startswith("maksud") for t in ts))
+
+    units = [SimpleNamespace(name=m.name, role="supervisor", id=m.id)
+             for m in db.query(Manager).filter(Manager.archived.is_(False)).all() if named(m.name)]
+    profs = [p for p in db.query(RoleProfile).filter(RoleProfile.ended_on.is_(None)).all()
+             if named(p.name, p.name_uz_cyrl, p.name_ru, p.name_en)]
+    pool = units + profs
+    for group in (pool, [p for p in pool if p.role != "leader"]):
+        if len(group) == 1:
+            return group[0], [f"{p.name} · {p.role}:{p.id}" for p in pool]
+    return None, [f"{p.name} · {p.role}:{p.id}" for p in pool]
+
+
+def alisher_container_logistics() -> None:
+    from app import capabilities
+    from app.identity import profile_holders
+    from app.services import container_flow as flow
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ALISHER_LOGISTICS_FLAG).first():
+            return
+        prof, listed = _alisher_profile(db)
+        if prof is None:
+            print(f"[startup] Alisher logistics: {len(listed)} profiles named Maksudov Alisher — nothing changed")
+            _dm_report("warn", "Maksudov Alisher · «Konteyner berish» (logistika) berilmadi",
+                       rows=[("🔎", "«Maksudov Alisher» nomli profillar", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda «Konteyner berish — logistika» "
+                                    "sahifasini yoqing.")],
+                       open=_REPORT_PERMS)
+            return
+        key = f"{prof.role}:{prof.id}"
+        grants = _nuriddin_container_grants(db)
+        capabilities.apply_profile_perms(
+            db, [key], grants=grants, actor_name="system (one-shot 2026-11-20)")
+        db.add(AppSetting(key=ALISHER_LOGISTICS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        tg = len(profile_holders(db, key))
+        names = [p["name"] for p in flow.logistics_people(db)]
+        print(f"[startup] Alisher logistics: {key} → {sorted(grants)} (Telegram: {tg})")
+        _dm_report("ok", f"{prof.name} · «Konteyner berish» (logistika)",
+                   status="Logistika sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("📲", "Telegram", f"{tg} ta akkaunt" if tg else "ulanmagan"),
+                         ("📨", "AXO so'rovni yuborishi mumkin", names)],
+                   notes=[] if tg else [("⚠️", "Profilga hali hech kim ulanmagan — xabarlar bormaydi.")],
+                   open=_report_open(prof))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Alisher logistics failed: {exc}")
+        _dm_report("fail", "Maksudov Alisher · «Konteyner berish» (logistika) berilmadi", error=exc)
     finally:
         db.close()
 

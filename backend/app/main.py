@@ -316,6 +316,8 @@ async def lifespan(app: FastAPI):
     later(davron_container_logistics)
     from app.startup import davron_no_idle_time
     later(davron_no_idle_time)          # after it: no ojidaniya for him
+    from app.startup import alisher_container_logistics
+    later(alisher_container_logistics)
     from app.startup import seed_container_send_areas
     later(seed_container_send_areas)
     from app.startup import container_flow_notify_on, containers_tv_managers

@@ -385,6 +385,43 @@ class FlowTest(unittest.TestCase):
                          ["page.view.container-logistics", "page.view.container-watch"])
         self.assertEqual(dm.call_count, 2)                           # the miss, then the grant
 
+    def test_alisher_gets_nuriddins_container_access(self):
+        """20 Nov: Maksudov Alisher — a brigadir, so his profile is his UNIT
+        (`supervisor:<managers.id>`) — gets Nuriddin aka's container grants;
+        another Alisher and Verifix's leader twin aside; once, and nothing
+        while no unit or profile carries both names."""
+        from app import capabilities, startup
+        from app.models import Manager, ProfilePermission, RoleProfile
+        self.db.execute(flow.text("DELETE FROM profile_permissions"))
+        self.db.execute(flow.text("DELETE FROM app_settings WHERE key = :k"), {"k": startup.ALISHER_LOGISTICS_FLAG})
+        self.db.execute(flow.text("DELETE FROM role_profiles WHERE name LIKE '%Alisher%'"))
+        self.db.execute(flow.text("DELETE FROM managers WHERE id IN (7101, 7102)"))
+        n = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        self.db.add_all([n, Manager(id=7101, name="Karimov Alisher", shift=2)])      # a namesake unit
+        self.db.flush()
+        nk = f"idle-owner:{n.id}"
+        self.db.add_all([
+            ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"),
+            ProfilePermission(profile_key=nk, capability="page.view.container-watch", mode="grant", scope="all"),
+            ProfilePermission(profile_key=nk, capability="page.view.downtime", mode="grant", scope="all"),
+        ])
+        self.db.commit()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.alisher_container_logistics()                    # no «Maksudov Alisher» yet: nothing
+            self.assertEqual([p["name"] for p in flow.logistics_people(self.db)], ["Nuriddin aka"])
+            self.db.add_all([Manager(id=7102, name="Максудов Алишер", shift=2),
+                             RoleProfile(role="leader", name="Maqsudov Alisher")])   # Verifix's leader twin
+            self.db.commit()
+            startup.alisher_container_logistics()
+            startup.alisher_container_logistics()                    # the flag: once
+        self.db.expire_all()
+        self.assertEqual([p["key"] for p in flow.logistics_people(self.db)], [nk, "supervisor:7102"])
+        self.assertEqual(sorted(capabilities.perms_for_profile(self.db, "supervisor:7102")),
+                         ["page.view.container-logistics", "page.view.container-watch"])
+        self.assertEqual(capabilities.perms_for_profile(self.db, "supervisor:7101"), {})
+        self.assertEqual(dm.call_count, 2)                           # the miss, then the grant
+
     def test_davron_loses_idle_time_keeps_containers(self):
         """18 Nov: Davron's profile is denied /downtime and /idle-cell and lets
         go of the ojidaniya categories he answered for; logistics stays; once."""
