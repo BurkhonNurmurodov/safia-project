@@ -1,11 +1,7 @@
-import { Loader2 } from "lucide-react";
 import Toast from "../ui/Toast";
 import Button from "../ui/Button";
 import { useLang } from "../../context/LangContext";
 import { useAppUpdate } from "../../hooks/useAppUpdate";
-
-/** Toast draws its icon as <Icon size style />; this one turns while the app fetches. */
-const Spinner = (props) => <Loader2 {...props} className="animate-spin" />;
 
 /**
  * "A new version is ready" — offered, never imposed.
@@ -32,31 +28,13 @@ const Spinner = (props) => <Loader2 {...props} className="animate-spin" />;
  * prompt is precisely that some of what is on screen may be unsaved.
  *
  * In the Android app there is a step before «ready»: a newer build is live and
- * the app is still fetching it (`coming`). It is said at once, with no reload
- * button — a reload before the phone holds the build lands on the same pages —
- * and the same toast turns into «ready — reload» when the build has arrived.
+ * the app is still fetching it (`coming`). That step is NOT a toast — it is the
+ * small ring in the header (UpdateRing), which covers nothing; this toast
+ * appears by itself when the build has arrived and the person is needed.
  */
 export default function UpdatePrompt() {
   const { t } = useLang();
-  const {
-    show, incompatible, dismiss, reload, showComing, comingVersion, comingPct, comingFailed, dismissComing,
-  } = useAppUpdate();
-
-  if (!show && showComing) {
-    // 1.8.0+ says how far the download is; an older app only that it is coming.
-    const key = comingFailed ? "ui.version.comingFailed"
-      : comingPct !== null ? "ui.version.comingProgress" : "ui.version.coming";
-    return (
-      <Toast
-        open
-        tone="info"
-        icon={comingFailed ? undefined : Spinner}
-        duration={0}
-        onClose={dismissComing}
-        message={t(key).replace("{v}", comingVersion ? `v${comingVersion}` : "").replace("{p}", String(comingPct ?? 0))}
-      />
-    );
-  }
+  const { show, incompatible, dismiss, reload } = useAppUpdate();
 
   return (
     <Toast

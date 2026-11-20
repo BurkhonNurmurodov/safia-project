@@ -15,6 +15,7 @@ import { AssistantButton } from "../assistant/AssistantPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
 import UpdatePrompt from "./UpdatePrompt";
+import UpdateRing from "./UpdateRing";
 import ServerRestartNotice from "./ServerRestartNotice";
 import ExamBand from "../exam/ExamBand";
 import OfflineBand from "./OfflineBand";
@@ -749,6 +750,9 @@ export default function Layout({ children, title, subtitle, bare = false, backdr
 
             {/* Right: bell · language · theme · ghost(admin) · account */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              {/* The Android app fetching a newer build — a ring, only while it
+                  runs, leftmost so the bell and the avatar never move for it. */}
+              <UpdateRing />
               {/* «Yordamchi» — the AI assistant's side panel (admins for now). */}
               <AssistantButton />
               {/* Notifications — standalone bell in the header */}

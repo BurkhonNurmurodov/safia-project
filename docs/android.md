@@ -118,6 +118,21 @@ daily") **the app downloads every build the site deploys by itself** — see
     `utils/androidUpdate.js`, which also make the «check» ONCE per build however
     many components ask). An app before 1.8.0 answers nothing and keeps
     the spinner-only «coming» notice.
+  - **While it downloads it is a RING in the header, not a toast**
+    (2026-11-20, the operator, the same evening: the toast made a person read
+    two lines to learn «9%» and covered the header for something nobody asked
+    about — «humans prefer more visual rather than texts»). `UpdateRing`
+    (`components/layout/`, left of the bell, only while `coming`): the arc is
+    the percent, or turns when the app cannot say how far it is (before
+    1.8.0 — most phones). Pressed, it opens a panel: «Yangi versiya yuklab
+    olinmoqda» with the version, a `Meter` and the percent; without a percent,
+    the title and the version alone, never a 0% bar. A failed download turns
+    the ring amber and the panel says so. It covers nothing, so it has no ×:
+    nothing on screen writes `coming:<stamp>` any more (the hook still honours
+    one written before). The «tayyor — Yangilash» toast is unchanged and
+    appears by itself. Where the two bullets above say «toast» for `coming`,
+    read this ring. `ui.version.coming` / `comingProgress` are gone;
+    `ui.version.downloading` is the panel's title.
   - **Cost**: until v4.324.1 every deploy renamed ~227 of 231 asset files
     (the build stamp sat in a shared chunk), so a new build was ~1.6 MB over
     the wire. The stamp now lives in index.html (see «A deploy renames only
