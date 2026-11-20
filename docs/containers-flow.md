@@ -211,29 +211,28 @@ After a review of the app the operator answered «make it» to two points:
   asked (`over`), fewer needs a reason; the request is then `assigned` and
   CLOSED — nobody confirms the arrival yet (the operator's pick). `late` = split
   after the deadline. AXO / an admin may cancel one with a note — while it waits, or after its split until a brigadir confirms (below).
-  **In which OTDEL how many** (2026-11-20, the operator: «every supervisor has
-  his own otdel … logistics has to know in which otdel how many he has to
-  send», then «in which otdel how many containers they will get — this is much
-  important»; asked, they picked Verifix as the source, the plan's need as the
-  share, and the split dialog + the brigadir's card + «Qabul» as the places).
-  A cell's otdel is the Verifix subdivision it hangs under; a brigadir's otdels
-  are their live cells' (most cells first) or, with no tied cell, the one
-  Verifix seats them in (`verifix_org.otdel_map`, read off the STORED org
-  read, never a call to Verifix). `units_hours` keeps each unit's hours per
-  otdel too (`_otdel_hours`: a team under its cell's otdel, a cell-less team
-  under the unit's first). `otdel_weights` gives each otdel the weight of what
-  it still needs from the day's start through the request's hour — the window
-  of the limit — less what earlier splits sent it (its need alone when that
-  leaves nothing); `otdel_split` shares a brigadir's count by it, largest
-  remainder (`share_out`), a type no otdel needs whole to the first otdel, ""
-  = «Otdel aniqlanmagan». The split stores the result on each part
-  (`container_request_parts.otdels` {otdel: n}, NULL before 2026-11-20 or for
-  a unit Verifix places nowhere). Shown: the dialog — under every brigadir row,
-  live as the counts change (`otdelSplit`, the browser's twin — keep the two in
-  step), and the picker lists «name · S1 · otdel» so an otdel can be typed;
-  the request's phone card and the row's tooltip; the brigadir's card
-  («Otdellar bo'yicha», also on the reminder); «Qabul». `GET /units` carries
-  `otdel`, `split-hint` carries `otdels` (the weights).
+  **To which CELL how many** (2026-11-20). The operator first asked for the
+  brigadir's OTDEL («every supervisor has his own otdel … logistics has to know
+  in which otdel how many he has to send»), built that morning off Verifix's
+  subdivisions as v4.594–4.597, then: «remove the otdel and replace the teams'
+  yacheyka — for this supervisor he has to send this amount of containers».
+  So the breakdown is per CELL, and nothing names an otdel any more. A
+  brigadir's hourly need already comes per team (`hourly_containers
+  .unit_teams`); `units_hours` keeps it per cell too (`_cell_hours` — a team
+  under its cell's verifix CODE, a team with no cell under its work centre
+  «A2894 · A»; teams of one cell add up). `cell_weights` gives each cell the
+  weight of what it still needs from the day's start through the request's
+  hour — the window of the limit — less what earlier splits sent it (its need
+  alone when that leaves nothing); `cell_split` shares a brigadir's count by
+  it, largest remainder (`share_out`), so the cells add up to the count; a type
+  no cell needs goes to the brigadir's ONLY cell, or stays unbroken when they
+  have several. The split stores it on each part (`container_request_parts
+  .cells` {code: n}; NULL before 2026-11-20 or with no plan — the first
+  version's `otdels` column stays in the table, unread). Shown: the dialog —
+  under every brigadir row, live as the counts change (`cellSplit`, the
+  browser's twin — keep the two in step); the request's phone card and the
+  row's tooltip; the brigadir's card («Yacheykalar bo'yicha», also on the
+  reminder); «Qabul». `split-hint` carries `cells` (the weights).
   **The counts start from the hour's figure** (2026-11-14, the operator: «when
   we choose the hours the number of containers should appear by default, then
   if it is incorrect they will correct it by hand»): picking an hour on «Yangi

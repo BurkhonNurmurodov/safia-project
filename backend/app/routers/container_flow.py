@@ -392,11 +392,8 @@ def get_logistics(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
 
 @router.get("/units")
 def get_all_units(db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
-    """Every brigadir a request can be split to (not archived), with the
-    otdel(s) Verifix places them in — so logistics knows where each part goes."""
-    from app.services import verifix_org
-    otdels = verifix_org.unit_otdels(db)
-    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift, "otdel": otdels.get(m.id, [])}
+    """Every brigadir a request can be split to (not archived)."""
+    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift}
                       for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all()]}
 
 
@@ -605,13 +602,13 @@ def get_split_hint(request_id: int, db: Session = Depends(get_db), payload: dict
                 "rows": [{"manager_id": extra, "unit": getattr(m, "name", None), "shift": getattr(m, "shift", None),
                           "counts": counts, "need": {}}],
                 "limits": {str(extra): {"limit": counts, "given": {}, "left": counts}},
-                "otdels": {str(m): e for m, e in flow.otdel_weights(db, r.day, r.hour, r.id).items()
-                           if m == extra}}
+                "cells": {str(m): e for m, e in flow.cell_weights(db, r.day, r.hour, r.id).items()
+                          if m == extra}}
     limits = flow.unit_limits(db, r.day, r.hour, r.id)
     return {"rows": flow.split_hint(db, r, limits), "extra_for": None,
-            # in which otdel how many: each brigadir's count is shared by these
-            # weights (`otdel_split`, the dialog's `otdelSplit`), the split stores it
-            "otdels": {str(m): e for m, e in flow.otdel_weights(db, r.day, r.hour, r.id).items()},
+            # to which cell how many: each brigadir's count is shared by these
+            # weights (`cell_split`, the dialog's `cellSplit`), the split stores it
+            "cells": {str(m): e for m, e in flow.cell_weights(db, r.day, r.hour, r.id).items()},
             # each brigadir's limit for the hour: the dialog caps every count at `left`
             "limits": {str(m): u for m, u in limits.items()},
             # the dispatch amount starts as every dispatch container and lid asked

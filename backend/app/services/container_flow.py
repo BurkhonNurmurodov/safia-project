@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.models import (AppSetting, ContainerBatch, ContainerBatchLine, ContainerExtra,
                         ContainerRequest, ContainerRequestPart, ContainerSendArea, ContainerStockMove,
                         Manager, ProfilePermission, RoleProfile)
-from app.services import hourly_containers, verifix_org
+from app.services import hourly_containers
 
 logger = logging.getLogger(__name__)
 
@@ -412,11 +412,11 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
     for mid, c in clean:
         for k, n in c.items():
             merged[(mid, k)] = merged.get((mid, k), 0) + n
-    # in which otdel how many — by the same weights the split dialog showed
-    ow = otdel_weights(db, r.day, r.hour, r.id) if merged else {}
+    # to which cell how many — by the same weights the split dialog showed
+    cw = cell_weights(db, r.day, r.hour, r.id) if merged else {}
     for (mid, k), n in merged.items():
         db.add(ContainerRequestPart(request_id=r.id, manager_id=mid, ctype=k, count=n,
-                                    otdels=otdel_split(ow.get(mid), k, n) or None))
+                                    cells=cell_split(cw.get(mid), k, n) or None))
     r.given = lump or None
     at = now()
     r.status, r.assigned_at, r.assigned_by, r.late = "assigned", at, actor, at > r.due_at
@@ -597,10 +597,10 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
                                                   "counts": {}, "received": None, "received_at": None,
                                                   "received_by": None, "received_reason": None,
                                                   "received_comment": None, "reminded_at": None,
-                                                  "otdels": {}})
+                                                  "cells": {}})
             u["counts"][p.ctype] = p.count
-            for o, n in (p.otdels or {}).items():
-                u["otdels"].setdefault(o, {})[p.ctype] = n
+            for c, n in (p.cells or {}).items():
+                u["cells"].setdefault(c, {})[p.ctype] = n
             if p.reminded_at is not None:
                 u["reminded_at"] = _iso(p.reminded_at)
             if p.received is not None:
@@ -1157,25 +1157,25 @@ RECEIVE_CAP = "page.view.container-receive"
 CALLBACK = "crv"          # crv:<request id>:<manager id> — «Hammasi keldi» in the bot
 
 _TG_BRIG = {
-    "uz": {"title": "Sizga konteyner yuborildi", "remind": '⏰ Konteynerlar hali tasdiqlanmagan', "cancel_title": "Konteyner so'rovi bekor qilindi", "cancelled": "Bu so'rov bekor qilingan", "hour": "Soat", "by": "Yubordi", "otdels": "Otdellar bo'yicha", "otdel_none": "Otdel aniqlanmagan",
+    "uz": {"title": "Sizga konteyner yuborildi", "remind": '⏰ Konteynerlar hali tasdiqlanmagan', "cancel_title": "Konteyner so'rovi bekor qilindi", "cancelled": "Bu so'rov bekor qilingan", "hour": "Soat", "by": "Yubordi", "cells": "Yacheykalar bo'yicha",
            "hint": "Kelganini tasdiqlang: hammasi kelgan bo'lsa — «Hammasi keldi», kam bo'lsa — «Boshqa son».",
            "all": "✅ Hammasi keldi", "other": "✏️ Boshqa son",
            "done": "✅ Qabul qilindi · {at}", "already": "Bu allaqachon tasdiqlangan",
            "not_yours": "Bu konteynerlar sizning bo'limingizga yuborilmagan", "gone": "So'rov topilmadi",
            "failed": "Saqlanmadi — sahifada tasdiqlang"},
-    "uz_cyrl": {"title": "Сизга контейнер юборилди", "remind": '⏰ Контейнерлар ҳали тасдиқланмаган', "cancel_title": 'Контейнер сўрови бекор қилинди', "cancelled": 'Бу сўров бекор қилинган', "hour": "Соат", "by": "Юборди", "otdels": "Отделлар бўйича", "otdel_none": "Отдел аниқланмаган",
+    "uz_cyrl": {"title": "Сизга контейнер юборилди", "remind": '⏰ Контейнерлар ҳали тасдиқланмаган', "cancel_title": 'Контейнер сўрови бекор қилинди', "cancelled": 'Бу сўров бекор қилинган', "hour": "Соат", "by": "Юборди", "cells": "Ячейкалар бўйича",
                 "hint": "Келганини тасдиқланг: ҳаммаси келган бўлса — «Ҳаммаси келди», кам бўлса — «Бошқа сон».",
                 "all": "✅ Ҳаммаси келди", "other": "✏️ Бошқа сон",
                 "done": "✅ Қабул қилинди · {at}", "already": "Бу аллақачон тасдиқланган",
                 "not_yours": "Бу контейнерлар сизнинг бўлимингизга юборилмаган", "gone": "Сўров топилмади",
                 "failed": "Сақланмади — саҳифада тасдиқланг"},
-    "ru": {"title": "Вам отправлены контейнеры", "remind": '⏰ Контейнеры ещё не подтверждены', "cancel_title": 'Заявка на контейнеры отменена', "cancelled": 'Эта заявка отменена', "hour": "Час", "by": "Отправил(а)", "otdels": "По отделам", "otdel_none": "Отдел не определён",
+    "ru": {"title": "Вам отправлены контейнеры", "remind": '⏰ Контейнеры ещё не подтверждены', "cancel_title": 'Заявка на контейнеры отменена', "cancelled": 'Эта заявка отменена', "hour": "Час", "by": "Отправил(а)", "cells": "По ячейкам",
            "hint": "Подтвердите приход: всё пришло — «Всё пришло», меньше — «Другое число».",
            "all": "✅ Всё пришло", "other": "✏️ Другое число",
            "done": "✅ Принято · {at}", "already": "Уже подтверждено",
            "not_yours": "Эти контейнеры отправлены не вашему участку", "gone": "Заявка не найдена",
            "failed": "Не сохранилось — подтвердите на странице"},
-    "en": {"title": "Containers sent to you", "remind": '⏰ Containers not confirmed yet', "cancel_title": 'Container request cancelled', "cancelled": 'This request was cancelled', "hour": "Hour", "by": "Sent by", "otdels": "By department", "otdel_none": "Department unknown",
+    "en": {"title": "Containers sent to you", "remind": '⏰ Containers not confirmed yet', "cancel_title": 'Container request cancelled', "cancelled": 'This request was cancelled', "hour": "Hour", "by": "Sent by", "cells": "By cell",
            "hint": "Confirm what arrived: everything — «All arrived», fewer — «Different count».",
            "all": "✅ All arrived", "other": "✏️ Different count",
            "done": "✅ Received · {at}", "already": "Already confirmed",
@@ -1202,10 +1202,10 @@ def receive_open(db: Session, manager_id: int) -> bool:
 
 
 def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split",
-               otdels: Optional[dict] = None) -> str:
+               cells: Optional[dict] = None) -> str:
     """The brigadir's card: `split` (containers sent), `remind` (still not
-    confirmed) or `cancel` (the request was withdrawn — no buttons). `otdels`
-    ({otdel: {ctype: n}}) adds in which otdel how many (2026-11-20)."""
+    confirmed) or `cancel` (the request was withdrawn — no buttons). `cells`
+    ({cell: {ctype: n}}) adds to which cell how many (2026-11-20)."""
     from html import escape as _esc
     from app.translit import transliterate, transliterate_text
     t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
@@ -1216,11 +1216,10 @@ def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split"
             "cancel": f"🚫 <b>{_esc(t['cancel_title'], quote=False)}</b>"}[kind]
     rows = [head, "", f"{t['hour']}: <b>{hour_span(r.hour)}</b>",
             _esc(counts_text(counts, lang), quote=False)]
-    if otdels:
-        rows += ["", f"<b>{_esc(t['otdels'], quote=False)}:</b>"]
-        for o, c in otdels.items():
-            name = (transliterate_text(o, lang) or o) if o else t["otdel_none"]
-            rows.append(f"• {_esc(name, quote=False)} — {_esc(counts_text(c, lang), quote=False)}")
+    if cells:
+        rows += ["", f"<b>{_esc(t['cells'], quote=False)}:</b>"]
+        for c, cn in cells.items():
+            rows.append(f"• <b>{_esc(c, quote=False)}</b> — {_esc(counts_text(cn, lang), quote=False)}")
     if kind == "cancel":
         if r.cancel_note:
             note = transliterate_text(r.cancel_note, lang) or r.cancel_note
@@ -1265,14 +1264,14 @@ def notify_split(request_id: int) -> int:
         rows = db.query(ContainerRequestPart).filter(ContainerRequestPart.request_id == r.id).all()
         for p in rows:
             units.setdefault(p.manager_id, {})[p.ctype] = p.count
-        ots = _otdels_of(rows)
+        cls = _cells_of(rows)
         for mid, counts in units.items():
             if not receive_open(db, mid):
                 continue
             notify_profile(
                 db, f"supervisor:{mid}", "container_split",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="info", html_fn=lambda lang, c=counts, o=ots.get(mid): _brig_body(r, c, lang, otdels=o),
+                type="info", html_fn=lambda lang, c=counts, cl=cls.get(mid): _brig_body(r, c, lang, cells=cl),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             told += 1
         db.commit()
@@ -1290,13 +1289,13 @@ def notify_split_later(request_id: int) -> None:
     threading.Thread(target=notify_split, args=(request_id,), daemon=True).start()
 
 
-def _otdels_of(parts) -> dict:
-    """{manager_id: {otdel: {ctype: n}}} of a request's part rows."""
+def _cells_of(parts) -> dict:
+    """{manager_id: {cell: {ctype: n}}} of a request's part rows."""
     out: dict = {}
     for p in parts:
-        for o, n in (p.otdels or {}).items():
+        for c, n in (p.cells or {}).items():
             if n:
-                out.setdefault(p.manager_id, {}).setdefault(o, {})[p.ctype] = n
+                out.setdefault(p.manager_id, {}).setdefault(c, {})[p.ctype] = n
     return out
 
 
@@ -1737,7 +1736,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
             ContainerRequestPart.reminded_at.is_(None)).all()
         for p in prow:
             pending.setdefault(p.manager_id, {})[p.ctype] = p.count
-        p_ots = _otdels_of(prow)
+        p_cls = _cells_of(prow)
         for mid, counts in pending.items():
             if not receive_open(db, mid):
                 continue
@@ -1751,7 +1750,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
             notify_profile(
                 db, f"supervisor:{mid}", "container_split_remind",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="warning", html_fn=lambda lang, c=counts, rr=r, o=p_ots.get(mid): _brig_body(rr, c, lang, "remind", o),
+                type="warning", html_fn=lambda lang, c=counts, rr=r, cl=p_cls.get(mid): _brig_body(rr, c, lang, "remind", cl),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             db.commit()
             sent += 1
@@ -1893,13 +1892,8 @@ def units_hours(db: Session, day: date) -> dict:
         return got[1]
     started = _time.monotonic()
     configured = production._configured_manager_ids(db)
-    try:
-        cell_otdel, unit_otdel = verifix_org.otdel_map(db)
-    except Exception:                       # the otdel line is a label; it never costs the figure
-        logger.warning("container-flow: otdel map failed", exc_info=True)
-        cell_otdel, unit_otdel = {}, {}
     out: dict = {}
-    by_otdel: dict = {}
+    by_cell: dict = {}
     for (mid,) in db.query(Manager.id).filter(Manager.archived.is_(False)).all():
         if mid not in configured:
             continue
@@ -1912,112 +1906,116 @@ def units_hours(db: Session, day: date) -> dict:
         hm = {h: e for h, e in hm.items() if e}
         if hm:
             out[mid] = hm
-            try:                            # a label: it never costs the figure
-                ob = _otdel_hours(hourly_containers.unit_teams(dash), mid, cell_otdel, unit_otdel)
+            try:                            # a breakdown: it never costs the figure
+                cb = _cell_hours(hourly_containers.unit_teams(dash))
             except Exception:
-                logger.warning("container-flow: otdel hours failed for unit %s", mid, exc_info=True)
-                ob = {}
-            if ob:
-                by_otdel[mid] = ob
-    _hours_cache[day] = (started, out, by_otdel)
+                logger.warning("container-flow: cell hours failed for unit %s", mid, exc_info=True)
+                cb = {}
+            if cb:
+                by_cell[mid] = cb
+    _hours_cache[day] = (started, out, by_cell)
     return out
 
 
-def _otdel_hours(teams: list, mid: int, cell_otdel: dict, unit_otdel: dict) -> dict:
-    """One unit's teams → {otdel: {hour: {ctype: n}}}: each team's hours under
-    the otdel its cell hangs under, a team with no such cell under the unit's
-    own (first) otdel, "" when Verifix places the unit nowhere."""
-    own = (unit_otdel.get(mid) or [""])[0]
+def _team_key(tm: dict) -> str:
+    """A team's name in the breakdown: its cell's verifix CODE (how a cell is
+    named — `utils/cellName.js`), else its work centre (« · group»)."""
+    code = (tm.get("cell") or {}).get("verifix_code")
+    if code:
+        return str(code)
+    wc, g = tm.get("work_center") or "", tm.get("group") or ""
+    return f"{wc} · {g}" if g else wc
+
+
+def _cell_hours(teams: list) -> dict:
+    """One unit's teams → {cell: {hour: {ctype: n}}} — each team's hours under
+    its cell (`_team_key`); teams sharing a cell add up."""
     out: dict = {}
     for tm in teams:
-        cid = (tm.get("cell") or {}).get("id")
-        o = (cell_otdel.get(cid) if cid is not None else None) or own
+        key = _team_key(tm)
         for h, e in (tm.get("hours") or {}).items():
-            d = out.setdefault(o, {}).setdefault(int(h), {})
+            d = out.setdefault(key, {}).setdefault(int(h), {})
             for k, n in e.items():
                 if n:
                     d[k] = d.get(k, 0) + n
     return out
 
 
-def units_otdel_hours(db: Session, day: date) -> dict:
-    """{manager_id: {otdel: {hour: {ctype: n}}}} — `units_hours` kept per
-    otdel (the same read, the same minute's cache)."""
+def units_cell_hours(db: Session, day: date) -> dict:
+    """{manager_id: {cell: {hour: {ctype: n}}}} — `units_hours` kept per cell
+    (the same read, the same minute's cache)."""
     units_hours(db, day)
     got = _hours_cache.get(day)
     return got[2] if got and len(got) > 2 else {}
 
 
-def otdel_weights(db: Session, day: date, hour: int, exclude_request_id: Optional[int] = None) -> dict:
-    """How a brigadir's part of a request is shared across their otdels
-    (2026-11-20, the operator: «in which otdel how many containers they will
-    get»): {manager_id: {"names": [otdel…], "w": {ctype: [[otdel, weight]…]}}}.
-    The weight is what each otdel still needs — its «Konteynerlar» figures from
-    the day's start through `hour` (the window of the brigadir's limit, see
+def cell_weights(db: Session, day: date, hour: int, exclude_request_id: Optional[int] = None) -> dict:
+    """How a brigadir's part of a request is shared across their cells
+    (2026-11-20, the operator: «replace the otdel with the teams' yacheyka —
+    for this supervisor he has to send this amount of containers»):
+    {manager_id: {"names": [cell…], "w": {ctype: [[cell, weight]…]}}}. The
+    weight is what each cell still needs — its «Konteynerlar» figures from the
+    day's start through `hour` (the window of the brigadir's limit, see
     `unit_limits`) less what earlier splits already sent it; when that leaves
-    nothing, its need alone. A type no otdel needs goes whole to the unit's
-    first otdel (`otdel_split`). Never raises — a failure is no breakdown."""
+    nothing, its need alone. Never raises — a failure is no breakdown."""
     try:
         hour = int(hour)
-        per = units_otdel_hours(db, day)
-        _c, unit_otdel = verifix_org.otdel_map(db)
+        per = units_cell_hours(db, day)
         q = db.query(ContainerRequestPart.manager_id, ContainerRequestPart.ctype,
-                     ContainerRequestPart.otdels).join(
+                     ContainerRequestPart.cells).join(
             ContainerRequest, ContainerRequest.id == ContainerRequestPart.request_id).filter(
             ContainerRequest.day == day, ContainerRequest.status == "assigned",
-            ContainerRequest.hour <= hour, ContainerRequestPart.otdels.isnot(None),
+            ContainerRequest.hour <= hour, ContainerRequestPart.cells.isnot(None),
             ~ContainerRequest.id.in_(_extra_request_ids(db)))
         if exclude_request_id is not None:
             q = q.filter(ContainerRequest.id != exclude_request_id)
         given: dict = {}
-        for mid, k, od in q.all():
-            for o, n in (od or {}).items():
-                e = given.setdefault(mid, {}).setdefault(o, {})
+        for mid, k, cd in q.all():
+            for c, n in (cd or {}).items():
+                e = given.setdefault(mid, {}).setdefault(c, {})
                 e[k] = e.get(k, 0) + int(n or 0)
         out: dict = {}
-        for mid in set(per) | set(unit_otdel):
-            known = [o for o in unit_otdel.get(mid) or [] if o]
-            names = known + sorted(o for o in (per.get(mid) or {}) if o and o not in known)
+        for mid, cells in per.items():
+            names = sorted(c for c in cells if c)
             if not names:
                 continue
             cum: dict = {}
-            for o, hm in (per.get(mid) or {}).items():
+            for c, hm in cells.items():
                 for h, e in hm.items():
                     if h > hour:
                         continue
                     for k, n in e.items():
-                        cum.setdefault(k, {})[o] = cum.get(k, {}).get(o, 0) + n
-            order = names + ([""] if any("" in c for c in cum.values()) else [])
+                        cum.setdefault(k, {})[c] = cum.get(k, {}).get(c, 0) + n
+            g = given.get(mid) or {}
             w: dict = {}
-            for k, c in cum.items():
-                g = (given.get(mid) or {})
-                rows = [[o, max(0, c.get(o, 0) - (g.get(o) or {}).get(k, 0)), c.get(o, 0)] for o in order]
+            for k, need in cum.items():
+                rows = [[c, max(0, need.get(c, 0) - (g.get(c) or {}).get(k, 0)), need.get(c, 0)] for c in names]
                 if not any(x[1] for x in rows):
-                    rows = [[o, need, need] for o, _l, need in rows]
-                rows = [[o, x] for o, x, _n in rows if x > 0]
+                    rows = [[c, nd, nd] for c, _l, nd in rows]
+                rows = [[c, x] for c, x, _n in rows if x > 0]
                 if rows:
                     w[k] = rows
             out[mid] = {"names": names, "w": w}
         return out
     except Exception:
-        logger.warning("container-flow: otdel weights failed", exc_info=True)
+        logger.warning("container-flow: cell weights failed", exc_info=True)
         return {}
 
 
-def otdel_split(entry: Optional[dict], ctype: str, n: int) -> dict:
-    """`n` containers of `ctype` across one brigadir's otdels by
-    `otdel_weights` — {otdel: count}, adding up to `n` (largest remainder,
-    `share_out`); "" is the part Verifix places in no otdel. {} when the
-    brigadir has no otdel. The browser's twin is `otdelSplit` in
-    `components/containers/flowUtil.jsx` — keep the two in step."""
+def cell_split(entry: Optional[dict], ctype: str, n: int) -> dict:
+    """`n` containers of `ctype` across one brigadir's cells by
+    `cell_weights` — {cell: count}, adding up to `n` (largest remainder,
+    `share_out`). A type no cell needs goes to the brigadir's only cell, or
+    stays unbroken ({}) when they have several. The browser's twin is
+    `cellSplit` in `components/containers/flowUtil.jsx` — keep the two in step."""
     if not entry or not n or n <= 0:
         return {}
     ws = (entry.get("w") or {}).get(ctype) or []
     if not ws:
         names = entry.get("names") or []
-        return {names[0]: n} if names else {}
-    got = share_out(n, [x for _o, x in ws])
-    return {o: x for (o, _w), x in zip(ws, got) if x}
+        return {names[0]: n} if len(names) == 1 else {}
+    got = share_out(n, [x for _c, x in ws])
+    return {c: x for (c, _w), x in zip(ws, got) if x}
 
 
 # ── AXO's stock (2026-11-17, the operator: «add for AXO how many containers

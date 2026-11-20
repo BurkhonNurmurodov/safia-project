@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
         add_container_request_seen,
         add_container_receipt_columns,
         add_container_send_columns,
-        add_container_part_otdels,
+        add_container_part_cells,
         add_manager_kind_columns,
         turn_on_cells_of_counted_units,
         untick_cells_in_load,
@@ -259,7 +259,7 @@ async def lifespan(app: FastAPI):
     run(add_container_request_seen)
     run(add_container_receipt_columns)
     run(add_container_send_columns)
-    run(add_container_part_otdels)
+    run(add_container_part_cells)
     run(add_last_seen_column)
     run(add_tg_name_column)
     run(add_edit_requests_batch_id)

@@ -643,55 +643,6 @@ def plant_of(divs: dict, start: Optional[str], plants_: list[tuple[int, set]]) -
     return fallback
 
 
-def otdel_map(db: Session) -> tuple[dict, dict]:
-    """({cell id: its otdel name}, {brigadir unit id: the otdel names it works
-    in}) — read off the stored Verifix org (no call to Verifix). A cell's
-    otdel is the subdivision it hangs under (the «shops» the sync already
-    matches brigadirs by); a brigadir's are their live cells' otdels, most
-    cells first, or — with no tied cell — the subdivision Verifix seats the
-    brigadir in. What Verifix says nothing about is absent, never a guess.
-    (2026-11-20, the operator: logistics must see in which otdel how many
-    containers a brigadir gets.)"""
-    from app.models import Cell, Manager
-    org, _at = stored(db)
-    divs = (org or {}).get("divs") or {}
-    if not divs:
-        return {}, {}
-    cells = (db.query(Cell.id, Cell.manager_id, Cell.vfx_division_id, Cell.vfx_meta)
-             .filter(Cell.archived_at.is_(None), Cell.vfx_division_id.isnot(None)).all())
-    units = db.query(Manager.id, Manager.vfx_meta).filter(Manager.archived.is_(False)).all()
-    return otdels_from(divs, cells, units)
-
-
-def unit_otdels(db: Session) -> dict[int, list[str]]:
-    """{brigadir unit id: the otdel names it works in} — `otdel_map`'s half."""
-    return otdel_map(db)[1]
-
-
-def otdels_from(divs: dict, cells, units) -> tuple[dict, dict]:
-    """`otdel_map`'s fold: `cells` (cell id, manager id, division id,
-    vfx_meta), `units` (manager id, vfx_meta)."""
-    by_cell: dict = {}
-    counts: dict = defaultdict(Counter)
-    for cid, mid, did, meta in cells:
-        parent = (divs.get(did) or {}).get("parent") or (meta or {}).get("parent")
-        name = (divs.get(parent or "") or {}).get("name")
-        if not name:
-            continue
-        by_cell[cid] = name
-        if mid is not None:
-            counts[mid][name] += 1
-    out = {mid: [n for n, _ in sorted(c.items(), key=lambda x: (-x[1], x[0]))]
-           for mid, c in counts.items()}
-    for mid, meta in units:
-        if mid in out:
-            continue
-        name = (divs.get((meta or {}).get("unit") or "") or {}).get("name")
-        if name:
-            out[mid] = [name]
-    return by_cell, out
-
-
 # ── the strict name match ─────────────────────────────────────────────────────
 
 def index(rows: list[dict]) -> tuple[dict, dict]:

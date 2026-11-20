@@ -2151,12 +2151,13 @@ def add_container_receipt_columns() -> None:
         "container receipt columns")
 
 
-def add_container_part_otdels() -> None:
-    """2026-11-20: `container_request_parts.otdels` — in which otdel how many
-    of a brigadir's part, fixed at the split; NULL on every older part. Pure
-    DDL, idempotent, no flag; every ORM read of a part selects it."""
-    _ensure_columns((("container_request_parts", (("otdels", "JSONB"),), None),),
-                    "container part otdels column")
+def add_container_part_cells() -> None:
+    """2026-11-20: `container_request_parts.cells` — to which cell how many of
+    a brigadir's part, fixed at the split; NULL on every older part. Pure DDL,
+    idempotent, no flag; every ORM read of a part selects it. (The same
+    morning's `otdels` column, the first version, is left in place unread.)"""
+    _ensure_columns((("container_request_parts", (("cells", "JSONB"),), None),),
+                    "container part cells column")
 
 
 def add_container_send_columns() -> None:

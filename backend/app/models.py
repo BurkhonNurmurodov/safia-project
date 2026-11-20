@@ -6175,12 +6175,14 @@ class ContainerRequestPart(Base):
     # …and when the shift managers were told it is STILL unconfirmed after it
     # (`container_flow.escalate_unconfirmed`). NULL = not escalated.
     escalated_at     = Column(DateTime(timezone=True), nullable=True)
-    # In which OTDEL how many of `count` (2026-11-20, the operator: «in which
-    # otdel how many containers they will get»): {otdel name: n}, fixed at the
-    # split — the count shared across the unit's otdels by the hour's need
-    # (`container_flow.otdel_split`). NULL = a split from before, or a unit
-    # Verifix places in no otdel.
-    otdels           = Column(JSONB, nullable=True)
+    # To which CELL how many of `count` (2026-11-20, the operator: «for this
+    # supervisor he has to send this amount of containers» — per yacheyka):
+    # {cell verifix code (or work centre for a team with no cell): n}, fixed at
+    # the split — the count shared across the unit's cells by the hour's need
+    # (`container_flow.cell_split`). NULL = a split from before, or no plan.
+    # (An `otdels` column from the same morning's first version stays in the
+    # table unread — migrations are additive.)
+    cells            = Column(JSONB, nullable=True)
 
 
 class ContainerExtra(Base):

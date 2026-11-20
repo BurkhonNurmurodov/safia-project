@@ -36,7 +36,7 @@ import {
   refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
   defaultHour, COUNT_GRID, COUNT_PAIR,
-  OtdelList, otdelBreakdown, otdelsText,
+  CellList, cellBreakdown, cellsText,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
@@ -407,7 +407,7 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
   const lumpGiven = !area && r.given && sum(r.given) > 0 ? r.given : null;
   const title = area ? [tx(r.area), r.given && countsText(t, r.given)].filter(Boolean).join(": ")
     : [...r.parts.map((p) => `${tl(p.unit) || "—"}: ${countsText(t, p.counts)}`
-        + (otdelsText(t, tx, p.otdels) ? ` (${otdelsText(t, tx, p.otdels)})` : "")),
+        + (cellsText(t, p.cells) ? ` (${cellsText(t, p.cells)})` : "")),
       lumpGiven && `${t("cflow.req.kind.send")}: ${countsText(t, lumpGiven)}`].filter(Boolean).join(" · ");
   return (
     <tr className={`text-sm ${fresh ? "font-semibold" : ""}`}
@@ -534,7 +534,7 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
             {r.parts.map((p) => (
               <li key={p.manager_id} className="min-w-0 flex flex-col gap-1">
                 <span className="truncate"><PartLine p={p} t={t} tl={tl} /></span>
-                <OtdelList t={t} otdels={p.otdels} />
+                <CellList t={t} cells={p.cells} />
               </li>
             ))}
           </ul>
@@ -923,7 +923,7 @@ const blankRow = () => ({ id: rowSeq++, unit: null, counts: {}, need: null });
 // request, no limit, nobody confirms it. It starts as every dispatch container
 // and lid asked; a crate may go there too when the day needs it.
 function AssignModal({ t, r, onClose, onDone, onFail }) {
-  const { tl, tx } = useTranslit();
+  const { tl } = useTranslit();
   const types = KEYS.filter((k) => r.lines[k] != null);         // the brigadirs' rows: crates
   const allTypes = ALL_KEYS.filter((k) => r.lines[k] != null);  // everything the request carries
   // a request with no crates — dispatch only (a night hour, 2026-11-20): no
@@ -979,20 +979,16 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   // over a limit: the server refuses it too; the field says which count and its cap
   const overLimit = rows.some((row) => row.unit != null && types.some((k) => (row.counts[k] ?? 0) > capOf(row.unit, k)));
   // a brigadir with room for the hour first; one with none stays listed, not pickable
-  // a brigadir's otdels (from Verifix, 2026-11-20): named in the picker (searchable),
-  // and under the row IN WHICH OTDEL HOW MANY — the count shared by the hour's need
-  // (`otdelSplit`, the server's twin stores the same numbers at the split)
-  const otdelOf = (unit) => (units.data ?? []).find((u) => u.id === unit)?.otdel?.map(tx).join(", ") || "";
-  const otdelEntry = (unit) => hint.data?.otdels?.[String(unit)]
-    ?? { names: (units.data ?? []).find((u) => u.id === unit)?.otdel ?? [], w: {} };
+  // to which cell how many (2026-11-20): under every row, the count shared across
+  // the brigadir's cells by the hour's need (`cellSplit`, the server's twin stores
+  // the same numbers at the split)
+  const cellEntry = (unit) => hint.data?.cells?.[String(unit)];
   const opts = (mine) => (units.data ?? []).filter((u) => u.id === mine || !taken.has(u.id))
     .map((u) => {
       const room = roomOf(u.id);
-      const name = `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`;
-      const otdel = otdelOf(u.id);
       return {
-        value: u.id, room, short: name,
-        label: otdel ? `${name} · ${otdel}` : name,
+        value: u.id, room,
+        label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`,
         disabled: !hint.isLoading && room === 0 && u.id !== mine,
         title: room === 0 ? t("cflow.lim.noneLeft") : undefined,
       };
@@ -1057,7 +1053,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
                   {row.unit != null && !hint.isLoading && (
-                    <OtdelList t={t} className="mt-1.5" otdels={otdelBreakdown(otdelEntry(row.unit), row.counts, types)} />
+                    <CellList t={t} className="mt-1.5" cells={cellBreakdown(cellEntry(row.unit), row.counts, types)} />
                   )}
                 </FormField>
               </div>
