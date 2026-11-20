@@ -11255,6 +11255,65 @@ def add_almaty_plant() -> None:
         db.close()
 
 
+# ── 20 Nov: …and the Almaty unit is Akramova Munisa's (docs/data-fixes.md) ───
+# The operator, the same day: «We dont have supervisor in Almaty, but we have
+# lider who is in place of supervisor, her name is AKRAMOVA MUNISA AKMAL QIZI».
+# So the unit stops carrying the plant's name: it takes hers, spelt as the
+# register spells a Verifix person, through the profile page's own rename, and
+# its «Lavozim» becomes «Brigadir o'rnida» as a person's answer
+# (`almaty_plant.name_head`). ONCE, and after `add_almaty_plant` in both
+# entrypoints. A unit that is not there, or that somebody already gave another
+# name, changes nothing and the admins are told.
+ALMATY_HEAD_FLAG = "oneshot:almaty_unit_akramova_nov20"
+
+
+def name_almaty_unit() -> None:
+    from app.identity import profile_holders
+    from app.services import almaty_plant
+
+    title = "Almaty · bo'linma rahbari"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": almaty_plant.LOCK_KEY})
+        if db.query(AppSetting).filter_by(key=ALMATY_HEAD_FLAG).first():
+            return
+        try:
+            res = almaty_plant.name_head(db, "system (one-shot 2026-11-20)")
+        except almaty_plant.Refused as why:
+            db.rollback()
+            db.add(AppSetting(key=ALMATY_HEAD_FLAG, value=f"refused: {why}"[:250]))
+            db.commit()
+            print(f"[startup] Almaty unit head: nothing changed — {why}")
+            _dm_report("warn", title,
+                       rows=[("🔎", "Sabab", str(why)),
+                             ("👤", "Kerakli rahbar", almaty_plant.HEAD)],
+                       notes=[("👉", "Bo'linma nomi va «Lavozim»ni uning profil sahifasida "
+                                    "qo'lda o'zgartiring.")],
+                       open=_REPORT_FACTORIES)
+            return
+        db.add(AppSetting(key=ALMATY_HEAD_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        tg = len(profile_holders(db, f"supervisor:{res['unit_id']}"))
+        print(f"[startup] Almaty unit head: unit {res['unit_id']} «{res['was']}» → "
+              f"«{res['name']}» (renamed={res['renamed']}), kind {res['kind_was']} → "
+              f"{res['kind']} (Telegram: {tg})")
+        _dm_report("ok", title, status="Bo'linma rahbar nomiga o'tkazildi",
+                   rows=[("👤", "Bo'linma", f"{res['name']} · №{res['unit_id']} · "
+                                           f"{res['unit_shift'] or '—'}-smena"),
+                         ("✏️", "Avvalgi nomi", res["was"] if res["renamed"] else None),
+                         ("🏷", "Lavozim", "Brigadir o'rnida"),
+                         ("📲", "Telegram", f"{tg} ta akkaunt" if tg else "ulanmagan")],
+                   notes=[] if tg else [("ℹ️", "Profilga hali hech kim ulanmagan — u botda "
+                                              "ro'yxatdan o'tib, shu profilni tanlaydi.")],
+                   open=("Profilni ochish", f"/profile/supervisor/{res['unit_id']}"))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Almaty unit head failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
+
+
 # ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
 # The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
 # «Kutish mas'uli» reads /downtime and /idle-cell through the categories he

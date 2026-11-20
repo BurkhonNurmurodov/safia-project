@@ -527,10 +527,38 @@ The admins' DM says why and where to load the catalogue by hand. It runs once
 (flag `oneshot:almaty_plant_catalog_nov20`); only a crash leaves it to try
 again on the next start. Tests: `tests/test_almaty_plant.py`.
 
-**Still to do by hand**, when the plant is staffed: name the supervisor, tie
-the unit and its cells to Verifix, give each cell its team (`cells.sap_code`
-is what `cell_lookup.by_sap` joins a Команда on, per unit), and switch
-«Zagruzka hisoblanadi» on.
+**Still to do by hand**, when the plant is staffed: tie the unit and its cells
+to Verifix, give each cell its team (`cells.sap_code` is what
+`cell_lookup.by_sap` joins a Команда on, per unit), and switch «Zagruzka
+hisoblanadi» on. (The unit was named the same day — the next section.)
+
+## …then the Almaty unit is Akramova Munisa's, «Brigadir o'rnida» (`startup.name_almaty_unit`, 2026-11-20)
+
+The operator, once the unit stood under the plant's name: «We dont have
+supervisor in Almaty, but we have lider who is in place of supervisor, her name
+is AKRAMOVA MUNISA AKMAL QIZI».
+
+That is the platform's «Brigadir o'rnida»: a person who runs a unit under a
+leader's job (`supervisor_kind` "acting", `services/supervisor_kind.py`). So
+`almaty_plant.name_head` changes two things on the plant's one live unit and
+nothing else — its shift, plant, catalogue and «Zagruzka hisoblanadi» stay:
+
+- **The name** becomes «Akramova Munisa Akmal Qizi» — the operator's spelling
+  put through `verifix_org.profile_name`, the way the register spells every
+  Verifix person, so the live sync's tie run can pair the unit with her. It
+  goes through the profile page's own rename (`profiles._rename_profile`), so
+  an account already bound to the unit reads the new name too.
+- **«Lavozim»** becomes «Brigadir o'rnida», written as a person's answer
+  (`set_manual`): no Verifix check overwrites it.
+
+Only the placeholder name is replaced. A unit that somebody already named
+after another person, a namesake unit elsewhere, or no unit on the plant
+change nothing, and the admins' DM says to set the name and «Lavozim» on the
+profile page by hand. It runs once (flag `oneshot:almaty_unit_akramova_nov20`),
+after `add_almaty_plant` in both entrypoints. Tests: `tests/test_almaty_plant.py`.
+
+She is not bound to the unit by this: she registers in the bot and picks the
+unit's profile like every brigadir, and an admin approves.
 
 ## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
 

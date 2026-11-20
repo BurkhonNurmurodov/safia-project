@@ -7,6 +7,10 @@ production-shaped database the step adds the plant after the last tab, a unit
 named after it (next id, shift 1, загрузка OFF) and the catalogue with the
 teams' штатка; it runs once; it never writes into a unit that holds a catalogue
 and never guesses between several units; other plants' units are untouched.
+Then the unit takes its head's name (`startup.name_almaty_unit`): Akramova
+Munisa, spelt as the register spells a Verifix person, «Brigadir o'rnida» as a
+person's answer, the bound accounts' name following; once; a unit somebody
+already named after another person, or no unit at all, changes nothing.
 The database half runs where `SAFIA_TEST_PG` names a server.
 """
 import unittest
@@ -21,7 +25,8 @@ except ImportError:  # run from inside tests/
 from sqlalchemy import text
 
 from app import startup
-from app.models import AppSetting, Factory, Manager, PPProduct, PPWorkCenter
+from app.models import (AppSetting, Factory, Manager, PPProduct, PPWorkCenter,
+                        TelegramUserRole)
 from app.services import almaty_plant
 from app.services.pp_calc import daily_key, line_keys, takes_sap
 
@@ -48,6 +53,13 @@ class CatalogueData(unittest.TestCase):
         self.assertEqual(almaty_plant.TEAMS, (("A", 2), ("B", 2), ("C", 1)))
         self.assertEqual(sum(n for _, n in almaty_plant.TEAMS), 5)
 
+    def test_the_head_as_the_register_spells_her(self):
+        from app.services import supervisor_kind, verifix_org
+        self.assertEqual(verifix_org.profile_name(almaty_plant.HEAD),
+                         "Akramova Munisa Akmal Qizi")
+        self.assertIn(almaty_plant.HEAD_KIND, supervisor_kind.KINDS)
+        self.assertEqual(almaty_plant.HEAD_KIND, "acting")
+
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
 class AlmatyPlantTest(unittest.TestCase):
@@ -62,7 +74,8 @@ class AlmatyPlantTest(unittest.TestCase):
     def setUp(self):
         self.db = self.pg.Session()
         self.db.execute(text("TRUNCATE pp_products, pp_work_centers, pp_catalog_versions, "
-                             "managers, factories, app_settings RESTART IDENTITY CASCADE"))
+                             "managers, factories, app_settings, telegram_user_roles, "
+                             "translations RESTART IDENTITY CASCADE"))
         # Production's shape on 2026-11-20: Uchtepa and Keles, units up to №30.
         uch = Factory(code="Uchtepa", name_ru="Учтепа", sort_order=0)
         kel = Factory(code="Keles", name_ru="Келес", sort_order=1)
@@ -86,6 +99,13 @@ class AlmatyPlantTest(unittest.TestCase):
                 mock.patch.object(startup, "_dm_report",
                                   lambda tone, title, **kw: self.cards.append((tone, kw))):
             startup.add_almaty_plant()
+        self.db.expire_all()
+
+    def _name(self):
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+                mock.patch.object(startup, "_dm_report",
+                                  lambda tone, title, **kw: self.cards.append((tone, kw))):
+            startup.name_almaty_unit()
         self.db.expire_all()
 
     def _plant(self):
@@ -183,6 +203,77 @@ class AlmatyPlantTest(unittest.TestCase):
         self.assertEqual(self.db.query(Manager).count(), 4)
         self.assertEqual(self.db.query(PPProduct).filter(PPProduct.manager_id == 40).count(), 0)
         self.assertEqual([t for t, _ in self.cards], ["warn"])
+
+    # ── the unit's head ──────────────────────────────────────────────────────
+
+    def test_the_unit_takes_its_heads_name_and_kind(self):
+        self._boot()
+        self.db.add(TelegramUserRole(telegram_id=777, role="supervisor", role_id=31,
+                                     full_name="Almaty", status="approved"))
+        self.db.commit()
+        self._name()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        self.assertEqual(unit.name, "Akramova Munisa Akmal Qizi")
+        self.assertEqual(unit.supervisor_kind, "acting")
+        self.assertEqual(unit.supervisor_kind_meta["src"], "manual")
+        # Nothing else about the unit moved.
+        self.assertEqual((unit.shift, bool(unit.archived), bool(unit.zagruzka_on),
+                          unit.factory_id), (1, False, False, self._plant().id))
+        self.assertEqual(self.db.query(PPProduct).filter(PPProduct.manager_id == 31).count(), 83)
+        # The account bound to the unit reads the new name too.
+        self.assertEqual(self.db.query(TelegramUserRole.full_name).filter_by(role_id=31).scalar(),
+                         "Akramova Munisa Akmal Qizi")
+        self.assertEqual([t for t, _ in self.cards], ["ok", "ok"])
+        rows = dict((label, value) for _, label, value in self.cards[-1][1]["rows"])
+        self.assertEqual(rows["Avvalgi nomi"], "Almaty")
+        self.assertEqual(rows["Telegram"], "1 ta akkaunt")
+
+    def test_naming_runs_once(self):
+        self._boot()
+        self._name()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        unit.name = "Somebody Later"          # a person renames it afterwards
+        self.db.commit()
+        self._name()
+        self.assertEqual(self.db.query(Manager.name).filter(Manager.id == 31).scalar(),
+                         "Somebody Later")
+        self.assertEqual(len(self.cards), 2)
+
+    def test_a_unit_typed_in_her_name_by_hand_only_gets_the_kind(self):
+        self._boot()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        unit.name = "AKRAMOVA MUNISA AKMAL QIZI"
+        self.db.commit()
+        self._name()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        self.assertEqual((unit.name, unit.supervisor_kind),
+                         ("Akramova Munisa Akmal Qizi", "acting"))
+
+    def test_a_unit_named_after_somebody_else_is_left_alone(self):
+        self._boot()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        unit.name = "Somebody Real"
+        self.db.commit()
+        self._name()
+        unit = self.db.query(Manager).filter(Manager.id == 31).one()
+        self.assertEqual((unit.name, unit.supervisor_kind), ("Somebody Real", None))
+        self.assertEqual([t for t, _ in self.cards], ["ok", "warn"])
+        flag = self.db.query(AppSetting).filter_by(key=startup.ALMATY_HEAD_FLAG).one()
+        self.assertTrue(flag.value.startswith("refused"))
+
+    def test_no_plant_changes_nothing(self):
+        self._name()
+        self.assertEqual({m.name for m in self.db.query(Manager)},
+                         {"Aripova Manzura", "Axmedova Munisa", "Yuldasheva Dilnoza Ulmasovna"})
+        self.assertEqual([t for t, _ in self.cards], ["warn"])
+
+    def test_a_namesake_unit_changes_nothing(self):
+        self._boot()
+        self.db.add(Manager(id=40, name="akramova munisa akmal qizi", shift=2, factory_id=1))
+        self.db.commit()
+        self._name()
+        self.assertEqual(self.db.query(Manager.name).filter(Manager.id == 31).scalar(), "Almaty")
+        self.assertEqual([t for t, _ in self.cards], ["ok", "warn"])
 
 
 if __name__ == "__main__":

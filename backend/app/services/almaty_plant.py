@@ -34,6 +34,16 @@ quantities, not catalogue, and is not read. Names are the form's, with stray
 spaces dropped and the spelling left alone.
 
 Run once by `startup.add_almaty_plant` (docs/data-fixes.md).
+
+THE UNIT'S HEAD (the same day): «We dont have supervisor in Almaty, but we have
+lider who is in place of supervisor, her name is AKRAMOVA MUNISA AKMAL QIZI».
+`name_head` gives the unit her name, spelt the way the register spells a
+Verifix person (`verifix_org.profile_name`), through the profile page's own
+rename, and sets «Lavozim» to «Brigadir o'rnida» (`supervisor_kind` "acting":
+she runs the unit under a leader's job) as a person's answer, which no Verifix
+check overwrites. Only the placeholder name is replaced: a unit somebody has
+already given another person's name is left alone. Run once by
+`startup.name_almaty_unit`.
 """
 from __future__ import annotations
 
@@ -51,6 +61,11 @@ PLANT = {"code": "Almaty", "name_uz": "Olmaota", "name_uz_cyrl": "Олмаота
          "name_ru": "Алматы", "name_en": "Almaty"}
 UNIT_NAME = "Almaty"
 UNIT_SHIFT = 1
+
+# Who runs the unit, as the operator wrote her (Verifix's own spelling), and
+# what she is to it: a leader in place of a supervisor.
+HEAD = "AKRAMOVA MUNISA AKMAL QIZI"
+HEAD_KIND = "acting"
 
 # (Команда, штатка) — the form's team block, in its order.
 TEAMS = (("A", 2), ("B", 2), ("C", 1))
@@ -208,3 +223,45 @@ def apply(db: Session) -> dict:
         "work_centers": db.query(PPWorkCenter).filter(
             PPWorkCenter.manager_id == unit.id).count(),
     }
+
+
+def name_head(db: Session, by: str) -> dict:
+    """Give the plant's one live unit its head's name and kind, inside the
+    caller's transaction (the caller commits). Raises :class:`Refused`, having
+    changed nothing, when the unit is not there to name or carries somebody
+    else's name."""
+    from app.routers.profiles import _rename_profile   # THE rename, with its cascade
+    from app.services import supervisor_kind, verifix_org
+
+    plant = db.query(Factory).filter(
+        func.lower(Factory.code) == PLANT["code"].lower()).first()
+    if plant is None:
+        raise Refused("the plant «Almaty» is not on the platform")
+    live = (db.query(Manager).filter(Manager.factory_id == plant.id,
+                                     Manager.archived.is_(False))
+            .order_by(Manager.id).all())
+    if len(live) != 1:
+        raise Refused(f"{len(live)} live units stand on the plant"
+                      + (": " + ", ".join(f"{m.name} (№{m.id})" for m in live) if live else ""))
+    unit = live[0]
+    name = verifix_org.profile_name(HEAD)
+    was = unit.name
+    fold = lambda v: " ".join((v or "").split()).lower()      # noqa: E731
+    if fold(was) not in (fold(UNIT_NAME), fold(name)):
+        raise Refused(f"the unit is named {was} (№{unit.id}) already")
+    twin = db.query(Manager).filter(func.lower(Manager.name) == name.lower(),
+                                    Manager.archived.is_(False),
+                                    Manager.id != unit.id).first()
+    if twin:
+        raise Refused(f"a unit named {twin.name} (№{twin.id}) exists already")
+
+    renamed = was != name
+    if renamed:
+        _rename_profile(db, "supervisor", unit.id, name)
+    kind_was = unit.supervisor_kind
+    if kind_was != HEAD_KIND:
+        supervisor_kind.set_manual(unit, HEAD_KIND, by)
+    db.flush()
+    return {"unit_id": unit.id, "unit_shift": unit.shift, "name": unit.name,
+            "was": was, "renamed": renamed,
+            "kind": unit.supervisor_kind, "kind_was": kind_was}

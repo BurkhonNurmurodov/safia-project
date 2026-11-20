@@ -302,6 +302,10 @@ try:
     # 2026-11-20, mirrored from main.py).
     from app.startup import add_almaty_plant
     add_almaty_plant()
+    # …then that unit takes its head's name, Akramova Munisa, «Brigadir o'rnida»
+    # (once, 2026-11-20; after the step above, in both entrypoints).
+    from app.startup import name_almaty_unit
+    name_almaty_unit()
     from app.startup import seed_container_send_areas
     seed_container_send_areas()
     from app.startup import container_flow_notify_on, containers_tv_managers
