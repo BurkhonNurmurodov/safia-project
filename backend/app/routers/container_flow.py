@@ -392,8 +392,11 @@ def get_logistics(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
 
 @router.get("/units")
 def get_all_units(db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
-    """Every brigadir a request can be split to (not archived)."""
-    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift}
+    """Every brigadir a request can be split to (not archived), with the
+    otdel(s) Verifix places them in — so logistics knows where each part goes."""
+    from app.services import verifix_org
+    otdels = verifix_org.unit_otdels(db)
+    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift, "otdel": otdels.get(m.id, [])}
                       for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all()]}
 
 

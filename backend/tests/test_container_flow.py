@@ -1568,3 +1568,33 @@ class PageKeyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnitOtdelsTest(unittest.TestCase):
+    """The split dialog names each brigadir's otdel (2026-11-20): the Verifix
+    subdivision their cells hang under, else the one the brigadir sits in."""
+
+    DIVS = {
+        "10": {"id": "10", "name": "Цех круассанов", "parent": "1"},
+        "11": {"id": "11", "name": "Цех тортов", "parent": "1"},
+        "101": {"id": "101", "name": "9123", "parent": "10"},
+        "102": {"id": "102", "name": "9124", "parent": "10"},
+        "111": {"id": "111", "name": "7331", "parent": "11"},
+    }
+
+    def test_cells_parent_names_the_otdel_most_cells_first(self):
+        from app.services.verifix_org import otdels_from
+        cells = [(1, "101", None), (1, "102", None), (1, "111", None), (2, "111", None)]
+        out = otdels_from(self.DIVS, cells, [(1, None), (2, None)])
+        self.assertEqual(out[1], ["Цех круассанов", "Цех тортов"])
+        self.assertEqual(out[2], ["Цех тортов"])
+
+    def test_a_cell_the_read_lost_keeps_its_stored_parent(self):
+        from app.services.verifix_org import otdels_from
+        out = otdels_from(self.DIVS, [(3, "999", {"parent": "11"})], [])
+        self.assertEqual(out[3], ["Цех тортов"])
+
+    def test_no_cell_falls_back_to_the_brigadirs_seat_and_unknown_is_absent(self):
+        from app.services.verifix_org import otdels_from
+        out = otdels_from(self.DIVS, [], [(4, {"unit": "10"}), (5, {"unit": "nope"}), (6, None)])
+        self.assertEqual(out, {4: ["Цех круассанов"]})

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, Ban, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Truck, Wand2,
+  Activity, AlertTriangle, Ban, Building2, CalendarClock, Check, ClipboardList, Eye, EyeOff, Pencil, Plus, Sparkles, Split, Trash2, Truck, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -835,7 +835,7 @@ const blankRow = () => ({ id: rowSeq++, unit: null, counts: {}, need: null });
 // request, no limit, nobody confirms it. It starts as every dispatch container
 // and lid asked; a crate may go there too when the day needs it.
 function AssignModal({ t, r, onClose, onDone, onFail }) {
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
   const types = KEYS.filter((k) => r.lines[k] != null);         // the brigadirs' rows: crates
   const allTypes = ALL_KEYS.filter((k) => r.lines[k] != null);  // everything the request carries
   const units = useQuery({
@@ -888,12 +888,17 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   // over a limit: the server refuses it too; the field says which count and its cap
   const overLimit = rows.some((row) => row.unit != null && types.some((k) => (row.counts[k] ?? 0) > capOf(row.unit, k)));
   // a brigadir with room for the hour first; one with none stays listed, not pickable
+  // a brigadir's otdel (from Verifix, 2026-11-20): where their part goes — named in
+  // the picker (searchable) and on the row, the trigger keeps the bare name
+  const otdelOf = (unit) => (units.data ?? []).find((u) => u.id === unit)?.otdel?.map(tx).join(", ") || "";
   const opts = (mine) => (units.data ?? []).filter((u) => u.id === mine || !taken.has(u.id))
     .map((u) => {
       const room = roomOf(u.id);
+      const name = `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`;
+      const otdel = otdelOf(u.id);
       return {
-        value: u.id, room,
-        label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`,
+        value: u.id, room, short: name,
+        label: otdel ? `${name} · ${otdel}` : name,
         disabled: !hint.isLoading && room === 0 && u.id !== mine,
         title: room === 0 ? t("cflow.lim.noneLeft") : undefined,
       };
@@ -956,6 +961,15 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   })()}>
                   <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
+                  {row.unit != null && otdelOf(row.unit) && (
+                    <div className="mt-1.5 self-start inline-flex items-center gap-1.5 max-w-full rounded-lg px-2 py-1 text-xs font-medium"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                      title={otdelOf(row.unit)}>
+                      <Building2 size={13} className="shrink-0" style={{ color: "var(--text-3)" }} />
+                      <span className="shrink-0" style={{ color: "var(--text-3)" }}>{t("cflow.otdel")}:</span>
+                      <span className="truncate">{otdelOf(row.unit)}</span>
+                    </div>
+                  )}
                 </FormField>
               </div>
               {rows.length > 1 && (

@@ -643,6 +643,47 @@ def plant_of(divs: dict, start: Optional[str], plants_: list[tuple[int, set]]) -
     return fallback
 
 
+def unit_otdels(db: Session) -> dict[int, list[str]]:
+    """{brigadir unit id: the otdel names it works in} — read off the stored
+    Verifix org (no call to Verifix). A brigadir's otdel is the subdivision
+    their cells hang under (the «shops» the sync already matches them by);
+    one with no tied cell falls back to the subdivision Verifix seats the
+    brigadir in. Most cells first, so the usual one-otdel unit is one name.
+    A unit Verifix tells nothing about is absent — never a guess.
+    (2026-11-20, the operator: logistics must see which otdel a brigadir's
+    containers go to when splitting a request.)"""
+    from app.models import Cell, Manager
+    org, _at = stored(db)
+    divs = (org or {}).get("divs") or {}
+    if not divs:
+        return {}
+    cells = (db.query(Cell.manager_id, Cell.vfx_division_id, Cell.vfx_meta)
+             .filter(Cell.manager_id.isnot(None), Cell.archived_at.is_(None),
+                     Cell.vfx_division_id.isnot(None)).all())
+    units = db.query(Manager.id, Manager.vfx_meta).filter(Manager.archived.is_(False)).all()
+    return otdels_from(divs, cells, units)
+
+
+def otdels_from(divs: dict, cells, units) -> dict[int, list[str]]:
+    """`unit_otdels`' fold: `cells` (manager id, division id, vfx_meta),
+    `units` (manager id, vfx_meta)."""
+    counts: dict = defaultdict(Counter)
+    for mid, did, meta in cells:
+        parent = (divs.get(did) or {}).get("parent") or (meta or {}).get("parent")
+        name = (divs.get(parent or "") or {}).get("name")
+        if name:
+            counts[mid][name] += 1
+    out = {mid: [n for n, _ in sorted(c.items(), key=lambda x: (-x[1], x[0]))]
+           for mid, c in counts.items()}
+    for mid, meta in units:
+        if mid in out:
+            continue
+        name = (divs.get((meta or {}).get("unit") or "") or {}).get("name")
+        if name:
+            out[mid] = [name]
+    return out
+
+
 # ── the strict name match ─────────────────────────────────────────────────────
 
 def index(rows: list[dict]) -> tuple[dict, dict]:

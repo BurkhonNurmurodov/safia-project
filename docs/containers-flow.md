@@ -211,6 +211,17 @@ After a review of the app the operator answered «make it» to two points:
   asked (`over`), fewer needs a reason; the request is then `assigned` and
   CLOSED — nobody confirms the arrival yet (the operator's pick). `late` = split
   after the deadline. AXO / an admin may cancel one with a note — while it waits, or after its split until a brigadir confirms (below).
+  **Each brigadir row names the brigadir's OTDEL** (2026-11-20, the operator:
+  «every supervisor has his own otdel … logistics has to know in which otdel
+  how many he has to send»; asked where it comes from, they picked Verifix and
+  «the split dialog only»): `GET /units` carries `otdel` — the names of the
+  Verifix subdivisions the brigadir's live cells hang under, most cells first
+  (`verifix_org.unit_otdels`, read off the STORED org read, never a call to
+  Verifix), or, for a unit with no tied cell, the subdivision Verifix seats the
+  brigadir in; a unit Verifix says nothing about gets `[]` and no line. The
+  picker lists «name · S1 · otdel» (so an otdel can be typed to find its
+  brigadir), the closed trigger the bare name, and a «Otdel: …» chip sits
+  under it. Nothing else (the card, «Qabul», «Hisobot») names it.
   **The counts start from the hour's figure** (2026-11-14, the operator: «when
   we choose the hours the number of containers should appear by default, then
   if it is incorrect they will correct it by hand»): picking an hour on «Yangi
