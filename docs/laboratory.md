@@ -50,6 +50,37 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   number changes and its toast names the new one; the Jurnal's create and
   redraw rows carry it (`ticket`). Pinned by `tests/test_assessment_ticket.py`
   (Postgres).
+- **«Biletlar» — the tickets as a table of their own** (2026-11-20, the
+  operator: «we need a table to see tickets separately»). A third tab,
+  between «Baholashlar» and «Savollar banki», ADMIN-ONLY like the bank (a
+  ticket is the bank's questions with their expected answers, which a judge
+  never browses; `page_admin(…, "assessment")`, so it is grantable).
+  `GET /api/assessment/tickets` — every sitting's set, newest ticket first, a
+  sitting not yet numbered last: the number, the candidate (face included),
+  the day, the status, and what it holds — questions per department
+  («Tarkibi», icon + count) and per type («Turi»); no «20» column, since every
+  ticket holds the draw's 20. A row opens the ticket whole (`TicketModal` in
+  `components/assessment/TicketList.jsx`, `GET /api/assessment/tickets/{id}`):
+  its questions in the sitting's order under their block headings, each with
+  its department and type, printed as written. **The expected answers are
+  hidden until «Javoblar bilan» is picked** — a ticket may be on a screen the
+  candidate can see; the toggle resets to «Faqat savollar» every time a ticket
+  opens. «Baholashni ochish» goes to the sitting. **A redrawn set is replaced
+  by the new one, never kept** (the redraw deletes its items), so a retired
+  number has no row. The search box finds a number or a name.
+- **The candidate's face on the lists** (2026-11-20, the operator: «this table
+  also should show the image of the candidate»): «Baholashlar» and «Biletlar»
+  draw each candidate's Verifix photo — the one «Xodim kartasi» shows — beside
+  the name (28px in a table row, 40px on a phone card), initials where there is
+  none (`CandidateAvatar` in `assessmentUtil.jsx`). The server says per
+  candidate whether Verifix holds a photo (`candidate.photo`, from the stored
+  org read — `_photo_emps`), so no row asks for one that is not there; the
+  grading page's avatar follows the same flag. **The photo is the «Xodim
+  kartasi» photo and keeps its guard**: a viewer who may not open `people`
+  (a judge, today) sees initials, exactly as on the grading page. In dev only
+  (`StrictMode`), a photo already cached when a tab switch mounts its avatar
+  shows broken — `ProfileAvatar` revokes its object URL in the double-mounted
+  effect; a production build mounts once and is unaffected.
 - **Six tables** (created by `create_all`; later columns through startup steps — the expected answer, the candidate's Verifix id, the ticket number):
   `assessment_candidates` (a worker of the plant + an optional note — see the
   next bullet), `assessment_questions` (the bank; never

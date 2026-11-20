@@ -200,7 +200,7 @@ export default function AssessmentGrade() {
         <section className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <div className="p-4 sm:p-5 flex items-start gap-4">
             <ProfileAvatar muted name={candName || "—"} colorKey={cand?.full_name || ""} size={phone ? 48 : 60}
-              photoUrl={canPeople && eid ? `/api/people/${encodeURIComponent(eid)}/photo?size=192` : undefined} />
+              photoUrl={canPeople && eid && cand?.photo !== false ? `/api/people/${encodeURIComponent(eid)}/photo?size=192` : undefined} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 <h2 className="text-lg sm:text-[22px] font-semibold leading-tight tracking-[-0.01em] break-words" style={{ color: "var(--text-1)" }}>

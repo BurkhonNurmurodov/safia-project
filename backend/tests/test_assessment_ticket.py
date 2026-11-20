@@ -5,7 +5,7 @@ these run where `SAFIA_TEST_PG` names a server.
 What is pinned: sittings from before are numbered once in the order they were
 opened; the boot step is idempotent; the sequence never trails a number already
 printed; a draw takes the next number and a redraw takes a new one; a bank too
-short to draw burns no number.
+short to draw burns no number; the «Biletlar» list and one ticket (admins only).
 """
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -120,6 +120,52 @@ class TicketTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.db.rollback()
         self.assertEqual(self.db.execute(text("SELECT nextval('assessment_ticket_seq')")).scalar(), 1)
+
+    def test_tickets_list_says_what_each_ticket_holds(self):
+        """«Biletlar»: newest ticket first, a sitting not yet numbered last;
+        each row counts its questions per department and type; `photo` only
+        where Verifix holds one; refused to a non-admin."""
+        from app.routers import assessment as r
+        self._boot()
+        for dept, qtype in BANK:
+            self.db.add(AssessmentQuestion(department=dept, qtype=qtype, text=f"{dept} {qtype} {id(object())}"))
+        self.cand.employee_id = "E-1"
+        other = AssessmentCandidate(full_name="Ikkinchi", employee_id="E-2")
+        self.db.add(other)
+        self.db.commit()
+        first = Assessment(candidate_id=self.cand.id)
+        second = Assessment(candidate_id=other.id)
+        self.db.add_all([first, second])
+        self.db.flush()
+        r._draw_into(self.db, first)
+        r._draw_into(self.db, second)
+        unnumbered = Assessment(candidate_id=other.id)    # opened by an old worker mid-deploy
+        self.db.add(unnumbered)
+        self.db.commit()
+        emps = {"E-1": {"photo": "sha1"}, "E-2": {}}
+        with mock.patch.object(r, "_is_admin", return_value=True), \
+                mock.patch.object(r, "_photo_emps", return_value=emps):
+            out = r.list_tickets(db=self.db, payload={})
+            one = r.get_ticket(first.id, db=self.db, payload={})
+        rows = out["rows"]
+        self.assertEqual([x["ticket_no"] for x in rows], [2, 1, None])
+        self.assertEqual(rows[1]["departments"], {"kaizen": rows[1]["departments"]["kaizen"],
+                                                  "production": rows[1]["departments"]["production"],
+                                                  "tb": 3, "hr": 3, "okk": 3})
+        self.assertEqual(rows[1]["departments"]["kaizen"] + rows[1]["departments"]["production"], 11)
+        self.assertEqual(sum(rows[1]["types"].values()), 20)
+        self.assertEqual(rows[1]["total"], 20)
+        self.assertEqual(rows[2]["total"], 0)
+        self.assertTrue(rows[1]["candidate"]["photo"])
+        self.assertFalse(rows[0]["candidate"]["photo"])
+        self.assertEqual([i["position"] for i in one["items"]], list(range(1, 21)))
+        self.assertEqual(one["ticket_no"], 1)
+        with mock.patch.object(r, "_is_admin", return_value=False):
+            with self.assertRaises(HTTPException) as ctx:
+                r.list_tickets(db=self.db, payload={})
+            self.assertEqual(ctx.exception.status_code, 403)
+            with self.assertRaises(HTTPException):
+                r.get_ticket(first.id, db=self.db, payload={})
 
 
 if __name__ == "__main__":

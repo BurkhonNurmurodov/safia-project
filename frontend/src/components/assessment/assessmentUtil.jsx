@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import { BadgeCheck, Users, Factory, HardHat, Sparkles, BookOpen, Wrench, Ticket } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { TXT, fill } from "../../pages/assessmentText";
+import ProfileAvatar from "../ui/ProfileAvatar";
+import { useCanOpen } from "../people/peopleUtil";
 
 export { fill };
 
@@ -56,6 +58,22 @@ export function TypeChip({ type, T }) {
 export function TicketChip({ n, T }) {
   if (n == null) return null;
   return <Chip icon={Ticket} title={T.ticketTip}><span className="tabular-nums">{fill(T.ticket, { n })}</span></Chip>;
+}
+
+/** The candidate's face — their Verifix photo, the one «Xodim kartasi» shows
+ *  (2026-11-20, the operator: «this table also should show the image of the
+ *  candidate»). Asked for only when the viewer may open «Xodim kartasi» (the
+ *  photo's own guard) and the server says there is one (`photo`); initials
+ *  otherwise, on the neutral surface the grading page's avatar uses. */
+export function CandidateAvatar({ cand, size = 28, tl = (s) => s }) {
+  const canPeople = useCanOpen("people");
+  const eid = cand?.employee_id;
+  return (
+    <ProfileAvatar muted size={size} name={tl(cand?.full_name || "—")} colorKey={cand?.full_name || ""}
+      className="flex-shrink-0"
+      photoUrl={canPeople && eid && cand?.photo !== false
+        ? `/api/people/${encodeURIComponent(eid)}/photo?size=${size > 48 ? 192 : 96}` : undefined} />
+  );
 }
 
 /** A whole percent, «—» when there is nothing to divide. */

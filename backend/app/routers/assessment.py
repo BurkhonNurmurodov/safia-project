@@ -413,11 +413,28 @@ def search_workers(q: str = Query(default=""), limit: int = Query(default=30, ge
     }
 
 
-def _cand_dict(c: Optional[AssessmentCandidate]) -> Optional[dict]:
+def _photo_emps(db: Session) -> dict:
+    """{employee id: their Verifix record} — the one place a person's photo
+    hash is kept (the «Xodim kartasi» photo, `/api/people/{eid}/photo`). Read
+    once per answer; a failure costs the faces, never the list."""
+    try:
+        from app.services import verifix_org
+        org, _ = verifix_org.stored(db)
+        return (org or {}).get("emps") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _cand_dict(c: Optional[AssessmentCandidate], emps: Optional[dict] = None) -> Optional[dict]:
+    """`photo` (when `emps` is given): Verifix holds a photo of this candidate,
+    so a list may draw the face and never asks for one that is not there."""
     if not c:
         return None
-    return {"id": c.id, "full_name": c.full_name, "note": c.note, "employee_id": c.employee_id,
-            "job": c.job, "unit": c.unit_name, "code": c.cell_code}
+    out = {"id": c.id, "full_name": c.full_name, "note": c.note, "employee_id": c.employee_id,
+           "job": c.job, "unit": c.unit_name, "code": c.cell_code}
+    if emps is not None:
+        out["photo"] = bool(c.employee_id and (emps.get(str(c.employee_id)) or {}).get("photo"))
+    return out
 
 
 @router.get("/candidates")
@@ -513,6 +530,7 @@ def list_assessments(
     by_a: dict[int, list[JudgeEvaluation]] = {}
     for e in evs_all:
         by_a.setdefault(e.assessment_id, []).append(e)
+    emps = _photo_emps(db)
     out = []
     for a in rows:
         evs = by_a.get(a.id, [])
@@ -527,7 +545,7 @@ def list_assessments(
             "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
             "created_at": _iso(a.created_at), "created_by": a.created_by,
             "closed_at": _iso(a.closed_at),
-            "candidate": _cand_dict(c),
+            "candidate": _cand_dict(c, emps),
             "seats": _seats(evs, grades, me, idep),
             "submitted": len(sub),
             "results_hidden": hidden,
@@ -584,6 +602,54 @@ def create_assessment(body: dict = Body(...), db: Session = Depends(get_db), pay
     return {"id": a.id, "ticket_no": a.ticket_no}
 
 
+# ── «Biletlar» — every drawn set as a ticket of its own (admins) ──────────────
+@router.get("/tickets")
+def list_tickets(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Every sitting's drawn set as a ticket: its number, whose it is, when, and
+    what it holds (questions per department and per type). The questions
+    themselves are `GET /tickets/{id}`. Admins only — a ticket carries the
+    bank's questions and their expected answers, which a judge never browses.
+    A redrawn set is replaced by the new one; the old set is not kept."""
+    _require_admin(db, payload)
+    rows = (db.query(Assessment)
+            .order_by(Assessment.ticket_no.desc().nulls_last(), Assessment.id.desc())
+            .limit(500).all())
+    if not rows:
+        return {"rows": [], "total": rules.TOTAL}
+    ids = [a.id for a in rows]
+    cands = {c.id: c for c in db.query(AssessmentCandidate).filter(
+        AssessmentCandidate.id.in_({a.candidate_id for a in rows})).all()}
+    comp: dict[int, dict] = {}
+    for aid_, dep, qt in db.query(AssessmentItem.assessment_id, AssessmentItem.department,
+                                  AssessmentItem.qtype).filter(AssessmentItem.assessment_id.in_(ids)).all():
+        c = comp.setdefault(aid_, {"departments": {}, "types": {}, "total": 0})
+        c["departments"][dep] = c["departments"].get(dep, 0) + 1
+        c["types"][qt] = c["types"].get(qt, 0) + 1
+        c["total"] += 1
+    emps = _photo_emps(db)
+    return {"total": rules.TOTAL, "rows": [{
+        "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
+        "created_at": _iso(a.created_at), "created_by": a.created_by,
+        "candidate": _cand_dict(cands.get(a.candidate_id), emps),
+        **comp.get(a.id, {"departments": {}, "types": {}, "total": 0}),
+    } for a in rows]}
+
+
+@router.get("/tickets/{aid}")
+def get_ticket(aid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """One ticket whole: its questions in the sitting's order, each with its
+    department, type and expected answer (as copied at the draw). Admins only."""
+    _require_admin(db, payload)
+    a = _get(db, aid)
+    c = db.query(AssessmentCandidate).filter(AssessmentCandidate.id == a.candidate_id).first()
+    return {
+        "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
+        "created_at": _iso(a.created_at), "created_by": a.created_by,
+        "candidate": _cand_dict(c, _photo_emps(db)),
+        "items": [_item_dict(i) for i in _items(db, aid)],
+    }
+
+
 @router.get("/assessments/{aid}")
 def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
                    db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
@@ -615,7 +681,7 @@ def get_assessment(aid: int, seat: Optional[str] = Query(default=None),
         "id": a.id, "ticket_no": a.ticket_no, "status": a.status, "held_on": _iso(a.held_on),
         "created_at": _iso(a.created_at), "created_by": a.created_by,
         "closed_at": _iso(a.closed_at), "closed_by": a.closed_by,
-        "candidate": _cand_dict(c),
+        "candidate": _cand_dict(c, _photo_emps(db)),
         "items": [_item_dict(i) for i in items],
         "total": len(items),
         "seats": _seats(evs, grades, me, {i.id: i.department for i in items}),

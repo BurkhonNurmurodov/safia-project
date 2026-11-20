@@ -12,7 +12,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import NewAssessmentModal from "./NewAssessmentModal";
-import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace, TicketChip } from "./assessmentUtil";
+import { useAT, fill, DEPT_ICON, pct0, fmtDate, VERDICT, workPlace, TicketChip, CandidateAvatar } from "./assessmentUtil";
 import { PersonLink } from "../people/peopleUtil";
 
 /** One seat of the panel as a small square: free (dashed), being graded
@@ -42,7 +42,7 @@ export function SeatDot({ seat, T, tl }) {
   );
 }
 
-function StatusChip({ status, T }) {
+export function StatusChip({ status, T }) {
   const open = status === "open";
   return (
     <span className="inline-flex items-center rounded-md px-1.5 py-[2px] text-[11px] font-medium"
@@ -134,6 +134,7 @@ export default function AssessmentList({ isAdmin }) {
       {rows.map((r) => (
         <li key={r.id} style={{ borderTop: "1px solid var(--border)" }}>
           <button type="button" onClick={() => open(r)} className="w-full text-left px-4 py-3 flex items-center gap-3 min-h-[56px]">
+            <CandidateAvatar cand={r.candidate} size={40} tl={tl} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm truncate" style={{ color: "var(--text-1)" }}>{tl(r.candidate?.full_name || "—")}</span>
@@ -184,8 +185,9 @@ export default function AssessmentList({ isAdmin }) {
                 style={{ color: r.ticket_no == null ? "var(--text-3)" : "var(--text-1)" }}>
                 {r.ticket_no == null ? "—" : fill(T.ticketShort, { n: r.ticket_no })}
               </td>
-              <td className="px-3 py-2 max-w-[360px]">
-                <div className="flex items-baseline gap-2 min-w-0 whitespace-nowrap">
+              <td className="px-3 py-1.5 max-w-[400px]">
+                <div className="flex items-center gap-2 min-w-0 whitespace-nowrap">
+                  <CandidateAvatar cand={r.candidate} size={28} tl={tl} />
                   <span className="font-medium shrink-0" style={{ color: "var(--text-1)" }}>
                     <PersonLink employeeId={r.candidate?.employee_id}>{tl(r.candidate?.full_name || "—")}</PersonLink>
                   </span>
