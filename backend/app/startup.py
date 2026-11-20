@@ -8040,6 +8040,38 @@ def _closed_day_trace_job() -> None:
                       closed_day_trace_report.send, UNPRICED_DM_CHAT)
 
 
+# ── one-shot: which unit of the Kazakhstan plant its catalogue belongs to ────
+# The operator sent the Kazakhstan supervisor's catalogue on 2026-11-20 to be
+# added. A catalogue hangs on `managers.id`, production cannot be read from a
+# cloud session and the report door refused the session's key that day, so the
+# plants, every unit, and the new plant's cells, work centres and catalogue go
+# out once as TEXT (`services/plant_units_report.py`) — to Abbos, the reader
+# the operator named. READ-ONLY: it writes nothing but its flag. Changing what
+# it sends needs a NEW flag key.
+PLANT_UNITS_FLAG = "plant_units_report_2026_11_20_v1"
+_PLANT_UNITS_DELAY_S = 60
+
+
+def report_plant_units() -> None:
+    """The plants and their supervisor units, DMed once. Never raises."""
+    try:
+        if not _report_pending(PLANT_UNITS_FLAG):
+            return
+        from datetime import timedelta
+        from app.scheduler import schedule_at
+        schedule_at("plant-units-report",
+                    datetime.now(timezone.utc) + timedelta(seconds=_PLANT_UNITS_DELAY_S),
+                    _plant_units_job)
+    except Exception as exc:
+        print(f"[startup] plant units report could not be scheduled: {exc}")
+
+
+def _plant_units_job() -> None:
+    from app.services import plant_units_report
+    _send_report_once(PLANT_UNITS_FLAG, "plant units report",
+                      plant_units_report.send, REPORT_CHAT_ABBOS)
+
+
 # ── one-shot: which leader profiles ARE leaders on Verifix ──────────────────
 # The operator asked on 2026-10-04 for the «Lider / Lider o'rnida» switch on
 # every leader profile to be filled from Verifix's API (not the attendance

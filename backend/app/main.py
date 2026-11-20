@@ -153,6 +153,7 @@ async def lifespan(app: FastAPI):
         report_trudoyomkost_register,
         report_admin_objections,
         report_closed_day_trace,
+        report_plant_units,
         check_leader_kinds, check_leader_kind_pins,
         preview_leader_rules_sep19,
         patch_task10_description_sep19,
@@ -852,6 +853,13 @@ async def lifespan(app: FastAPI):
     # `startup.report_closed_day_trace` and
     # `services/closed_day_trace_report.py` once it has landed.
     later(report_closed_day_trace)
+    # ⚠ TEMPORARY one-shot (2026-11-20) — the plants, every supervisor unit,
+    # and the Kazakhstan plant's cells, work centres and catalogue as text,
+    # DMed once to Abbos: what the session adding that plant's catalogue must
+    # know and cannot read. Read-only. Remove this line,
+    # `startup.report_plant_units` and `services/plant_units_report.py` once
+    # the answer is back.
+    later(report_plant_units)
     # ⚠ TEMPORARY one-shot (2026-10-04) — fills every leader profile's
     # «Lider / Lider o'rnida» switch from Verifix's API and DMs the operator who
     # is which. Remove this line, `startup.check_leader_kinds` and
