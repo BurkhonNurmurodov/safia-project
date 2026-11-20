@@ -113,9 +113,9 @@ Izzatilla — and some cells are the same. The rulings, asked and answered:
    in the KPIs** — official only, confirmed («Yes, official only»).
 8. **The cases, as they stand on the platform today, are right**: Niyozov
    Izzatilla actually runs Цех-8's bakery cells (9411–9414) and Raximova Kamola
-   Цех-11's; Murodali Ochilov actually runs Цех-14 on the 3rd shift, and
-   **his brigade's загрузка keeps being counted** (the one exception to «the 3rd
-   shift is not counted»); **0822 stays with Aripova Manzura** on shift 1 and
+   Цех-11's; Murodali Ochilov actually runs Цех-14, which works the 3rd shift
+   but **is counted as the 2nd** (20 Nov — so its загрузка counts like any
+   shift-2 brigade's); **0822 stays with Aripova Manzura** on shift 1 and
    keeps counting, though Verifix puts it in Цех-20 on shift 3. So a cell's
    shift is its ACTUAL brigade's shift, and the actual brigade of a cell can
    differ from its Verifix «Цех» (ruling 4 then holds it until Verifix moves
@@ -237,6 +237,12 @@ CREATE TABLE shifts (
   rows 2 and 3 together. They are two rows, not one, because each block has its
   own Verifix node and its own shift-manager — so a block is where a brigade and
   a shift-manager hang, and the shift is what every page groups by.
+- **A brigade's `shift_id` is the shift it is COUNTED on**, the Verifix node only
+  its default — the shift's own «actual vs official». Murodali Ochilov's brigade
+  works the 3rd shift (Verifix «Цех -14») and is counted as the 2nd (the
+  operator, 20 Nov: «Actually 3 but we count them for 2»), so it is set by hand
+  and holds until Verifix moves «Цех -14». Which 2nd-shift block it belongs to
+  is open — Verifix cannot say.
 - **Keles is counted apart from Uchtepa, always.** Its shift is numbered 1, but
   a page that groups by shift groups by plant AND shift: Keles's row is never
   summed into Uchtepa's «1-smena», and a count for the whole company lists
@@ -271,10 +277,10 @@ ALTER TABLE managers
 - **The 3rd shift's загрузка is off through the switches that exist**: its
   brigades get «Zagruzka hisoblanadi» off (`managers.zagruzka_on = false`) and
   their cells stay out of the load (`cells.in_load`). Nothing new is built for
-  it, and turning it on later is the same two switches. **Exception (ruling
-  8): Murodali Ochilov's brigade** — Цех-14, moved to shift 3 — keeps its
-  switch ON and keeps counting. Цех-20 is a new brigade (2531, 7231) with it
-  off; 0822 stays in Aripova's shift-1 brigade and keeps counting.
+  it, and turning it on later is the same two switches. Murodali Ochilov's
+  brigade (Цех-14) works the 3rd shift but is counted as the 2nd, so it is not
+  among them and keeps its switch ON. Цех-20 is a new brigade (2531, 7231)
+  with it off; 0822 stays in Aripova's shift-1 brigade and keeps counting.
 - `vfx_division_id` ties the UNIT to its «Цех» node. Today only the brigadir
   PERSON is tied (`vfx_employee_id`), which is why a unit whose brigadir changed
   cannot be followed (the 24 Oct swaps). Two of ours may tie to one node (Цех-4,

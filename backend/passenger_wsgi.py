@@ -330,6 +330,8 @@ try:
     # Two roster fixes from the lost-workers audit (20 Nov, once).
     from app.startup import fix_lost_workers_nov20
     fix_lost_workers_nov20()
+    from app.startup import mark_sent_home_doc_nov20
+    mark_sent_home_doc_nov20()
     # HR's cells out of the leaders' KPI + six turnover reasons (16 Nov, once).
     from app.startup import kpi_off_cells_nov16
     kpi_off_cells_nov16()
