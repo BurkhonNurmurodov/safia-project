@@ -237,7 +237,7 @@ async def lifespan(app: FastAPI):
         ensure_internal_api_key, reset_arc_mirror,
         migrate_permission_modes,
         migrate_user_capabilities,
-        repoint_shift_report_sheet,
+        drop_retired_sheet_sources,
         wipe_cell_perenaladka_history,
         purge_leader_ai_history,
         drop_paused_shift_reviews,
@@ -524,7 +524,7 @@ async def lifespan(app: FastAPI):
     # instead of staying unassigned.
     run(migrate_factories)
     run(add_role_profile_factory)
-    later(repoint_shift_report_sheet)
+    later(drop_retired_sheet_sources)
     later(wipe_cell_perenaladka_history)
     later(purge_leader_ai_history)
     # After purge_leader_ai_history (no point re-judging rows about to be

@@ -38,9 +38,7 @@ from app.models import (
 )
 from app.services import action_log, leader_ai
 from app.services.verifix_parser import parse_verifix_file
-from app.services.sheets_sync import (
-    sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
-)
+from app.services.sheets_sync import sync_leaders_sheet, sync_quality_sheet
 from app.permissions import (
     get_page_access, set_page_access, role_can_access, require_page, PAGE_KEYS, TOGGLEABLE_ROLES,
 )
@@ -276,6 +274,20 @@ def delete_attendance(
     return {"date": body.date, "rows_deleted": total_rows, "results": results}
 
 
+# The загрузка's two sheets, DISCONNECTED on 2026-11-17 (docs/zagruzka.md): their
+# rows are the frozen history, so an old admin tab may neither re-point nor
+# Refresh them — a Refresh would wipe that history and reload whatever the
+# sheet holds today.
+RETIRED_SHEETS = ("source", "shift_report")
+
+
+def _refuse_retired(name: str) -> None:
+    if name in RETIRED_SHEETS:
+        raise HTTPException(status_code=410, detail=(
+            f"Sheet '{name}' is disconnected: its history is stored in the "
+            "database and the загрузка reads the platform's own pages."))
+
+
 @router.get("/sheet-sources")
 def get_sheet_sources(db: Session = Depends(get_db), _: dict = Depends(require_tab("data"))):
     return db.query(SheetSource).all()
@@ -295,6 +307,7 @@ def update_sheet_source(
     db: Session = Depends(get_db),
     _: dict = Depends(require_tab("data")),
 ):
+    _refuse_retired(name)
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
     old_id = src.sheet_id if src else None
     if not src:
@@ -330,21 +343,12 @@ def refresh_sheet(
     db: Session = Depends(get_db),
     caller: dict = Depends(verify_refresh_access),
 ):
+    _refuse_retired(name)
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
     if not src:
         raise HTTPException(status_code=404, detail=f"Sheet '{name}' not configured")
 
     try:
-        if name == "source":
-            result = sync_source_sheet(src.sheet_id, db)
-            _log_sheet_refresh(name, result)
-            return {"status": "ok", "sheet": name, **result}
-
-        if name == "shift_report":
-            result = sync_shift_report_sheet(src.sheet_id, db)
-            _log_sheet_refresh(name, result)
-            return {"status": "ok", "sheet": name, **result}
-
         if name == "leaders":
             result = sync_leaders_sheet(src.sheet_id, db)
             # Stamp the sync time so the Leaders page can show "last updated".

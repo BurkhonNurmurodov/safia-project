@@ -21,11 +21,14 @@ import { useToast } from "../../components/ui/Toast";
  * The leaders checklist sheet is no longer listed (2026-10-15): the Google
  * Form stopped receiving filings, so its row could only re-read a sheet that
  * no longer changes. Its stored rows stay the history the register reads.
+ *
+ * The загрузка's two sheets went the same way on 2026-11-17: «Manba» («Минут»
+ * + «Одам сони») and «Smena hisoboti» («Смена отчёт»). The загрузка reads the
+ * «Zagruzka fayli» page and ojidaniya the cells; their rows stay the history
+ * (docs/zagruzka.md), and the backend refuses to re-point or Refresh them.
  */
 
 const SOURCES = [
-  { name: "source",       labelKey: "admin.source" },
-  { name: "shift_report", labelKey: "admin.shiftReport" },
   { name: "quality",      labelKey: "admin.qualitySheet" },
   // The logistics team's «on time report» (/ontime). Its read takes minutes, so
   // Refresh only starts it (services/ontime_sync.py) and the page shows it land.
@@ -115,20 +118,8 @@ export default function DataSources() {
   }
 
   function refreshDetail(name, data) {
-    if (name === "source") {
-      return t("admin.refreshDetail.source")
-        .replace("{p}", data.production_rows ?? 0)
-        .replace("{h}", data.headcount_rows ?? 0);
-    }
     if (name === "quality") return t("admin.refreshDetail.quality").replace("{n}", data.quality_rows ?? 0);
-    if (name === "ontime") return t(data.status === "busy" ? "admin.refreshDetail.ontimeBusy" : "admin.refreshDetail.ontime");
-    // A refiled day imports LESS than its rows add up to (the last form wins,
-    // see read_downtime_data) — say so, or the drop looks like lost data.
-    const refiled = data.resubmitted ?? 0;
-    return t("admin.refreshDetail.shift")
-      .replace("{n}", data.downtime_rows ?? 0)
-      .replace("{m}", data.managers_synced ?? 0)
-      + (refiled ? t("admin.refreshDetail.refiled").replace("{n}", refiled) : "");
+    return t(data.status === "busy" ? "admin.refreshDetail.ontimeBusy" : "admin.refreshDetail.ontime");
   }
 
   /**

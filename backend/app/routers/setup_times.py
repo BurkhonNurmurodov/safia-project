@@ -16,9 +16,9 @@ Setup-times page API — three tabs, one router:
 The «Fakt» data has TWO doors (user, 2026-08-17): this page's tab and the
 Idle-cell page's «Perenaladka» tab. They are the same rows — an edit on one
 surface IS the edit on the other — so the fact endpoints accept EITHER page
-key and union both pages' scope grants. The bulk sheet import stays behind
-"setup" alone: it is a Setup-times-only button, and one that can rewrite a
-whole month.
+key and union both pages' scope grants. The bulk «Смена отчёт» sheet import
+is GONE (2026-11-17): it last wrote on 2026-08-16, and its rows
+(`entered_by_profile = "sheet-import"`) stay as history.
 
 Reads/writes of fact data are scoped to the caller's cells exactly like the
 Idle-cell page (admins/top-managers all, "all"-scope grants all, supervisors
@@ -37,7 +37,7 @@ from app import identity
 from app.capabilities import page_admin, page_cap, page_view_scope
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.database import get_db
-from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
+from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime
 from app.permissions import require_page
 from app.routers.idle_cell import _scoped_cells
 from app.services import action_log, cell_archive
@@ -297,9 +297,8 @@ def save_fact(
     minutes. The note is OPTIONAL; the minutes must be > 0 — a blank/0 value
     means "not entered", which the UI expresses by DELETEing the row instead.
 
-    Stamping the writer is what makes the row a TYPED one: the sheet import
-    refuses to overwrite or clear anything it did not write itself, so a
-    brigadir's correction survives the next «Смена отчёт» Refresh."""
+    Stamping the writer is what makes the row a TYPED one, told apart from
+    the history the retired sheet import wrote («sheet-import")."""
     if not _valid_date(body.date):
         raise HTTPException(status_code=400, detail="Invalid date")
     scoped = _scoped_cells(db, payload, *FACT_PAGES)
@@ -351,41 +350,6 @@ def save_fact(
                 changes=diff, native=False,
             )
     return _peren_json(p)
-
-
-@router.post("/fact/refresh")
-def refresh_fact(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """Pull the shift report's per-cell «Переналадка» minutes into the Fakt tab
-    — the same «Смена отчёт» workbook the Ojidaniya sync reads, on demand from
-    the page. Shown to every profile that can open the page (the refresh-button
-    rule); the import itself is global history, not scoped to the caller's
-    cells — it writes only what the owning brigadir answered on the form."""
-    from app.services.sheets_sync import sync_cell_perenaladka
-
-    src = db.query(SheetSource).filter(SheetSource.name == "shift_report").first()
-    if not src:
-        raise HTTPException(status_code=404, detail="Shift report sheet is not configured")
-    try:
-        result = sync_cell_perenaladka(src.sheet_id, db)
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(status_code=502, detail=f"Sheet import failed: {exc}")
-    if page_grant_used(db, payload, PAGE):
-        alert_grant_use(
-            db, payload, page_cap(PAGE), "idle_cell.peren_refreshed",
-            details=[("l.count", f"+{result.get('saved', 0)} / −{result.get('cleared', 0)}")],
-        )
-    action_log.enrich(
-        target_kind="batch", target_id="cell_perenaladka",
-        details=[("source", "shift_report"), ("added", result.get("saved", 0)),
-                 ("removed", result.get("cleared", 0)),
-                 ("skipped", result.get("kept", 0)),
-                 ("cells", result.get("cells", 0))],
-    )
-    return {"status": "ok", **result}
 
 
 @router.delete("/fact/{entry_id}", status_code=204)

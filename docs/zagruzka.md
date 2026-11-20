@@ -37,7 +37,8 @@ for byte**; only where three numbers come from changes.
   now splits at `range_start` / `sheet_end` like the загрузка; on 2–4 Sep, both
   sources filled, they agreed within ~1% for all 21 units, so the seam moves no
   level. A new reader of planned trudoyomkost reads `unit_labor` from the floor
-  — never `ProductionData`, which keeps syncing and feeds nobody.
+  — never `ProductionData`, which is frozen history since 2026-11-17 (see
+  «The загрузка's Google Sheets are DISCONNECTED»).
 - **Odam soni is the TYPED number and nothing else.**
   `pp_work_center_daily.people` — the «Bugungi fakt» box on the «Odamlar soni»
   tab — summed over the unit's work centres **the day gave PLAN MINUTES to**
@@ -152,8 +153,8 @@ for byte**; only where three numbers come from changes.
   operator's call), the early-arrival subtraction, the headcount-mismatch flag,
   the flat 480 base (the production page's `pp_shift_min` is deliberately NOT
   adopted), the closed-day lock, the day-close gate on `build_metrics_list`,
-  and both sheet imports, which keep syncing and are simply not read from the
-  floor on.
+  and the rows both sheet imports stored, which are simply not read from the
+  floor on (the sheets themselves are disconnected since 2026-11-17).
 - **«Yacheyka zagruzkasi» (`/zagruzka-cell`) runs the same rule per CELL.**
   Its trudoyomkost already came from `pp_calc.line_minutes`; what changed is
   its headcount — `o_soni()` returns the TYPED «Bugungi fakt» and nothing else
@@ -221,6 +222,45 @@ for byte**; only where three numbers come from changes.
   defaults to no roles (admin-only) and is opened per profile on Access /
   Permissions — widening the units it covers is not the same decision as
   widening who may open it.
+
+## The загрузка's Google Sheets are DISCONNECTED (2026-11-17)
+
+The operator's directive: «save all historical data to database and remove the
+connection to these unnecessary sheets». The two sheets the загрузка was built
+from — **«source»** («Минут» → `production_data.prod_plan` / `.prod_actual`,
+«Одам сони» → `headcount_data.official_hc`) and **«shift_report»** («Смена
+отчёт» → `downtime_data`, and its per-cell «Переналадка» → `cell_perenaladka`)
+— are no longer connected to anything. The links removed, for the record:
+«source» `14cu-nJ9IR5DP4g2r76p5gdByxR1-PETS7V_GNR_Yh-w`, «shift_report»
+`1swk6vyvlZtY2L2HPRYd9H2Lwi-A3K53B2SvLcu5rXOs`.
+
+- **The history was already IN the database, and stays there untouched.** Both
+  syncs were wipe-and-reload mirrors, so the tables held exactly what the
+  platform had been reading. Checked on production before the cut (report
+  door, 17 Nov): `production_data` / `headcount_data` 1 May → 6 Sep 2026
+  (2,709 rows each, 21 units), `downtime_data` 25 Mar → 1 Oct (2,906),
+  `cell_perenaladka`'s `sheet-import` rows 25 Mar → 16 Aug (10,961); last
+  Refresh 2 Oct. Everything the sheets could still answer lies before its
+  floor — `ZAGRUZKA_FROM` (2 Sep), `idle_source.CELLS_FROM` (27 Aug), and
+  perenaladka has been typed on the page since 15 Aug — so no figure lost its
+  source.
+- **A last Refresh was deliberately NOT the "save"**: it deletes the table and
+  reloads whatever the sheet holds today, so a trimmed or renamed tab would
+  have replaced history with less. The rows are frozen as they were.
+- **What went**: `sheets_sync.sync_source_sheet` / `sync_shift_report_sheet` /
+  `sync_cell_perenaladka` and their readers in `sheets_reader` (its category
+  constants and `get_client` stay — a dozen modules and the ontime read use
+  them), the two rows on «Ma'lumotlar», the Setup-times «Fakt» Refresh
+  (`POST /api/setup-times/fact/refresh`), the `SHEET_SOURCES` seed entries and
+  the stored links themselves (`startup.drop_retired_sheet_sources`, every
+  boot, idempotent). `POST /admin/refresh-sheet/{source,shift_report}` and
+  `PUT /admin/sheet-sources/{…}` answer **410** (`admin.RETIRED_SHEETS`), so an
+  old admin tab can neither re-point one nor wipe the history with a Refresh.
+- **What stays**: every reader of those tables, unchanged, and `rekey_sheet_eras_boot`, which re-files the frozen rows on every
+  boot when a brigadir change joins `name_map.SHEET_NAME_ERAS` — the syncs were
+  its other caller, so a new era still reaches them.
+- The quality, ontime and (hidden) leaders sheets are untouched — they are not
+  inputs of the загрузка.
 
 ## The trudoyomkost is KEPT between requests (`labor_kept`, 2026-11-02)
 

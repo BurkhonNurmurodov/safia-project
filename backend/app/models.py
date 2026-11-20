@@ -138,7 +138,7 @@ class SheetSource(Base):
     __tablename__ = "sheet_sources"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, unique=True, nullable=False)  # 'source' | 'shift_report'
+    name = Column(String, unique=True, nullable=False)  # 'quality' | 'ontime' | 'leaders' (source/shift_report retired 2026-11-17)
     sheet_id = Column(String, nullable=False)
 
 

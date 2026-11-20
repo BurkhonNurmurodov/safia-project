@@ -36,15 +36,9 @@ MANAGERS = [
     (19, "Уразов Аскар", 2),
 ]
 
-# Shift report («Смена отчёт, Сафия»). Replaced 2026-07-29: the previous
-# workbook ("Copy of Смена отчёт, Сафия(5/9)") stopped taking submissions on
-# 2026-05-26, and the new one both carries the full history from 2026-03-28 and
-# reshuffles the columns — see _shift_layout in services/sheets_reader.py.
-SHIFT_REPORT_SHEET_ID = "1swk6vyvlZtY2L2HPRYd9H2Lwi-A3K53B2SvLcu5rXOs"
-
+# «source» and «shift_report» (the загрузка's sheets) were disconnected on
+# 2026-11-17 — `drop_retired_sheet_sources`; never seed them back.
 SHEET_SOURCES = [
-    ("source", "1q-4PTcnGNNsGzXmXAIa5HE2Ze0f6hQ-7dKagvHSH2eI"),
-    ("shift_report", SHIFT_REPORT_SHEET_ID),
     # Quality register (complaints & non-conformances) — tab «для свода».
     ("quality", "1DtQxGyc8IByew_Hakj0HX3ZL0MigphWON8CNkjZFE3k"),
 ]
@@ -4559,34 +4553,23 @@ def seed_managers_and_sources() -> None:
         db.close()
 
 
-SHIFT_SHEET_REPOINT_FLAG = "shift_report_sheet_2026_07_29"
-
-
-def repoint_shift_report_sheet() -> None:
-    """Point the stored `shift_report` source at the new «Смена отчёт, Сафия»
-    workbook (2026-07-29).
-
-    seed_managers_and_sources only ever INSERTS a missing source row, so
-    changing SHEET_SOURCES alone would leave every existing deployment reading
-    the retired workbook — which stopped taking submissions on 2026-05-26.
-    Flag-guarded so it runs exactly once: an admin who later repoints the source
-    by hand keeps their choice.
-    """
+def drop_retired_sheet_sources() -> None:
+    """2026-11-17: the загрузка's two Google Sheets — «source» («Минут» +
+    «Одам сони») and «shift_report» («Смена отчёт») — are disconnected. Their
+    rows stay in production_data / headcount_data / downtime_data /
+    cell_perenaladka as the frozen history; only the two stored links go.
+    Idempotent: a second boot finds nothing to delete."""
     db = SessionLocal()
     try:
-        if db.query(AppSetting).filter_by(key=SHIFT_SHEET_REPOINT_FLAG).first():
-            return
-
-        src = db.query(SheetSource).filter(SheetSource.name == "shift_report").first()
-        if src and src.sheet_id != SHIFT_REPORT_SHEET_ID:
-            print(f"[startup] shift_report sheet {src.sheet_id} → {SHIFT_REPORT_SHEET_ID}")
-            src.sheet_id = SHIFT_REPORT_SHEET_ID
-
-        db.add(AppSetting(key=SHIFT_SHEET_REPOINT_FLAG, value="1"))
+        n = (db.query(SheetSource)
+             .filter(SheetSource.name.in_(("source", "shift_report")))
+             .delete(synchronize_session=False))
         db.commit()
+        if n:
+            print(f"[startup] retired sheet sources removed: {n}")
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
-        print(f"[startup] shift_report repoint skipped: {exc}")
+        print(f"[startup] retired sheet sources not removed: {exc}")
     finally:
         db.close()
 
@@ -8825,8 +8808,10 @@ def patch_task10_scrollbar_nov16() -> None:
 def rekey_sheet_eras_boot() -> None:
     """2026-11-12: re-file the stored sheet rows (Минут, Одам сони, the shift
     report, the leaders sheet) a brigadir change took from their unit
-    (`name_map.SHEET_NAME_ERAS`). Idempotent; the syncs re-file their own
-    reloads, so this only ever moves what was stored before an era was added."""
+    (`name_map.SHEET_NAME_ERAS`). Idempotent. Since 2026-11-17 the Минут /
+    Одам сони / shift-report rows are frozen (their sheets are disconnected),
+    so this boot step is the only thing that re-files them when an era is
+    added; the leaders sync still re-files its own reloads."""
     from app.services.name_map import rekey_sheet_eras
     db = SessionLocal()
     try:

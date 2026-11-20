@@ -220,7 +220,7 @@ try:
         ensure_internal_api_key, reset_arc_mirror,
         migrate_permission_modes,
         migrate_user_capabilities,
-        repoint_shift_report_sheet,
+        drop_retired_sheet_sources,
         wipe_cell_perenaladka_history,
         purge_leader_ai_history,
         drop_paused_shift_reviews,
@@ -488,7 +488,7 @@ try:
     # instead of staying unassigned.
     migrate_factories()
     add_role_profile_factory()
-    repoint_shift_report_sheet()
+    drop_retired_sheet_sources()
     wipe_cell_perenaladka_history()
     purge_leader_ai_history()
     # After purge_leader_ai_history (no point re-judging rows about to be

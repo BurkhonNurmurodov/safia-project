@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Wrench, CircleUserRound, LayoutGrid, Timer, MessageSquareText, Barcode,
-  Plus, Pencil, Trash2, Repeat2, RefreshCw, Gauge, ClipboardList,
+  Plus, Pencil, Trash2, Repeat2, Gauge, ClipboardList,
   TrendingUp, TrendingDown, LineChart, BarChart3, Scale, CalendarDays,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -19,7 +19,6 @@ import FormField from "../components/ui/FormField";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import KPICard from "../components/ui/KPICard";
 import TrendChart from "../components/charts/TrendChart";
-import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 // The «Fakt» tab's table, and the number/colour/cell helpers all three tabs
 // share with the Idle-cell page's «Perenaladka» tab.
@@ -57,10 +56,6 @@ const TXT = {
     secFact: "Kunlik fakt", searchPhFact: "Supervayzer yoki yacheyka…",
     colStandard: "Standart (min)",
     shiftAll: "Hammasi", shift1: "1-smena", shift2: "2-smena",
-    refresh: "Yangilash",
-    refreshHint: "«Смена отчёт» jadvalidan yacheykalar bo'yicha perenaladka tarixini yuklash",
-    refreshDone: "Jadvaldan yuklandi", refreshFail: "Yangilab bo'lmadi",
-    refreshKept: "{n} ta qo'lda kiritilgan yozuv o'zgarmadi",
     // Tahlil tab
     kEntries: "Fakt yozuvlari", kEntriesSub: "{n} yacheyka hisobot berdi",
     kStd: "O'rtacha standart", kFact: "O'rtacha fakt", kDelta: "O'rtacha farq",
@@ -93,10 +88,6 @@ const TXT = {
     secFact: "Кунлик факт", searchPhFact: "Супервайзер ёки ячейка…",
     colStandard: "Стандарт (мин)",
     shiftAll: "Ҳаммаси", shift1: "1-смена", shift2: "2-смена",
-    refresh: "Янгилаш",
-    refreshHint: "«Смена отчёт» жадвалидан ячейкалар бўйича переналадка тарихини юклаш",
-    refreshDone: "Жадвалдан юкланди", refreshFail: "Янгилаб бўлмади",
-    refreshKept: "{n} та қўлда киритилган ёзув ўзгармади",
     kEntries: "Факт ёзувлари", kEntriesSub: "{n} ячейка ҳисобот берди",
     kStd: "Ўртача стандарт", kFact: "Ўртача факт", kDelta: "Ўртача фарқ",
     kMatchedSub: "стандарти бор ячейкалар бўйича", vsStd: "стандартга нисбатан",
@@ -128,10 +119,6 @@ const TXT = {
     secFact: "Факт за день", searchPhFact: "Супервайзер или ячейка…",
     colStandard: "Стандарт (мин)",
     shiftAll: "Все", shift1: "1-я смена", shift2: "2-я смена",
-    refresh: "Обновить",
-    refreshHint: "Загрузить историю переналадок по ячейкам из таблицы «Смена отчёт»",
-    refreshDone: "Загружено из таблицы", refreshFail: "Не удалось обновить",
-    refreshKept: "{n} записей, введённых вручную, не изменены",
     kEntries: "Записей факта", kEntriesSub: "{n} ячеек с данными",
     kStd: "Средний стандарт", kFact: "Средний факт", kDelta: "Среднее отклонение",
     kMatchedSub: "по ячейкам со стандартом", vsStd: "к стандарту",
@@ -163,10 +150,6 @@ const TXT = {
     secFact: "Daily fact", searchPhFact: "Supervisor or cell…",
     colStandard: "Standard (min)",
     shiftAll: "All", shift1: "Shift 1", shift2: "Shift 2",
-    refresh: "Refresh",
-    refreshHint: "Load the per-cell changeover history from the «Смена отчёт» sheet",
-    refreshDone: "Loaded from the sheet", refreshFail: "Refresh failed",
-    refreshKept: "{n} manually entered rows left untouched",
     kEntries: "Fact entries", kEntriesSub: "{n} cells reported",
     kStd: "Avg standard", kFact: "Avg fact", kDelta: "Avg deviation",
     kMatchedSub: "across cells with a standard", vsStd: "vs standard",
@@ -511,12 +494,9 @@ function StandardTab({ T, lang, tl }) {
 // ─── «Fakt» tab — one day's actual changeover minutes per cell ───────────────
 // The table itself is components/setup/PerenaladkaFactTable — the SAME
 // component the Idle-cell page's «Perenaladka» tab renders, over the same rows.
-// This tab owns only its filters and the «Смена отчёт» Refresh, which stays
-// here alone: it is the bulk import, and a bulk import does not belong on a
-// page whose job is one brigadir typing one day.
+// This tab owns only its filters. Its «Смена отчёт» Refresh (the bulk sheet
+// import) was removed on 2026-11-17 with the sheet itself.
 function FactTab({ T, lang, tl }) {
-  const toast = useToast();
-
   // date deliberately NOT persisted: this is a data-entry surface — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
@@ -526,20 +506,6 @@ function FactTab({ T, lang, tl }) {
   const [sort, onSort] = useSortState("setup_fact_sort");
 
   const { cells: allCells, isLoading } = usePerenaladkaFact(date);
-
-  const qc = useQueryClient();
-  const refreshMut = useMutation({
-    mutationFn: () => api.post("/api/setup-times/fact/refresh").then((r) => r.data),
-    onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["setup-fact"] });
-      qc.invalidateQueries({ queryKey: ["setup-analysis"] });
-      // A skipped row is not a silent one: the sheet no longer overwrites what
-      // somebody typed, so the press says how many it left alone.
-      const kept = d.kept ? ` · ${T.refreshKept.replace("{n}", d.kept)}` : "";
-      toast.success(`${T.refreshDone} (+${d.saved ?? 0})${kept}`);
-    },
-    onError: (e) => toast.error(e?.response?.data?.detail || T.refreshFail),
-  });
 
   const supOpts = useMemo(() => {
     const names = [...new Set(allCells.map((c) => c.supervisor).filter(Boolean))]
@@ -586,21 +552,9 @@ function FactTab({ T, lang, tl }) {
               onChange={setShiftSel}
               options={[["all", T.shiftAll], [1, T.shift1], [2, T.shift2]]}
             />
-            <div className="flex-grow" />
-            <Button
-              size="lg"
-              variant="secondary"
-              loading={refreshMut.isPending}
-              icon={!refreshMut.isPending ? <RefreshCw size={14} /> : null}
-              title={T.refreshHint}
-              onClick={() => refreshMut.mutate()}
-            >
-              <span className="hidden sm:inline">{T.refresh}</span>
-            </Button>
           </>
         }
       />
-      {toast.node}
     </>
   );
 }

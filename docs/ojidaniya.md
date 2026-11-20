@@ -143,7 +143,10 @@ From **2026-08-27** — `idle_source.CELLS_FROM`, the user's directive — **eve
 supervisor's ojidaniya minutes come from the per-cell interval model
 (`cell_ojidaniya_intervals`, what the leaders file on `/idle-cell`). The
 «Смена отчёт» sheet row (`DowntimeData`) is **not read for any unit on any day
-from that date on**, and nothing turns it back on.
+from that date on**, and nothing turns it back on. **The sheet itself is
+disconnected since 2026-11-17** (docs/zagruzka.md «The загрузка's Google Sheets
+are DISCONNECTED»): `downtime_data` is frozen at the last Refresh (2 Oct 2026,
+25 Mar → 1 Oct) and is the only answer for the days before the floor.
 
 - **The floor is a CONSTANT with no override**, the shape the AI review floor
   and the client-compat floor already use: a rule a per-unit toggle can quietly
