@@ -604,11 +604,17 @@ function NoAccess({ page, dest }) {
  */
 function RequirePage({ page, children }) {
   const { auth } = useAuth();
+  // The ROUTER's location, never window.location: <Navigate> moves the address
+  // bar at once and the routes a moment later, and a re-render of the OLD route
+  // in that gap compared its own target with the new address — «already there,
+  // still refused» — and showed «no pages» to leaders redirected from «/» to
+  // /production (2026-11-21, the NoAccess report: page overview, dest /production).
+  const { pathname } = useLocation();
   const { access, isLoading } = usePageAccess();
   const { capPages, deniedPages, isLoading: capsLoading } = useCapabilities();
   if (isLoading || capsLoading) return <PageLoader where="access" />;
   if (canAccessPage(auth?.role, page, access, capPages, deniedPages)) {
-    if (page === "overview" && window.location.pathname === "/") {
+    if (page === "overview" && pathname === "/") {
       try { localStorage.removeItem(HOME_ROUTE_KEY); } catch { /* a hint only */ }
     }
     return children;
@@ -616,8 +622,8 @@ function RequirePage({ page, children }) {
   // The redirect target has to respect the denies too, or a person blocked from
   // their role's first page is bounced straight back into it and loops.
   const dest = firstAccessibleRoute(auth?.role, access, capPages, deniedPages);
-  if (!dest || dest === window.location.pathname) return <NoAccess page={page} dest={dest} />;
-  if (window.location.pathname === "/") {
+  if (!dest || dest === pathname) return <NoAccess page={page} dest={dest} />;
+  if (pathname === "/") {
     try { localStorage.setItem(HOME_ROUTE_KEY, dest); } catch { /* a hint only */ }
   }
   return <Navigate to={dest} replace />;

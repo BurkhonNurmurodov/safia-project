@@ -169,3 +169,14 @@ for approval, or registered on the shared cell phone as somebody else.
   mount the screen again. And the screen asks the
   server again as it opens (both queries invalidated): a decision taken on
   stale data turns into the page by itself; a true «no pages» stays.
+- **FOUND (21 Nov, the first detailed DM)**: a leader on /production, the
+  screen decided for page `overview` with `dest` `/production`, 9 role pages,
+  nothing denied, data fresh. The leader had opened «/»: `RequirePage`
+  (overview) refused and rendered `<Navigate to="/production">`, which moves
+  the address bar AT ONCE and the routes a moment later. A re-render of the
+  still-mounted «/» route in that gap (the sign-in answer landing, a refetch)
+  compared its target with `window.location.pathname` — already
+  `/production` — read it as «already there, still refused» and showed
+  «no pages». `RequirePage` now compares with the ROUTER's location
+  (`useLocation`), so that re-render simply redirects again. Never compare a
+  route decision with `window.location` — it runs ahead of the routes.
