@@ -1135,25 +1135,45 @@ def _no_cell(db: Session, ctx: Ctx, pl: Plan) -> None:
     — a «Boshqaruvchi» link released since — and runs none now, with nothing
     waiting for them: stopped counting from the release day (act `no_cell`).
     One who runs a cell again counts again (act `cell_back`), the days between
-    taken out. A person's own cutoff is never touched."""
+    taken out. A person's own cutoff is never touched. An «Egasi» link released
+    counts as having had a cell too, once they own no live cell either
+    (2026-11-21, Ibragimjonov Farrux: moved by Verifix to a technologist's job,
+    he was 9123's seat under a hand-picked «Boshqaruvchi», so only his «Egasi»
+    was released and he kept counting in his old unit)."""
     from app.models import CellLinkEvent as E
     from sqlalchemy import func
-    released = dict(db.query(E.prev, func.max(E.effective_from)).filter(
-        E.field == "leader_id", E.prev.isnot(None), E.applied_at.isnot(None),
-        or_(E.value.is_(None), E.value != E.prev)).group_by(E.prev).all())
+
+    def released_from(field):
+        return dict(db.query(E.prev, func.max(E.effective_from)).filter(
+            E.field == field, E.prev.isnot(None), E.applied_at.isnot(None),
+            or_(E.value.is_(None), E.value != E.prev)).group_by(E.prev).all())
+
+    def waiting_for(field):
+        return {v for (v,) in db.query(E.value).filter(
+            E.field == field, E.value.isnot(None), E.applied_at.is_(None)).all()}
+
     linked = dict(db.query(E.value, func.max(E.effective_from)).filter(
         E.field == "leader_id", E.value.isnot(None)).group_by(E.value).all())
     running = {c.leader_id for c in ctx.cells if c.leader_id and c.archived_at is None}
-    waiting = {v for (v,) in db.query(E.value).filter(
-        E.field == "leader_id", E.value.isnot(None), E.applied_at.is_(None)).all()}
-    for kind, kw in no_cell_acts(ctx.profiles, released, linked, running | waiting):
+    owning = ({c.owner_id for c in ctx.cells if c.owner_id and c.archived_at is None}
+              | waiting_for("owner_id"))
+    for kind, kw in no_cell_acts(ctx.profiles, released_from("leader_id"), linked,
+                                 running | waiting_for("leader_id"),
+                                 released_from("owner_id"), owning):
         pl.act(kind, **kw)
 
 
-def no_cell_acts(profiles, released: dict, linked: dict, holding: set) -> list:
+def no_cell_acts(profiles, released: dict, linked: dict, holding: set,
+                 owner_released: Optional[dict] = None, owning=frozenset()) -> list:
     """The `_no_cell` decision, pure: [(kind, kwargs)]. `released` / `linked`
     = profile id → the last day a «Boshqaruvchi» link left / reached them,
-    `holding` = the ids running a live cell now or with one waiting."""
+    `holding` = the ids running a live cell now or with one waiting.
+    `owner_released` = profile id → the last day an «Egasi» link left them,
+    counted only for ids not in `owning` (owner of a live cell, or one waiting)."""
+    released = dict(released)
+    for pid, d in (owner_released or {}).items():
+        if pid not in owning and (pid not in released or d > released[pid]):
+            released[pid] = d
     out = []
     for p in profiles:
         if p.role != "leader" or p.ended_on:

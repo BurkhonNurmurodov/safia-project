@@ -102,6 +102,15 @@ class NoCell(unittest.TestCase):
         self.assertEqual(acts[0][0], "cell_back")
         self.assertEqual((acts[0][1]["date"], acts[0][1]["back"]), ("2026-11-05", "2026-11-20"))
 
+    def test_egasi_released_owning_and_running_nothing_stops_counting(self):
+        acts = verifix_sync.no_cell_acts([leader(260)], {}, {}, set(), {260: self.NOV20}, set())
+        self.assertEqual(acts, [("no_cell", {"profile": 260, "name": "L260", "unit": 14,
+                                             "date": "2026-11-20"})])
+
+    def test_egasi_released_but_owning_another_cell_is_left(self):
+        self.assertEqual(verifix_sync.no_cell_acts(
+            [leader(260)], {}, {}, set(), {260: self.NOV20}, {260}), [])
+
     def test_ended_and_other_roles_untouched(self):
         self.assertEqual(verifix_sync.no_cell_acts(
             [leader(1, ended=self.NOV5), leader(2, role="supervisor")],

@@ -337,6 +337,16 @@ problems later. Watch for verifix always.»
   from …», `set_by` = the sync), `vfx_meta.nocell_from`, the leader and the
   brigadir told (`notify_cutoff`). The unit is scored on its remaining leaders.
   A leader who never had a cell link is `leader_load`'s case, above.
+- **An «Egasi» released counts too** (2026-11-21, Ibragimjonov Farrux,
+  Niyozov Izzatilla's unit: Verifix moved him to «Технолог» in another
+  department; he was 9123's seat under a hand-picked «Boshqaruvchi», so the
+  sync released only his «Egasi» on 20 Nov and he kept counting): an
+  `owner_id` link released since, when the leader also OWNS no live cell now
+  (nor one waiting) and runs none — the date is the later of the two
+  releases. Still owning a cell under somebody else's «Boshqaruvchi» is NOT a
+  trigger; that leader stays as before. Production's dry run that day: Farrux
+  (from 20 Nov) and Ne'matillayev Izzatilla (no unit, never filed — nothing
+  scored moves).
 - **Back**: one who runs a cell again (or has one waiting) counts again — the
   sync's cutoff of that date is lifted and every day from it to the day the
   new link counts from is a day exclusion («Verifix: no cell»), because a
