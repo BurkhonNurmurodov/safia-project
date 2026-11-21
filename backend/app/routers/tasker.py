@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.capabilities import require_tab
 from app.routers.verifix import _who
-from app.services import action_log, sd_panel, tasker
+from app.services import action_log, panel_audits, sd_panel, tasker
 
 router = APIRouter(prefix="/api/admin/tasker", tags=["tasker"])
 
@@ -92,7 +92,8 @@ _PANEL = {"target_kind": "setting", "target_id": "sdpanel", "target_name": "pane
 
 
 def _panel_state(db: Session) -> dict:
-    return {**sd_panel.config(db), "url": sd_panel.REPORT_URL, "last": sd_panel.last(db)}
+    return {**sd_panel.config(db), "url": sd_panel.REPORT_URL, "last": sd_panel.last(db),
+            "audits": panel_audits.summary(db)}
 
 
 @router.get("/panel")
@@ -124,3 +125,12 @@ def fetch_panel(db: Session = Depends(get_db), admin: dict = Depends(require_tab
     action_log.enrich(**_PANEL, details=[("rows", len(res["rows"]))] if res["ok"]
                       else [("error", res["code"])])
     return res
+
+
+@router.post("/panel/check")
+def check_panel(db: Session = Depends(get_db), admin: dict = Depends(require_tab("sdpanel"))):
+    """Sign in and read this month of both audit kinds — the card's one check,
+    the same read «Auditlar» keeps (services/panel_audits.py)."""
+    res = panel_audits.check(db, actor=_who(admin))
+    action_log.enrich(**_PANEL, details=[("check", "ok" if res.get("ok") else res.get("code") or "partial")])
+    return {**_panel_state(db), "check": res}

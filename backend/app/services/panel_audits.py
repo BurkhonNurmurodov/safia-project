@@ -387,3 +387,33 @@ def coverage(db: Session, kind: str, d1: date, d2: date) -> dict:
 def first_day(db: Session, kind: str) -> Optional[str]:
     d = db.query(func.min(PanelAuditRow.day)).filter(PanelAuditRow.kind == kind).scalar()
     return d.isoformat() if d else None
+
+
+def summary(db: Session) -> dict:
+    """The connection card's answer (`/panel/sdpanel`): per audit kind, when it
+    was last read, how many months are kept, this month's minuses, and the
+    last failure when it is newer than the last good read."""
+    st = state(db)
+    sealed = _get(db, sd_panel.K_PASS)
+    month = first_of(datetime.now(TZ).date())
+    counts = dict(db.query(PanelAuditRow.kind, func.count()).filter(PanelAuditRow.month == month)
+                  .group_by(PanelAuditRow.kind).all())
+    kinds = {}
+    for k in KINDS:
+        slots = st["months"].get(k) or {}
+        ok_at = [v["at"] for v in slots.values() if v.get("ok") and v.get("at")]
+        errs = sorted(((v.get("error_at"), v.get("error")) for v in slots.values() if v.get("error")),
+                      key=lambda x: x[0] or "")
+        read_at = max(ok_at) if ok_at else None
+        err_at, err = errs[-1] if errs else (None, None)
+        if err_at and read_at and err_at <= read_at:
+            err_at, err = None, None
+        kinds[k] = {"read_at": read_at, "months": len(ok_at), "this_month": counts.get(k, 0),
+                    "error": err, "error_at": err_at}
+    return {"refused": bool(sealed) and st.get("refused") == _fingerprint(sealed), "kinds": kinds,
+            "month": _mkey(month)}
+
+
+def check(db: Session, actor: str = "") -> dict:
+    """«Tekshirish» on the card: read the current month of both kinds now."""
+    return refresh(db, list(KINDS), [first_of(datetime.now(TZ).date())], actor=actor)

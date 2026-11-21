@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, ClipboardX, Clock, Database, DatabaseBackup, Factory, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
+  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -121,7 +121,7 @@ export const ADMIN_NAV = [
   // panel.safiabakery.uz's «Минусы» (technical audit) read with a stored
   // login — the report has no API (docs/tasker.md). No capKey: the login is a
   // person's panel account (grantable: `admin.tab.sdpanel`).
-  { id: "sdpanel",      group: "adm-links",   Icon: ClipboardX,     labelKey: "admin.tabSdPanel",      descKey: "admin.desc.sdpanel" },
+  { id: "sdpanel",      group: "adm-links",   Icon: ShieldCheck,    labelKey: "admin.tabSdPanel",      descKey: "admin.desc.sdpanel" },
   // «Trello» — the API key and the (sealed) token /trello reads boards with,
   // the boards it reads and what «done» means on each. No capKey: the token
   // reads every board its Trello member can open (grantable: `admin.tab.trello`).

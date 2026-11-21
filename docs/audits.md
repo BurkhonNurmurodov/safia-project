@@ -6,8 +6,9 @@ The operator: «make one page for audits, take them from the panel I shared … 
 both audits KRU / tech on separate tabs, and inside these tabs open new tabs:
 register / analysis. On analysis show different types of charts, the right type
 for the key figures». The panel is panel.safiabakery.uz; its login card already
-existed — «Panel: audit minuslari» (`/panel/sdpanel`, `docs/tasker.md`) — and the
-page reads with that one stored login. (A separate login card for another host
+existed — «Panel: audit minuslari», renamed «Audit paneli» the same day
+(`/panel/sdpanel`, `docs/tasker.md`) — and the page reads with that one stored
+login; the card shows each kind's last read and checks the connection. (A separate login card for another host
 was built and dropped the same day: it duplicated that card.)
 
 - **The source is the panel's «Минусы» report** (`/task-factory-reports/cancelled`),

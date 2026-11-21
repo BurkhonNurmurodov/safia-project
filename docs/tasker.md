@@ -134,3 +134,30 @@ languages). Admin-only, not grantable.
   auditi» (docs/kpi.md) picks the cell from `division_name`, so it credits
   audits to the wrong cells. Choosing the cell by `factory_id` through the
   panel's names (its `terminal[]` picker lists all 402) waits on the operator.
+
+### The card becomes «Audit paneli» (2026-11-21)
+
+The operator, on the card above: «admin page doesn't mean it shouldn't be
+well-designed». Once «Auditlar» (`/audits`, `docs/audits.md`) read the same
+report for any period and both audit kinds, the card's job narrowed to ONE
+question — is the platform signed in to the panel and reading it — so it was
+rebuilt around that and renamed «Audit paneli» (all four languages):
+
+- **Status first**: one line on the card's own inset — connected and when it
+  last read, not set up (and that «Auditlar» stays empty), the password
+  refused (the clock is paused, `panel_audits` «refused»), a password that no
+  longer opens, or the last failure with its reason.
+- **One row, one button**: login · password (still plain text, the Tasker
+  ruling) · «Saqlash va tekshirish» when something is edited, «Tekshirish»
+  otherwise. It saves, then CHECKS — `POST /api/admin/tasker/panel/check`
+  reads the current month of both kinds through `panel_audits.check`, the same
+  read «Auditlar» keeps. One quiet line under it says the password is sealed
+  and the panel is only read.
+- **«Paneldan o'qilayotgan auditlar»**: a row per kind (Texnik audit · KRU) —
+  when it was last read or why it was not, how many months are kept, this
+  month's minuses, and the row opens that kind on «Auditlar»
+  (`panel_audits.summary`, served as `audits` on `GET /api/admin/tasker/panel`).
+- **The October table is gone from the card** — every row of it, for every
+  period, is on «Auditlar». `POST /panel/fetch` and the stored `sdpanel_last`
+  stay for a tab still holding the old card.
+
