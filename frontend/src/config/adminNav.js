@@ -4,7 +4,7 @@
 // page map); the sidebar, the header search, the launcher tile and the browser
 // tab title all derive from this list. Never keep a second copy.
 import {
-  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
+  BellRing, Building2, CalendarDays, CircleSlash, ClipboardCheck, ClipboardList, Clock, Database, DatabaseBackup, Factory, Fingerprint, GraduationCap, IdCard, KeyRound, Languages, ListChecks, Megaphone, Network, ScanSearch, ScrollText, ShieldCheck, ShieldQuestion, Sparkles, SquareKanban, CookingPot, Crown, Plug, SlidersHorizontal, Trash2, UserX, Users, UsersRound, Wrench,
 } from "lucide-react";
 
 // The admin app's home; /panel/<id> is a page. The old single page,
@@ -118,6 +118,11 @@ export const ADMIN_NAV = [
   // connection test (docs/tasker.md). No capKey — the token reads every
   // factory department's inspections, so admin-only like Verifix.
   { id: "tasker",       group: "adm-links",   Icon: ScanSearch,     labelKey: "admin.tabTasker",       descKey: "admin.desc.tasker" },
+  // «Audit paneli» — the panel the KRU and the technologists file their audits
+  // in: its address, a login, a SEALED password and a discovery test that maps
+  // where the audits sit (docs/audits.md). No capKey — the login reads every
+  // audit the panel holds, so admin-only like Verifix and Tasker.
+  { id: "auditpanel",   group: "adm-links",   Icon: ShieldCheck,    labelKey: "admin.tabAuditPanel",   descKey: "admin.desc.auditpanel" },
   // «Trello» — the API key and the (sealed) token /trello reads boards with,
   // the boards it reads and what «done» means on each. No capKey: the token
   // reads every board its Trello member can open — admin-only, never grantable.

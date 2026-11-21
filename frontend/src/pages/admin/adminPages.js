@@ -25,6 +25,7 @@ export const ADMIN_PAGES = {
   lostworkers:   lazyWithReload(() => import("./LostWorkers")),
   verifixsync:   lazyWithReload(() => import("./VerifixPage")),
   tasker:        lazyWithReload(() => import("./TaskerSettings")),
+  auditpanel:    lazyWithReload(() => import("./AuditPanelSettings")),
   aikeys:        lazyWithReload(() => import("./AiKeys")),
   trello:        lazyWithReload(() => import("./TrelloSettings")),
   ovens:         lazyWithReload(() => import("./OvensSettings")),
