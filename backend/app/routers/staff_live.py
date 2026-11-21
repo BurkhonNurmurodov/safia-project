@@ -2267,6 +2267,73 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
             "read_at": out["read_at"]}
 
 
+def _auto_close_one(db: Session, mid: int, d: date, name: str) -> int:
+    """Close one unit-day on the platform's clock, whatever it still waits on
+    (the operator, 2026-11-21 — «close it anyway and warn»). Reads the stored
+    day, never Verifix: a pass of ~100 forced 7–11 s reads would starve the
+    minute job. 1 = closed, 0 = nothing to close or retry next minute."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services.verifix_live import _claim
+    try:
+        chk = _close_check(db, mid, d, force=False, stored_only=True)
+    except _NoDay:
+        _claim(db, "auto_close", mid, d)        # nothing was ever stored: nothing will be
+        return 0
+    out, ctx, ud = chk["out"], chk["ctx"], chk["ud"]
+    if not (ud["counts"]["came"] or ud["counts"].get("extra_came")):
+        _claim(db, "auto_close", mid, d)        # nobody came: no day to close
+        return 0
+    db.add(LiveDayClose(manager_id=mid, day=d, closed_by_name="System"))
+    try:
+        copied = live_projection.close(db, mid, ctx, None, "System")
+        db.commit()
+    except IntegrityError:                       # a brigadir closed it in the same second
+        db.rollback()
+        return 0
+    _recopy(db, d, only=mid)
+    no_out, inside, no_cell = len(out["no_checkout"]), out["busy_count"], out["unplaced"]
+    bad = no_out + inside + no_cell
+    action_log.record_system("attendance", "lab.live_day_closed", db, target_kind="day",
+                             target_id=f"{mid}:{d}", unit_id=mid, unit_name=name, day=d,
+                             details=[("date", str(d)), ("closed_by", "System"), ("rows", copied),
+                                      ("no_checkout", no_out), ("inside", inside), ("no_cell", no_cell)],
+                             changes=[("status", "open", "closed")])
+    names = ", ".join(f["worker_name"] or "—" for f in out["no_checkout"][:10])
+    _notify(db, "live_day_auto_closed_warn" if bad else "live_day_auto_closed",
+            {"date": d.strftime("%d.%m.%Y"), "unit": name, "no_exit": no_out, "inside": inside,
+             "no_cell": no_cell, "missing": names or "—"},
+            units=(mid,), supervisors=(mid,), ntype="warning" if bad else "info",
+            subject=("live_day", f"{mid}:{d.isoformat()}"), admins_bell_only=not bad)
+    return 1
+
+
+def auto_close_due(db: Session, units: dict, with_cells: set) -> int:
+    """The platform's own close (`close_window.AUTO_AT`): shift-day D closes at
+    D+1 10:00 (S1) / 19:00 (S2) for every unit nobody closed by hand, from the
+    shift-day `AUTO_FROM`. The last 3 days are looked at, so a stopped job
+    catches up; each unit-day is judged ONCE (`live_day_notices` kind
+    «auto_close»), so a day an admin reopens stays open."""
+    from app.models import LiveDayNotice
+    now = datetime.now(verifix_live.TZ)
+    n = 0
+    for back in (1, 2, 3):
+        d = now.date() - timedelta(days=back)
+        if d < close_window.AUTO_FROM or not live_day.is_live(d):
+            continue
+        done = {m for (m,) in db.query(LiveDayClose.manager_id).filter(LiveDayClose.day == d)}
+        tried = {m for (m,) in db.query(LiveDayNotice.manager_id).filter(
+            LiveDayNotice.kind == "auto_close", LiveDayNotice.day == d)}
+        for mid in sorted(with_cells - done - tried):
+            if not close_window.auto_due(units[mid]["shift"], d, now):
+                continue
+            try:
+                n += _auto_close_one(db, mid, d, units[mid]["name"] or f"#{mid}")
+            except Exception:  # noqa: BLE001 — the next minute tries again
+                db.rollback()
+                log.exception("staff-live: the automatic close of %s on %s failed", mid, d)
+    return n
+
+
 @router.post("/approvals/reopen")
 def reopen_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     if not body.manager_id:

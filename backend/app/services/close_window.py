@@ -33,7 +33,14 @@ from app.services.verifix import TZ
 KEYS = {1: "day_close_after_shift_1", 2: "day_close_after_shift_2"}
 FALLBACK = {1: "12:00", 2: "23:00"}
 
-__all__ = ["KEYS", "FALLBACK", "defaults", "set_default", "opens_at", "lock", "refusal"]
+__all__ = ["KEYS", "FALLBACK", "defaults", "set_default", "opens_at", "lock", "refusal",
+           "AUTO_FROM", "AUTO_AT", "auto_due"]
+
+# The platform closes a day itself (the operator, 2026-11-21): shift-day D at
+# D+1, S1 10:00 and S2 19:00 (Tashkent), from the shift-day 21.11 on. ONE pair
+# of constants, no setting and no browser twin — `routers/staff_live.auto_close_due`.
+AUTO_FROM = date(2026, 11, 21)
+AUTO_AT = {1: "10:00", 2: "19:00"}
 
 
 def _min(v: str) -> int:
@@ -107,3 +114,11 @@ def refusal(lk: dict) -> str:
         d = date.fromisoformat(lk["opens_on"]).strftime("%d.%m.%Y")
         return f"Kunni {d} soat {lk['close_from']} dan keyin yopish mumkin."
     return f"Kunni soat {lk['close_from']} dan keyin yopish mumkin."
+
+
+def auto_due(shift: Optional[int], day: date, now: datetime) -> bool:
+    """Has the platform's own close clock of shift-day `day` come round?"""
+    if day < AUTO_FROM:
+        return False
+    h, m = AUTO_AT[shift if shift in AUTO_AT else 1].split(":")
+    return now >= datetime.combine(day + timedelta(days=1), time(int(h), int(m)), tzinfo=TZ)

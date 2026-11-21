@@ -70,6 +70,7 @@ _EXACT = {
     "live_all_left": "day", "live_all_left_staff": "day", "live_all_left_staff_early": "day",
     "live_list_open": "day",
     "live_day_still_open": "day", "live_shift_summary": "day",
+    "live_day_auto_closed": "day", "live_day_auto_closed_warn": "day",
     # A live day's requests and closes (routers/staff_live) — /staff's twins.
     "live_exchange_created": "approvals", "live_exchange_approved": "approvals",
     "live_exchange_cancelled": "approvals", "live_role_change_new": "approvals",
