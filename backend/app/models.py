@@ -6340,3 +6340,30 @@ class Equipment(Base):
     responsible_id = Column(String(64), nullable=False, default="")  # …its Verifix employee_id (2026-11-20); "" = typed by hand / nobody
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class PanelAuditRow(Base):
+    """One row of panel.safiabakery.uz's «Минусы» report — ONE checklist
+    question that lost points in one inspection (services/panel_audits.py,
+    docs/audits.md). `kind` is 'kru' («КРУ Производство», type 10) or 'tech'
+    («Технический аудит», type 16). A month of one kind is REPLACED whole on
+    every read, so these rows are always the panel's answer as last read."""
+    __tablename__ = "panel_audit_rows"
+    __table_args__ = (Index("ix_panel_audit_rows_kind_day", "kind", "day"),)
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(8), nullable=False)
+    month = Column(Date, nullable=False)          # the first of the month it was read for
+    day = Column(Date, nullable=True)
+    workshop_id = Column(Integer, nullable=True)  # the panel's own workshop id
+    workshop = Column(String(300), nullable=True)
+    inspector = Column(String(200), nullable=True)
+    total = Column(Float, nullable=True)          # the inspection's overall %
+    rating = Column(Float, nullable=True)         # this question's %
+    task_id = Column(Integer, nullable=True)
+    task = Column(String(500), nullable=True)
+    question_id = Column(Integer, nullable=True)  # the row's data-id
+    question = Column(Text, nullable=True)
+    comment = Column(Text, nullable=True)
+    top = Column(Integer, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

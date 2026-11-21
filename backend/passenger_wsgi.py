@@ -815,6 +815,8 @@ try:
     # «Trello»: every board every 15 minutes (mirrors main.py).
     from app.services.trello import register_jobs as register_trello_jobs
     register_trello_jobs()
+    from app.services.panel_audits import register_jobs as register_panel_audit_jobs
+    register_panel_audit_jobs()
     # «Notion vazifalari»: the reminders' minute job, the carried-over
     # settings and the bot's webhook (mirrors main.py).
     from app.services import notion_tracker

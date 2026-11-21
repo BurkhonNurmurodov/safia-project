@@ -94,6 +94,9 @@ export const ALL_LINKS = [
   { to: "/notion-tasks", page: "notion-tasks", key: "nav.notionTasks", icon: ListChecks, group: "quality", app: "kaizen" },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
+  // «Auditlar» — the KRU and technical audits read from panel.safiabakery.uz
+  // (services/panel_audits.py). Page key `audits`: admins, and anybody granted it.
+  { to: "/audits", page: "audits", key: "nav.audits", icon: ClipboardCheck, group: "quality" },
   // ARC service-ticket register — synced from the ARC API, admin-only by default.
   { to: "/arc", page: "arc", key: "nav.arc", icon: Repair, group: "quality", app: "arc" },
   // THE task board — both tiers (smena menejeri → brigadir, brigadir → lider)

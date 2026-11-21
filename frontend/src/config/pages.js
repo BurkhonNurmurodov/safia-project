@@ -80,6 +80,7 @@ export const PAGES = [
   { key: "doc-audit", route: "/doc-audit", labelKey: "admin.tabDocAudit" },
   { key: "trello", route: "/trello", labelKey: "nav.trello" },
   { key: "audit", route: "/audit", labelKey: "nav.audit" },
+  { key: "audits", route: "/audits", labelKey: "nav.audits" },
   { key: "tg-user", route: "/tg-user", labelKey: "nav.tgUser", noLanding: true },  // needs an id: never a landing page
   { key: "gamification", route: "/gamification", labelKey: "nav.gamification" },
   { key: "targets", route: "/targets", labelKey: "nav.targets" },

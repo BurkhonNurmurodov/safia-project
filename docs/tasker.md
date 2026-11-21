@@ -125,6 +125,8 @@ languages). Admin-only, not grantable.
   the question (`tr[data-id]`), the comment, «TOP (N)» or blank. No pagination:
   October was one page, 505 rows from 208 inspections over 121 workshops.
   `type` 16 = «Технический аудит», 10 = «КРУ Производство».
+  The same report for any period and both types feeds «Auditlar» (`/audits`,
+  `docs/audits.md`) through `read_reports` — one login, several paths.
 - **Observed on the first read (not acted on):** the panel's workshop id equals
   `public.audit.factory_id` (99 of 110 date + rating matches), but
   `public.audit.division_name` disagrees with the panel's own name for EVERY

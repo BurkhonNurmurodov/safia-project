@@ -38,7 +38,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, MIN_CLIENT, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, shift_manager_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, idle_solutions, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, tasker, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, brigadirs_kpi, ontime, reports, ops_door, assessment, people, trello, notion_tasks, ovens, audit_table, equipment, ext_api, api_tokens, kitchen, container_flow
+from app.routers import admin, brigadirs, search, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, brigadir_tasks, shift_manager_tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, leader_proof, leader_appeals, leader_checklist, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc, arc_legacy, cell_hours, idle_source, exchange_audit, doc_audit, logs, live_overview, cell_concerns, education, idle_owner, idle_solutions, shift_report, exam, exam_sandbox, kelish, android, verifix, verifix_sync, staff_live, push, verifix_explore, tasker, turnover, assistant, foreign_objects, category_compliance, leaders_kpi, brigadirs_kpi, ontime, reports, ops_door, assessment, people, trello, notion_tasks, ovens, audit_table, audits, equipment, ext_api, api_tokens, kitchen, container_flow
 from app.routers import ai_admin as ai_admin_router
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -652,6 +652,10 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.trello import register_jobs as register_trello_jobs
     run(register_trello_jobs)
+    # «Auditlar»: the panel's KRU and technical audit reports, every two hours
+    # by day and once after boot (mirrored in passenger_wsgi.py).
+    from app.services.panel_audits import register_jobs as register_panel_audit_jobs
+    later(register_panel_audit_jobs)
     # «Notion vazifalari»: the Notion "Production" task list's daily Telegram
     # reminders, moved from the stand-alone GitHub bot (2026-11-02) — a job
     # every minute sends the day's messages at the first tick after the send
@@ -1470,6 +1474,7 @@ app.include_router(trello.admin_router)
 # «Audit jadvali» (/audit): the public.audit table, read-only — admins only,
 # never grantable (verify_admin on every route).
 app.include_router(audit_table.router)
+app.include_router(audits.router)
 # «Uskunalar» (/equipment): the equipment register — admins only, editable.
 app.include_router(equipment.router)
 # «Pechlar» (/ovens): the Revent ovens — the page (page-gated), the register

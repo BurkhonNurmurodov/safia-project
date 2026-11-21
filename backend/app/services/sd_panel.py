@@ -181,9 +181,20 @@ def _to_login(res: httpx.Response) -> bool:
     return res.is_redirect and urlsplit(res.headers.get("location", "")).path.rstrip("/") == "/login"
 
 
-def read_report(user: str, password: str) -> list[dict]:
-    """Log in and read the report — one attempt, redirects never followed (the
-    host is fixed; a bounce to /login is the answer, not a place to go)."""
+def report_path(start: str, end: str, type_id: int) -> str:
+    """The «Минусы» report's address for one period and audit type (16 =
+    «Технический аудит», 10 = «КРУ Производство») — the host and the path are
+    fixed, only these three values change (services/panel_audits.py)."""
+    return f"/task-factory-reports/cancelled?start={start}&end={end}&type={int(type_id)}"
+
+
+def read_reports(user: str, password: str, paths: list[str],
+                 deadline: Optional[float] = None) -> dict[str, Any]:
+    """Log in ONCE and read each report path — one attempt, redirects never
+    followed (the host is fixed; a bounce to /login is the answer, not a place
+    to go). Returns {path: rows | PanelError}; a failed login raises. A path
+    left when ``deadline`` (monotonic) passes is answered PanelError('no_time')."""
+    out: dict[str, Any] = {}
     with httpx.Client(base_url=BASE, timeout=TIMEOUT, follow_redirects=False,
                       headers={"User-Agent": UA}) as c:
         res = _call(c, "GET", "/login")
@@ -203,12 +214,30 @@ def read_report(user: str, password: str) -> list[dict]:
             raise PanelError("refused", html.unescape(said)[:300])
         if not res.is_redirect or _to_login(res):
             raise PanelError("status", "POST /login", res.status_code)
-        res = _call(c, "GET", REPORT_PATH)
-        if _to_login(res):
-            raise PanelError("no_access")
-        if res.status_code != 200:
-            raise PanelError("status", "GET report", res.status_code)
-        return parse(res.text)
+        for path in paths:
+            if deadline is not None and time.monotonic() > deadline:
+                out[path] = PanelError("no_time")
+                continue
+            try:
+                res = _call(c, "GET", path)
+                if _to_login(res):
+                    raise PanelError("no_access")
+                if res.status_code != 200:
+                    raise PanelError("status", "GET report", res.status_code)
+                out[path] = parse(res.text)
+            except PanelError as e:
+                if e.code in ("no_access", "network", "timeout"):
+                    raise
+                out[path] = e
+    return out
+
+
+def read_report(user: str, password: str) -> list[dict]:
+    """The card's one fixed address (REPORT_PATH)."""
+    got = read_reports(user, password, [REPORT_PATH])[REPORT_PATH]
+    if isinstance(got, PanelError):
+        raise got
+    return got
 
 
 def fetch(db: Session, actor: str = "") -> dict:

@@ -116,6 +116,8 @@ const TrelloAnalytics = lazyWithReload(() => import("./pages/TrelloAnalytics"));
 // «Audit jadvali» — the public.audit table, read-only (Laboratory, admins only).
 const AuditTable = lazyWithReload(() => import("./pages/AuditTable"));
 const Equipment = lazyWithReload(() => import("./pages/Equipment"));
+// «Auditlar» — the KRU and technical audits read from panel.safiabakery.uz.
+const Audits = lazyWithReload(() => import("./pages/Audits"));
 // «Verifix (test)» — the attendance system's API, page by page (admin-only).
 const VfxApiMap = lazyWithReload(() => import("./pages/verifix/VfxApiMap"));
 const VfxEmployees = lazyWithReload(() => import("./pages/verifix/VfxEmployees"));
@@ -144,7 +146,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime, "idle-solutions": IdleSolutions,
-  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, equipment: Equipment, ovens: Ovens, kitchen: Kitchen, tokens: ApiAccess,
+  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, audits: Audits, equipment: Equipment, ovens: Ovens, kitchen: Kitchen, tokens: ApiAccess,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production, containers: Containers,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi, "brigadirs-kpi": BrigadirsKpi,
@@ -774,6 +776,7 @@ function AppWithLang() {
             <Route path="/trello" element={<AuthGate><RequirePage page="trello"><TrelloAnalytics /></RequirePage></AuthGate>} />
             {/* «Audit jadvali» — ADMINS ONLY, not grantable (no page key). */}
             <Route path="/audit" element={<AuthGate><RequirePage page="audit"><AuditTable /></RequirePage></AuthGate>} />
+            <Route path="/audits" element={<AuthGate><RequirePage page="audits"><Audits /></RequirePage></AuthGate>} />
             {/* «Hisobotlar» — the period report. Page key `reports`: admin-only
                 until the operator opens it on the Access tab. */}
             <Route path="/reports" element={<AuthGate><RequirePage page="reports"><Reports /></RequirePage></AuthGate>} />
