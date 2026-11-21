@@ -9,6 +9,11 @@ operator says otherwise, and the page is admin-only until then.
 
 THE rules, all the operator's (2026-09-28):
 
+  * From `CURRENT_FROM` (2026-11-22, the operator, 2026-11-21) WHO is on a
+    cell's list is who Verifix has on it NOW — `kelish_placements`, kept by
+    `track_placements` on every directory read; a worker who joined on a
+    shift-day is listed from the next one. The rules below on the file stand
+    for the days before it.
   * WHO is on a cell's list is the ORIGINAL Verifix upload
     (`attendance_batch_rows` — the file as uploaded, before any
     people-exchange rewrote `attendance`): every worker it filed under the cell
@@ -43,23 +48,33 @@ This module computes; `routers/kelish.py` decides who may see and change what.
 """
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from bisect import bisect_right
 from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Iterable, Optional
 
-from sqlalchemy import text
+from sqlalchemy import case, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import KelishCellKind, KelishMark, KelishRosterEvent
+from app.models import KelishCellKind, KelishMark, KelishPlacement, KelishRosterEvent
 from app.services import live_overview
 from app.services.cell_lookup import norm_code
 from app.services.name_map import _name_tokens
 
+log = logging.getLogger(__name__)
+
 WINDOW_DAYS = 30        # «every unique worker for the last 30 days»
+# From this day a list is who Verifix has on the cell NOW (`kelish_placements`),
+# not the last 30 days' file — the operator, 2026-11-21; from the next day so a
+# list already being filled today is not changed under its leader.
+CURRENT_FROM = date(2026, 11, 22)
+SINCE_ALWAYS = date(2000, 1, 1)                          # the first pass: as it stood
+SEEDED_AT = datetime(2000, 1, 1, tzinfo=timezone.utc)
 QUIET_DAYS = 7          # no worked day for this long → the list says so
 STATUSES = ("yes", "no")
 NAME_MAX = 120
@@ -72,6 +87,7 @@ def clean_name(value) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:NAME_MAX]
 
 
+@lru_cache(maxsize=16384)     # every tap folds the plant's ~2,000 placed names again
 def worker_key(name: str) -> str:
     """THE identity of a worker on these lists — the folded name.
 
@@ -269,6 +285,110 @@ def _reading_lock(key: tuple) -> threading.Lock:
 
 def file_workers_days(db: Session, days: Iterable[date],
                       as_of: Optional[datetime] = None) -> dict:
+    """THE reader every list is built from, in `_file_days`' shape: the file
+    for a day before `CURRENT_FROM`, who Verifix has on each cell from it."""
+    return _placed(db, _file_days(db, days, as_of), as_of)
+
+
+def _placed(db: Session, files: dict, as_of: Optional[datetime]) -> dict:
+    """`files` with each day from `CURRENT_FROM` replaced by the placement log:
+    an employee is on a day's list when their stint began BEFORE that day and
+    had not ended before it. `came` (the «not in for N days» hint) and the
+    newest file day still come from the file. `as_of` reads the log as it
+    stood then. An empty log (before the first directory read) leaves the
+    file standing."""
+    want = [d for d in files if d >= CURRENT_FROM]
+    if not want:
+        return files
+    P = KelishPlacement
+    until, known = P.until, [P.since < max(want)]
+    if as_of is not None:                   # compared in SQL, as the file's `as_of` is
+        until = case((P.closed_at > as_of, None), else_=P.until)   # closed only later
+        known.append(P.opened_at <= as_of)
+    rows = (db.query(P.name, P.code, P.job, P.since, until)
+            .filter(*known, until.is_(None) | (until >= min(want)))
+            .order_by(P.opened_at, P.id).all())      # one list a day: the newest stint wins
+    if not rows and db.query(P.id).first() is None:
+        return files
+    keyed = [(worker_key(name), clean_name(name), code, job or "", since, u)
+             for name, code, job, since, u in rows]
+    out = dict(files)            # the kept maps are shared: build new ones
+    for d in want:
+        fw_file, last = files[d]
+        fw: dict = {}
+        for k, name, code, job, since, until in keyed:
+            if since < d and (until is None or d <= until):
+                f = fw_file.get(k)
+                fw[k] = {"key": k, "name": name, "code": code, "job": job,
+                         "seen": d, "came": f["came"] if f else None}
+        out[d] = (fw, last)
+    return out
+
+
+def track_placements(db: Session, directory: dict, now: Optional[datetime] = None) -> int:
+    """Bring `kelish_placements` in line with a fresh Verifix directory read
+    (`verifix_live._directory`): a stint opens where an employee is first seen
+    in a coded org unit, and closes where they are gone from it (moved, or no
+    longer working). Dates are each cell's own shift-day, so a night joiner at
+    02:00 still makes the night that opens tonight. Commits; returns the
+    number of stints opened or closed."""
+    from app.models import Cell, Manager
+    from app.services import cell_hours
+    now = now or live_overview.now_local()
+    divs = directory.get("divs") or {}
+    seen: dict[str, tuple] = {}
+    for eid, e in (directory.get("emps") or {}).items():
+        raw = (divs.get(e.get("unit")) or {}).get("raw")
+        name = clean_name(e.get("name"))
+        if raw and name:
+            seen[eid] = (norm_code(raw), name, (e.get("job") or "").strip() or None)
+    open_rows: dict = {}
+    for p in db.query(KelishPlacement).filter(KelishPlacement.until.is_(None)).order_by(KelishPlacement.id):
+        if p.employee_id in open_rows:
+            db.delete(p)         # a twin from two passes at once: one stint per person
+        else:
+            open_rows[p.employee_id] = p
+    # A read that came back collapsed would close the whole plant and hide it
+    # until tomorrow — a real plant never halves in ten minutes.
+    if not seen or len(seen) < len(open_rows) // 2:
+        log.warning("kelish: directory read of %d people against %d placed — not applied",
+                    len(seen), len(open_rows))
+        db.rollback()
+        return 0
+    first = not open_rows and db.query(KelishPlacement.id).first() is None
+    windows = cell_hours.defaults(db)
+    shifts = {norm_code(c): s for c, s in
+              db.query(Cell.verifix_code, Manager.shift)
+                .outerjoin(Manager, Manager.id == Cell.manager_id).all() if c}
+    days: dict = {}
+
+    def today(code: str) -> date:
+        if code not in days:
+            days[code] = shift_days(windows, shifts.get(code), now)[0]
+        return days[code]
+
+    changed = 0
+    for eid, p in open_rows.items():
+        cur = seen.get(eid)
+        if cur is None or cur[0] != p.code:
+            p.until, p.closed_at = today(p.code), now
+            changed += 1
+        elif (p.name, p.job) != cur[1:]:
+            p.name, p.job = cur[1], cur[2]
+    for eid, (code, name, job) in seen.items():
+        p = open_rows.get(eid)
+        if p is not None and p.code == code:
+            continue
+        db.add(KelishPlacement(employee_id=eid, code=code, name=name, job=job,
+                               since=SINCE_ALWAYS if first else today(code),
+                               opened_at=SEEDED_AT if first else now))
+        changed += 1
+    db.commit()
+    return changed
+
+
+def _file_days(db: Session, days: Iterable[date],
+               as_of: Optional[datetime] = None) -> dict:
     """THE file reader: for each of `days`, every worker the original upload
     filed in that day's window, keyed by `worker_key`, each on the cell of their
     MOST RECENT row:

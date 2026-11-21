@@ -409,7 +409,14 @@ def _directory(db: Session, cfg: dict, max_age: float) -> tuple[dict, Optional[d
         row.data, row.read_at = data, datetime.now(timezone.utc)
         row.ms, row.error, row.error_at = int((_time.monotonic() - t0) * 1000), None, None
         db.commit()
-        return data, _local(row.read_at)
+        got = data, _local(row.read_at)
+        try:
+            from app.services import kelish
+            kelish.track_placements(db, data)    # «Ish grafigi» lists who is on a cell now
+        except Exception:
+            db.rollback()
+            log.exception("staff-live: kelish placements not updated")
+        return got
     finally:
         _dir_lock.release()
 

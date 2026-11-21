@@ -128,9 +128,32 @@ marked «Keladi» (green) or «Kelmaydi» (red). `services/kelish.py` computes,
 open it**, and **task #11 is untouched** — nothing here scores anything, and
 the task still wants its screenshot. Both switches are the operator's to throw.
 
-- **WHO is on a list is the ORIGINAL upload** — `attendance_batch_rows`, the
-  Verifix file as uploaded, never `attendance` (which exchanges rewrite): every
-  worker the file filed under the cell in the 30 days before the day shown.
+- **From 2026-11-22 WHO is on a list is who Verifix has on the cell NOW**
+  (the operator, 2026-11-21: «instead of past 30 days unique workers show the
+  current people on this cell; if the worker joined today, start showing them
+  from tomorrow»). `kelish_placements` is a dated log kept by
+  `kelish.track_placements` on every Verifix directory read
+  (`verifix_live._directory`, ~10 min): one row per stint of an employee in a
+  coded org unit. `since` = the cell's shift-day they were first seen there,
+  listed from the NEXT day; `until` = the shift-day they were first seen gone
+  (moved, or no longer working), listed THROUGH it — a move is never two lists
+  on one day nor none. Dates are each cell's own shift frame, so on a night
+  cell a joiner at 16:00 is on tonight's list (its «tomorrow»); where a day →
+  night move puts both stints on one date, the newer stint's cell has them
+  (one worker, one list — the file reader's rule). The first pass
+  ever is the plant as it stood (`SINCE_ALWAYS`); a directory read under half
+  the placed count is refused (a collapsed read would hide the plant until
+  tomorrow). The switch is inside `file_workers_days` (`_placed`), so every
+  caller — the page, «+»/«−» checks, task #11's `staff_list` — reads it, and
+  `as_of` reads the log as it stood (`opened_at` / `closed_at`). Days before
+  `CURRENT_FROM` keep the file below (history is never rewritten), and an
+  empty log leaves the file standing. The «not in for N days» hint still reads
+  `came` from the file. The empty card says «nobody in this cell in Verifix
+  now».
+- **Before 2026-11-22 WHO is on a list is the ORIGINAL upload** —
+  `attendance_batch_rows`, the Verifix file as uploaded, never `attendance`
+  (which exchanges rewrite): every worker the file filed under the cell in the
+  30 days before the day shown.
 - **One worker, one list: the cell of their MOST RECENT row.** Verifix itself
   re-files people — on the 11 Sep copy 105 of 1,487 workers carried two cell
   codes within 30 days, every row an untouched file row, 86 of them moved once

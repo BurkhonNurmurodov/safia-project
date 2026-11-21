@@ -4751,6 +4751,33 @@ class KelishRosterEvent(Base):
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class KelishPlacement(Base):
+    """Who Verifix has on a cell NOW, dated (from 2026-11-21) — what «Ish
+    grafigi» lists from `kelish.CURRENT_FROM` instead of the last 30 days'
+    file (the operator, 2026-11-21).
+
+    Kept by `kelish.track_placements` on every Verifix directory read: one row
+    per stint of an employee in an org unit carrying a code. `since` is the
+    cell's shift-day the employee was first seen there — they are listed from
+    the NEXT day («joined today → from tomorrow»); `until` is the cell's
+    shift-day they were first seen gone, and they stay listed THROUGH it, so a
+    move is never two lists on one day nor none. The first pass ever is the
+    plant as it stood, so its rows are dated `SINCE_ALWAYS` / `SEEDED_AT`.
+    `opened_at` / `closed_at` let task #11's check rebuild a list as it stood.
+    """
+    __tablename__ = "kelish_placements"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    employee_id = Column(String, nullable=False, index=True)
+    code        = Column(String, nullable=False)          # cell_lookup.norm_code
+    name        = Column(String, nullable=False)
+    job         = Column(String, nullable=True)
+    since       = Column(Date, nullable=False)
+    until       = Column(Date, nullable=True, index=True)
+    opened_at   = Column(DateTime(timezone=True), nullable=False)
+    closed_at   = Column(DateTime(timezone=True), nullable=True)
+
+
 class KelishCellKind(Base):
     """Which list a cell's staff list is JUDGED on by checklist task #11's
     automatic check (`leader_auto`, check `staff_list`, from 2026-10-05):
