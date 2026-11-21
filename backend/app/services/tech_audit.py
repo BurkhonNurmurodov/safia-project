@@ -66,11 +66,12 @@ DEFAULT_RULE = {
 _TAIL4 = re.compile(r"(?<!\d)(\d{4})\s*$")
 _CODES = re.compile(r"(?<![\d.])(\d{3,5})(?![\d.])")   # «самса,9122» is a code; «2.1» is not
 # Panel workshops still named by a code the cell no longer has → today's cell.
-# HR's own notes in its October file (column O of «Аудит Техн»), and 0611, which
-# Verifix itself names A0061. 8921 «Цех Печенье2.1» (HR: 7424, the name reads
-# 7421) and 8917 «Цех Печенье7» wait for the technologists.
+# HR's own notes in its October file (column O of «Аудит Техн»), confirmed by the
+# technologists on 21 Nov for 2322, 4324 and 8921 («7424 - Цех Печенье 4» is
+# 8921 in the Tasker); and 0611, which Verifix itself names A0061. 8917 «Цех
+# Печенье7» waits for them.
 # shortcut: a constant, changed in code — make it an admin list when it moves often.
-PANEL_WORKSHOP_CELL = {11: "7315", 176: "A0061", 122: "7414", 39: "7223"}
+PANEL_WORKSHOP_CELL = {11: "7315", 176: "A0061", 122: "7414", 39: "7223", 129: "7424"}
 
 
 # ── the rule ──────────────────────────────────────────────────────────────────

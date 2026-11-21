@@ -1024,18 +1024,22 @@ THE rule.
     3 in HR's file and a 2 here;
   - **a workshop the panel still names by an OLD code is placed by its panel
     id** (`PANEL_WORKSHOP_CELL`): 2322 «Оф.Мел.Изд.Экл2» → 7315, 8914 «Цех
-    Печенье4» → 7414, 4324 «Оф.Тортов.нап4» → 7223 — HR's own pairs (column O
-    of its October «Аудит Техн», which its formulas never applied) — and 0611
+    Печенье4» → 7414, 4324 «Оф.Тортов.нап4» → 7223, 8921 «Цех Печенье2.1» →
+    7424 — HR's own pairs (column O of its October «Аудит Техн», which its
+    formulas never applied); the technologists confirmed 2322, 4324 and 8921
+    on 2026-11-21 («7424 - Цех Печенье 4» is 8921 in the Tasker) — and 0611
     «Обработка яиц» → A0061, which Verifix itself names «0611 Обработка яиц».
-    Still OFF, counting toward nobody until the technologists say: 8921 «Цех
-    Печенье2.1» (HR pairs it with 7424 «Цех Печенье4»; «2.1» reads as shift 2,
-    line 1 — 7421) and 8917 «Цех Печенье7» (no cell of that name);
+    HR's fifth pair, 7427/8922, needs nothing: «8922 - Цех Пирог» is 7427 in
+    the Tasker, and /cells still has it as 7427. Still OFF, counting toward
+    nobody until the technologists say: 8917 «Цех Печенье7» (no cell of that
+    name);
   - a workshop that names no cell of ours counts toward nobody and is NAMED in
     the notes (`unregistered`, unscoped views only).
 - **Against HR's October file** (its «Аудит Техн» is the panel's month figure
-  per workshop, read by an exact VLOOKUP of the cell code): 92 of the 99 owned,
-  KPI-counted cells score the same. The 7: 7315, 7414, 7223 get the scores HR
-  left #N/A (the old codes); 8920, 9122, 9429 fall to 2 (all their rows);
+  per workshop, read by an exact VLOOKUP of the cell code): on the production
+  board 95 of the 102 owned cells scored the same before 8921 was placed; with
+  it, 7424 (Atayeva, 3 audits, 100 %) is an 8th difference. The others: 7315,
+  7414, 7223 get the scores HR left #N/A (the old codes); 8920, 9122, 9429 fall to 2 (all their rows);
   A0061 is HR's 0611 row under today's code (0 both). HR's file also misses
   5 cells whose code it typed as a NUMBER against the sheet's text (6611, 6621,
   6711, 6712, 3611 — #N/A), none of them owned.
