@@ -307,6 +307,10 @@ try:
     # (once, 2026-11-20; after the step above, in both entrypoints).
     from app.startup import name_almaty_unit
     name_almaty_unit()
+    # …and its second form replaces the catalogue: 84 lines, Команда 8898 ·
+    # 6866 · 9888 (once, 2026-11-21; after both steps above, in both entrypoints).
+    from app.startup import replace_almaty_catalog
+    replace_almaty_catalog()
     from app.startup import seed_container_send_areas
     seed_container_send_areas()
     from app.startup import container_flow_notify_on, containers_tv_managers

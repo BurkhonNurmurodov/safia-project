@@ -11313,6 +11313,82 @@ def name_almaty_unit() -> None:
         db.close()
 
 
+# ── 21 Nov: the Almaty unit's second form replaces its catalogue ────────────
+# (docs/data-fixes.md) The operator, 2026-11-21, with the same form sent again
+# — 84 positions, Команда written 8898 · 6866 · 9888 where the first wrote
+# A · B · C: «Put this Almata Catalog instead of current one». ONCE, after the
+# two steps above in both entrypoints. `almaty_plant.replace_catalog` is the
+# change: an edit dated from the shift in progress, a line that keeps its name
+# edited in place, the teams renamed, what a person typed from that day on
+# carried with its line. A plant with no unit, with several, or with positions
+# that moved with a cell changes NOTHING and the admins are told.
+ALMATY_FORM_FLAG = "oneshot:almaty_catalog_form_nov21"
+
+
+def replace_almaty_catalog() -> None:
+    from app.services import almaty_plant
+
+    title = "Almaty · yangi katalog"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": almaty_plant.LOCK_KEY})
+        if db.query(AppSetting).filter_by(key=ALMATY_FORM_FLAG).first():
+            return
+        try:
+            res = almaty_plant.replace_catalog(db)
+        except almaty_plant.Refused as why:
+            db.rollback()
+            db.add(AppSetting(key=ALMATY_FORM_FLAG, value=f"refused: {why}"[:250]))
+            db.commit()
+            print(f"[startup] Almaty catalogue: nothing changed — {why}")
+            _dm_report("warn", title, status="Katalog almashtirilmadi",
+                       rows=[("🔎", "Sabab", str(why))],
+                       notes=[("👉", "Yangi ro'yxatni «Ishlab chiqarish» → katalog importi "
+                                    "orqali qo'lda yuklang.")],
+                       open=_REPORT_FACTORIES)
+            return
+        db.add(AppSetting(key=ALMATY_FORM_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        since = res["from"].strftime("%d.%m.%Y") if res["from"] else None
+        print(f"[startup] Almaty catalogue: unit {res['unit_id']} — {res['lines']} lines "
+              f"from {since or 'every day'} (+{len(res['added'])} −{len(res['removed'])}, "
+              f"{len(res['retimed'])} retimed), carried {res['carried']} value(s) "
+              f"and {res['pins']} pin(s), unjoined teams {res['unjoined']}")
+        teams = ", ".join(f"{c} — {n}" for c, n in res["teams"])
+        num = lambda v: f"{v:g}" if v is not None else "—"      # noqa: E731
+        typed = res["carried"] + res["pins"]
+        notes = []
+        if since:
+            notes.append(("ℹ️", f"{since} dan oldingi kunlar avvalgi katalogni (A · B · C) "
+                                "va o'z raqamlarini saqlaydi."))
+        if res["unjoined"]:
+            notes.append(("👉", "Komanda yacheykaga ulanishi uchun «Yacheykalar» sahifasida "
+                                "har bir yacheykaning «SAP kodi»ga uning komandasini yozing: "
+                                + " · ".join(res["unjoined"]) + "."))
+        _dm_report("ok", title, status="Katalog yangi forma bo'yicha almashtirildi",
+                   rows=[("👤", "Bo'linma", f"{res['unit_name']} · №{res['unit_id']} · "
+                                           f"{res['unit_shift'] or '—'}-smena"),
+                         ("📦", "Katalog", f"{res['lines']} ta pozitsiya (SAP kodsiz, nomi bo'yicha)"),
+                         ("📅", "Qaysi kundan", since or "barcha kunlar"),
+                         ("👥", "Komandalar · shtatka", teams),
+                         ("➕", "Qo'shildi", res["added"]),
+                         ("➖", "Olib tashlandi", res["removed"]),
+                         ("⏱", "Trudoyomkost o'zgardi",
+                          [f"{n}: {num(a)} → {num(b)}" for n, a, b in res["retimed"]]),
+                         ("♻️", "Arxivdan qaytdi", f"{res['restored']} ta" if res["restored"] else None),
+                         ("🗄", "Arxivda qoldi", f"{res['archived_kept']} ta" if res["archived_kept"] else None),
+                         ("✍️", "Yangi komandaga ko'chirilgan kiritmalar",
+                          f"{typed} ta" if typed else None)],
+                   notes=notes,
+                   open=("Profilni ochish", f"/profile/supervisor/{res['unit_id']}"))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Almaty catalogue failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
+
+
 # ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
 # The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
 # «Kutish mas'uli» reads /downtime and /idle-cell through the categories he

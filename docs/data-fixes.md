@@ -618,6 +618,71 @@ after `add_almaty_plant` in both entrypoints. Tests: `tests/test_almaty_plant.py
 She is not bound to the unit by this: she registers in the bot and picks the
 unit's profile like every brigadir, and an admin approves.
 
+## …and the unit's second form replaces its catalogue (`startup.replace_almaty_catalog`, 2026-11-21)
+
+The operator, with the same form sent again («Almata_Abbos.xlsx»): «Put this
+Almata Catalog instead of current one».
+
+What the second form says, against the first:
+
+- **84 positions** (was 83). «Сосиска Булочка Замарозка» is written
+  «СосискаСлойка Булочка Замарозка»; «СосискаСлойка Булочка Гп» (4.2) is new;
+  «Балиш Гп» is 3.7 (was 3.4) and «Сосиска Булочка Гп» 3.1 (was 4.2). The
+  other 79 lines are the same name and Трудоемкость.
+- **Команда is a NUMBER now: 8898 · 6866 · 9888** — every line that was A is
+  8898 (54 lines), every B 6866 (12), every C 9888 (18), one to one. The
+  form's team block was not retyped — it still lists A · B · C with 2 · 2 · 1
+  — and its legend names them: «A-Замарозка гп», «B Сендвич Круассан»,
+  «С Передзагатовка». So the штатка is 8898 — 2, 6866 — 2, 9888 — 1.
+- Still no SAP codes; ПЛАН is again one day's quantities and is not read.
+
+Production's state could not be read first: the report door answered `bad_key`
+to the cloud environment's key again (64 characters, SHA-256 starting
+`c7b29959` — a key, but not the one whose digest production holds). So
+`almaty_plant.replace_catalog` is written to hold whatever stands on the unit,
+and it is an EDIT of the catalogue, made the way the page's own edits are,
+never a wipe:
+
+- **Dated** (`pp_catalog.freeze`, «A catalog edit counts FROM NOW ON»): the
+  days before the shift in progress keep the first catalogue, A · B · C, and
+  every number on them. Shift 1, so a deploy before 20:00 counts from that day
+  and one after it from the next. Only a unit holding no catalogue at all
+  takes the form for every day.
+- **A line that keeps its NAME is edited in place** — Команда, Трудоемкость,
+  its place in the list. Its row stays, and with it whatever a person set on
+  it since: «O'lchov birligi», the container capacities, a SAP code. The name
+  is all the form says about a code-less line, so it is the one match that is
+  not a guess. «Сосиска Булочка Замарозка» → «СосискаСлойка …» sits on the
+  same row of the form with the same Трудоемкость and is still NOT followed:
+  a match by position is the thing `pp_calc.line_keys` rules out. It is one
+  line removed and one added.
+- **A line the form does not name goes**: a live one is deleted, an archived
+  one stays in the archive under its team's new Команда. A line the form names
+  that sits in the archive comes back live, as an import brings it back.
+- **The teams are renamed, not re-made**: the row that was A becomes 8898 (B →
+  6866, C → 9888), keeps a capacity somebody tuned and takes the form's
+  штатка. A work centre no line names any more is removed.
+- **What a person typed from the start day on follows its line**
+  (`production._carry_manual_quantities`, the page's own carry): a line's
+  Команда is part of the key its ПЛАН / ФАКТ / «Kontiner krishka» / «Navbat»
+  are stored under, and every line's changes here. The day's «Odam soni» and
+  штатка pins follow their team's new Команда too. A letter on a line is
+  dropped, as on any line moved to another work centre.
+
+It changes nothing, and tells the admins to load the form through the import
+by hand, when the plant has no unit or several, or when positions ever moved
+with a cell into or out of the unit (`pp_catalog_moves` — the import treats
+those line by line, and the plant has no cell another unit held). It runs once
+(flag `oneshot:almaty_catalog_form_nov21`), after `add_almaty_plant` and
+`name_almaty_unit` in both entrypoints; only a crash leaves it to try again.
+The admins' DM names the day it counts from, what was added, removed and
+retimed, how many typed values moved, and which of the three teams no cell
+answers for yet. Tests: `tests/test_almaty_plant.py`.
+
+**Still to do by hand**: each Almaty cell's «SAP kodi» on «Yacheykalar» must
+be its team — 8898, 6866 or 9888 — for the Команда to be joined to the cell
+(`cell_lookup.by_sap`); then «Zagruzka hisoblanadi» on.
+
 ## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
 
 The operator: «Maksudov Alisher can you add the container page for him». He
