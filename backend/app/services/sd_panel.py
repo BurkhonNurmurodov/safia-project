@@ -188,8 +188,46 @@ def report_path(start: str, end: str, type_id: int) -> str:
     return f"/task-factory-reports/cancelled?start={start}&end={end}&type={int(type_id)}"
 
 
+_ANY_TABLE = re.compile(r'<table[^>]*>(.*?)</table>', re.S)
+_ANY_TR = re.compile(r'<tr[^>]*>(.*?)</tr>', re.S)
+_CELL = re.compile(r'<t[hd][^>]*>(.*?)</t[hd]>', re.S)
+_HREF = re.compile(r'href="([^"]+)"')
+PEEK_REPORTS = ("index", "days", "tasks", "cancelled-total")
+
+
+def tables(page: str, cap: int = 800) -> list[dict]:
+    """Every table on a page as text, with each row's links — to learn the
+    layout of a report this module does not parse yet (`peek`)."""
+    out = []
+    for t in _ANY_TABLE.findall(page):
+        rows = [{"cells": [_text(c) for c in _CELL.findall(tr)],
+                 "links": [html.unescape(h) for h in _HREF.findall(tr)]}
+                for tr in _ANY_TR.findall(t)]
+        out.append({"rows": rows[:cap], "row_count": len(rows)})
+    return out
+
+
+def peek(db: Session, report: str, start: str, end: str, type_id: int) -> dict:
+    """One panel report read raw (`tables`) with the stored login — the admin
+    door the report door GETs. Only the reports in PEEK_REPORTS, on the fixed host."""
+    from app.web_auth import open_password
+
+    if report not in PEEK_REPORTS:
+        raise PanelError("report")
+    path = f"/task-factory-reports/{report}?start={start}&end={end}&type={int(type_id)}"
+    user, sealed = _get(db, K_USER), _get(db, K_PASS)
+    password = open_password(sealed) if sealed else None
+    db.rollback()  # hand the connection back for the network wait
+    if not user or password is None:
+        raise PanelError("no_login")
+    got = read_reports(user, password, [path], reader=tables)[path]
+    if isinstance(got, PanelError):
+        raise got
+    return {"path": path, "tables": got}
+
+
 def read_reports(user: str, password: str, paths: list[str],
-                 deadline: Optional[float] = None) -> dict[str, Any]:
+                 deadline: Optional[float] = None, reader=None) -> dict[str, Any]:
     """Log in ONCE and read each report path — one attempt, redirects never
     followed (the host is fixed; a bounce to /login is the answer, not a place
     to go). Returns {path: rows | PanelError}; a failed login raises. A path
@@ -224,7 +262,7 @@ def read_reports(user: str, password: str, paths: list[str],
                     raise PanelError("no_access")
                 if res.status_code != 200:
                     raise PanelError("status", "GET report", res.status_code)
-                out[path] = parse(res.text)
+                out[path] = (reader or parse)(res.text)
             except PanelError as e:
                 if e.code in ("no_access", "network", "timeout"):
                     raise

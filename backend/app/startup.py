@@ -12127,3 +12127,71 @@ def restore_wiped_accounts() -> None:
         _dm_report("fail", "O'chgan akkauntlarni tiklash bajarilmadi", error=exc)
     finally:
         db.close()
+
+
+# ── 21 Nov: Ibragimjonov Farrux stops counting from 16 Nov (docs/data-fixes.md)
+# Verifix moved him out of 9123 to «Отдел технологов» (Технолог) from 16 Nov,
+# but HR posted the transfer only on 20 Nov, so the sync's «no cell» cutoff
+# reads 20 Nov. The operator, 2026-11-21: «His scores shouldn't be calculated
+# starting from 16th». His cutoff is moved to 16 Nov as a PERSON's (the sync
+# never moves or lifts one), AI reviews queued from that day are dropped, and he
+# and his brigadir are told — what «Liderni hisobdan chiqarish» does. Profile
+# 260, checked by name; not found → nothing, the admins are told, and the step
+# tries again on the next start.
+FARRUX_CUTOFF_FLAG = "oneshot:farrux_cutoff_nov16"
+FARRUX_ID, FARRUX_FROM = 260, "2026-11-16"
+
+
+def farrux_cutoff_nov16() -> None:
+    from app.services import action_log, leader_cutoffs, leader_reports
+    from app.services.people import fold_name
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=FARRUX_CUTOFF_FLAG).first():
+            return
+        p = db.query(RoleProfile).filter_by(id=FARRUX_ID, role="leader").first()
+        folded = fold_name(p.name) if p else ""
+        if "ibragim" not in folded or "farr" not in folded:
+            print(f"[startup] Farrux cutoff: profile {FARRUX_ID} is {p.name if p else 'gone'} — nothing changed")
+            _dm_report("warn", "Ibragimjonov Farrux · 16.11 dan hisobdan chiqarilmadi",
+                       rows=[("🔎", f"Profil {FARRUX_ID}", p.name if p else "topilmadi")],
+                       notes=[("👉", "«Hisobga olinmaydi» → «Liderni hisobdan chiqarish»da "
+                                    "16.11.2026 dan qo'lda belgilang.")])
+            return
+        reason = "Verifix: 16.11.2026 dan Texnologlar bo'limiga o'tkazilgan (Технолог)"
+        who = "system (one-shot 2026-11-21)"
+        _, prev, _ = leader_cutoffs.set_cutoff(
+            db, leader_id=p.id, leader_name=p.name, from_date=FARRUX_FROM,
+            manager_id=p.manager_id, reason=reason, actor=who)
+        dropped = (leader_cutoffs.drop_pending_reviews(db, p.id, FARRUX_FROM)
+                   if prev is None or FARRUX_FROM < prev else 0)
+        db.add(AppSetting(key=FARRUX_CUTOFF_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        told = 0
+        try:
+            told = leader_reports.notify_cutoff(
+                db, leader_id=p.id, leader_name=p.name, manager_id=p.manager_id,
+                from_date=FARRUX_FROM, reason=reason, actor=who)
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 — a DM never undoes the cutoff
+            db.rollback()
+            print(f"[startup] Farrux cutoff: not notified: {exc}")
+        action_log.record_system(
+            "leader_review", "leader.cutoff_set", target_kind="leader", target_name=p.name,
+            reason=reason, details=[("from", FARRUX_FROM), ("was", prev or "—"),
+                                    ("notified", told), ("reviews_dropped", dropped)])
+        print(f"[startup] Farrux cutoff: {p.id} from {FARRUX_FROM} (was {prev}), "
+              f"{told} told, {dropped} reviews dropped")
+        _dm_report("ok", f"{p.name} · 16.11 dan hisobdan chiqarildi",
+                   rows=[("🪪", "Profil", _report_who(p)),
+                         ("📅", "Hisobdan chiqarildi", f"16.11.2026 dan (oldin: {prev or '—'})"),
+                         ("📨", "Xabar berildi", told),
+                         ("🧹", "Navbatdan olingan AI tekshiruvlar", dropped)],
+                   open=_report_open(p))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Farrux cutoff failed: {exc}")
+        _dm_report("fail", "Ibragimjonov Farrux · 16.11 dan hisobdan chiqarilmadi", error=exc)
+    finally:
+        db.close()
