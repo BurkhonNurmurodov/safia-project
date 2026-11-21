@@ -233,15 +233,22 @@ After a review of the app the operator answered «make it» to two points:
   browser's twin — keep the two in step); the request's phone card and the
   row's tooltip; the brigadir's card («Yacheykalar bo'yicha», also on the
   reminder); «Qabul». `split-hint` carries `cells` (the weights).
-  **Each cell with its LEADER** (2026-11-21, the operator: «put names of
-  leaders for each teams yacheyka»; asked which of a cell's two leaders, «just
-  the leader of the yacheyka», so the «Boshqaruvchi», `cells.leader_id`, the
-  name `cellLabel` prints beside a code everywhere; asked where, the split
-  dialog and the brigadir's card): `cell_leaders` (live cells, by code) fills
-  `leaders` {code: name} on each `split-hint` cell entry — the dialog's rows
-  read «7416 · Karimova Dilnoza» — and the split card and its reminder print
-  the same («• 7416 · name — counts»). A work-centre key and a cell nobody
-  leads print the code alone. «Qabul» and the request cards keep the code only.
+  **Each cell with its WORKSHOP name** (2026-11-21). The operator first asked
+  for the cell's leader («put names of leaders for each teams yacheyka … just
+  the leader of the yacheyka», shipped as v4.621.0, the «Boshqaruvchi»), then
+  the same day: «we have to write the name of the workshop for each
+  containers … remove the names, put just workshop names». So each cell reads
+  «7416 · Tsentr. Moyka 1 smena» — the code stays, because workshop names
+  repeat across cells. `cell_workshops` (live cells, by code: every language
+  column of «Sex nomi», `cells.name_workshop_*`) fills `workshops`
+  {code: {lang: name}} on each `split-hint` cell entry; the dialog prints it
+  through `cellName` + `tx`, the split card and its reminder through
+  `workshop_name` (the reader's column, else Russian, transliterated as text,
+  never as a name). A work-centre key and a cell with no name print the code
+  alone. Only the split dialog and the brigadir's card (the operator's pick for
+  the leader, kept); «Qabul» and the request cards keep the code only. **This
+  is the second place a workshop name is printed** (CLAUDE.md «Cell label»,
+  `utils/cellName.js`) — the operator's own call, like the /cells register's.
   **The counts start from the hour's figure** (2026-11-14, the operator: «when
   we choose the hours the number of containers should appear by default, then
   if it is incorrect they will correct it by hand»): picking an hour on «Yangi

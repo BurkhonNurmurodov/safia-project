@@ -1054,7 +1054,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
                   {row.unit != null && !hint.isLoading && (
                     <CellList t={t} className="mt-1.5" cells={cellBreakdown(cellEntry(row.unit), row.counts, types)}
-                      leaders={cellEntry(row.unit)?.leaders} />
+                      workshops={cellEntry(row.unit)?.workshops} />
                   )}
                 </FormField>
               </div>

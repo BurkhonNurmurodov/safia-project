@@ -1687,10 +1687,16 @@ class CellBreakdownTest(unittest.TestCase):
         self.assertEqual(flow.cell_split(entry, "yellow", 0), {})
         self.assertEqual(flow.cell_split(None, "yellow", 5), {})
 
-    def test_card_names_each_cell_with_its_leader(self):
+    def test_card_names_each_cell_with_its_workshop(self):
         from app.models import ContainerRequest
         r = ContainerRequest(hour=9, logistics_name="Yusuf aka", assigned_at=None)
-        body = flow._brig_body(r, {"yellow": 232}, "uz", cells={"7416": {"yellow": 200}, "A2894 · A": {"yellow": 32}},
-                               leaders={"7416": "Каримова Дилноза"})
-        self.assertIn("<b>7416</b> · Karimova Dilnoza — ", body)       # a person's name, transliterated
-        self.assertIn("<b>A2894 · A</b> — ", body)                     # no cell, no leader: the key alone
+        body = flow._brig_body(r, {"yellow": 232}, "uz",
+                               cells={"7416": {"yellow": 200}, "A2894 · A": {"yellow": 32}},
+                               workshops={"7416": {"ru": "Центр. Мойка 1 смена"}})
+        self.assertIn("<b>7416</b> · Tsentr. Moyka 1 smena — ", body)    # Russian → the reader's script
+        self.assertIn("<b>A2894 · A</b> — ", body)                       # no cell: the key alone
+
+    def test_workshop_name_prefers_the_readers_language(self):
+        self.assertEqual(flow.workshop_name({"uz": "Yuvish", "ru": "Мойка"}, "uz"), "Yuvish")
+        self.assertEqual(flow.workshop_name({"ru": "Мойка"}, "ru"), "Мойка")
+        self.assertEqual(flow.workshop_name(None, "uz"), "")

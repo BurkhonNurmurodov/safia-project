@@ -8,7 +8,7 @@ import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
-import { cellLabel } from "../../utils/cellName";
+import { cellLabel, cellName } from "../../utils/cellName";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { ontimeTone } from "../../utils/statusBands";
 
@@ -178,17 +178,18 @@ export function cellBreakdown(entry, counts, keys) {
 
 // The breakdown as rows: the cell — its verifix CODE, how a cell is named
 // (`utils/cellName.js`); a team with no cell by its work centre — and its counts.
-// `leaders` ({code: name}) puts the cell's leader beside its code — `cellLabel`, the
-// one way a cell is named with its leader (the split dialog, 2026-11-21).
-export function CellList({ t, cells, leaders, className = "" }) {
-  const { tl } = useTranslit();
+// `workshops` ({code: {lang: name}}) puts the cell's WORKSHOP name beside its code
+// (2026-11-21, the operator, on the split dialog: «remove the names, put just
+// workshop names») — the one place outside /cells that prints it (`utils/cellName.js`).
+export function CellList({ t, cells, workshops, className = "" }) {
+  const { tx, lang } = useTranslit();
   const rows = Object.entries(cells ?? {});
   if (!rows.length) return null;
   return (
     <div className={`rounded-lg overflow-hidden ${className}`} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
       {rows.map(([c, n], i) => {
         const text = countsText(t, n);
-        const who = leaders?.[c] ? tl(leaders[c]) : "";
+        const who = workshops?.[c] ? tx(cellName(workshops[c], lang, "")) : "";
         return (
           <div key={c || "_"} className="flex items-start gap-2 px-2.5 py-1.5 text-xs"
             style={i ? { borderTop: "1px solid var(--border)" } : undefined}>

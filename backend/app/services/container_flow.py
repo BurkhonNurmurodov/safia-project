@@ -1241,11 +1241,11 @@ def receive_open(db: Session, manager_id: int) -> bool:
 
 
 def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split",
-               cells: Optional[dict] = None, leaders: Optional[dict] = None) -> str:
+               cells: Optional[dict] = None, workshops: Optional[dict] = None) -> str:
     """The brigadir's card: `split` (containers sent), `remind` (still not
     confirmed) or `cancel` (the request was withdrawn — no buttons). `cells`
     ({cell: {ctype: n}}) adds to which cell how many (2026-11-20), each cell
-    with its leader from `leaders` ({cell: name}, 2026-11-21)."""
+    with its workshop name from `workshops` ({cell: {lang: name}}, 2026-11-21)."""
     from html import escape as _esc
     from app.translit import transliterate, transliterate_text
     t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
@@ -1259,8 +1259,8 @@ def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split"
     if cells:
         rows += ["", f"<b>{_esc(t['cells'], quote=False)}:</b>"]
         for c, cn in cells.items():
-            who = transliterate((leaders or {}).get(c) or "", lang)
-            who = f" · {_esc(who, quote=False)}" if who else ""
+            ws = workshop_name((workshops or {}).get(c), lang)
+            who = f" · {_esc(ws, quote=False)}" if ws else ""
             rows.append(f"• <b>{_esc(c, quote=False)}</b>{who} — {_esc(counts_text(cn, lang), quote=False)}")
     if kind == "cancel":
         if r.cancel_note:
@@ -1307,14 +1307,14 @@ def notify_split(request_id: int) -> int:
         for p in rows:
             units.setdefault(p.manager_id, {})[p.ctype] = p.count
         cls = _cells_of(rows)
-        lead = cell_leaders(db, {c for u in cls.values() for c in u})
+        shops = cell_workshops(db, {c for u in cls.values() for c in u})
         for mid, counts in units.items():
             if not receive_open(db, mid):
                 continue
             notify_profile(
                 db, f"supervisor:{mid}", "container_split",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="info", html_fn=lambda lang, c=counts, cl=cls.get(mid): _brig_body(r, c, lang, cells=cl, leaders=lead),
+                type="info", html_fn=lambda lang, c=counts, cl=cls.get(mid): _brig_body(r, c, lang, cells=cl, workshops=shops),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             told += 1
         db.commit()
@@ -1780,7 +1780,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
         for p in prow:
             pending.setdefault(p.manager_id, {})[p.ctype] = p.count
         p_cls = _cells_of(prow)
-        p_lead = cell_leaders(db, {c for u in p_cls.values() for c in u})
+        p_shops = cell_workshops(db, {c for u in p_cls.values() for c in u})
         for mid, counts in pending.items():
             if not receive_open(db, mid):
                 continue
@@ -1794,7 +1794,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
             notify_profile(
                 db, f"supervisor:{mid}", "container_split_remind",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="warning", html_fn=lambda lang, c=counts, rr=r, cl=p_cls.get(mid): _brig_body(rr, c, lang, "remind", cl, p_lead),
+                type="warning", html_fn=lambda lang, c=counts, rr=r, cl=p_cls.get(mid): _brig_body(rr, c, lang, "remind", cl, p_shops),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             db.commit()
             sent += 1
@@ -2040,30 +2040,55 @@ def cell_weights(db: Session, day: date, hour: int, exclude_request_id: Optional
                 if rows:
                     w[k] = rows
             out[mid] = {"names": names, "w": w}
-        # each cell's leader beside its code (2026-11-21, the operator: «put the
-        # names of the leaders for each yacheyka … just the leader of the yacheyka»)
-        lead = cell_leaders(db, {c for e in out.values() for c in e["names"]})
+        # each cell's WORKSHOP name beside its code (2026-11-21, the operator:
+        # «write the name of the workshop … remove the names, put just workshop
+        # names» — it replaced the leader's name the same day)
+        shops = cell_workshops(db, {c for e in out.values() for c in e["names"]})
         for e in out.values():
-            e["leaders"] = {c: lead[c] for c in e["names"] if c in lead}
+            e["workshops"] = {c: shops[c] for c in e["names"] if c in shops}
         return out
     except Exception:
         logger.warning("container-flow: cell weights failed", exc_info=True)
         return {}
 
 
-def cell_leaders(db: Session, codes) -> dict:
-    """{verifix code: the name of the leader who RUNS the cell} — the cell's
-    «Boshqaruvchi» (`cells.leader_id`), the leader every page names beside a
-    code (`cellLabel`). Live cells only; a code with no leader is absent. A
-    work-centre key («A2894 · A», a team with no cell) matches nothing."""
+def cell_workshops(db: Session, codes) -> dict:
+    """{verifix code: {lang: the cell's workshop name}} — its «Sex nomi» on
+    /cells (`cells.name_workshop_*`, Verifix's name synced live), every
+    language that has one. Live cells only; a code with no name is absent. A
+    work-centre key («A2894 · A», a team with no cell) matches nothing.
+    **The one place outside /cells that prints a workshop name**: the operator
+    asked for it on the container split (2026-11-21); everywhere else a cell is
+    its code (`utils/cellName.js`)."""
     from app.models import Cell
     codes = {str(c) for c in codes or () if c}
     if not codes:
         return {}
-    rows = (db.query(Cell.verifix_code, RoleProfile.name)
-            .join(RoleProfile, RoleProfile.id == Cell.leader_id)
+    rows = (db.query(Cell.verifix_code, Cell.name_workshop_uz, Cell.name_workshop_uz_cyrl,
+                     Cell.name_workshop_ru, Cell.name_workshop_en)
             .filter(Cell.verifix_code.in_(sorted(codes)), Cell.archived_at.is_(None)).all())
-    return {str(code): name for code, name in rows if name}
+    out: dict = {}
+    for code, uz, uz_cyrl, ru, en in rows:
+        names = {k: v.strip() for k, v in (("uz", uz), ("uz_cyrl", uz_cyrl), ("ru", ru), ("en", en))
+                 if v and v.strip()}
+        if names:
+            out[str(code)] = names
+    return out
+
+
+def workshop_name(names: Optional[dict], lang: str) -> str:
+    """One cell's workshop name for `lang` — its own column, else Russian (the
+    one the plant fills in), else any; transliterated like every other DB text
+    (`transliterate_text` — never the name convention). The twin of
+    `cellName` + `tx` in the browser."""
+    from app.translit import transliterate_text
+    if not names:
+        return ""
+    for k in (lang, "ru", "uz", "uz_cyrl", "en"):
+        if names.get(k):
+            raw = names[k]
+            return raw if k == lang else (transliterate_text(raw, lang) or raw)
+    return ""
 
 
 def cell_split(entry: Optional[dict], ctype: str, n: int) -> dict:
