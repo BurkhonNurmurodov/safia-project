@@ -656,3 +656,32 @@ of one. `services/close_window.py` is THE definition.
 - **The «everybody left» DM** still goes the moment the last person leaves;
   before the clock it is `live_all_left_staff_early`, whose last line says
   from when the day can be closed (`close_from`).
+
+## The platform closes a day itself (`close_window.AUTO_AT`, 2026-11-21)
+
+The operator, 2026-11-21: «from 22 Nov the day closes automatically — S1 of 21.11
+at 10:00, S2 of 21.11 at 19:00.» **Shift-day D closes on D+1: S1 at 10:00, S2 at
+19:00 (Tashkent), for every shift-day from `AUTO_FROM` = 21.11 on.** This is the
+one exception to «A day closes BY HAND only» above; the manual close and its
+12:00 / 23:00 lock (`close_window.lock`) are unchanged.
+
+- **One job, no new schedule.** `staff_live.auto_close_due` runs at the end of
+  the minute pass (`verifix_live._pass`). It looks at the last 3 days (a stopped
+  job catches up), skips units a brigadir already closed, and judges each
+  unit-day ONCE (`live_day_notices` kind `auto_close`) — so a day an admin
+  REOPENS stays open. `AUTO_FROM` / `AUTO_AT` are ONE pair of constants in
+  `services/close_window.py`, no setting and no browser twin.
+- **It closes anyway** (the operator's ruling: «close it anyway and warn»):
+  somebody still inside, a missing check-out answer, a worker with no cell do
+  NOT hold it. It reads the STORED day, never Verifix (a pass of ~100 forced
+  7–11 s reads would starve the minute job), writes `LiveDayClose` as «System»
+  and copies the day (`live_projection.close`). A unit nobody came to is not
+  closed (judged and marked); a day with no stored read at all is marked too.
+- **Warned:** `live_day_auto_closed` (clean, admins on the bell only) or
+  `live_day_auto_closed_warn` (counts of no-exit / still-inside / no-cell and up
+  to ten names) to the unit's brigadir, its shift manager(s) and every admin.
+  The register row is the ordinary «day closed» with closer «System».
+- **Not built:** a forced fresh Verifix read before the automatic close; a
+  per-shift setting for the two clocks; a worker still shown inside keeps the
+  hours the stored read gave them.
+

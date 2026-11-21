@@ -91,6 +91,17 @@ class CloseWindowTest(unittest.TestCase):
         self.assertEqual(close_window.refusal({"close_from": "01:00", "opens_on": "2026-10-23"}),
                          "Kunni 23.10.2026 soat 01:00 dan keyin yopish mumkin.")
 
+    def test_auto_close_clock(self):
+        # the operator, 2026-11-21: day D closes on D+1, S1 10:00 · S2 19:00
+        d = date(2026, 11, 21)
+        nxt = date(2026, 11, 22)
+        self.assertFalse(close_window.auto_due(1, d, at(nxt, "09:59")))
+        self.assertTrue(close_window.auto_due(1, d, at(nxt, "10:00")))
+        self.assertFalse(close_window.auto_due(2, d, at(nxt, "18:59")))
+        self.assertTrue(close_window.auto_due(2, d, at(nxt, "19:00")))
+        self.assertFalse(close_window.auto_due(1, date(2026, 11, 20), at(nxt, "23:00")))  # before AUTO_FROM
+        self.assertFalse(close_window.auto_due(1, d, at(d, "23:00")))                     # same day: never
+
 
 if __name__ == "__main__":
     unittest.main()

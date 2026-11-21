@@ -1482,6 +1482,12 @@ def _pass(db: Session) -> None:
     except Exception:  # noqa: BLE001
         db.rollback()
         log.exception("staff-live: the next-shift reminders failed")
+    try:
+        from app.routers import staff_live
+        staff_live.auto_close_due(db, units, with_cells)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("staff-live: the automatic day close failed")
     if sent:
         from app.services import action_log
         action_log.record_system("attendance", "lab.live_all_left_notified", db,

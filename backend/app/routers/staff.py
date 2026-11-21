@@ -455,6 +455,20 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Verifix · день закрыт", "Дата: {date} | Закрыл(а): {closer_name}"),
         "en": ("Verifix · day closed", "Date: {date} | Closed by: {closer_name}"),
     },
+    # The platform closed a day on its own clock (`close_window.AUTO_AT`), clean
+    # or with what it did not wait for — told to the brigadir, shift manager, admins.
+    "live_day_auto_closed": {
+        "uz": ("Verifix · kun avtomatik yopildi", "Sana: {date} | Brigada: {unit}\nKun vaqti kelgani uchun tizim tomonidan yopildi."),
+        "uz_cyrl": ("Verifix · кун автоматик ёпилди", "Сана: {date} | Бригада: {unit}\nКун вақти келгани учун тизим томонидан ёпилди."),
+        "ru": ("Verifix · день закрыт автоматически", "Дата: {date} | Бригада: {unit}\nДень закрыт системой по времени."),
+        "en": ("Verifix · day closed automatically", "Date: {date} | Brigade: {unit}\nThe system closed the day on its clock."),
+    },
+    "live_day_auto_closed_warn": {
+        "uz": ("Verifix · kun avtomatik yopildi — tekshiring", "Sana: {date} | Brigada: {unit}\nChiqish belgisi yo'q: {no_exit} ({missing}) | Hali ichkarida: {inside} | Yacheykasiz: {no_cell}\nKun vaqti kelgani uchun yopildi. Kerak bo'lsa admin kunni qayta ochadi."),
+        "uz_cyrl": ("Verifix · кун автоматик ёпилди — текширинг", "Сана: {date} | Бригада: {unit}\nЧиқиш белгиси йўқ: {no_exit} ({missing}) | Ҳали ичкарида: {inside} | Ячейкасиз: {no_cell}\nКун вақти келгани учун ёпилди. Керак бўлса админ кунни қайта очади."),
+        "ru": ("Verifix · день закрыт автоматически — проверьте", "Дата: {date} | Бригада: {unit}\nНет отметки ухода: {no_exit} ({missing}) | Ещё внутри: {inside} | Без ячейки: {no_cell}\nДень закрыт по времени. При необходимости админ откроет день заново."),
+        "en": ("Verifix · day closed automatically — please check", "Date: {date} | Brigade: {unit}\nNo check-out: {no_exit} ({missing}) | Still inside: {inside} | No cell: {no_cell}\nClosed on its clock. An admin can reopen the day if needed."),
+    },
     "live_day_reopened": {
         "uz": ("Verifix · kun qayta ochildi: {reopener_name}", "Sana: {date} — kun yana ochiq, o'zgarishlar kiritish mumkin"),
         "uz_cyrl": ("Verifix · кун қайта очилди: {reopener_name}", "Сана: {date} — кун яна очиқ, ўзгаришлар киритиш мумкин"),
