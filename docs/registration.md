@@ -144,8 +144,10 @@ for approval, or registered on the shared cell phone as somebody else.
 - **Now**: the screen's primary button is «Qayta yuklash» (a reload). Its
   «Chiqish» does exactly what the header's does: a confirm, then `leaveRole`.
   In a browser it stays `logout()`, which only ends the session. `logout()` no
-  longer has a Telegram branch, so nothing in the app sends
-  `DELETE /api/auth/me` any more (the endpoint stays). Leaving a LAST role still
+  longer has a Telegram branch, and `DELETE /api/auth/me` itself answers
+  410 (`auth.delete_me`): a mini app still on a bundle from before v4.614.0
+  presses the old unconfirmed «Chiqish», gets the refusal, closes — and the
+  account survives. Leaving a LAST role still
   deletes the account, behind that confirm.
 - **Not found: why approved leaders saw the screen at all.** The live data
   cannot produce it: the stored matrix opens 9 pages to `leader`, 17 to
@@ -159,7 +161,11 @@ for approval, or registered on the shared cell phone as somebody else.
   brigadir on /zagruzka — each role's FIRST page, so the client had decided the
   role had none). The log was not readable from outside, so from that evening
   the DM itself carries the details (`component` = «NoAccess {json}»: the
-  role's page count in the matrix held, how old the page-access and capability
-  answers were, the granted and DENIED page lists). And the screen asks the
+  roles the held matrix gives the blocked page, the role's page count in it,
+  how old the page-access and capability answers were — bucketed fresh /
+  minutes / older so one cause stays one DM an hour — the granted and DENIED
+  page lists, and whether an exam attempt was active). Once per page load
+  (`noAccessChecked`): the re-check can put the route back on its loader and
+  mount the screen again. And the screen asks the
   server again as it opens (both queries invalidated): a decision taken on
   stale data turns into the page by itself; a true «no pages» stays.

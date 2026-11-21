@@ -214,6 +214,7 @@ import api from "./utils/api";
 import { APP_VERSION } from "./utils/version";
 import useLeaderPhone from "./hooks/useLeaderPhone";
 import { primeLeaderTab } from "./components/layout/leaderTab";
+import { examAttemptId } from "./utils/examMode";
 
 // A request that failed for want of a CONNECTION is tried again for as long
 // as the connection is down (utils/connectivity.js) — every OFFLINE_RETRY_MS
@@ -469,6 +470,10 @@ function LegacyAdminRedirect() {
  * escape hatches — otherwise a multi-role user (e.g. an admin who switched
  * into a page-less role) would be permanently trapped here.
  */
+// Once per page load: re-checking empties a query that held nothing, the route
+// shows its loader, and this screen mounts again — it must not report or ask twice.
+let noAccessChecked = false;
+
 function NoAccess({ page, dest }) {
   const { t } = useLang();
   const { tl } = useTranslit();
@@ -483,17 +488,23 @@ function NoAccess({ page, dest }) {
   // page by itself once the fresh answer lands; a real «no pages» stays.
   const qc = useQueryClient();
   useEffect(() => {
+    if (noAccessChecked) return;
+    noAccessChecked = true;
     try {
       const role = auth?.role;
+      // Bucketed, so one cause stays one fingerprint (one DM an hour).
       const age = (key) => {
         const at = qc.getQueryState(key)?.dataUpdatedAt;
-        return at ? Math.round((Date.now() - at) / 1000) : null;
+        if (!at) return "none";
+        const s = (Date.now() - at) / 1000;
+        return s < 60 ? "fresh" : s < 3600 ? "minutes" : "older";
       };
       const diag = JSON.stringify({
-        role, page, dest: dest || null,
+        role, page, dest: dest || null, page_roles: access?.[page] ?? null,
+        exam: Boolean(examAttemptId()),
         matrix: access === DEFAULT_PAGE_ACCESS ? "defaults" : "server",
         role_pages: Object.values(access || {}).filter((v) => Array.isArray(v) && v.includes(role)).length,
-        access_age_s: age(["page-access"]), caps_age_s: age(["my-capabilities"]),
+        access_age: age(["page-access"]), caps_age: age(["my-capabilities"]),
         cap_pages: capPages || [], denied: deniedPages || [],
         roles: (auth?.roles || []).length, token: Boolean(getToken()), web: webSession,
       });

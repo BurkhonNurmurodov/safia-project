@@ -576,34 +576,13 @@ def send_start_hint(body: SendStartHintBody):
 
 
 @router.delete("/me")
-def delete_me(token: str = Depends(_oauth2), db: Session = Depends(get_db)):
-    """Delete the calling user's account with all roles (sign-out + unregister)."""
+def delete_me(token: str = Depends(_oauth2)):
+    """REFUSED since 2026-11-20. It deleted the account and every role, and its
+    one caller — «Chiqish» on the mini app's «no pages» screen, unconfirmed —
+    wiped 11 accounts of people who only pressed it to get past that screen.
+    Nothing current calls it; a bundle loaded before v4.614.0 still can, and
+    it swallows the error and closes the mini app, so the account survives.
+    Signing out of the mini app is leaving a role (`DELETE /roles/{id}`)."""
     payload = _decode_token(token)
     _telegram_session_only(payload)
-
-    telegram_id = int(payload["sub"])
-    user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
-    if user:
-        lang = user.language or "uz"
-        dropped = db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
-        db.query(RegistrationNotice).filter_by(target_telegram_id=telegram_id).delete()
-        db.delete(user)
-        db.commit()
-        action_log.enrich(
-            target_kind="user", target_id=telegram_id,
-            target_name=payload.get("full_name"),
-            details=[("count", dropped)],
-        )
-        # Send a message with /start so the user can tap it to re-register
-        try:
-            from app.telegram_bot import bot
-            messages = {
-                "uz": "Siz tizimdan chiqdingiz.\n\nQayta ro'yxatdan o'tish uchun quyidagi buyruqni bosing: /start",
-                "uz_cyrl": "Сиз тизимдан чиқдингиз.\n\nҚайта рўйхатдан ўтиш учун қуйидаги буйруқни босинг: /start",
-                "ru": "Вы вышли из системы.\n\nДля повторной регистрации нажмите: /start",
-                "en": "You have been signed out.\n\nTap the command below to register again: /start",
-            }
-            bot.send_message(telegram_id, messages.get(lang, messages["uz"]))
-        except Exception:
-            pass
-    return {"ok": True}
+    raise HTTPException(status_code=410, detail="Leave a role instead: DELETE /api/auth/roles/{role_ref}")
