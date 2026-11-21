@@ -33,6 +33,32 @@ const KEY = ["assessment-materials"];
 const inputCls = "w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
+const MB = 1024 * 1024;
+
+/** The browser's own key for one upload in pieces — 32 hex digits. */
+function uploadKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replace(/-/g, "");
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Send one piece, again (twice, a little later each time) when the line or
+ *  the archive failed — never when the server REFUSED it: a 4xx is an answer. */
+async function sendPiece(make, onProgress) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await api.post("/api/assessment/materials/parts", make(), { onUploadProgress: onProgress });
+    } catch (e) {
+      const status = e?.response?.status;
+      if (attempt >= 2 || (status && status < 500)) throw e;
+      await wait(2000 * (attempt + 1));
+    }
+  }
+}
+
 const deptName = (d, T) => (d === GENERAL ? T.matGeneral : T.dept[d] || d);
 const deptIcon = (d) => (d === GENERAL ? Layers : DEPT_ICON[d]);
 
@@ -54,19 +80,26 @@ function DeptSelect({ value, onChange, T }) {
 
 /**
  * Upload — pick the files first, send them with «Yuklash». Every file is one
- * material (one request each, so each has its own progress and a refused one
- * takes nothing else with it); the department and the note go with them all,
+ * material, sent on its own, so each has its own progress and a refused one
+ * takes nothing else with it; the department and the note go with them all,
  * a title only with a single file. A failed file stays listed with its reason.
+ *
+ * A file the archive keeps as ONE document (up to `wholeMb`) goes in one
+ * request. A bigger one (up to `maxMb`) is cut HERE into pieces of
+ * `partBytes`, sent one request each and completed at the end — the bot API
+ * hands back no single file over 20 MB, and one long request for a big file
+ * is the kind a phone line drops.
  */
-function UploadModal({ startDept, maxMb, onClose, onDone, T }) {
+function UploadModal({ startDept, wholeMb, maxMb, partBytes, onClose, onDone, T }) {
   const [dept, setDept] = useState(startDept);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [staged, setStaged] = useState([]);   // [{id, file}] — picked, not sent yet
   const [busy, setBusy] = useState(false);
   const fs = useFileStates();
-  const limit = maxMb * 1024 * 1024;
+  const limit = maxMb * MB;
   const tooBig = (f) => f.size > limit;
+  const inPieces = (f) => partBytes > 0 && f.size > wholeMb * MB;
   const ready = staged.filter((s) => !tooBig(s.file));
   const many = ready.length > 1;   // a title names ONE file; the server refuses it with several
 
@@ -80,20 +113,39 @@ function UploadModal({ startDept, maxMb, onClose, onDone, T }) {
     setBusy(true);
     const entries = fs.begin(ready.map((s) => s.file));
     let ok = 0;
+    const meta = { department: dept, note: note.trim(), title: entries.length === 1 ? title.trim() : "" };
     for (const { id, file } of entries) {
       fs.patch(id, { status: "uploading", progress: 0 });
-      const fd = new FormData();
-      fd.append("department", dept);
-      if (note.trim()) fd.append("note", note.trim());
-      if (entries.length === 1 && title.trim()) fd.append("title", title.trim());
-      fd.append("files", file, file.name);
       try {
-        await api.post("/api/assessment/materials", fd, {
-          onUploadProgress: (e) => {
-            const pct = e.total ? Math.round((e.loaded / e.total) * 100) : 50;
-            fs.patch(id, { progress: pct, status: pct >= 100 ? "processing" : "uploading" });
-          },
-        });
+        if (inPieces(file)) {
+          const key = uploadKey();
+          const n = Math.ceil(file.size / partBytes);
+          for (let seq = 1; seq <= n; seq += 1) {
+            const from = (seq - 1) * partBytes;
+            await sendPiece(() => {
+              const fd = new FormData();
+              fd.append("upload", key);
+              fd.append("seq", String(seq));
+              fd.append("name", file.name);
+              fd.append("part", file.slice(from, from + partBytes), `${file.name}.part`);
+              return fd;
+            }, (e) => fs.patch(id, { progress: Math.min(99, Math.floor(((from + (e.loaded || 0)) * 100) / file.size)) }));
+          }
+          fs.patch(id, { status: "processing", progress: 100 });
+          await api.post("/api/assessment/materials/complete", { upload: key, name: file.name, size: file.size, ...meta });
+        } else {
+          const fd = new FormData();
+          fd.append("department", meta.department);
+          if (meta.note) fd.append("note", meta.note);
+          if (meta.title) fd.append("title", meta.title);
+          fd.append("files", file, file.name);
+          await api.post("/api/assessment/materials", fd, {
+            onUploadProgress: (e) => {
+              const pct = e.total ? Math.round((e.loaded / e.total) * 100) : 50;
+              fs.patch(id, { progress: pct, status: pct >= 100 ? "processing" : "uploading" });
+            },
+          });
+        }
         fs.patch(id, { status: "ok", progress: 100 });
         ok += 1;
       } catch (e) {
@@ -118,7 +170,8 @@ function UploadModal({ startDept, maxMb, onClose, onDone, T }) {
       <FormField label={T.colDept} required hint={T.matDeptHint}>
         <DeptSelect value={dept} onChange={setDept} T={T} />
       </FormField>
-      <FormField label={T.matFiles} required>
+      <FormField label={T.matFiles} required
+        hint={maxMb > wholeMb ? fill(T.matBigHint, { mb: wholeMb }) : null}>
         <UploadDropzone multiple busy={busy} onFiles={pick} label={T.matDrop}
           hint={fill(T.matDropHint, { mb: maxMb })} />
         {staged.length > 0 && (
@@ -197,7 +250,9 @@ function EditModal({ row, opening, onOpen, onClose, onSaved, T }) {
  * A file is opened the way every attachment on the platform is: downloaded in
  * a browser, put into the reader's own chat with the bot inside Telegram —
  * and that chat is where it is forwarded to a candidate from (no
- * candidate-facing view exists), so a browser offers both.
+ * candidate-facing view exists), so a browser offers both. A file over the
+ * one-document limit is kept in pieces (`sendable: false`): the bot cannot
+ * send it, a browser downloads it whole.
  */
 export default function MaterialList() {
   const T = useAT();
@@ -213,12 +268,18 @@ export default function MaterialList() {
   const [removing, setRemoving] = useState(null);
   const [removeErr, setRemoveErr] = useState(null);
   const [opening, setOpening] = useState(null);   // the row whose file is on its way
+  const [openPct, setOpenPct] = useState(null);   // …and how much of a big one has arrived
 
   const list = useQuery({
     queryKey: KEY,
     queryFn: () => api.get("/api/assessment/materials").then((r) => r.data),
   });
-  const maxMb = list.data?.meta?.limits?.material_mb || 20;
+  // `material_mb`: what the archive keeps as ONE document; `material_max_mb`:
+  // the cap of a file kept in pieces (absent on a server from before them).
+  const lim = list.data?.meta?.limits || {};
+  const wholeMb = lim.material_mb || 20;
+  const maxMb = lim.material_max_mb || wholeMb;
+  const partBytes = lim.material_part_bytes || 0;
   const refresh = () => qc.invalidateQueries({ queryKey: KEY });
 
   const remove = useMutation({
@@ -228,12 +289,25 @@ export default function MaterialList() {
   });
 
   // `how`: "download" (a browser), "send" (the reader's chat with the bot).
+  // A file kept in pieces is too big for the bot: a browser downloads it, and
+  // inside Telegram — no downloads folder there — the tap says where to get it.
   const openFile = async (row, how = web ? "download" : "send") => {
     if (opening) return;
+    if (how === "send" && row.sendable === false) {
+      toast.show(fill(T.matBigOpen, { mb: wholeMb }), "info");
+      return;
+    }
     setOpening(row.id);
+    setOpenPct(null);
     try {
       if (how === "download") {
-        const r = await api.get(`/api/assessment/materials/${row.id}/file`, { responseType: "blob" });
+        const r = await api.get(`/api/assessment/materials/${row.id}/file`, {
+          responseType: "blob",
+          onDownloadProgress: (e) => {
+            const total = e.total || row.size;
+            if (total > wholeMb * MB) setOpenPct(Math.min(99, Math.floor((e.loaded * 100) / total)));
+          },
+        });
         saveBlob(r.data, row.name);
       } else {
         await api.post(`/api/assessment/materials/${row.id}/send`);
@@ -278,7 +352,10 @@ export default function MaterialList() {
   const menu = (r) => (
     <ActionMenu label={fill(T.matActions, { title: r.title })} items={[
       web && { key: "download", label: T.matDownload, icon: Download, onSelect: () => openFile(r, "download") },
-      { key: "send", label: T.matSend, icon: Send, onSelect: () => openFile(r, "send") },
+      {
+        key: "send", label: T.matSend, icon: Send, onSelect: () => openFile(r, "send"),
+        disabled: r.sendable === false, title: r.sendable === false ? fill(T.matBigOpen, { mb: wholeMb }) : undefined,
+      },
       { key: "edit", label: T.edit, icon: Pencil, onSelect: () => setEditing(r) },
       { key: "delete", tone: "danger", label: T.deleteA, icon: Trash2, onSelect: () => { setRemoveErr(null); setRemoving(r); } },
     ]} />
@@ -288,11 +365,14 @@ export default function MaterialList() {
   // one box either way, so nothing in the row moves.
   const icon = (r, size) => (opening === r.id ? (
     <span className="inline-flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
-      <Loader2 size={Math.round(size * 0.55)} className="animate-spin" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+      {openPct == null
+        ? <Loader2 size={Math.round(size * 0.55)} className="animate-spin" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
+        : <span className="text-[10px] font-semibold tabular-nums" style={{ color: "var(--brand-text)" }}>{openPct}%</span>}
     </span>
   ) : <FileIcon name={r.name} size={size} />);
 
-  const openTip = (r) => `${web ? T.matDownload : T.matSend} — ${r.name}`;
+  const openTip = (r) => (!web && r.sendable === false
+    ? fill(T.matBigOpen, { mb: wholeMb }) : `${web ? T.matDownload : T.matSend} — ${r.name}`);
 
   const empty = !list.isLoading && rows.length === 0;
   const emptyNode = list.isError ? (
@@ -389,7 +469,8 @@ export default function MaterialList() {
         </tbody>
       </TableCard>
       {uploading && (
-        <UploadModal T={T} maxMb={maxMb} startDept={fDept === ALL ? GENERAL : fDept}
+        <UploadModal T={T} wholeMb={wholeMb} maxMb={maxMb} partBytes={partBytes}
+          startDept={fDept === ALL ? GENERAL : fDept}
           onClose={() => setUploading(false)}
           onDone={(ok, bad) => {
             if (ok) refresh();

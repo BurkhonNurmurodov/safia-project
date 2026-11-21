@@ -416,6 +416,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("DELETE",), "/api/assessment/samples",                   "training", "assessment.samples_deleted"),
     # «Materiallar» — the files a candidate prepares from (2026-11-21).
     (("POST",),   "/api/assessment/materials/{}/send",         "training", "assessment.material_sent"),
+    (("POST",),   "/api/assessment/materials/complete",        "training", "assessment.material_added"),
     (("POST",),   "/api/assessment/materials",                 "training", "assessment.material_added"),
     (("PUT",),    "/api/assessment/materials/{}",              "training", "assessment.material_edited"),
     (("DELETE",), "/api/assessment/materials/{}",              "training", "assessment.material_deleted"),
@@ -618,6 +619,9 @@ _SKIP = (
     # «Nomzodlarni baholash»: a judge's per-tap verdict / note and feedback
     # drafts. The submitted scorecard is the recorded act.
     "/api/assessment/draft/",
+    # «Materiallar»: one PIECE of a file over 20 MB on its way in. The
+    # completed upload (`/materials/complete`) is the recorded act.
+    "/api/assessment/materials/parts",
     # «Konteyner berish»: the addressee opened a request (its «new» mark goes).
     "/api/container-flow/seen/",
     # The bell's read marks: a viewer opened their notifications or tapped

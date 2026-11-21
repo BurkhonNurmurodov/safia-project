@@ -17,8 +17,9 @@ which the action register skips — the submit is the act it records.
 """
 from __future__ import annotations
 
+import mimetypes
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -32,13 +33,15 @@ from app.database import get_db
 from app.identity import viewer_profile_key
 from app.models import (
     Assessment, AssessmentCandidate, AssessmentGrade, AssessmentItem,
-    AssessmentMaterial, AssessmentQuestion, JudgeEvaluation, TurnoverPerson, TurnoverRead,
+    AssessmentMaterial, AssessmentMaterialPart, AssessmentQuestion, JudgeEvaluation,
+    TurnoverPerson, TurnoverRead,
 )
 from app.translit import transliterate
 from app.permissions import require_page
 from app.routers.leaders import appeal_body, relay_uploads
 from app.services import action_log
 from app.services import assessment as rules
+from app.services import leader_appeal_chat
 from app.services import people
 
 router = APIRouter(prefix="/api/assessment", tags=["assessment"])
@@ -660,15 +663,35 @@ def get_ticket(aid: int, db: Session = Depends(get_db), payload: dict = Depends(
 # goes — into the archive channel (`relay_uploads`), streamed back as a
 # download, or put into the caller's own Telegram chat, from where it is
 # forwarded to a candidate. No candidate-facing view exists.
+#
+# The bot API hands back no file over 20 MB, so a bigger one (up to
+# `rules.MAX_MATERIAL_MB`) is stored in PIECES: the browser cuts it and sends
+# the pieces one request each (`POST /materials/parts`), then completes the
+# upload (`POST /materials/complete`) — only then does the row exist. Such a
+# file is downloaded as its pieces in order and is never sent by the bot.
 
 MAX_MATERIAL_FILES = 10   # one request; `relay_uploads` holds the same line
 
 
 def _m_dict(m: AssessmentMaterial) -> dict:
+    """`sendable`: the bot can put it into a chat — a file kept as ONE archive
+    document. One kept in pieces is downloaded in a browser only."""
     return {"id": m.id, "department": m.department or rules.GENERAL, "title": m.title,
             "note": m.note, "name": m.name, "mime": m.mime, "size": m.size,
+            "sendable": bool(m.file_id),
             "created_at": _iso(m.created_at), "created_by": m.created_by,
             "updated_at": _iso(m.updated_at), "updated_by": m.updated_by}
+
+
+_UPLOAD_KEY = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _upload_key(value) -> str:
+    """The browser's key for one upload in pieces — 32 hex digits it made up."""
+    key = str(value or "").replace("-", "").lower()
+    if not _UPLOAD_KEY.match(key):
+        _refuse(400, "bad_upload", "Unknown upload.")
+    return key
 
 
 def _material(db: Session, mid: int) -> AssessmentMaterial:
@@ -734,6 +757,95 @@ def add_materials(parsed: dict = Depends(appeal_body), db: Session = Depends(get
     return {"added": len(rows), "rows": [_m_dict(m) for m in rows]}
 
 
+@router.post("/materials/parts")
+def add_material_part(parsed: dict = Depends(appeal_body), db: Session = Depends(get_db),
+                      payload: dict = Depends(PAGE)):
+    """One piece of a file too big for a single archive document: `upload` (the
+    browser's key for this upload), `seq` (1 … n), `name` (the file's own) and
+    the bytes. Stored in the archive channel at once; sending a piece again
+    replaces it, so a retry after a lost answer is safe. The material itself
+    appears only when the upload is completed."""
+    _require_admin(db, payload)
+    fields = parsed.get("fields") or {}
+    uploads = list(parsed.get("files") or [])
+    key = _upload_key(fields.get("upload"))
+    try:
+        seq = int(fields.get("seq"))
+    except (TypeError, ValueError):
+        seq = 0
+    most = rules.material_part_count(rules.MAX_MATERIAL_MB * 1024 * 1024)
+    if not 1 <= seq <= most or len(uploads) != 1:
+        _refuse(400, "bad_part", "A piece is one file with its number.")
+    up = uploads[0]
+    up.file.seek(0)
+    data = up.file.read(rules.MATERIAL_PART_BYTES + 1)
+    if not data or len(data) > rules.MATERIAL_PART_BYTES:
+        _refuse(400, "bad_part", "A piece is empty or too large.")
+    row = db.query(AssessmentMaterialPart).filter(
+        AssessmentMaterialPart.upload == key, AssessmentMaterialPart.seq == seq).first()
+    if row is not None and row.material_id is not None:
+        _refuse(409, "upload_done", "This upload is already complete.")
+    name = leader_appeal_chat.safe_name(fields.get("name"))
+    got = leader_appeal_chat.relay_file(data, f"{name[:100]}.part{seq:03d}")
+    if not got:
+        _refuse(502, "store_failed", "The piece could not be stored — send it again.")
+    if row is None:
+        row = AssessmentMaterialPart(upload=key, seq=seq, size=0, file_id="")
+        db.add(row)
+    row.size, row.file_id, row.tg_message_id, row.created_by = len(data), got[0], got[1], _who(payload)
+    try:
+        db.commit()
+    except IntegrityError:        # the same piece sent twice at once: the other one stands
+        db.rollback()
+    return {"seq": seq, "size": len(data)}
+
+
+@router.post("/materials/complete")
+def complete_material(body: dict = Body(...), db: Session = Depends(get_db),
+                      payload: dict = Depends(PAGE)):
+    """Turn an upload in pieces into a material: `upload`, the file's `name`
+    and `size`, and the `department` / `title` / `note` a one-request upload
+    takes. Refused until the stored pieces are exactly the file — every piece
+    present and full, the last one the remainder (409 `upload_incomplete` +
+    `missing`), so a material can never be listed with a hole in it."""
+    _require_admin(db, payload)
+    key = _upload_key(body.get("upload"))
+    try:
+        size = int(body.get("size"))
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0:
+        _refuse(400, "bad_file", "The file is empty.")
+    if size > rules.MAX_MATERIAL_MB * 1024 * 1024:
+        _refuse(413, "file_too_big", f"The file is larger than {rules.MAX_MATERIAL_MB} MB.")
+    dept = _m_department(body.get("department"))
+    name = leader_appeal_chat.safe_name(body.get("name"))
+    parts = (db.query(AssessmentMaterialPart)
+             .filter(AssessmentMaterialPart.upload == key).order_by(AssessmentMaterialPart.seq).all())
+    if any(p.material_id is not None for p in parts):
+        _refuse(409, "upload_done", "This upload is already complete.")
+    missing = rules.material_parts_missing(size, [(p.seq, p.size) for p in parts])
+    if missing is None or missing:
+        _refuse(409, "upload_incomplete", "Some pieces of the file did not arrive.", missing=missing or [])
+    m = AssessmentMaterial(department=dept, title=rules.material_title(_clean(body.get("title"), rules.MAX_MATERIAL_TITLE), name),
+                           note=_clean(body.get("note"), rules.MAX_MATERIAL_NOTE) or None,
+                           name=name, mime=mimetypes.guess_type(name)[0] or "application/octet-stream",
+                           size=size, file_id="", created_by=_who(payload))
+    db.add(m)
+    db.flush()
+    for p in parts:
+        p.material_id = m.id
+    # Pieces of uploads nobody completed — a closed tab, a lost connection.
+    db.query(AssessmentMaterialPart).filter(
+        AssessmentMaterialPart.material_id.is_(None),
+        AssessmentMaterialPart.created_at < _now() - timedelta(days=1)).delete(synchronize_session=False)
+    db.commit()
+    action_log.enrich(target_kind="assessment_material", target_id=str(m.id), target_name=m.title,
+                      details=[("department", dept or rules.GENERAL), ("added", 1), ("files", m.name),
+                               ("size", size), ("parts", len(parts))])
+    return _m_dict(m)
+
+
 @router.put("/materials/{mid}")
 def edit_material(mid: int, body: dict = Body(...), db: Session = Depends(get_db),
                   payload: dict = Depends(PAGE)):
@@ -759,8 +871,9 @@ def edit_material(mid: int, body: dict = Body(...), db: Session = Depends(get_db
 
 @router.delete("/materials/{mid}")
 def delete_material(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """Take a material off the list. Its copy in the archive channel stays
-    where every archived file stays; nothing here points at it any more."""
+    """Take a material off the list (its pieces go with it — ON DELETE
+    CASCADE). Its copy in the archive channel stays where every archived file
+    stays; nothing here points at it any more."""
     _require_admin(db, payload)
     m = _material(db, mid)
     was = {"target_id": str(m.id), "target_name": m.title,
@@ -774,12 +887,20 @@ def delete_material(mid: int, db: Session = Depends(get_db), payload: dict = Dep
 @router.get("/materials/{mid}/file")
 def material_file(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """The file itself, always as a DOWNLOAD behind `nosniff` — an uploaded
-    page or SVG must never run in our own origin."""
+    page or SVG must never run in our own origin. One archive document, or the
+    pieces of a file too big to be one, in order."""
     _require_admin(db, payload)
     m = _material(db, mid)
-    from app.routers.leader_tasks import _stream_tg_file
-    return _stream_tg_file(m.file_id, name=m.name, mime=m.mime or "application/octet-stream",
-                           download=True)
+    from app.routers.leader_tasks import _stream_tg_file, _stream_tg_parts
+    mime = m.mime or "application/octet-stream"
+    if not m.file_id:        # kept in pieces: the same bytes, stitched in order
+        ids = [fid for (fid,) in db.query(AssessmentMaterialPart.file_id)
+               .filter(AssessmentMaterialPart.material_id == m.id)
+               .order_by(AssessmentMaterialPart.seq).all()]
+        if not ids:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": "File not found."})
+        return _stream_tg_parts(ids, name=m.name, mime=mime, size=m.size)
+    return _stream_tg_file(m.file_id, name=m.name, mime=mime, download=True)
 
 
 @router.post("/materials/{mid}/send")
@@ -789,6 +910,8 @@ def send_material(mid: int, db: Session = Depends(get_db), payload: dict = Depen
     file is forwarded to a candidate from."""
     _require_admin(db, payload)
     m = _material(db, mid)
+    if not m.file_id:
+        _refuse(409, "too_big_to_send", "The bot cannot send a file this large — download it in a browser.")
     tid = _tg(payload)
     if not tid:
         _refuse(400, "no_chat", "No Telegram chat to send to.")

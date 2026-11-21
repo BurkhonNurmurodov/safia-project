@@ -2663,7 +2663,22 @@ def _stream_tg_file(file_id: str, *, name: str | None = None,
     The name travels RFC 5987-encoded: a Cyrillic file name in a plain header
     is a latin-1 encode error, not a download.
     """
-    from urllib.parse import quote
+    upstream, meta = _open_tg_file(file_id)
+
+    def _chunks():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    headers = _archive_headers(name or meta["file_name"] or "file", download, meta["file_size"])
+    return StreamingResponse(_chunks(), media_type=mime or meta["mime_type"],
+                             headers=headers)
+
+
+def _open_tg_file(file_id: str):
+    """(the open download, its meta) for one archive file — 502 when Telegram
+    cannot be reached, 404 when it no longer has the file."""
     meta = _tg_file_meta(file_id)
     url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
     try:
@@ -2673,14 +2688,13 @@ def _stream_tg_file(file_id: str, *, name: str | None = None,
     if upstream.status_code != 200:
         upstream.close()
         raise HTTPException(status_code=404, detail="File no longer available")
+    return upstream, meta
 
-    def _chunks():
-        try:
-            yield from upstream.iter_content(chunk_size=64 * 1024)
-        finally:
-            upstream.close()
 
-    fname = name or meta["file_name"] or "file"
+def _archive_headers(fname: str, download: bool, size) -> dict:
+    """The headers every archive file leaves under: its name RFC 5987-encoded,
+    never cached, never sniffed."""
+    from urllib.parse import quote
     ascii_name = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_"
                          for c in fname) or "file"
     disp = "attachment" if download else "inline"
@@ -2688,10 +2702,39 @@ def _stream_tg_file(file_id: str, *, name: str | None = None,
                                        f"filename*=UTF-8''{quote(fname)}"),
                "Cache-Control": "no-store",
                "X-Content-Type-Options": "nosniff"}
-    if meta["file_size"]:
-        headers["Content-Length"] = str(meta["file_size"])
-    return StreamingResponse(_chunks(), media_type=mime or meta["mime_type"],
-                             headers=headers)
+    if size:
+        headers["Content-Length"] = str(size)
+    return headers
+
+
+def _stream_tg_parts(file_ids: list[str], *, name: str, mime: str | None = None,
+                     size: int | None = None) -> StreamingResponse:
+    """ONE file kept as several archive documents, piped back as one download:
+    the pieces in order (a preparation material over 20 MB — the bot API hands
+    back no single file bigger). Always an attachment behind `nosniff`.
+
+    The first piece is opened BEFORE the response starts, so a file Telegram
+    no longer has is a 404, not an empty download. A piece that fails later
+    cuts the stream short of its Content-Length — the browser then reports a
+    failed download instead of saving a file with its tail missing.
+    """
+    first, _meta = _open_tg_file(file_ids[0])
+
+    def _chunks():
+        upstream = first
+        try:
+            for i, fid in enumerate(file_ids):
+                if i:
+                    upstream, _m = _open_tg_file(fid)
+                try:
+                    yield from upstream.iter_content(chunk_size=64 * 1024)
+                finally:
+                    upstream.close()
+        finally:
+            first.close()
+
+    return StreamingResponse(_chunks(), media_type=mime or "application/octet-stream",
+                             headers=_archive_headers(name or "file", True, size))
 
 
 # ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────

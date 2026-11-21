@@ -5781,9 +5781,14 @@ class AssessmentMaterial(Base):
     """One file a candidate prepares from («Materiallar», 2026-11-21, the
     operator: «another table in which I can upload the materials for
     candidates to prepare»). The ARCHIVE-CHANNEL copy, like a chat's file
-    (`LeaderTaskCommentFile`): any type, up to 20 MB, streamed through
+    (`LeaderTaskCommentFile`), streamed through
     `/api/assessment/materials/{id}/file`. The bytes never live in this
-    database. `department` NULL = for every department («Umumiy»)."""
+    database. `department` NULL = for every department («Umumiy»).
+
+    A file of up to 20 MB is ONE archive document, `file_id` — the bot can
+    hand it back and send it on. A bigger one is stored in pieces
+    (`AssessmentMaterialPart`) and `file_id` is "" — downloaded as the pieces
+    in order, never sent by the bot."""
     __tablename__ = "assessment_materials"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -5793,12 +5798,34 @@ class AssessmentMaterial(Base):
     name          = Column(String(255), nullable=False)             # the file's own name
     mime          = Column(String(160), nullable=True)
     size          = Column(Integer, nullable=True)
-    file_id       = Column(String, nullable=False)
+    file_id       = Column(String, nullable=False)                  # "" = stored in parts
     tg_message_id = Column(BigInteger, nullable=True)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     created_by    = Column(String, nullable=True)
     updated_at    = Column(DateTime(timezone=True), nullable=True)
     updated_by    = Column(String, nullable=True)
+
+
+class AssessmentMaterialPart(Base):
+    """One piece of a material too big for a single archive document (over
+    20 MB — the most the bot API hands back; 2026-11-21, the operator: «I have
+    a file over 20mb, what can I do»). The browser cuts the file, sends the
+    pieces one request each under its own `upload` key, and completes the
+    upload; only then is the material's row made and `material_id` set. A
+    piece whose upload was never completed is swept a day later."""
+    __tablename__ = "assessment_material_parts"
+    __table_args__ = (UniqueConstraint("upload", "seq", name="uq_assessment_material_part"),)
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    upload        = Column(String(40), nullable=False, index=True)   # the browser's key for one upload
+    material_id   = Column(Integer, ForeignKey("assessment_materials.id", ondelete="CASCADE"),
+                           nullable=True, index=True)
+    seq           = Column(Integer, nullable=False)                  # 1 … n, the order of the bytes
+    size          = Column(Integer, nullable=False)
+    file_id       = Column(String, nullable=False)
+    tg_message_id = Column(BigInteger, nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    created_by    = Column(String, nullable=True)
 
 
 # ── «Xodim kartasi» — one person's card (/people/:employee_id) ──────────────

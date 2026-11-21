@@ -90,22 +90,53 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
     department and the note go with every file of the batch; a TITLE only with
     a single file (400 `title_one` otherwise — the bank's `answer_one` rule),
     and a file with none is called by its own name without the extension
-    (`rules.material_title`). A file over 20 MB is marked in the dialog before
-    anything is sent.
+    (`rules.material_title`). A file over the cap (300 MB) is marked in the
+    dialog before anything is sent.
   - **The file is the ARCHIVE-CHANNEL copy**, like every chat attachment
-    (`leaders.relay_uploads` → `leader_appeal_chat.relay_file`): any type, at
-    most **20 MB** (the most the bot API hands back —
-    `upload_guard.CHAT_FILE_MAX`, `rules.MAX_MATERIAL_MB`), the bytes never in
-    this database, `file_id` never sent to the browser. `relay_uploads`' English
-    refusals become codes the page words (`file_too_big` 413, `store_failed`
-    502, `bad_file` 400). **Consequence: no archive channel or no Telegram, no
-    upload** (502 `store_failed`) — the cloud stack cannot store one.
+    (`leaders.relay_uploads` → `leader_appeal_chat.relay_file`): any type, the
+    bytes never in this database, `file_id` never sent to the browser. A file
+    of up to **20 MB** (`rules.MATERIAL_WHOLE_MB` — the most the bot API hands
+    back, `upload_guard.CHAT_FILE_MAX`) is ONE archive document. `relay_uploads`'
+    English refusals become codes the page words (`file_too_big` 413,
+    `store_failed` 502, `bad_file` 400). **Consequence: no archive channel or
+    no Telegram, no upload** (502 `store_failed`) — the cloud stack cannot
+    store one.
+  - **A file over 20 MB is kept in PIECES, up to 300 MB** (the same day, the
+    operator: «I have a file over 20mb, what can I do»; `rules.MAX_MATERIAL_MB`,
+    `rules.MATERIAL_PART_BYTES` = 19 MB, a piece the bot API still hands back).
+    The BROWSER cuts the file (`File.slice`) and sends the pieces one request
+    each — `POST /api/assessment/materials/parts` (`upload` = a 32-hex key the
+    browser makes up, `seq` 1 … n, `name`, the bytes; a piece sent again
+    replaces itself, so the dialog retries a failed one twice) — then
+    `POST …/materials/complete` (`upload`, `name`, `size` + department / title /
+    note). **The material's row exists only from the completion**, which is
+    refused until the stored pieces are exactly the file — all present, every
+    one full, the last the remainder (409 `upload_incomplete` + `missing`,
+    `rules.material_parts_missing`) — so nothing is ever listed with a hole in
+    it. Table `assessment_material_parts` (`AssessmentMaterialPart`,
+    `create_all`; unique (upload, seq); ON DELETE CASCADE from the material);
+    such a material's `file_id` is "" and its payload says `sendable: false`.
+    Pieces of an upload nobody completed are swept at a later completion, a
+    day old. One request per piece on purpose: nginx gives a request 180 s
+    after its body, and one 300 MB request relayed to Telegram would not fit.
+    `meta.limits`: `material_mb` stays the ONE-document limit (a bundle from
+    v4.617.0 reads it and still sends one request), `material_max_mb` is the
+    cap, `material_part_bytes` the piece.
   - **Getting the file**: `GET …/materials/{id}/file` streams it, ALWAYS as a
-    download behind `nosniff` (`leader_tasks._stream_tg_file`);
-    `POST …/materials/{id}/send` puts it into the caller's own chat with the
-    bot, captioned with the title and the note. Inside Telegram a tap on the
-    title sends (a WebView has no downloads folder); in a browser it downloads,
-    and the ⋮ menu offers both.
+    download behind `nosniff` (`leader_tasks._stream_tg_file`; a file in
+    pieces through `_stream_tg_parts` — the pieces in order as ONE download
+    with the file's own Content-Length, the first opened before the response
+    starts, a later failure cutting the stream short rather than ending it
+    clean); `POST …/materials/{id}/send` puts it into the caller's own chat
+    with the bot, captioned with the title and the note. Inside Telegram a tap
+    on the title sends (a WebView has no downloads folder); in a browser it
+    downloads (a big one shows its percent in the icon's place), and the ⋮
+    menu offers both. **A file in pieces is download-only**: the bot holds no
+    single document of it, so «Telegramga yuborish» is listed disabled with
+    the reason, the server refuses it (409 `too_big_to_send`), and inside
+    Telegram the tap says to open the platform in a browser. NOT built: a
+    second, whole copy for files of 20–50 MB (the most a bot can send), which
+    would let the bot deliver those too.
   - **No candidate-facing view exists** (candidates are workers picked from
     the Verifix directory, most with no account), so a material reaches a
     candidate through the admin: «Telegramga yuborish» → forward from the bot
@@ -117,9 +148,11 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
     **Delete** (`DELETE`, danger confirm) removes the row; the archive
     channel's copy stays where every archived file stays.
   - The Jurnal files all four under «training»: `assessment.material_added` /
-    `_edited` / `_deleted` / `_sent`. Pinned by
-    `tests/test_assessment_materials.py` (the rules without a database, the
-    endpoints on Postgres with the relay stubbed).
+    `_edited` / `_deleted` / `_sent`; a completed upload in pieces is a
+    `material_added` too, and the pieces themselves are in `_SKIP` (the
+    completion is the act). Pinned by `tests/test_assessment_materials.py`
+    (the rules and the stitched download without a database, the endpoints on
+    Postgres with the relay stubbed).
 - **The candidate's face on the lists** (2026-11-20, the operator: «this table
   also should show the image of the candidate»): «Baholashlar» and «Biletlar»
   draw each candidate's Verifix photo — the one «Xodim kartasi» shows — beside

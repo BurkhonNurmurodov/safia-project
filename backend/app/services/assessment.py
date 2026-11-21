@@ -63,7 +63,11 @@ MAX_FEEDBACK = 8000    # a judge's overall feedback
 GENERAL = "general"
 MAX_MATERIAL_TITLE = 200
 MAX_MATERIAL_NOTE = 1000
-MAX_MATERIAL_MB = 20   # the archive channel's limit (`upload_guard.CHAT_FILE_MAX`)
+MATERIAL_WHOLE_MB = 20  # ONE archive document (`upload_guard.CHAT_FILE_MAX`): the bot hands it back and sends it on
+# A bigger file is stored in pieces, each small enough for the bot API to
+# hand back; the browser cuts it and the download stitches it together again.
+MATERIAL_PART_BYTES = 19 * 1024 * 1024
+MAX_MATERIAL_MB = 300   # a material in pieces — past this, a long video belongs behind a link
 
 
 @dataclass
@@ -191,7 +195,10 @@ def meta() -> dict:
         "total": TOTAL,
         "limits": {"text": MAX_TEXT, "answer": MAX_ANSWER, "note": MAX_NOTE, "feedback": MAX_FEEDBACK,
                    "material_title": MAX_MATERIAL_TITLE, "material_note": MAX_MATERIAL_NOTE,
-                   "material_mb": MAX_MATERIAL_MB},
+                   # `material_mb` is the ONE-document limit, as a bundle from
+                   # before the pieces reads it; the cap itself is `material_max_mb`.
+                   "material_mb": MATERIAL_WHOLE_MB, "material_max_mb": MAX_MATERIAL_MB,
+                   "material_part_bytes": MATERIAL_PART_BYTES},
     }
 
 
@@ -203,6 +210,26 @@ def material_department(value) -> Optional[str]:
     if value in DEPARTMENTS:
         return value
     raise ValueError("unknown department")
+
+
+def material_part_count(size: int) -> int:
+    """How many pieces a file of `size` bytes is stored in: every piece full
+    but the last. 0 for nothing."""
+    return -(-max(int(size), 0) // MATERIAL_PART_BYTES)
+
+
+def material_parts_missing(size: int, parts: Iterable[tuple[int, int]]) -> Optional[list[int]]:
+    """What an upload of `size` bytes still lacks, given its stored (seq, size)
+    pieces: the missing or wrong-sized piece numbers, [] when the pieces are
+    exactly the file, None when they cannot be this file at all (more pieces
+    than it has)."""
+    have = dict(parts)
+    n = material_part_count(size)
+    if not n or any(seq < 1 or seq > n for seq in have):
+        return None
+    last = size - (n - 1) * MATERIAL_PART_BYTES
+    return [seq for seq in range(1, n + 1)
+            if have.get(seq) != (last if seq == n else MATERIAL_PART_BYTES)]
 
 
 def material_title(title: Optional[str], filename: Optional[str]) -> str:
