@@ -10,6 +10,7 @@ a masked token can't be checked against the one Tasker issued); the action
 register records that it changed and its length — never the value.
 """
 import logging
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -117,6 +118,18 @@ def save_panel(body: PanelIn, db: Session = Depends(get_db),
     action_log.enrich(**_PANEL, details=details)
     log.info("sd_panel: %s saved the login (%s)", _who(admin), ", ".join(sorted(changed)) or "no change")
     return _panel_state(db)
+
+
+@router.get("/panel/peek")
+def peek_panel(report: str, start: date, end: date, type: int = 16,
+               db: Session = Depends(get_db), _: dict = Depends(require_tab("sdpanel"))):
+    """One panel report's tables as text — its layout, before a parser is
+    written for it (`sd_panel.peek`). Read-only."""
+    try:
+        return sd_panel.peek(db, report, start.isoformat(), end.isoformat(), type)
+    except sd_panel.PanelError as e:
+        raise HTTPException(status_code=422 if e.code == "report" else 502,
+                            detail={"code": e.code, "message": e.message})
 
 
 @router.post("/panel/fetch")

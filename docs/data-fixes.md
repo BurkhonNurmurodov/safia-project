@@ -763,3 +763,30 @@ course, go ahead».
   records of October naming these cells now attribute to them as their
   «Egasi» of the day. Delete the step, its flag constant and both calls once
   the flag is set.
+
+## Ibragimjonov Farrux stops counting from 16 Nov (`startup.farrux_cutoff_nov16`, 2026-11-21)
+
+Farrux (profile 260, Niyozov Izzatilla's unit, 9123's «Egasi») was moved by
+Verifix to «Отдел технологов», Департамент по продукту и технологиям, as
+Технолог. The transfer journal starts on **16 Nov** but HR posted it on
+**20 Nov** (a schedule change from 19 Nov came with it). So the sync only saw
+the move on 20 Nov, and its «no cell» cutoff reads 20 Nov
+(`docs/checklist-not-counting.md`, «An «Egasi» released counts too»). The
+operator: «His scores shouldn't be calculated starting from 16th».
+
+- **What it does, once** (TEMPORARY `startup.farrux_cutoff_nov16`, flag
+  `oneshot:farrux_cutoff_nov16`, `later` in the lifespan, both entrypoints):
+  checks that profile 260 is still a leader named Ibragimjonov Farrux, then
+  does what «Liderni hisobdan chiqarish» does. It sets his cutoff from
+  16.11.2026 with the reason «Verifix: 16.11.2026 dan Texnologlar bo'limiga
+  o'tkazilgan (Технолог)», drops any AI reviews queued from that day, tells him
+  and his brigadir, writes a `leader.cutoff_set` Jurnal row and DMs the admins.
+  If the name doesn't match, nothing changes, the admins are told, and it tries
+  again on the next start.
+- **It is a PERSON's cutoff** (`set_by` = «system (one-shot 2026-11-21)»), so
+  the sync never moves or lifts it. If he ever runs a cell again, a person
+  lifts it on «Hisobga olinmaydi».
+- **Consequences**: 16–19 Nov leave both sides of his average and his unit's
+  results, including the day he filed (19 Nov). Days before 16 Nov are
+  unchanged. Delete the step, its flag constants and both calls once the flag
+  is set.
