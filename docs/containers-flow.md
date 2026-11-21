@@ -57,7 +57,8 @@ containers row from production and move it into the new button».
     card from before. Somebody holding another key as well keeps both rows.
   - **The workshop names, in sight on every screen.** On this row the requests
     are CARDS at every width (`RequestsTab` `logiSide`: one column on a phone,
-    two from md, three from 2xl) — never the one-line table, which kept a
+    two from md, three from 2xl; laid out as the board below) — never the
+    one-line table, which kept a
     split's cells in a hover tooltip no phone can open and no laptop shows
     until pointed at. Each card lists every brigadir's part cell by cell, the
     cell's workshop name on its own wrapping row under the code (`CellList`
@@ -65,6 +66,38 @@ containers row from production and move it into the new button».
     the cells of the day's parts (`cell_workshops`, one lookup, none when
     nothing is split by cell; a bundle from before ignores it). AXO's page is
     unchanged — table from md, cards on a phone, codes only (the earlier pick).
+  - **The requests are a BOARD, not a list** (`SplitBoard`, v4.630.0, the same
+    day). The operator, on the row's first form: «make the container split
+    page request more advanced and more convenient — this condition is not
+    good and takes a lot of time to figure out». It was every request of the
+    day in HOUR order under «Kun holati»'s seven figures, so on a phone the
+    first request still to split sat 2,200px down, behind the finished ones.
+    Now three sections, in the order the logistics person asks:
+    **«Taqsimlash kerak»** — the waiting requests, the nearest deadline first
+    (an overdue one leads, a red edge, its «N daq kechikdi» in a red pill; the
+    last half hour in a yellow one), each with a filled «Taqsimlash» /
+    «Yetkazildi» button; **«Brigadir qabulini kutmoqda»** — the split requests
+    a brigadir has not confirmed, each brigadir a block (`PartBlock`: name,
+    counts, «Yetib keldi» / «Qabul kutilmoqda» / «Kam keldi» + «Keldi: N»,
+    then the cells with their workshop names); **«Yakunlangan»** — every
+    brigadir confirmed, a dispatch area delivered, or cancelled: FOLDED, its
+    count on the head, the latest hour first. The three heads are always
+    drawn, with their counts and a fixed line when empty, so a split moves one
+    card from the first section to the second and nothing else. «Kun holati»
+    is not drawn on this row (AXO's page keeps it); a split card carries no
+    clock and no «from → to» line — a bare «20:32» named nothing.
+  - **The split dialog reads in the order it is filled** (`AssignModal`, the
+    same release; nothing in what it sends changed). **How much is handed out
+    is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi
+    45», green with a tick when it is all out, red «N ortiqcha» past the
+    request; it was the dialog's LAST line, under 1,700px of rows on a phone.
+    (Sticky at `top: -16px`: a sticky box stops at its scroller's padding, and
+    Modal's body is `py-4`.) A brigadir's block is WHO (the picker, the bin
+    beside it, «Bugun shu soatgacha berilgan: …» under it) → HOW MANY (each
+    count with its own «Limit: N» on its label's line — the one sentence
+    listing every limit over all the fields is gone; `cflow.lim.row` /
+    `.before` are no longer read) → TO WHICH CELL (the cell list, now under the
+    counts it follows from).
   - **The name fits the sidebar in all four languages** (191px of label
     room): «Konteyner taqsimlash» · «Контейнер тақсимлаш» · «Логистика
     контейнеров» · «Container split». The Russian is NOT «Распределение

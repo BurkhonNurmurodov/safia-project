@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, ArrowRight, Ban, Building2, CalendarClock, Check, ClipboardList, Eye, EyeOff, MessageSquareText, Pencil, Plus, Sparkles, Split, Trash2, Truck, Users, Wand2,
+  Activity, AlertTriangle, ArrowRight, Ban, Building2, CalendarClock, Check, CheckCheck, ClipboardList, Clock, Eye, EyeOff, MessageSquareText, PackageCheck, Pencil, Plus, Sparkles, Split, Trash2, Truck, Users, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -32,7 +32,7 @@ import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
-  useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS,
+  useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS, SOON_MIN,
   refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
   defaultHour, COUNT_GRID, COUNT_PAIR,
@@ -181,10 +181,12 @@ function CountTags({ r, t }) {
 }
 
 // `logiSide` is «Konteyner taqsimlash» (/containers/split, 2026-11-21): the
-// requests are CARDS at every width — a laptop and a PC too — because a card
-// has the room a one-line table row has not: every brigadir's part cell by
-// cell, each cell with its WORKSHOP name in sight (`workshops` of the answer),
-// where the table kept the cells in a hover tooltip no phone can open.
+// requests are a BOARD (`SplitBoard`) — what to split first, then what the
+// brigadirs have not confirmed, then the finished — of CARDS at every width, a
+// laptop and a PC too, because a card has the room a one-line table row has
+// not: every brigadir's part cell by cell, each cell with its WORKSHOP name in
+// sight (`workshops` of the answer), where the table kept the cells in a hover
+// tooltip no phone can open.
 export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
   const { tl, tx } = useTranslit();
   const now = useNow();
@@ -255,26 +257,23 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
         <DayStrip t={t} day={day} list={list} loading={q.isLoading} now={now} onPick={roles.axo ? onNew : null} />
       )}
 
+      {logiSide ? <SplitBoard t={t} list={list} loading={q.isLoading} empty={empty} ctx={ctx} /> : (<>
       <DayStatus t={t} list={list} loading={q.isLoading} />
 
-      {/* phone: a card per request — and the logistics row's list at every width */}
-      <div className={`${logiSide ? "" : "md:hidden "}flex flex-col gap-2.5`}>
+      {/* phone: a card per request */}
+      <div className="md:hidden flex flex-col gap-2.5">
         <SectionHead icon={ClipboardList} title={t("cflow.req.title")}
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{list.length}</span>} />
-        {!q.isLoading && !list.length ? (
-          <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-            {empty}
-          </div>
-        ) : (
-          <div className={logiSide ? "grid gap-2.5 items-start md:grid-cols-2 2xl:grid-cols-3" : "contents"}>
-            {q.isLoading ? [0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)
-              : list.map((r) => <RequestCard key={r.id} r={r} {...ctx} />)}
-          </div>
-        )}
+        {q.isLoading ? [0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)
+          : !list.length ? (
+            <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+              {empty}
+            </div>
+          ) : list.map((r) => <RequestCard key={r.id} r={r} {...ctx} />)}
       </div>
 
       {/* md+: the table */}
-      <div className={logiSide ? "hidden" : "hidden md:block"}>
+      <div className="hidden md:block">
         <TableCard icon={ClipboardList} title={t("cflow.req.title")}
           subtitle={t(roles.axo || roles.watch ? "cflow.req.subAxo" : "cflow.req.subLog")} headSize="lg"
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{list.length}</span>}>
@@ -298,6 +297,7 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
           </tbody>
         </TableCard>
       </div>
+      </>)}
 
       {/* below the requests: an ask arriving never moves the rows above */}
       {(roles.axo || roles.watch) && (
@@ -484,32 +484,147 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
   );
 }
 
-function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops = null }) {
+// ── the logistics row's board (/containers/split, 2026-11-21) ────────────────
+// The operator, a day after the row was made: «make the container split page
+// more advanced and more convenient — this condition is not good and takes a
+// lot of time to figure out». The list was every request of the day in HOUR
+// order under a seven-figure status block, so on a phone the first request
+// still to split sat 2,200px down the page, behind the finished ones. Now the
+// page is three answers, in the order the logistics person asks them:
+//   1. WHAT DO I SPLIT NOW — the waiting requests, the nearest deadline first
+//      (an overdue one leads, in red), each with its «Taqsimlash» button;
+//   2. WHAT HAVE I SENT THAT NOBODY CONFIRMED — the split requests with a
+//      brigadir still to confirm, brigadir by brigadir (confirmed / waiting /
+//      got fewer), every cell with its workshop name;
+//   3. the FINISHED ones — folded, a count on the head.
+// The heads are always drawn, with their counts and a fixed line when empty,
+// so a split moves a card from one section to the next and nothing else.
+const arrivedAll = (r) => r.status === "assigned" && (r.area_id != null || !r.receipt?.units
+  || r.receipt.confirmed === r.receipt.units);
+const BOARD_GRID = "grid gap-2.5 items-start md:grid-cols-2 2xl:grid-cols-3";
+
+function SplitBoard({ t, list, loading, empty, ctx }) {
+  const [doneOpen, setDoneOpen] = useState(false);
+  const due = (r) => Date.parse(r.due_at) || 0;
+  const todo = list.filter((r) => r.status === "requested").sort((a, b) => due(a) - due(b) || a.hour - b.hour || a.id - b.id);
+  const way = list.filter((r) => r.status === "assigned" && !arrivedAll(r));
+  const done = list.filter((r) => r.status === "cancelled" || arrivedAll(r)).reverse();   // the latest hour first
+  const n = (x) => <span className="text-xs tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>{loading ? "…" : x}</span>;
+  const skeleton = <div className={BOARD_GRID}>{[0, 1].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)}</div>;
+  const none = (text, ok = false) => (
+    <div className="rounded-2xl px-4 py-3 text-sm flex items-center gap-2"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+      {ok && <Check size={15} className="shrink-0" style={{ color: "var(--status-ok)" }} />}
+      {text}
+    </div>
+  );
+  if (!loading && !list.length) {
+    return (
+      <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+        {empty}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-col gap-2.5">
+        <SectionHead icon={Split} title={t("cflow.board.todo")} right={n(todo.length)} />
+        {loading ? skeleton : !todo.length ? none(t("cflow.board.todoNone"), true)
+          : <div className={BOARD_GRID}>{todo.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="todo" />)}</div>}
+      </section>
+      <section className="flex flex-col gap-2.5">
+        <SectionHead icon={PackageCheck} title={t("cflow.board.way")} right={n(way.length)} />
+        {loading ? skeleton : !way.length ? none(t("cflow.board.wayNone"))
+          : <div className={BOARD_GRID}>{way.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="way" />)}</div>}
+      </section>
+      <section className="flex flex-col gap-2.5">
+        <SectionHead icon={CheckCheck} title={t("cflow.board.done")} right={n(done.length)}
+          open={doneOpen} onToggle={() => setDoneOpen((v) => !v)} />
+        {doneOpen && (!done.length ? none(t("cflow.board.doneNone"))
+          : <div className={BOARD_GRID}>{done.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="done" />)}</div>)}
+      </section>
+    </div>
+  );
+}
+
+// One brigadir's part on the board: who, how many, whether they confirmed —
+// and, under it, to which cell how many.
+function PartBlock({ p, t, tl, shops }) {
+  const got = p.received;
+  const short = got && KEYS.some((k) => (got[k] ?? 0) < (p.counts[k] ?? 0));
+  return (
+    <li className="min-w-0 flex flex-col gap-1.5">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold leading-snug break-words" style={{ color: "var(--text-1)" }}>{tl(p.unit) || "—"}</div>
+          <div className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>{countsText(t, p.counts)}</div>
+          {short && (
+            <div className="text-xs tabular-nums font-medium" style={{ color: "var(--status-bad)" }}>
+              {t("cflow.board.got").replace("{x}", countsText(t, got) || "0")}
+            </div>
+          )}
+        </div>
+        <span className="shrink-0 pt-px">
+          {!got ? <Chip tone="warn" icon={Clock}>{t("cflow.rcv.st.wait")}</Chip>
+            : short ? <Chip tone="bad" icon={AlertTriangle} title={t("cflow.rcv.shortHint")}>{t("cflow.rcv.st.short")}</Chip>
+            : <Chip tone="ok" icon={Check}>{t("cflow.rcv.st.all")}</Chip>}
+        </span>
+      </div>
+      <CellList t={t} cells={p.cells} workshops={shops} />
+    </li>
+  );
+}
+
+// `board` — the card on the logistics row's board: "todo" (still to split: the
+// time left in a pill, a red edge once overdue, the button always filled),
+// "way" / "done" (split: every brigadir's part as a block with its receipt).
+function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops = null, board = null }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const items = menu(r).filter(Boolean);
+  const left = minsTo(r.due_at, now);
+  const todo = board === "todo";
+  const late = todo && left != null && left < 0;
+  const soon = todo && !late && left != null && left <= SOON_MIN;
+  const edge = late ? "var(--status-bad)" : fresh ? "var(--brand)" : null;
+  // what went to dispatch — above the parts on AXO's card (as it was), under them on the board
+  const dispatch = !area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
+    <p className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
+      <DispatchLine given={r.given} t={t} />
+    </p>
+  );
   return (
     <article className="rounded-2xl overflow-hidden"
       style={{
         background: fresh ? "color-mix(in srgb, var(--brand) 12%, var(--bg-card))" : "var(--bg-card)",
-        border: `1px solid ${fresh ? "color-mix(in srgb, var(--brand) 55%, transparent)" : "var(--border)"}`,
-        boxShadow: fresh ? "inset 4px 0 0 var(--brand)" : undefined,
+        border: `1px solid ${late ? "color-mix(in srgb, var(--status-bad) 55%, transparent)"
+          : fresh ? "color-mix(in srgb, var(--brand) 55%, transparent)" : "var(--border)"}`,
+        boxShadow: edge ? `inset 4px 0 0 ${edge}` : undefined,
       }}>
       <div className="p-3.5 flex flex-col gap-2.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[16px] font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>{span(r.hour)}</div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1 empty:hidden">
               {fresh && <Chip tone="fresh" icon={Sparkles}>{t("cflow.req.fresh")}</Chip>}
               <ExtraTag r={r} t={t} />
-              <StateChip r={r} t={t} />
+              {/* in the «to split» section the section itself says it is waiting */}
+              {!todo && <StateChip r={r} t={t} />}
               {r.late && <Chip tone="bad" title={t("cflow.late")}>{t("cflow.req.lateShort")}</Chip>}
             </div>
           </div>
-          <div className="shrink-0 pt-0.5">
-            <DueText iso={r.due_at} now={now} t={t} live={r.status === "requested"} />
-          </div>
+          {/* a split or cancelled card on the board carries no clock: its deadline
+              has passed into the chips («Kech»), and a bare «20:32» named nothing */}
+          {(!board || todo) && (
+            <div className={`shrink-0 ${todo ? "rounded-lg px-2 py-1" : "pt-0.5"}`}
+              style={todo ? {
+                background: late ? "color-mix(in srgb, var(--status-bad) 14%, transparent)"
+                  : soon ? "color-mix(in srgb, var(--status-warn) 16%, transparent)" : "var(--bg-inner)",
+              } : undefined}>
+              <DueText iso={r.due_at} now={now} t={t} live={r.status === "requested"} />
+            </div>
+          )}
           {items.length > 0 && <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={items} />}
         </div>
 
@@ -520,25 +635,29 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu,
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
-          <FromTo r={r} t={t} tl={tl} className="max-w-full" />
-          {!addressee && <SeenMark r={r} t={t} now={now} />}
-        </div>
+        {/* who asked → whom: on the board only while it waits — once split, the
+            card is about the brigadirs */}
+        {(!board || todo) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+            <FromTo r={r} t={t} tl={tl} className="max-w-full" />
+            {!addressee && <SeenMark r={r} t={t} now={now} />}
+          </div>
+        )}
         {r.note && (
           <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.note}</p>
         )}
 
-        {!area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
-          <p className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
-            <DispatchLine given={r.given} t={t} />
-          </p>
-        )}
+        {!board && dispatch}
         {area && r.status === "assigned" && r.given && (
           <p className="text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
             {t("cflow.snd.gave").replace("{x}", countsText(t, r.given))}
           </p>
         )}
-        {r.status === "assigned" && r.parts.length > 0 && (
+        {r.status === "assigned" && r.parts.length > 0 && (board ? (
+          <ul className="flex flex-col gap-3 pt-2.5" style={{ borderTop: "1px solid var(--border)" }}>
+            {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} />)}
+          </ul>
+        ) : (
           <ul className="flex flex-col gap-1 text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
             {r.parts.map((p) => (
               <li key={p.manager_id} className="min-w-0 flex flex-col gap-1">
@@ -547,14 +666,15 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu,
               </li>
             ))}
           </ul>
-        )}
+        ))}
+        {board && dispatch}
         {r.status === "cancelled" && r.cancel_note && (
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{r.cancel_note}</p>
         )}
       </div>
       {mayAssign(r) && (
         <div className="px-3.5 pb-3.5">
-          <Button size="lg" className="w-full" tint={!fresh} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
+          <Button size="lg" className="w-full" tint={!fresh && !todo} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
             {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
           </Button>
         </div>
@@ -1028,6 +1148,32 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
         </>
       )}>
       <div className="flex flex-col gap-3">
+        {/* How much of the request is handed out — PINNED to the top of the
+            dialog (2026-11-21, the operator: the page «takes a lot of time to
+            figure out»): it used to be the last line, under 1,700px of rows on a
+            phone, so the one figure the split is steered by was out of sight
+            while every count was typed. Always drawn, one chip per type. */}
+        <div className="sticky z-10 -mx-5 -mt-4 px-5 py-2.5 flex flex-wrap gap-1.5"
+          // a sticky box stops at its scroller's PADDING (Modal's body is py-4): -16px seats it flush
+          style={{ top: -16, background: "var(--bg-card)", borderBottom: "1px solid var(--border)" }}>
+          {allTypes.map((k) => {
+            const got = given[k] ?? 0;
+            const left = r.lines[k] - got;
+            const hue = left < 0 ? "var(--status-bad)" : left > 0 ? "var(--status-warn)" : "var(--status-ok)";
+            return (
+              <span key={k} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs whitespace-nowrap tabular-nums"
+                style={{ background: `color-mix(in srgb, ${hue} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${hue} 40%, transparent)`, color: "var(--text-2)" }}>
+                <TypeName t={t} k={k} />
+                <span><b className="text-[13px]" style={{ color: "var(--text-1)" }}>{fmt(got)}</b> / {fmt(r.lines[k])}</span>
+                <span className="inline-flex items-center font-semibold" style={{ color: hue }}>
+                  {left === 0 ? <Check size={13} aria-label={t("cflow.split.allOut")} />
+                    : left > 0 ? t("cflow.req.left").replace("{n}", fmt(left))
+                    : t("cflow.split.overBy").replace("{n}", fmt(-left))}
+                </span>
+              </span>
+            );
+          })}
+        </div>
         {/* where the rows came from — one fixed line, so nothing below moves when the figures land */}
         <div className="flex items-center gap-2 min-h-[34px] rounded-xl px-3 py-1.5 text-xs"
           style={{ background: hinted ? "color-mix(in srgb, var(--brand) 10%, transparent)" : "var(--bg-inner)", color: "var(--text-2)" }}>
@@ -1045,49 +1191,62 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
             </Button>
           )}
         </div>
-        {crates && rows.map((row, i) => (
-          <div key={row.id} className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-            <div className="flex items-end gap-2">
-              <div className="flex-1 min-w-0">
-                <FormField label={`${t("containers.brigadir")} ${i + 1}`} required
-                  hint={row.unit == null || hint.isLoading ? undefined : (() => {
-                    const left = Object.fromEntries(types.map((k) => [k, capOf(row.unit, k)]));
-                    const before = countsText(t, Object.fromEntries(types.map((k) => [k, givenOf(row.unit)[k] ?? 0])));
-                    if (!Object.values(left).some(Boolean)) return t("cflow.lim.noneLeft");
-                    // an approved extra has no plan limit — what AXO approved is the whole of it
-                    if (extraFor != null) return t("cflow.ex.approvedRow").replace("{x}", countsText(t, left));
-                    return t("cflow.lim.row").replace("{x}", countsText(t, left))
-                      + (before ? ` ${t("cflow.lim.before").replace("{x}", before)}` : "");
-                  })()}>
-                  <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
-                    placeholder={t("cflow.pick")} options={opts(row.unit)} />
-                  {row.unit != null && !hint.isLoading && (
-                    <CellList t={t} className="mt-1.5" cells={cellBreakdown(cellEntry(row.unit), row.counts, types)}
-                      workshops={cellEntry(row.unit)?.workshops} />
+        {/* A brigadir's block reads in the order it is filled: WHO → HOW MANY
+            (each count with its own limit under it — the one long sentence of
+            limits over every field is gone) → TO WHICH CELL that lands. */}
+        {crates && rows.map((row, i) => {
+          const picked = row.unit != null && !hint.isLoading;
+          const noRoom = picked && !types.some((k) => capOf(row.unit, k));
+          const before = picked ? countsText(t, Object.fromEntries(types.map((k) => [k, givenOf(row.unit)[k] ?? 0]))) : "";
+          return (
+            <div key={row.id} className="rounded-xl p-3 flex flex-col gap-2.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <FormField label={`${t("containers.brigadir")} ${i + 1}`} required
+                hint={!picked ? undefined
+                  : noRoom ? t("cflow.lim.noneLeft")
+                  // an approved extra has no plan limit — what AXO approved is the whole of it
+                  : extraFor != null ? t("cflow.ex.approvedRow").replace("{x}", countsText(t, Object.fromEntries(types.map((k) => [k, capOf(row.unit, k)]))))
+                  : before ? t("cflow.lim.givenToday").replace("{x}", before) : undefined}>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
+                      placeholder={t("cflow.pick")} options={opts(row.unit)} />
+                  </div>
+                  {rows.length > 1 && (
+                    <Button size="lg" variant="ghost" aria-label={t("cflow.req.removeRow")} title={t("cflow.req.removeRow")}
+                      icon={<Trash2 size={15} />} onClick={() => { setTouched(true); setRows((rs) => rs.filter((x) => x.id !== row.id)); }} />
                   )}
-                </FormField>
+                </div>
+              </FormField>
+              <div className={`${COUNT_GRID} gap-2.5`}>
+                {types.map((k) => {
+                  const cap = row.unit == null ? r.lines[k] : capOf(row.unit, k);
+                  const past = row.unit != null && (row.counts[k] ?? 0) > cap;
+                  return (
+                    <FormField key={k} alignTop
+                      // the limit rides on the label's own line, at the field it caps
+                      label={(
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span>{t(`cflow.ct.${k}`)}</span>
+                          {picked && extraFor == null && (
+                            <span className="normal-case tracking-normal tabular-nums whitespace-nowrap">{t("cflow.lim.max").replace("{n}", fmt(cap))}</span>
+                          )}
+                        </span>
+                      )}
+                      error={past ? t("cflow.lim.over").replace("{n}", cap) : undefined}>
+                      <CountStepper fill min={0} max={cap} value={row.counts[k] ?? null} placeholder="0" invalid={past}
+                        disabled={row.unit != null && cap === 0 && !(row.counts[k] > 0)}
+                        onChange={(n) => set(row.id, { counts: { ...row.counts, [k]: n ?? 0 } })} />
+                    </FormField>
+                  );
+                })}
               </div>
-              {rows.length > 1 && (
-                <Button size="lg" variant="ghost" aria-label={t("cflow.req.removeRow")} title={t("cflow.req.removeRow")}
-                  icon={<Trash2 size={15} />} onClick={() => { setTouched(true); setRows((rs) => rs.filter((x) => x.id !== row.id)); }} />
+              {picked && (
+                <CellList t={t} cells={cellBreakdown(cellEntry(row.unit), row.counts, types)}
+                  workshops={cellEntry(row.unit)?.workshops} />
               )}
             </div>
-            <div className={`${COUNT_GRID} gap-2.5`}>
-              {types.map((k) => {
-                const cap = row.unit == null ? r.lines[k] : capOf(row.unit, k);
-                const past = row.unit != null && (row.counts[k] ?? 0) > cap;
-                return (
-                  <FormField key={k} label={t(`cflow.ct.${k}`)}
-                    error={past ? t("cflow.lim.over").replace("{n}", cap) : undefined}>
-                    <CountStepper min={0} max={cap} value={row.counts[k] ?? null} placeholder="0" invalid={past}
-                      disabled={row.unit != null && cap === 0 && !(row.counts[k] > 0)}
-                      onChange={(n) => set(row.id, { counts: { ...row.counts, [k]: n ?? 0 } })} />
-                  </FormField>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {extraFor == null && types.length > 0 && (
           <div>
             <Button variant="secondary" icon={<Plus size={14} />}
@@ -1114,17 +1273,6 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
             </div>
           </div>
         )}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
-          {allTypes.map((k) => {
-            const left = r.lines[k] - (given[k] ?? 0);
-            return (
-              <span key={k} className="inline-flex items-center whitespace-nowrap"
-                style={{ color: left < 0 ? "var(--status-bad)" : left > 0 ? "var(--status-warn)" : "var(--status-ok)" }}>
-                <TypeName t={t} k={k} />{`: ${t("cflow.req.left").replace("{n}", left)}`}
-              </span>
-            );
-          })}
-        </div>
         {over && <p className="text-xs" style={{ color: "var(--status-bad)" }}>{t("cflow.err.over_req")}</p>}
         {short && !over && <ReasonFields {...{ reason, setReason, comment, setComment, t }} />}
       </div>
