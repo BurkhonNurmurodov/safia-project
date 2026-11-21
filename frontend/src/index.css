@@ -317,6 +317,12 @@ body.sidebar-open { overflow: hidden; }
     color: var(--brand-text) !important;
   }
 }
+/* A row of the container split board (components/containers/FlowRequests.jsx
+   `BoardRow`): ONE button lies under the whole head and opens the row. It has
+   no content of its own, so its wash and its focus ring are the head's. */
+.board-row-toggle { border-radius: 0; background: transparent; }
+@media (hover: hover) { .board-row-toggle:hover { background: var(--hover-bg); } }
+.board-row-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 /* Keyboard focus gets a ring instead — never gated on hover support. Inset so
    the scrollable nav can't clip it against a neighbouring row. */
 .nav-item:focus-visible {

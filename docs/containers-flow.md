@@ -83,9 +83,33 @@ containers row from production and move it into the new button».
     brigadir confirmed, a dispatch area delivered, or cancelled: FOLDED, its
     count on the head, the latest hour first. The three heads are always
     drawn, with their counts and a fixed line when empty, so a split moves one
-    card from the first section to the second and nothing else. «Kun holati»
+    row from the first section to the second and nothing else. «Kun holati»
     is not drawn on this row (AXO's page keeps it); a split card carries no
     clock and no «from → to» line — a bare «20:32» named nothing.
+  - **Every request on the board is a MINIMISED ROW that opens** (`BoardRow`,
+    v4.631.0, the same evening). The operator, on the first board of full
+    cards: «I like it — can you minimize it, after opening it should give the
+    whole information; logistics work only on phones and PCs, find the
+    suitable design for that». Each section is ONE bordered list. **Shut**, a
+    row is what is needed to choose — on a PC one line: the hour · every count
+    (`CountTags wrap`: a second line before any is cut, measured at 1024px) ·
+    the time left in its pill or the receipt chip · «Taqsimlash» · ⋮; on a
+    phone two short ones: the hour with the button, then the state and «Jami N
+    ta». **Open**, it is everything: the counts (a phone only — a PC's row
+    already lists them), who asked whom, «… gacha» or «Taqsimlandi: who ·
+    when», the note, each brigadir's `PartBlock` with the cells and workshop
+    names (side by side from md), dispatch, a cancel note. All rows start
+    shut; the opened ones are remembered by request id (`openIds` in
+    `SplitBoard`), so a refresh or a row moving to the next section leaves
+    them as they were. Sample day of eight requests on a phone: 755px, one
+    screen (it was 1,700px of cards). **The whole head toggles**: one empty
+    button (`.board-row-toggle`, index.css — its hover wash and focus ring
+    are the head's) lies under the head, the head's content is drawn over it
+    with `pointer-events-none`, and «Taqsimlash» and ⋮ take their own presses
+    — a button cannot hold other buttons, and a chevron-only target is too
+    small for a thumb. Nothing animates its height (`docs/motion.md`); the
+    chevron turns. The full cards of v4.630.0 are gone from this row;
+    `RequestCard` is AXO's phone card again, exactly as before the row existed.
   - **The split dialog reads in the order it is filled** (`AssignModal`, the
     same release; nothing in what it sends changed). **How much is handed out
     is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi

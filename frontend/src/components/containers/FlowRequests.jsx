@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, AlertTriangle, ArrowRight, Ban, Building2, CalendarClock, Check, CheckCheck, ClipboardList, Clock, Eye, EyeOff, MessageSquareText, PackageCheck, Pencil, Plus, Sparkles, Split, Trash2, Truck, Users, Wand2,
+  Activity, AlertTriangle, ArrowRight, Ban, Building2, CalendarClock, Check, CheckCheck, ChevronRight, ClipboardList, Clock, Eye, EyeOff, MessageSquareText, PackageCheck, Pencil, Plus, Sparkles, Split, Trash2, Truck, Users, Wand2,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -151,18 +151,20 @@ function FromTo({ r, t, tl, className = "" }) {
 // The counts a request asks, as ONE line of compact tags — only the types it
 // asks (seven columns of «—» were most of the old row). A type split short
 // reads «given / asked» in red.
-function CountTags({ r, t }) {
+// `wrap` lets the tags take a second line instead of running out of their box
+// (the board's row on a PC, where nothing may be cut).
+function CountTags({ r, t, wrap = false }) {
   const given = { ...(r.given ?? {}) };
   for (const p of r.parts) for (const [k, n] of Object.entries(p.counts)) given[k] = (given[k] ?? 0) + n;
   const keys = ALL_KEYS.filter((k) => r.lines[k]);
   if (!keys.length) return <span style={{ color: "var(--text-4)" }}>—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+    <span className={wrap ? "flex flex-wrap items-center gap-1.5" : "inline-flex items-center gap-1.5 whitespace-nowrap"}>
       {keys.map((k) => {
         const ask = r.lines[k];
         const short = r.status === "assigned" && (given[k] ?? 0) < ask;
         return (
-          <span key={k} className="inline-flex items-center gap-1.5 rounded-md pl-1.5 pr-2 py-[3px] text-xs leading-none"
+          <span key={k} className="inline-flex items-center gap-1.5 rounded-md pl-1.5 pr-2 py-[3px] text-xs leading-none whitespace-nowrap"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
             title={short ? `${t(`production.cont.${k}`)} — ${t("cflow.req.gaveOf").replace("{n}", given[k] ?? 0).replace("{of}", ask)}`
               : t(`production.cont.${k}`)}>
@@ -498,50 +500,72 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
 //      got fewer), every cell with its workshop name;
 //   3. the FINISHED ones — folded, a count on the head.
 // The heads are always drawn, with their counts and a fixed line when empty,
-// so a split moves a card from one section to the next and nothing else.
+// so a split moves a row from one section to the next and nothing else.
+//
+// Every request is a MINIMISED ROW that opens (the operator, on the first
+// board of full cards: «I like it — can you minimize it, after opening it
+// should give the whole information; logistics work only on phones and PCs»).
+// Shut, a row is what is needed to choose: the hour, how urgent / how far the
+// receipt is, how many, and the button. On a PC that is ONE line — hour ·
+// every count · the state · «Taqsimlash»; on a phone two short ones — the hour
+// with the button, then the state and the total. Open, it is everything: the
+// counts, who asked whom, the note, each brigadir's part cell by cell with its
+// workshop name (side by side on a PC). Sixteen requests were six screens of
+// cards on a phone; they are a little over one of rows.
 const arrivedAll = (r) => r.status === "assigned" && (r.area_id != null || !r.receipt?.units
   || r.receipt.confirmed === r.receipt.units);
-const BOARD_GRID = "grid gap-2.5 items-start md:grid-cols-2 2xl:grid-cols-3";
 
 function SplitBoard({ t, list, loading, empty, ctx }) {
   const [doneOpen, setDoneOpen] = useState(false);
+  // the rows the reader opened — by request id, so a refresh or a row moving
+  // to the next section keeps it as they left it
+  const [openIds, setOpenIds] = useState(() => new Set());
+  const toggle = (id) => setOpenIds((cur) => {
+    const next = new Set(cur);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
   const due = (r) => Date.parse(r.due_at) || 0;
   const todo = list.filter((r) => r.status === "requested").sort((a, b) => due(a) - due(b) || a.hour - b.hour || a.id - b.id);
   const way = list.filter((r) => r.status === "assigned" && !arrivedAll(r));
   const done = list.filter((r) => r.status === "cancelled" || arrivedAll(r)).reverse();   // the latest hour first
   const n = (x) => <span className="text-xs tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>{loading ? "…" : x}</span>;
-  const skeleton = <div className={BOARD_GRID}>{[0, 1].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)}</div>;
+  const box = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+  const skeleton = (
+    <div className="rounded-2xl p-3 flex flex-col gap-2" style={box}>
+      {[0, 1].map((i) => <SkeletonBlock key={i} className="h-9 w-full rounded-lg" />)}
+    </div>
+  );
   const none = (text, ok = false) => (
-    <div className="rounded-2xl px-4 py-3 text-sm flex items-center gap-2"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+    <div className="rounded-2xl px-4 py-3 text-sm flex items-center gap-2" style={{ ...box, color: "var(--text-3)" }}>
       {ok && <Check size={15} className="shrink-0" style={{ color: "var(--status-ok)" }} />}
       {text}
     </div>
   );
+  const rows = (items, kind) => (
+    <ul className="rounded-2xl overflow-hidden" style={box}>
+      {items.map((r, i) => (
+        <BoardRow key={r.id} r={r} kind={kind} first={i === 0} open={openIds.has(r.id)} onToggle={() => toggle(r.id)} {...ctx} />
+      ))}
+    </ul>
+  );
   if (!loading && !list.length) {
-    return (
-      <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-        {empty}
-      </div>
-    );
+    return <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ ...box, color: "var(--text-3)" }}>{empty}</div>;
   }
   return (
     <div className="flex flex-col gap-5">
       <section className="flex flex-col gap-2.5">
         <SectionHead icon={Split} title={t("cflow.board.todo")} right={n(todo.length)} />
-        {loading ? skeleton : !todo.length ? none(t("cflow.board.todoNone"), true)
-          : <div className={BOARD_GRID}>{todo.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="todo" />)}</div>}
+        {loading ? skeleton : !todo.length ? none(t("cflow.board.todoNone"), true) : rows(todo, "todo")}
       </section>
       <section className="flex flex-col gap-2.5">
         <SectionHead icon={PackageCheck} title={t("cflow.board.way")} right={n(way.length)} />
-        {loading ? skeleton : !way.length ? none(t("cflow.board.wayNone"))
-          : <div className={BOARD_GRID}>{way.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="way" />)}</div>}
+        {loading ? skeleton : !way.length ? none(t("cflow.board.wayNone")) : rows(way, "way")}
       </section>
       <section className="flex flex-col gap-2.5">
         <SectionHead icon={CheckCheck} title={t("cflow.board.done")} right={n(done.length)}
           open={doneOpen} onToggle={() => setDoneOpen((v) => !v)} />
-        {doneOpen && (!done.length ? none(t("cflow.board.doneNone"))
-          : <div className={BOARD_GRID}>{done.map((r) => <RequestCard key={r.id} r={r} {...ctx} board="done" />)}</div>)}
+        {doneOpen && (!done.length ? none(t("cflow.board.doneNone")) : rows(done, "done"))}
       </section>
     </div>
   );
@@ -575,56 +599,135 @@ function PartBlock({ p, t, tl, shops }) {
   );
 }
 
-// `board` — the card on the logistics row's board: "todo" (still to split: the
-// time left in a pill, a red edge once overdue, the button always filled),
-// "way" / "done" (split: every brigadir's part as a block with its receipt).
-function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops = null, board = null }) {
+// One request on the board — shut, a row; open, the whole of it. The WHOLE head
+// toggles it: one button laid under the head (a button cannot hold «Taqsimlash»
+// and ⋮ inside it), the head's own content drawn over it and letting the press
+// through, the two controls taking theirs.
+function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const items = menu(r).filter(Boolean);
+  const todo = kind === "todo";
   const left = minsTo(r.due_at, now);
-  const todo = board === "todo";
   const late = todo && left != null && left < 0;
   const soon = todo && !late && left != null && left <= SOON_MIN;
   const edge = late ? "var(--status-bad)" : fresh ? "var(--brand)" : null;
-  // what went to dispatch — above the parts on AXO's card (as it was), under them on the board
-  const dispatch = !area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
-    <p className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
-      <DispatchLine given={r.given} t={t} />
-    </p>
+  const bodyId = `cflow-row-${r.id}`;
+  return (
+    <li style={{
+      borderTop: first ? undefined : "1px solid var(--border)",
+      background: fresh ? "color-mix(in srgb, var(--brand) 10%, transparent)" : undefined,
+      boxShadow: edge ? `inset 4px 0 0 ${edge}` : undefined,
+    }}>
+      <div className="relative">
+        <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={bodyId}
+          aria-label={`${span(r.hour)} — ${t(open ? "cflow.board.hide" : "cflow.board.show")}`}
+          className="board-row-toggle press-none absolute inset-0 w-full" />
+        <div className="relative pointer-events-none flex flex-wrap md:flex-nowrap items-center gap-x-2.5 gap-y-1 pl-3.5 pr-2 py-2.5 md:min-h-[52px]">
+          <ChevronRight size={16} className="shrink-0 transition-transform duration-150" aria-hidden
+            style={{ color: "var(--text-3)", transform: open ? "rotate(90deg)" : undefined }} />
+          <span className="flex-1 md:flex-none md:w-[104px] text-[15px] font-semibold tabular-nums whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+            {span(r.hour)}
+          </span>
+          {/* a PC has the room for every count on the row itself — wrapping
+              to a second line before any is cut */}
+          <span className="hidden md:block flex-1 min-w-0"><CountTags r={r} t={t} wrap /></span>
+          {/* how urgent / how far — a phone's second line, a PC's right edge */}
+          <span className="order-last md:order-none basis-full md:basis-auto pl-[26px] md:pl-0 flex flex-wrap md:flex-nowrap items-center gap-x-2 gap-y-1">
+            {fresh && <Chip tone="fresh" icon={Sparkles}>{t("cflow.req.fresh")}</Chip>}
+            <ExtraTag r={r} t={t} />
+            {todo ? (
+              <span className="rounded-lg px-2 py-0.5" style={{
+                background: late ? "color-mix(in srgb, var(--status-bad) 14%, transparent)"
+                  : soon ? "color-mix(in srgb, var(--status-warn) 16%, transparent)" : "var(--bg-inner)",
+              }}>
+                <DueText iso={r.due_at} now={now} t={t} />
+              </span>
+            ) : <StateChip r={r} t={t} />}
+            {r.late && <Chip tone="bad">{t("cflow.req.lateShort")}</Chip>}
+            <span className="md:hidden text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
+              {t("cflow.board.total").replace("{n}", fmt(sum(r.lines)))}
+            </span>
+          </span>
+          {(mayAssign(r) || items.length > 0) && (
+            <span className="pointer-events-auto shrink-0 flex items-center gap-1">
+              {mayAssign(r) && (
+                <Button size="lg" icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
+                  {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
+                </Button>
+              )}
+              {items.length > 0 && <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={items} />}
+            </span>
+          )}
+        </div>
+      </div>
+      {open && (
+        <div id={bodyId} className="px-3.5 pb-3.5 pt-0.5 md:pl-10 flex flex-col gap-2.5">
+          {/* a phone's row carries the total only; a PC's already lists every count */}
+          <div className="md:hidden"><CountPills counts={r.lines} t={t} /></div>
+          {area && (
+            <div className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
+              <AreaLine r={{ ...r, given: null }} t={t} tx={tx} />
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+            <FromTo r={r} t={t} tl={tl} className="max-w-full" />
+            {!addressee && <SeenMark r={r} t={t} now={now} />}
+            {r.status === "requested" && <span className="tabular-nums">{t("cflow.dueAt").replace("{at}", hhmm(r.due_at))}</span>}
+            {r.status === "assigned" && r.assigned_by && (
+              <span className="tabular-nums">{`${t("cflow.req.assigned")}: ${tl(r.assigned_by)}${r.assigned_at ? ` · ${hhmm(r.assigned_at)}` : ""}`}</span>
+            )}
+          </div>
+          {r.note && (
+            <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.note}</p>
+          )}
+          {area && r.status === "assigned" && r.given && (
+            <p className="text-xs" style={{ color: "var(--text-2)" }}>{t("cflow.snd.gave").replace("{x}", countsText(t, r.given))}</p>
+          )}
+          {r.status === "assigned" && r.parts.length > 0 && (
+            <ul className="grid gap-x-5 gap-y-3 pt-2.5 md:grid-cols-2 2xl:grid-cols-3" style={{ borderTop: "1px solid var(--border)" }}>
+              {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} />)}
+            </ul>
+          )}
+          {!area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
+            <p className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}><DispatchLine given={r.given} t={t} /></p>
+          )}
+          {r.status === "cancelled" && r.cancel_note && (
+            <p className="text-xs" style={{ color: "var(--text-3)" }}>{r.cancel_note}</p>
+          )}
+        </div>
+      )}
+    </li>
   );
+}
+
+function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
+  const fresh = isFresh(r, me, logi);
+  const area = r.area_id != null;
+  const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
+  const items = menu(r).filter(Boolean);
   return (
     <article className="rounded-2xl overflow-hidden"
       style={{
         background: fresh ? "color-mix(in srgb, var(--brand) 12%, var(--bg-card))" : "var(--bg-card)",
-        border: `1px solid ${late ? "color-mix(in srgb, var(--status-bad) 55%, transparent)"
-          : fresh ? "color-mix(in srgb, var(--brand) 55%, transparent)" : "var(--border)"}`,
-        boxShadow: edge ? `inset 4px 0 0 ${edge}` : undefined,
+        border: `1px solid ${fresh ? "color-mix(in srgb, var(--brand) 55%, transparent)" : "var(--border)"}`,
+        boxShadow: fresh ? "inset 4px 0 0 var(--brand)" : undefined,
       }}>
       <div className="p-3.5 flex flex-col gap-2.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[16px] font-semibold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>{span(r.hour)}</div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1 empty:hidden">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {fresh && <Chip tone="fresh" icon={Sparkles}>{t("cflow.req.fresh")}</Chip>}
               <ExtraTag r={r} t={t} />
-              {/* in the «to split» section the section itself says it is waiting */}
-              {!todo && <StateChip r={r} t={t} />}
+              <StateChip r={r} t={t} />
               {r.late && <Chip tone="bad" title={t("cflow.late")}>{t("cflow.req.lateShort")}</Chip>}
             </div>
           </div>
-          {/* a split or cancelled card on the board carries no clock: its deadline
-              has passed into the chips («Kech»), and a bare «20:32» named nothing */}
-          {(!board || todo) && (
-            <div className={`shrink-0 ${todo ? "rounded-lg px-2 py-1" : "pt-0.5"}`}
-              style={todo ? {
-                background: late ? "color-mix(in srgb, var(--status-bad) 14%, transparent)"
-                  : soon ? "color-mix(in srgb, var(--status-warn) 16%, transparent)" : "var(--bg-inner)",
-              } : undefined}>
-              <DueText iso={r.due_at} now={now} t={t} live={r.status === "requested"} />
-            </div>
-          )}
+          <div className="shrink-0 pt-0.5">
+            <DueText iso={r.due_at} now={now} t={t} live={r.status === "requested"} />
+          </div>
           {items.length > 0 && <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={items} />}
         </div>
 
@@ -635,46 +738,41 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu,
           </div>
         )}
 
-        {/* who asked → whom: on the board only while it waits — once split, the
-            card is about the brigadirs */}
-        {(!board || todo) && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
-            <FromTo r={r} t={t} tl={tl} className="max-w-full" />
-            {!addressee && <SeenMark r={r} t={t} now={now} />}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+          <FromTo r={r} t={t} tl={tl} className="max-w-full" />
+          {!addressee && <SeenMark r={r} t={t} now={now} />}
+        </div>
         {r.note && (
           <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.note}</p>
         )}
 
-        {!board && dispatch}
+        {!area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
+          <p className="text-xs min-w-0 truncate" style={{ color: "var(--text-2)" }}>
+            <DispatchLine given={r.given} t={t} />
+          </p>
+        )}
         {area && r.status === "assigned" && r.given && (
           <p className="text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
             {t("cflow.snd.gave").replace("{x}", countsText(t, r.given))}
           </p>
         )}
-        {r.status === "assigned" && r.parts.length > 0 && (board ? (
-          <ul className="flex flex-col gap-3 pt-2.5" style={{ borderTop: "1px solid var(--border)" }}>
-            {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} />)}
-          </ul>
-        ) : (
+        {r.status === "assigned" && r.parts.length > 0 && (
           <ul className="flex flex-col gap-1 text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-2)" }}>
             {r.parts.map((p) => (
               <li key={p.manager_id} className="min-w-0 flex flex-col gap-1">
                 <span className="truncate"><PartLine p={p} t={t} tl={tl} /></span>
-                <CellList t={t} cells={p.cells} workshops={shops} />
+                <CellList t={t} cells={p.cells} />
               </li>
             ))}
           </ul>
-        ))}
-        {board && dispatch}
+        )}
         {r.status === "cancelled" && r.cancel_note && (
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{r.cancel_note}</p>
         )}
       </div>
       {mayAssign(r) && (
         <div className="px-3.5 pb-3.5">
-          <Button size="lg" className="w-full" tint={!fresh && !todo} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
+          <Button size="lg" className="w-full" tint={!fresh} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
             {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
           </Button>
         </div>
