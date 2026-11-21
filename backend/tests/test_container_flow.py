@@ -542,6 +542,68 @@ class FlowTest(unittest.TestCase):
             self.assertFalse(flow.settings(self.db)["notify_managers"])   # an «off» sticks
             self.assertEqual(dm.call_count, 1)
 
+    def test_who_sees_what_oneshot(self):
+        """21 Nov: «Konteynerlar» to the AXO and logistics PROFILES, the shift
+        managers' alerts off — once; a grant taken back or a switch turned on
+        later sticks."""
+        from app import capabilities, startup
+        from app.models import ProfilePermission, RoleProfile
+        from app.permissions import get_page_access, set_page_access
+        lg = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        ax = RoleProfile(role="guest", name="Fozilova Dilafruz")
+        other = RoleProfile(role="idle-owner", name="Somebody Else")
+        self.db.add_all([lg, ax, other]); self.db.commit()
+        ids = [lg.id, ax.id, other.id]
+        lk, ak, ok_ = f"idle-owner:{lg.id}", f"guest:{ax.id}", f"idle-owner:{other.id}"
+
+        def clean():
+            s = self.pg.Session()
+            try:
+                s.query(ProfilePermission).filter(ProfilePermission.profile_key.in_([lk, ak, ok_])).delete(synchronize_session=False)
+                s.query(RoleProfile).filter(RoleProfile.id.in_(ids)).delete(synchronize_session=False)
+                s.commit()
+            finally:
+                s.close()
+        self.addCleanup(clean)
+        capabilities.apply_profile_perms(self.db, [lk], grants={"page.view.container-logistics": "all"})
+        capabilities.apply_profile_perms(self.db, [ak], grants={"page.view.container-flow": "all"})
+        flow.save_settings(self.db, notify_managers=True)
+        m = get_page_access(self.db); m["containers"] = ["top-manager"]; set_page_access(self.db, m)
+        self.db.commit()
+
+        def board(key):
+            s = self.pg.Session()
+            try:
+                return [r.mode for r in s.query(ProfilePermission).filter_by(
+                    profile_key=key, capability="page.view.containers").all()]
+            finally:
+                s.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.containers_who_sees_what()
+            self.db.expire_all()
+            self.assertEqual((board(lk), board(ak), board(ok_)), (["grant"], ["grant"], []))
+            cfg = flow.settings(self.db)
+            self.assertFalse(cfg["notify_managers"])
+            self.assertTrue(cfg["notify_axo"])                          # AXO's own alerts stay
+            self.assertIn("shift-manager", get_page_access(self.db)["containers"])
+            text = dm.call_args[0][0]
+            self.assertIn("Nuriddin aka", text)
+            self.assertIn("Fozilova Dilafruz", text)
+            # their own page each is untouched
+            self.assertEqual([r.capability for r in self.db.query(ProfilePermission).filter_by(profile_key=lk)
+                              .order_by(ProfilePermission.capability)],
+                             ["page.view.container-logistics", "page.view.containers"])
+            # later: an admin takes the board back and switches the alerts on — both stick
+            capabilities.apply_profile_perms(self.db, [lk], revokes=["page.view.containers"])
+            flow.save_settings(self.db, notify_managers=True)
+            self.db.commit()
+            startup.containers_who_sees_what()
+            self.db.expire_all()
+            self.assertEqual(board(lk), [])
+            self.assertTrue(flow.settings(self.db)["notify_managers"])
+            self.assertEqual(dm.call_count, 1)
+
     def test_extra_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access

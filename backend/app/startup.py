@@ -11779,6 +11779,75 @@ def container_extra_brigadirs_off() -> None:
         db.close()
 
 
+# ── 21 Nov: who sees which containers page (docs/containers-flow.md) ────────
+# The operator, 2026-11-21: «show the containers page to the responsible
+# persons: for the shift managers — just they can see, not change or edit, and
+# they don't need notification; for AXO — containers and container issuing;
+# for logistics — containers and container split».
+#   - «Konteynerlar» (the board, `page.view.containers`) goes to every profile
+#     holding AXO's page or the logistics page PERSONALLY (`axo_people`,
+#     `logistics_people` — Fozilova Dilafruz; Nuriddin aka, Yusuf aka). Their
+#     own page each already holds; nothing else of theirs is touched.
+#   - The shift managers keep what they read — the board and «Konteyner berish»
+#     as watchers (`container-watch`: every reading tab, no button) — and the
+#     board is re-ticked for the role should the stored matrix have lost it.
+#     Their container alerts (`notify_managers`, ON since 17 Nov) go OFF.
+# Once, under a flag: a grant taken back or the switch turned on later sticks.
+CONTAINERS_WHO_FLAG = "oneshot:containers_who_sees_what_nov21"
+
+
+def containers_who_sees_what() -> None:
+    from app import capabilities
+    from app.permissions import get_page_access, set_page_access
+    from app.services import container_flow as flow
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINERS_WHO_FLAG).first():
+            return
+        axo = list(flow.axo_people(db))
+        logi = [p["key"] for p in flow.logistics_people(db)]
+        keys = list(dict.fromkeys(axo + logi))
+        if keys:
+            capabilities.apply_profile_perms(
+                db, keys, grants={"page.view.containers": "all"},
+                actor_name="system (one-shot 2026-11-21)")
+        row = db.get(AppSetting, flow._NOTIFY_SM_KEY)
+        was_on = row is not None and row.value == "1"
+        if row is None:
+            db.add(AppSetting(key=flow._NOTIFY_SM_KEY, value="0"))
+        else:
+            row.value = "0"
+        matrix = get_page_access(db)
+        roles = list(matrix.get("containers", []))
+        readd = "shift-manager" not in roles
+        if readd:
+            matrix["containers"] = roles + ["shift-manager"]
+        db.add(AppSetting(key=CONTAINERS_WHO_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        if readd:
+            set_page_access(db, matrix)          # commits the flag with the matrix
+        else:
+            db.commit()
+        names = lambda ks: [flow.profile_name(db, k) or k for k in ks] or "hech kim topilmadi"  # noqa: E731
+        print(f"[startup] containers — who sees what: board → {keys}; "
+              f"shift-manager alerts OFF{' (were on)' if was_on else ''}"
+              f"{'; board re-ticked for shift-manager' if readd else ''}")
+        _dm_report("ok", "Konteynerlar · kim nimani ko'radi",
+                   status="«Konteynerlar» sahifasi mas'ullarga ochildi",
+                   rows=[("📦", "AXO: «Konteynerlar» + «Konteyner berish»", names(axo)),
+                         ("🚚", "Logistika: «Konteynerlar» + «Konteyner taqsimlash»", names(logi)),
+                         ("👁", "Smena menejerlari", ["faqat ko'radi — tugma yo'q",
+                                                      "Telegram ogohlantirishlari o'chirildi"
+                                                      + ("" if was_on else " (o'chiq edi)")])],
+                   notes=[("ℹ️", "Qayta yoqish: «Konteyner berish» → «Sozlamalar» → «Telegram xabarlari».")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] containers — who sees what failed: {exc}")
+        _dm_report("fail", "Konteynerlar · sahifalar mas'ullarga ochilmadi", error=exc)
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

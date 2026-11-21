@@ -143,6 +143,31 @@ containers row from production and move it into the new button».
   - With a stored launcher layout the row shows up by itself in the app the
     code puts it in (`docs/navigation-and-shell.md`, «a screen the layout does
     not place»); the operator moves it on the org chart like any screen.
+- **Who sees which page** (2026-11-21, v4.632.0). The operator: «show the
+  containers page to the responsible persons: for the shift managers — just
+  they can see, not change or edit, and they don't need notification; for AXO
+  — containers and container issuing; for logistics — containers and container
+  split». One one-shot, `startup.containers_who_sees_what` (flag
+  `oneshot:containers_who_sees_what_nov21`; `later` in the lifespan, after the
+  17 Nov one-shot that switched the managers' alerts on):
+  - **AXO** (`axo_people` — every profile with a PERSONAL grant of
+    `container-flow`; Fozilova Dilafruz): «Konteynerlar» + «Konteyner berish».
+  - **Logistics** (`logistics_people` — a personal grant of
+    `container-logistics`; Nuriddin aka, Yusuf aka): «Konteynerlar» +
+    «Konteyner taqsimlash». They held only their own page until then.
+  - Both get a personal `page.view.containers`; nothing else they hold is
+    touched, and the one-shot reads who they are at the moment it runs — a
+    person granted AXO's or the logistics page LATER gets the board by hand
+    («Shaxsiy vakolatlar»).
+  - **Shift managers WATCH and hear nothing**: they keep «Konteynerlar» (the
+    role is re-ticked on the board should the stored matrix have lost it) and
+    «Konteyner berish» as watchers (`container-watch`: every reading tab, no
+    button — the test that walks every POST / PUT guards it), and the
+    «Sozlamalar» switch `notify_managers` goes **OFF** — neither «not split by
+    its deadline» nor «still unconfirmed» reaches them. AXO's own alerts
+    (`notify_axo`) stay on. They do not see «Konteyner taqsimlash».
+  - Once: a grant taken back, or the switch turned on again, sticks. The run
+    DMs the admins who got what.
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».
@@ -442,7 +467,9 @@ After a review of the app the operator answered «make it» to two points:
     confirmed fewer than sent (`container_short_receipt`), a request still
     unsplit at its deadline (`container_request_overdue`). To EVERY
     shift-manager profile (`shift_scope`'s fan-out), switch `notify_managers`
-    — shipped OFF on 16 Nov, **ON since 2026-11-17** (the operator, asked
+    — shipped OFF on 16 Nov, **OFF again since 2026-11-21** (the operator:
+    the shift managers «don't need notification» — «Who sees which page»
+    above), ON from 2026-11-17 until then (the operator, asked
     whether to switch it on: «Yes, switch on»;
     `startup.container_flow_managers_alerts_on`, once under a flag, so an
     admin's «off» later sticks): the same overdue request, and a brigadir

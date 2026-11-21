@@ -350,6 +350,10 @@ async def lifespan(app: FastAPI):
     from app.startup import container_extra_brigadirs, container_extra_brigadirs_off
     later(container_extra_brigadirs)
     later(container_extra_brigadirs_off)     # after it: closed again the same day
+    # 21 Nov: the board for AXO and the logistics people; the shift managers'
+    # container alerts off (after the 17 Nov one-shot that switched them on)
+    from app.startup import containers_who_sees_what
+    later(containers_who_sees_what)
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)
