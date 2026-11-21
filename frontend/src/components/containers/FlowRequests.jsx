@@ -180,7 +180,12 @@ function CountTags({ r, t }) {
   );
 }
 
-export function RequestsTab({ t, day, roles, toast, onNew }) {
+// `logiSide` is «Konteyner taqsimlash» (/containers/split, 2026-11-21): the
+// requests are CARDS at every width — a laptop and a PC too — because a card
+// has the room a one-line table row has not: every brigadir's part cell by
+// cell, each cell with its WORKSHOP name in sight (`workshops` of the answer),
+// where the table kept the cells in a hover tooltip no phone can open.
+export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
   const { tl, tx } = useTranslit();
   const now = useNow();
   const qc = useQueryClient();
@@ -241,7 +246,7 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
       {roles.axo && <Button icon={<Plus size={14} />} onClick={() => onNew()}>{t("cflow.req.new")}</Button>}
     </span>
   );
-  const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, menu };
+  const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops: logiSide ? q.data?.workshops : null };
 
   return (
     <div className="flex flex-col gap-4">
@@ -252,20 +257,24 @@ export function RequestsTab({ t, day, roles, toast, onNew }) {
 
       <DayStatus t={t} list={list} loading={q.isLoading} />
 
-      {/* phone: a card per request */}
-      <div className="md:hidden flex flex-col gap-2.5">
+      {/* phone: a card per request — and the logistics row's list at every width */}
+      <div className={`${logiSide ? "" : "md:hidden "}flex flex-col gap-2.5`}>
         <SectionHead icon={ClipboardList} title={t("cflow.req.title")}
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{list.length}</span>} />
-        {q.isLoading ? [0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)
-          : !list.length ? (
-            <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-              {empty}
-            </div>
-          ) : list.map((r) => <RequestCard key={r.id} r={r} {...ctx} />)}
+        {!q.isLoading && !list.length ? (
+          <div className="rounded-2xl px-4 py-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+            {empty}
+          </div>
+        ) : (
+          <div className={logiSide ? "grid gap-2.5 items-start md:grid-cols-2 2xl:grid-cols-3" : "contents"}>
+            {q.isLoading ? [0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-36 w-full rounded-2xl" />)
+              : list.map((r) => <RequestCard key={r.id} r={r} {...ctx} />)}
+          </div>
+        )}
       </div>
 
       {/* md+: the table */}
-      <div className="hidden md:block">
+      <div className={logiSide ? "hidden" : "hidden md:block"}>
         <TableCard icon={ClipboardList} title={t("cflow.req.title")}
           subtitle={t(roles.axo || roles.watch ? "cflow.req.subAxo" : "cflow.req.subLog")} headSize="lg"
           right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{list.length}</span>}>
@@ -475,7 +484,7 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
   );
 }
 
-function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
+function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops = null }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
@@ -534,7 +543,7 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
             {r.parts.map((p) => (
               <li key={p.manager_id} className="min-w-0 flex flex-col gap-1">
                 <span className="truncate"><PartLine p={p} t={t} tl={tl} /></span>
-                <CellList t={t} cells={p.cells} />
+                <CellList t={t} cells={p.cells} workshops={shops} />
               </li>
             ))}
           </ul>

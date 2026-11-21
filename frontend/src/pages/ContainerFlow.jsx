@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListChecks, PackagePlus } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -35,23 +36,36 @@ import api from "../utils/api";
 // shift- and top-managers WATCHING (2026-11-15): every reading tab, no
 // button; the settings are admins'. The automatic batches («Partiyalar») were
 // removed on 2026-11-18.
+//
+// TWO menu rows since 2026-11-21 (the operator: «add another row for logistics
+// to splitting the containers … the thing related to the logistics bring to
+// the new row»). `side="logistics"` is «Konteyner taqsimlash»
+// (/containers/split): the requests to split, the split, «Tahlil», «Hisobot» —
+// and every split read cell by cell with its workshop name, on every screen.
+// «Konteyner berish» keeps AXO, the brigadirs and the managers watching, and
+// splits nothing any more: an admin splits on the new row too, and somebody
+// holding only `container-logistics` who opens the old address (a bookmark, a
+// Telegram card from before) is sent across.
 const REFRESH_MS = 60_000;
 // The page's tabs (2026-11-15, rebuilt): the request flow people use every
 // hour first — «So'rovlar», «Qabul» — then what it adds up to — «Tahlil» (the
 // graphs), «Hisobot» (the tables, Excel) — and the admins' «Sozlamalar».
 const TABS = ["requests", "receive", "analytics", "report", "settings"];
-const tabsFor = (r) => TABS.filter((k) => r.admin
+const LOGI_TABS = ["requests", "analytics", "report"];
+const tabsFor = (r, logiSide) => (logiSide ? LOGI_TABS : TABS.filter((k) => r.admin
   || ((k === "requests" || k === "analytics" || k === "report") && (r.axo || r.logistics || r.watch))
   // «Sozlamalar» also holds «Jo'natish jadvali», which AXO keeps (2026-11-19)
   || (k === "settings" && r.axo)
   // «Qabul» also holds a brigadir's EXTRA request (`container-extra`, 2026-11-18)
-  || (k === "receive" && (r.receive || r.watch || r.extra)));
+  || (k === "receive" && (r.receive || r.watch || r.extra))));
 
-export default function ContainerFlow() {
+export default function ContainerFlow({ side = "flow" }) {
+  const logiSide = side === "logistics";
+  const location = useLocation();
   const { t } = useLang();
   const toast = useToast();
   const qc = useQueryClient();
-  const [tabSaved, setTab] = usePersistentState("cflow_tab", "requests");
+  const [tabSaved, setTab] = usePersistentState(logiSide ? "cflow_split_tab" : "cflow_tab", "requests");
   // a link from a brigadir's Telegram card: ?tab=receive&rcv=<request id> opens
   // «Qabul» on that request's card (`flow._brig_markup`)
   const [tabParam, tabDone] = useOpenParam("tab");
@@ -77,14 +91,18 @@ export default function ContainerFlow() {
   // An admin, or a holder of `page.admin.container-flow` — the server says so
   // (`_roles`), since a grant is not in the token.
   const isAdmin = roleAdmin || !!settings.data?.admin;
-  const roles = {
-    admin: isAdmin, axo: isAdmin || !!settings.data?.axo, logistics: isAdmin || !!settings.data?.logistics,
-    receive: isAdmin || !!settings.data?.receive, watch: isAdmin || !!settings.data?.watch,
-    extra: isAdmin || !!settings.data?.extra,
-  };
+  const has = (k) => isAdmin || !!settings.data?.[k];
+  // each row is ONE side of the flow: the split lives on the logistics row
+  // only, and that row carries nothing of AXO's or a brigadir's
+  const roles = logiSide
+    ? { admin: isAdmin, axo: false, logistics: true, receive: false, watch: false, extra: false }
+    : { admin: isAdmin, axo: has("axo"), logistics: false, receive: has("receive"), watch: has("watch"), extra: has("extra") };
+  // a logistics person with nothing else here: their page is the other row
+  const toSplit = !logiSide && !isAdmin && !!settings.data?.logistics
+    && !(roles.axo || roles.receive || roles.watch || roles.extra);
   // a brigadir holding only «Qabul» reads nothing of the AXO / logistics side
   const flowSide = roles.axo || roles.logistics || roles.watch;
-  const tabs = tabsFor(roles);
+  const tabs = tabsFor(roles, logiSide);
   // The «So'rovlar» tab counts the requests its viewer has not opened yet
   // (the same query the tab reads — fetched once).
   const reqs = useQuery({
@@ -117,8 +135,10 @@ export default function ContainerFlow() {
   const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
   const fail = (e) => toast.error(errText(t, e));
 
+  if (toSplit) return <Navigate to={`/containers/split${location.search}`} replace />;
+
   return (
-    <Layout title={t("nav.containerFlow")}>
+    <Layout title={t(logiSide ? "nav.containerSplit" : "nav.containerFlow")}>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* The tabs first: they never move when a tab drops the day control. */}
         {tabs.length > 1 && <SegmentedToggle asTabs value={tab} onChange={setTab}
@@ -155,7 +175,7 @@ export default function ContainerFlow() {
 
       {settings.isLoading && !isAdmin ? <Loading />
         : !tab ? <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, settings.error)} />
-        : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} />
+        : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} logiSide={logiSide} />
         : tab === "receive" ? (
           <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone}
             canReceive={roles.receive || roles.watch}

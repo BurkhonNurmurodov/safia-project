@@ -296,8 +296,14 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     mine = None if (r["admin"] or r["axo"] or r["watch"]) else (me or "—")
     # `logistics`: the viewer is one of the people a request «to everybody»
     # goes to — such a request is new and theirs to split, as their own is
-    return {"day": day.isoformat(), "requests": flow.requests_of(db, day, mine), "me": me,
-            "logistics": bool(me) and me in {p["key"] for p in flow.logistics_people(db)}}
+    rows = flow.requests_of(db, day, mine)
+    # each split cell's WORKSHOP name ({code: {lang: name}}, 2026-11-21): the
+    # logistics row («Konteyner taqsimlash») prints it under the cell on every
+    # request card; a bundle from before ignores the key
+    codes = {c for x in rows for p in x["parts"] for c in (p.get("cells") or {})}
+    return {"day": day.isoformat(), "requests": rows, "me": me,
+            "logistics": bool(me) and me in {p["key"] for p in flow.logistics_people(db)},
+            "workshops": flow.cell_workshops(db, codes) if codes else {}}
 
 
 @router.post("/seen/{request_id}")
