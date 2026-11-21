@@ -1686,3 +1686,11 @@ class CellBreakdownTest(unittest.TestCase):
         self.assertEqual(flow.cell_split({"names": ["9123"], "w": {}}, "grey", 5), {"9123": 5})
         self.assertEqual(flow.cell_split(entry, "yellow", 0), {})
         self.assertEqual(flow.cell_split(None, "yellow", 5), {})
+
+    def test_card_names_each_cell_with_its_leader(self):
+        from app.models import ContainerRequest
+        r = ContainerRequest(hour=9, logistics_name="Yusuf aka", assigned_at=None)
+        body = flow._brig_body(r, {"yellow": 232}, "uz", cells={"7416": {"yellow": 200}, "A2894 · A": {"yellow": 32}},
+                               leaders={"7416": "Каримова Дилноза"})
+        self.assertIn("<b>7416</b> · Karimova Dilnoza — ", body)       # a person's name, transliterated
+        self.assertIn("<b>A2894 · A</b> — ", body)                     # no cell, no leader: the key alone

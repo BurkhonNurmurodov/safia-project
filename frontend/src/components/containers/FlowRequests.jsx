@@ -1053,7 +1053,8 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   <StyledSelect searchable value={row.unit} onChange={(v) => set(row.id, { unit: v, need: null })}
                     placeholder={t("cflow.pick")} options={opts(row.unit)} />
                   {row.unit != null && !hint.isLoading && (
-                    <CellList t={t} className="mt-1.5" cells={cellBreakdown(cellEntry(row.unit), row.counts, types)} />
+                    <CellList t={t} className="mt-1.5" cells={cellBreakdown(cellEntry(row.unit), row.counts, types)}
+                      leaders={cellEntry(row.unit)?.leaders} />
                   )}
                 </FormField>
               </div>

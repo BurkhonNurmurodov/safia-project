@@ -1241,10 +1241,11 @@ def receive_open(db: Session, manager_id: int) -> bool:
 
 
 def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split",
-               cells: Optional[dict] = None) -> str:
+               cells: Optional[dict] = None, leaders: Optional[dict] = None) -> str:
     """The brigadir's card: `split` (containers sent), `remind` (still not
     confirmed) or `cancel` (the request was withdrawn — no buttons). `cells`
-    ({cell: {ctype: n}}) adds to which cell how many (2026-11-20)."""
+    ({cell: {ctype: n}}) adds to which cell how many (2026-11-20), each cell
+    with its leader from `leaders` ({cell: name}, 2026-11-21)."""
     from html import escape as _esc
     from app.translit import transliterate, transliterate_text
     t = _TG_BRIG.get(lang) or _TG_BRIG["uz"]
@@ -1258,7 +1259,9 @@ def _brig_body(r: ContainerRequest, counts: dict, lang: str, kind: str = "split"
     if cells:
         rows += ["", f"<b>{_esc(t['cells'], quote=False)}:</b>"]
         for c, cn in cells.items():
-            rows.append(f"• <b>{_esc(c, quote=False)}</b> — {_esc(counts_text(cn, lang), quote=False)}")
+            who = transliterate((leaders or {}).get(c) or "", lang)
+            who = f" · {_esc(who, quote=False)}" if who else ""
+            rows.append(f"• <b>{_esc(c, quote=False)}</b>{who} — {_esc(counts_text(cn, lang), quote=False)}")
     if kind == "cancel":
         if r.cancel_note:
             note = transliterate_text(r.cancel_note, lang) or r.cancel_note
@@ -1304,13 +1307,14 @@ def notify_split(request_id: int) -> int:
         for p in rows:
             units.setdefault(p.manager_id, {})[p.ctype] = p.count
         cls = _cells_of(rows)
+        lead = cell_leaders(db, {c for u in cls.values() for c in u})
         for mid, counts in units.items():
             if not receive_open(db, mid):
                 continue
             notify_profile(
                 db, f"supervisor:{mid}", "container_split",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="info", html_fn=lambda lang, c=counts, cl=cls.get(mid): _brig_body(r, c, lang, cells=cl),
+                type="info", html_fn=lambda lang, c=counts, cl=cls.get(mid): _brig_body(r, c, lang, cells=cl, leaders=lead),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             told += 1
         db.commit()
@@ -1776,6 +1780,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
         for p in prow:
             pending.setdefault(p.manager_id, {})[p.ctype] = p.count
         p_cls = _cells_of(prow)
+        p_lead = cell_leaders(db, {c for u in p_cls.values() for c in u})
         for mid, counts in pending.items():
             if not receive_open(db, mid):
                 continue
@@ -1789,7 +1794,7 @@ def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
             notify_profile(
                 db, f"supervisor:{mid}", "container_split_remind",
                 {"hour": hour_span(r.hour), "counts": counts_text(counts), "by": r.logistics_name or "—"},
-                type="warning", html_fn=lambda lang, c=counts, rr=r, cl=p_cls.get(mid): _brig_body(rr, c, lang, "remind", cl),
+                type="warning", html_fn=lambda lang, c=counts, rr=r, cl=p_cls.get(mid): _brig_body(rr, c, lang, "remind", cl, p_lead),
                 markup_fn=_brig_markup(r.id, mid), subject=("page", NOTIFY_PAGE))
             db.commit()
             sent += 1
@@ -2035,10 +2040,30 @@ def cell_weights(db: Session, day: date, hour: int, exclude_request_id: Optional
                 if rows:
                     w[k] = rows
             out[mid] = {"names": names, "w": w}
+        # each cell's leader beside its code (2026-11-21, the operator: «put the
+        # names of the leaders for each yacheyka … just the leader of the yacheyka»)
+        lead = cell_leaders(db, {c for e in out.values() for c in e["names"]})
+        for e in out.values():
+            e["leaders"] = {c: lead[c] for c in e["names"] if c in lead}
         return out
     except Exception:
         logger.warning("container-flow: cell weights failed", exc_info=True)
         return {}
+
+
+def cell_leaders(db: Session, codes) -> dict:
+    """{verifix code: the name of the leader who RUNS the cell} — the cell's
+    «Boshqaruvchi» (`cells.leader_id`), the leader every page names beside a
+    code (`cellLabel`). Live cells only; a code with no leader is absent. A
+    work-centre key («A2894 · A», a team with no cell) matches nothing."""
+    from app.models import Cell
+    codes = {str(c) for c in codes or () if c}
+    if not codes:
+        return {}
+    rows = (db.query(Cell.verifix_code, RoleProfile.name)
+            .join(RoleProfile, RoleProfile.id == Cell.leader_id)
+            .filter(Cell.verifix_code.in_(sorted(codes)), Cell.archived_at.is_(None)).all())
+    return {str(code): name for code, name in rows if name}
 
 
 def cell_split(entry: Optional[dict], ctype: str, n: int) -> dict:
