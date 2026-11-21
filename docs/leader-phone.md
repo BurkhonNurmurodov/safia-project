@@ -413,6 +413,43 @@ md+ is unchanged for every role, except one fix that holds at every width:
   the top; their 10px labels are 12px. The closed-day banner is one line (state + who shut it; the
   «read-only, re-open to change» sentence is a note). The «*» explanation under ΣN is a note — off.
 
+## «Zagruzka fayli»: a leader types the whole day on the phone (2026-11-21)
+
+The operator: «the leader must be able to enter the plan/fact and headcount from
+the mobile app; each row should show the workstation, the group and the SAP code
+of the process». On a LEADER's phone (`useLeaderPhone`) the page is now the
+shift's whole ledger on one screen — people, then each line's REJA / FAKT:
+
+- **«Odam soni» on each team card** (`HeadcountField` — the `CountStepper`
+  template at `size="lg"` / `fill`): the team's typed headcount, − / + or a
+  typed number. A run of presses is ONE save, after a 0.9 s pause or at once
+  when the box loses focus, through `/api/production/staffing` with the body
+  the «Odamlar soni» tab would send (`headcountBody` = the tab's undo snapshot
+  with that one figure changed): every other centre and group goes back exactly
+  as it stands, so typing 7214 · B never wipes 7213 · A's pin, a locked centre
+  is re-sent untouched, the штатка pin survives — and the write rides the
+  page's undo stack (`tracked`). A group card types its group's pin
+  (`group` set), a centre card the whole centre's. The «Odamlar soni» tab stays
+  off a leader's phone (decision 7) — this replaces it there, not restores it.
+- **Shut where the backend would refuse**: a closed day, and a team the day
+  plans nothing at (`people_locked`, the 26 Oct rule) — the box is disabled and
+  the label row's one slot says «Reja kiritilgach yoziladi»; the same slot
+  says «Saqlandi» after a save, so the card never changes height (the
+  positions under it are where the leader types the plan that opens it).
+- **Each position card names its line as the SAP sheet does**: the work-centre
+  («Jamoa») chip in its own colour, the group letter (`GroupBadge`), «SAP kod»
+  and the operation's code — then the product name, REJA, FAKT, «Bajarish».
+  This supersedes the 20 Nov card's cell tag («7214 · B», shown only with two
+  cells): the cells stay named by code on the toggle and the team cards.
+- **«Not reported yet» is «—», never a red 0%**: a line's «Bajarish» until a
+  FAKT is typed on it, and the «Bajarish %» / «Umumiy trud. fakt» cards while no
+  line carries a FAKT and the engine counts no done minutes in the cards' scope
+  (`noFactYet`). The line's figure takes the band's theme-aware ink
+  (`--status-*`), not the raw fill hex.
+- Checked: five quick presses → one /staffing request; A = 5 then B = 3 stored
+  as two group pins; with only «7213 · A» picked, A changed and B stood; desktop
+  and every other role's phone pixel-identical to v4.622.0.
+
 ## «Ish grafigi» on a phone (2026-11-20)
 
 - **A leader's phone shows TODAY and TOMORROW only** (the operator's decision 3 of 2026-11-20 — it

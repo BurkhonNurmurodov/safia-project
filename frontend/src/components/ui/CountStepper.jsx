@@ -26,6 +26,11 @@ import { useMarkDraft } from "./dialogLayers";
  *   invalid          – red border (pair it with FormField's `error`)
  *   disabled, id, placeholder, aria-label – forwarded; the ref lands on the
  *                      <input>.
+ *   size             – "md" (default, the 38px toolbar baseline) or "lg" (44px:
+ *                      a finger's target, for a count typed on a phone card —
+ *                      the leader's headcount on «Zagruzka fayli», 2026-11-21).
+ *   fill             – the number box takes the width the buttons leave
+ *                      (default: a fixed 80px box).
  *
  * Skin: the house control (bg-inner, border, rounded-xl) at 38px — the toolbar
  * baseline — with 16px text below md so iOS never zooms the page into it.
@@ -40,8 +45,12 @@ const CountStepper = forwardRef(function CountStepper({
   id,
   placeholder = "",
   className = "",
+  size = "md",
+  fill = false,
   ...rest
 }, ref) {
+  const h = size === "lg" ? "h-11" : "h-[38px]";
+  const sq = size === "lg" ? "h-11 w-11" : "h-[38px] w-[38px]";
   const { t } = useLang();
   const markDraft = useMarkDraft();
   const n = Number.isInteger(value) ? value : null;
@@ -63,7 +72,7 @@ const CountStepper = forwardRef(function CountStepper({
       onClick={onClick}
       disabled={!enabled}
       aria-label={label}
-      className="h-[38px] w-[38px] flex-shrink-0 rounded-xl flex items-center justify-center transition-colors disabled:cursor-not-allowed"
+      className={`${sq} flex-shrink-0 rounded-xl flex items-center justify-center transition-colors disabled:cursor-not-allowed`}
       style={{
         background: "var(--bg-inner)",
         border: "1px solid var(--border)",
@@ -91,7 +100,7 @@ const CountStepper = forwardRef(function CountStepper({
           const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
           onChange(digits === "" ? null : parseInt(digits, 10));
         }}
-        className="h-[38px] w-20 min-w-0 rounded-xl px-3 text-center text-base md:text-sm font-semibold tabular-nums outline-none disabled:cursor-not-allowed"
+        className={`${h} ${fill ? "flex-1" : "w-20"} min-w-0 rounded-xl px-3 text-center text-base md:text-sm font-semibold tabular-nums outline-none disabled:cursor-not-allowed`}
         style={{
           background: "var(--bg-inner)",
           border: `1px solid ${invalid ? "#ef4444" : n != null ? "var(--border-md)" : "var(--border)"}`,

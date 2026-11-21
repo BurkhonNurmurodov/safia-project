@@ -5,7 +5,7 @@ import {
   AlertTriangle, Pencil, Save, Plus, Trash2,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2, Layers,
   Download, CheckCircle, Lock, Unlock, Undo2, Redo2, X, History,
-  Archive, ArchiveRestore, Scale, ListOrdered, GripVertical,
+  Archive, ArchiveRestore, Scale, ListOrdered, GripVertical, Check,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
@@ -23,6 +23,7 @@ import Field from "../components/ui/FormField";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import GroupBadge from "../components/ui/GroupBadge";
+import CountStepper from "../components/ui/CountStepper";
 import { useToast } from "../components/ui/Toast";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -36,7 +37,7 @@ import { useFactory } from "../context/FactoryContext";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
-import { GREEN, AMBER, RED, vypColor, loadColor } from "../utils/statusBands";
+import { GREEN, AMBER, RED, vypColor, vypTone, loadColor } from "../utils/statusBands";
 // The bands these colours are judged by are an admin setting now, edited on
 // «Smena hisoboti». This page paints them, so it subscribes: the helpers above
 // answer from module state, and without the subscription this page would go on
@@ -653,6 +654,64 @@ function QtyField({ label, value, onSave, readOnly = false, aria, decimals = 0 }
         </button>
       )}
     </label>
+  );
+}
+
+// ── a team's headcount on a leader's phone card (2026-11-21) ─────────────────
+// «Odam soni» typed on the team card itself, so a leader fills the whole day —
+// people, then each line's REJA / FAKT — on one screen (the «Odamlar soni» tab
+// is not offered on a leader's phone). The count template at a finger's 44px:
+// − / + are one tap each, the box takes a typed number. A run of presses is
+// ONE save: the figure goes out after a short pause, or at once when the box
+// loses focus, through the tab's own body (`headcountBody` → /staffing), so the
+// write, its undo and every rule about group pins are the tab's. «Saqlandi»
+// answers in a slot that is always there, so nothing on the card moves.
+const HEADCOUNT_PAUSE_MS = 900;
+function HeadcountField({ value, onCommit, disabled = false, label, aria, savedText, hint = null }) {
+  const [draft, setDraft] = useState(value ?? null);
+  const [saved, setSaved] = useState(false);
+  const timer = useRef(null);
+  const savedTimer = useRef(null);
+  const pending = useRef(false);
+  // The server's figure takes over whenever no change of ours is waiting.
+  useEffect(() => { if (!pending.current) setDraft(value ?? null); }, [value]);
+  useEffect(() => () => { clearTimeout(timer.current); clearTimeout(savedTimer.current); }, []);
+  const commit = async (n) => {
+    clearTimeout(timer.current);
+    if (!pending.current) return;
+    pending.current = false;
+    if ((n ?? null) === (value ?? null)) return;
+    const ok = await onCommit(n ?? null);
+    if (ok) {
+      setSaved(true);
+      clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 1800);
+    } else {
+      setDraft(value ?? null);   // refused: the box shows what stands
+    }
+  };
+  const change = (n) => {
+    setDraft(n);
+    pending.current = true;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(n), HEADCOUNT_PAUSE_MS);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+        <span className="font-medium">{label}</span>
+        {/* One slot, always there: why the box is shut (no plan yet), or the
+            «Saqlandi» that answers a save. */}
+        {hint ? <span className="text-right">{hint}</span> : (
+          <span aria-live="polite" className="inline-flex items-center gap-1 transition-opacity"
+            style={{ color: "var(--status-ok)", opacity: saved ? 1 : 0 }}>
+            <Check size={13} aria-hidden="true" />{savedText}
+          </span>
+        )}
+      </div>
+      <CountStepper size="lg" fill min={1} max={999} value={draft} disabled={disabled}
+        onChange={change} onBlur={() => commit(draft)} aria-label={aria} placeholder="—" />
+    </div>
   );
 }
 
@@ -2880,6 +2939,13 @@ export default function Production() {
   // …the same day as the KPI cards see it (no catalog rows needed): nothing
   // planned and nothing done. For everybody but an admin the cards then read
   // «—» instead of the engine's 0 / 0 = 0% (see the KPI row).
+  // A leader's phone, mid-shift: the day is planned but no FAKT has been typed
+  // on any line, and the engine counts no done minutes anywhere in the cards'
+  // scope. Completion is then «not reported yet», not a red 0% — the same
+  // reading each position card gives its own line (2026-11-21).
+  const noFactYet = leaderPhone && !loading && rows.length > 0
+    && !((totals.total_actual_labor || 0) > 0)
+    && rows.every((r) => shownQty(r, "actual") == null);
   const blankDay = !loading && !prodAdmin
     && !((totals.total_plan_labor || 0) > 0) && !((totals.total_actual_labor || 0) > 0);
   // The page is cut below the team level — a lettered work centre shows fewer
@@ -2931,6 +2997,37 @@ export default function Production() {
     const prev = staffingSnapshot();
     tracked({
       label: t("production.viewPeople"),
+      forward: () => staffing.mutateAsync(body),
+      back: () => staffing.mutateAsync(prev),
+    });
+  };
+  // ONE team's «Odam soni» typed on a leader's phone card (`HeadcountField`).
+  // The body is the snapshot above with that one figure changed: /staffing
+  // reads every centre it lists as authoritative, so every OTHER centre and
+  // group goes back exactly as it stands — a typed group never wipes its
+  // sibling's pin, a locked centre is re-sent untouched, the штатка pin
+  // survives — and the save, its undo and the group rules are the tab's own.
+  // `target` = { wc, group } (group null = the whole centre's figure).
+  // Answers whether the write landed.
+  const headcountBody = (target, value) => ({
+    rows: wcs.flatMap((w) => {
+      const sht = w.shtatka_overridden ? w.shtatka : null;
+      const mine = target.wc === w.work_center;
+      if (isLocked(w)) {
+        return lockedStaffRows(w, sht, lockedPin(w), lockedGroups(w).map((g) => [g.group, lockedGroupPin(g)]));
+      }
+      if (typesPerGroup(w)) {
+        return groupedStaffRows(w, sht, w.groups.map((g) => [g.group,
+          mine && !g.orphan && target.group === g.group ? value : (g.people_overridden ? g.people : null)]));
+      }
+      return centreStaffRows(w, mine && target.group == null ? value : (w.people_overridden ? w.people : null), sht);
+    }),
+  });
+  const saveHeadcount = (target, label) => (value) => {
+    const prev = staffingSnapshot();
+    const body = headcountBody(target, value);
+    return tracked({
+      label: `${label} · ${F.people}`,
       forward: () => staffing.mutateAsync(body),
       back: () => staffing.mutateAsync(prev),
     });
@@ -3726,13 +3823,37 @@ export default function Production() {
     ...(cellSection ? [cellSection] : []),
   ];
 
+  // ── a team's «Odam soni» on a leader's phone card ────────────────────────
+  // The figure the team's pin holds (locked or not — `storedPin`), typed through
+  // `saveHeadcount`. Shut on a closed day (the banner says so) and on a team the
+  // day plans nothing at (`people_locked`: the backend refuses a new figure
+  // there — the slot says why, and it opens by itself once a REJA is typed).
+  const headcountInput = (w, g, label) => {
+    const locked = isLocked(w);
+    return (
+      <HeadcountField
+        key={`${date}|${w.work_center}|${g?.group ?? ""}`}
+        label={F.people}
+        savedText={F.peopleSaved}
+        aria={fillF(F.peopleFor, { team: label })}
+        value={g ? storedGroupPin(w, g) : storedPin(w)}
+        disabled={!canEditPeople || locked}
+        hint={locked && dayOpen ? F.peopleNoPlan : null}
+        onCommit={saveHeadcount({ wc: w.work_center, group: g?.group ?? null }, label)}
+      />
+    );
+  };
+
   // ── the positions as phone CARDS (a leader's phone, below md) ─────────────
   // The table opened on №, Navbat, SAP kod and Faza with the product's name off
-  // screen (audit P2). A card leads with the NAME, then the two figures the
-  // leader types — REJA and FAKT, editable in place through the table's own
-  // saves — and the line's completion. Which of the leader's cells a line
-  // belongs to («7214 · B») is printed only while the list holds lines of more
-  // than one cell; otherwise it would repeat on every card.
+  // screen (audit P2). A card names its line as the SAP sheet and the
+  // brigadir's form do (the operator, 2026-11-21: «each row should show the
+  // workstation, the group and the SAP code of the process») — the work centre
+  // («Jamoa») chip in its own colour, the group letter, the operation's SAP
+  // code — then the product's NAME, then the two figures the leader types —
+  // REJA and FAKT, editable in place through the table's own saves — and the
+  // line's completion: «—» until a FAKT is typed, never a red 0% for a line
+  // whose shift has simply not reported yet.
   const lineCell = (r) => {
     if (r.wc_group) {
       const g = groupOf[gKey(r.work_center, r.wc_group)];
@@ -3742,7 +3863,6 @@ export default function Production() {
     const one = w && !isGrouped(w) && (w.cells_n ?? 1) <= 1 ? w.cell : null;
     return { key: r.work_center || "", code: one?.verifix_code || r.work_center, group: null, id: one?.id };
   };
-  const cardTags = leaderPhone ? new Set(viewRows.map((r) => lineCell(r).key)).size > 1 : false;
   const posCards = !leaderPhone ? undefined : loading ? (
     <ul>
       {Array.from({ length: 4 }).map((_, i) => (
@@ -3761,24 +3881,33 @@ export default function Production() {
   ) : (
     <ul>
       {viewRows.map((r, i) => {
-        const vyp = rowVyp(r);
-        const tag = cardTags ? lineCell(r) : null;
+        const vyp = shownQty(r, "actual") == null ? null : rowVyp(r);
+        const tag = lineCell(r);
         const nm = r.name || r.sap_code || "—";
+        const wcg = r.work_center ? wcColor(r.work_center) : null;
         return (
           <li key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`} className="px-3 py-3"
             style={{ borderTop: i ? "1px solid var(--border)" : "none" }}>
-            <div className="flex items-start gap-2">
-              <span className="flex-1 min-w-0 text-sm font-medium leading-snug line-clamp-2" style={{ color: "var(--text-1)" }}>
-                {nm}
-              </span>
-              {tag && (
-                <span className="inline-flex items-center gap-1 flex-shrink-0">
-                  <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>
-                    {tag.code}
-                  </span>
-                  {tag.group && <GroupBadge group={tag.group} tone={tag.orphan ? "warn" : "neutral"} />}
+            {/* Which line this is: Jamoa · guruh · SAP kod, as the sheet names it. */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-1.5 min-h-[22px]">
+              {r.work_center && (
+                <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded-md"
+                  title={wcTitle(r.work_center)}
+                  style={{ background: hexToRgba(wcg, 0.16), color: wcg, border: `1px solid ${hexToRgba(wcg, 0.3)}` }}>
+                  {r.work_center}
                 </span>
               )}
+              {tag.group && <GroupBadge group={tag.group} tone={tag.orphan ? "warn" : "neutral"}
+                title={tag.code && tag.code !== r.work_center ? `${t("production.col.group")} ${tag.group} · ${tag.code}` : undefined} />}
+              {r.sap_code && (
+                <span className="text-xs min-w-0" style={{ color: "var(--text-3)" }}>
+                  {t("production.col.sapCode")}{" "}
+                  <span className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>{r.sap_code}</span>
+                </span>
+              )}
+            </div>
+            <div className="text-sm font-medium leading-snug line-clamp-2" style={{ color: "var(--text-1)" }}>
+              {nm}
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2 items-end">
               <QtyField label={F.plan} value={shownQty(r, "plan")} readOnly={!dayOpen}
@@ -3787,8 +3916,10 @@ export default function Production() {
                 aria={fillF(F.editQty, { what: F.fact, name: nm })} onSave={saveOverride(r, "actual")} />
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{F.vyp}</span>
+                {/* Text takes the band's theme-aware ink (`--status-*`), never
+                    the raw fill hex: yellow-500 on a light card is 1.9:1. */}
                 <span className="min-h-[44px] flex items-center text-base font-semibold tabular-nums"
-                  style={{ color: vyp == null ? "var(--text-4)" : vypColor(vyp) }}>
+                  style={{ color: vyp == null ? "var(--text-4)" : `var(--status-${vypTone(vyp) || "none"}, var(--text-3))` }}>
                   {vyp == null ? "—" : pct(vyp)}
                 </span>
               </div>
@@ -4038,12 +4169,14 @@ export default function Production() {
             <Kpi label={t("production.kpiActualLabor")} value="—" icon={ClipboardList} />
             <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} value="—" />
           </>) : (<>
-          <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
-            bar={totals.completion} barColor={vypColor(totals.completion)} primary className="max-md:col-span-2" />
+          {noFactYet
+            ? <Kpi label={t("production.kpiVyp")} value="—" icon={Target} primary className="max-md:col-span-2" />
+            : <Kpi label={t("production.kpiVyp")} value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
+                bar={totals.completion} barColor={vypColor(totals.completion)} primary className="max-md:col-span-2" />}
           <Kpi label={t("production.kpiPeople")} icon={Users}
             value={<>{fmt(totals.total_people, 0)}{peopleUntyped > 0 && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>} />
           <Kpi label={t("production.kpiTotalLabor")} value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
-          <Kpi label={t("production.kpiActualLabor")} value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
+          <Kpi label={t("production.kpiActualLabor")} value={noFactYet ? "—" : fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
           <Kpi label={t("production.kpiAvgLoad")} icon={Gauge} accent={loadColor(totals.avg_load)}
             value={<>{pct(totals.avg_load)}{peopleUntyped > 0 && <sup className="max-md:hidden" style={{ color: "var(--text-4)" }}>*</sup>}</>}
             bar={totals.avg_load ?? undefined} barColor={loadColor(totals.avg_load)} />
@@ -4271,7 +4404,19 @@ export default function Production() {
                   ) : (
                     <>
                       <Bar value={g.load} color={gc} height={6} track="var(--bg-card)" />
+                      {leaderPhone && (
+                        <div className="mt-3">
+                          {headcountInput(w, g, `${g.cell?.verifix_code || w.work_center} · ${g.group}`)}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
+                        {leaderPhone ? (
+                          <span className="truncate">
+                            {t("production.shtatka")} <b className="tabular-nums"
+                              title={t("production.group.shtatkaShared").replace("{code}", w.work_center)}
+                              style={{ color: "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
+                          </span>
+                        ) : (
                         <span className="truncate">
                           {t("production.oSoni")} <b className="tabular-nums"
                             title={g.people_overridden ? undefined : groupUntypedTitle(t, w, g)}
@@ -4284,6 +4429,7 @@ export default function Production() {
                             title={t("production.group.shtatkaShared").replace("{code}", w.work_center)}
                             style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                         </span>
+                        )}
                         <span className="tabular-nums shrink-0">{laborHoursText(g.total_labor, g.people, t, fmt)}</span>
                       </div>
                     </>
@@ -4316,7 +4462,17 @@ export default function Production() {
                   </span>
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
+                {leaderPhone && (
+                  <div className="mt-3">
+                    {headcountInput(w, null, (!isGrouped(w) && (w.cells_n ?? 1) <= 1 && w.cell?.verifix_code) || w.work_center)}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
+                  {leaderPhone ? (
+                    <span className="truncate">
+                      {t("production.shtatka")} <b className="tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
+                    </span>
+                  ) : (<>
                   {/* a pinned staffing value goes brand-gold + bold. The Факт/ПЛАН
                       cells deliberately no longer do: a quantity somebody typed IS the
                       day’s quantity, while a pinned headcount overrides a figure the
@@ -4341,6 +4497,7 @@ export default function Production() {
                     {" · "}
                     {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                   </span>
+                  </>)}
                   <span className="tabular-nums shrink-0">{laborHoursText(w.total_labor, w.people, t, fmt)}</span>
                 </div>
                 {/* A centre typed per group: its «Кол-во» above is the sum of
