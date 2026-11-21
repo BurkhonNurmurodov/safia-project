@@ -111,6 +111,80 @@ class NoCell(unittest.TestCase):
         self.assertEqual(verifix_sync.no_cell_acts(
             [leader(260)], {}, {}, set(), {260: self.NOV20}, {260}), [])
 
+    def test_moved_from_the_transfer_start_hr_dated_back(self):
+        # Farrux: released 20 Nov, transferred into 7005 from 16 Nov.
+        tr = [(self._d(2025, 3, 1), "171"), (self._d(2026, 11, 16), "7005")]
+        self.assertEqual(verifix_sync.move_date("2026-11-20", "7005", tr), "2026-11-16")
+
+    def test_moved_without_a_matching_journal_keeps_the_release_day(self):
+        d = self._d
+        for tr in ([],                                   # no journal at all
+                   [(d(2026, 11, 16), "999")],           # into another unit
+                   [(d(2026, 11, 20), "7005")],          # starting on the release day
+                   [(d(2026, 11, 25), "7005")],          # starting after it
+                   [(d(2026, 9, 1), "7005")]):           # further back than the bound
+            self.assertEqual(verifix_sync.move_date("2026-11-20", "7005", tr), "2026-11-20", tr)
+
+    def test_moved_takes_the_latest_start_into_the_unit(self):
+        tr = [(self._d(2026, 11, 2), "7005"), (self._d(2026, 11, 16), "7005")]
+        self.assertEqual(verifix_sync.move_date("2026-11-20", "7005", tr), "2026-11-16")
+
+    def test_transfer_journal_keeps_posted_rows_of_the_asked_ids(self):
+        from contextlib import nullcontext
+        from unittest import mock
+        page = [{"journal_posted": "Y", "transfers": [
+                    {"employee_id": "3172", "org_unit_id": "7005", "transfer_begin": "16.11.2026",
+                     "wage": 1},
+                    {"employee_id": "9", "org_unit_id": "1", "transfer_begin": "01.11.2026"}]},
+                {"journal_posted": "N", "transfers": [
+                    {"employee_id": "3172", "org_unit_id": "8", "transfer_begin": "18.11.2026"}]}]
+        with mock.patch("app.services.verifix.client", lambda cfg: nullcontext()), \
+                mock.patch("app.services.verifix.each_page", lambda *a, **k: iter([page])):
+            got = verifix_sync._transfers({}, {"3172"})
+        self.assertEqual(got, {"3172": [(self._d(2026, 11, 16), "7005")]})
+
+    def test_unread_journal_holds_recent_acts_and_lets_old_ones_through(self):
+        from datetime import timedelta
+        from unittest import mock
+        today = verifix_sync._today()
+        new = {"kind": "no_cell", "profile": 1, "date": today.isoformat()}
+        old = {"kind": "no_cell", "profile": 2, "date": (today - timedelta(days=5)).isoformat()}
+        other = {"kind": "photo"}
+        pl = verifix_sync.Plan()
+        pl.auto = [new, old, other]
+        ctx = SimpleNamespace(prof_by_id={1: leader(1), 2: leader(2)}, by_emp={})
+        ctx.prof_by_id[1].vfx_employee_id, ctx.prof_by_id[2].vfx_employee_id = "e1", "e2"
+        db = SimpleNamespace(commit=lambda: None, rollback=lambda: None)
+
+        def down(cfg, emps):
+            raise RuntimeError("verifix down")
+        with mock.patch.object(verifix_sync, "_transfers", down), \
+                mock.patch("app.services.verifix.config", lambda db, **k: {}):
+            verifix_sync._date_moves(db, ctx, pl)
+        self.assertEqual(pl.deferred, [new])
+        self.assertEqual(pl.auto, [old, other])
+
+    def _pick(self, now="7005", was="171", status="W", held=False, cell=None):
+        p = SimpleNamespace(id=280, role="leader", vfx_employee_id="e280", vfx_meta={"unit": was})
+        ctx = SimpleNamespace(prof_by_id={280: p}, prof_by_emp={"e280": p}, org={},
+                              held={("profile", 280)} if held else set(),
+                              by_emp={"e280": {"status": status, "unit_id": now, "cell": cell}},
+                              unit_keys=lambda mid: {"9123", "9124"} if mid == 10 else set())
+        cell = SimpleNamespace(vfx_division_id="171", manager_id=10)
+        cache = {10: {"171": "9123", "172": "9124"}}
+        return verifix_sync._pick_left(None, ctx, cell, 280, {}, cache)
+
+    def test_hand_pick_moved_out_of_the_units_cells_is_released(self):
+        self.assertTrue(self._pick(now="7005"))
+
+    def test_hand_pick_kept_while_still_in_the_unit_or_unchanged(self):
+        self.assertFalse(self._pick(now="172"))              # moved to another cell of the unit
+        self.assertFalse(self._pick(now="888", cell="9124"))  # a cell Verifix re-made under a new id
+        self.assertFalse(self._pick(now="7005", was="7005"))  # always stood there (an «o'rnida»)
+        self.assertFalse(self._pick(now="7005", was=None))    # nothing recorded to compare
+        self.assertFalse(self._pick(status="D"))              # dismissal has its own path
+        self.assertFalse(self._pick(held=True))               # a doubtful tie: nothing automatic
+
     def test_ended_and_other_roles_untouched(self):
         self.assertEqual(verifix_sync.no_cell_acts(
             [leader(1, ended=self.NOV5), leader(2, role="supervisor")],

@@ -337,6 +337,18 @@ problems later. Watch for verifix always.»
   from …», `set_by` = the sync), `vfx_meta.nocell_from`, the leader and the
   brigadir told (`notify_cutoff`). The unit is scored on its remaining leaders.
   A leader who never had a cell link is `leader_load`'s case, above.
+- **A hand-picked «Boshqaruvchi» who moves out is released too** (2026-11-21,
+  `_pick_left`): a brigadir may pick only a worker Verifix places in a cell of
+  the unit (`manager_pool`), and the seat-moved release skips a hand-pick — so
+  a picked leader transferred to a department kept running the cell and kept
+  counting. Now, when the picked profile's Verifix org unit CHANGES (the
+  `vfx_meta.unit` last recorded ≠ Verifix's now) to a place outside the
+  unit's cells (and the cell's own, and a pending move's unit), the pass
+  releases the pick (`manager` → none, `why` = `pick_left`, under the
+  `seat_moves` cap); the cell returns to its Verifix seat next pass and the
+  rule above cuts the leader from the transfer's start. Only on a change: a
+  leader who has always stood elsewhere on Verifix (an «o'rnida» picked by
+  hand) is never touched, and no pick standing today is released by it.
 - **An «Egasi» released counts too** (2026-11-21, Ibragimjonov Farrux,
   Niyozov Izzatilla's unit: Verifix moved him to «Технолог» in another
   department; he was 9123's seat under a hand-picked «Boshqaruvchi», so the
@@ -347,6 +359,24 @@ problems later. Watch for verifix always.»
   trigger; that leader stays as before. Production's dry run that day: Farrux
   (from 20 Nov) and Ne'matillayev Izzatilla (no unit, never filed — nothing
   scored moves).
+- **The date is the TRANSFER's start, not the day the sync saw it**
+  (2026-11-21, the operator: «make sure this problem won't happen again» —
+  Farrux's transfer started 16 Nov and HR posted it 20 Nov). Before a planned
+  `no_cell` applies, the pass reads Verifix's transfer journal
+  (`pro/transfer$list`, ~40 pages, no date filter — `_transfers`, with no
+  transaction open, like the photo downloads) and `move_date` takes the start
+  of the latest POSTED transfer into the org unit Verifix has the person in
+  now, when it began before the release day and at most `MOVE_BACK_MAX_DAYS`
+  (62) before it; otherwise the release day. So the cutoff, its reason
+  («Verifix: transferred …») and the one notice carry the real day. Only
+  employee, unit and start are kept from a journal row (it carries pay). **A
+  read that fails holds the `no_cell` acts to the next pass** (the run counts
+  `no_cell_deferred`) — falling back to the release day would bring the
+  problem back on any Verifix hiccup; an act released more than `DEFER_DAYS`
+  (2) ago then applies with its release day, so a journal Verifix stops
+  serving never keeps a leader who left on the hook. Not moved: the dated «Egasi» /
+  «Boshqaruvchi» links still change on the release day, so owner-based KPI
+  for the days between is unchanged; an untied leader is still not covered.
 - **Back**: one who runs a cell again (or has one waiting) counts again — the
   sync's cutoff of that date is lifted and every day from it to the day the
   new link counts from is a day exclusion («Verifix: no cell»), because a

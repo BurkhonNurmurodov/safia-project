@@ -175,8 +175,9 @@ v4.502.0): «If the leader is resigned or got fired, it comes from verifix».
   person no longer works here. An ended profile keeps every filed day, photo,
   verdict and concern; nothing is deleted.
 - **Only Verifix sets it.** The pass's `dismissed` act (status D with a date,
-  seen twice ≥ 9 min apart): cells released, results cut from max(dismissal,
-  today), `ended_on` = that day, **and the accounts and the browser login taken
+  seen twice ≥ 9 min apart): cells released, results cut from the DISMISSAL
+  DATE (from 2026-11-21 — see below; until then max(dismissal, today)),
+  `ended_on` = that day, **and the accounts and the browser login taken
   off the profile** as a delete takes them (the operator: «remove them» —
   this replaces the 12 Oct «results, not access» reading). `returned` (Verifix
   lists them working again) clears it and lifts the sync's cutoff; the accounts
@@ -192,6 +193,15 @@ v4.502.0): «If the leader is resigned or got fired, it comes from verifix».
   before the profile was made. The next reads end them through `dismissed`.
   At most `GONE_TIES_PER_PASS` (5) a pass, so the dismissals they lead to stay
   under the «dismissed» cap (10) — a pass over a cap applies nothing.
+- **Cut from the real date, even when HR types it late** (2026-11-21, the
+  operator, after Ibragimjonov Farrux's transfer started 16 Nov and was posted
+  20 Nov: «make sure this problem won't happen again»). A dismissal cuts from
+  its own date, which replaces ruling 6's «the later of the date and today»
+  (`docs/plan-verifix-live-sync.md`): the days after a leader left are no days
+  of theirs, so they no longer count as misses. A leader moved OUT (still
+  working) is cut from the start of their Verifix transfer
+  (`docs/checklist-not-counting.md`, «A leader who runs NO cell»). Forward
+  only: cutoffs the sync set before this keep their dates.
 - **Leaders the sync dismissed before the column existed** get the date at
   boot (`startup.end_dismissed_leaders`, `later`, both entrypoints,
   idempotent: `vfx_meta.cut_from` is the proof, and a return pops it).

@@ -165,7 +165,8 @@ other way of vanishing is a suggestion.
 6. **Only «dismissed, with a dismissal date» is leaving** (proposal, accepted).
    Then: the manager and owner slots are released (the cell falls back to its
    default seat or reads «no manager» for the brigadir to pick), the profile
-   gets a cutoff from the LATER of the dismissal date and today (dismissals are
+   gets a cutoff from the LATER of the dismissal date and today [SUPERSEDED
+   2026-11-21 by the operator: from the dismissal date itself] (dismissals are
    typed late and dated back; under ruling 2 the days between keep whatever
    they scored), the profile, its history and its photos stay, and the brigadir
    is told once. Any other status change, and a tied id that is simply not in

@@ -406,7 +406,8 @@ once, and followed through the tie from then on; history is never affected.
   «Egasi» and as the default «Boshqaruvchi», a profile created for a seat
   nobody has (UNCLAIMED, connected to the unit only where it will run the cell);
   a leader DISMISSED with a date, seen twice — their cells released (to another
-  seat where there is one), their results cut from max(date, today), the
+  seat where there is one), their results cut from the dismissal date itself
+  (from 2026-11-21; it was max(date, today) — see `docs/cells-and-org.md`), the
   brigadir and the leader told; a return lifts the sync's own cutoff (a
   person's cutoff is never touched). Everything else is a QUEUE item
   (`verifix_sync_items`, one tap on the page, a dismissed fact never comes
@@ -417,7 +418,9 @@ once, and followed through the tie from then on; history is never affected.
   missing or is in another status than W or D — nothing released until tapped;
   a seat still WORKING who is no longer the cell's seat — moved to another cell,
   out of every cell, or off a leader's job — is released automatically, from
-  2026-11-13), `hold` (a seat whose
+  2026-11-13; a HAND-PICKED «Boshqaruvchi» whose Verifix unit changes to a place
+  outside the unit's cells is released too, from 2026-11-21 — `_pick_left`,
+  `docs/checklist-not-counting.md`), `hold` (a seat whose
   cell has no brigadir, or whose profile was made with no unit because a person
   chose the manager — the tap connects it, the manager stays),
   `archived_open`, `seat_no_profile`, and the information-only `missing`,

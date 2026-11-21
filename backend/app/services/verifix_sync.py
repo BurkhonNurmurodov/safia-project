@@ -175,6 +175,7 @@ class Ctx:
                 by_emp[p.vfx_employee_id].append(p)
         self.shared_emp = {k: v for k, v in by_emp.items() if len(v) > 1}
         self.prof_by_emp = {k: v[0] for k, v in by_emp.items() if len(v) == 1}
+        self.prof_by_id = {p.id: p for p in self.profiles}
         self.units = db.query(Manager).order_by(Manager.id).all()
         self.unit_by_emp = defaultdict(list)
         for m in self.units:
@@ -634,6 +635,7 @@ class Plan:
         self.counts: Counter = Counter()
         self.found_share = 1.0
         self.photos = 0
+        self.deferred: list[dict] = []     # acts held back to the next pass (`_date_moves`)
 
     def act(self, kind: str, cap: Optional[str] = None, **kw) -> None:
         self.auto.append({"kind": kind, "cap": cap, **kw})
@@ -877,6 +879,7 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
     pend = cell_links.pending(db, [c.id for c in ctx.cells if c.vfx_division_id])
     new_by_emp: dict = {}
     patch: dict = defaultdict(dict)   # cell id → vfx_meta keys this loop sets
+    unit_divs: dict = {}              # unit id → its cells' divisions (`_pick_left`)
     for c in ctx.cells:
         if not c.vfx_division_id or c.archived_at is not None:
             continue
@@ -911,6 +914,14 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
             else:
                 pl.act("grandfather", cell=c.id, code=c.verifix_code, to=cur_mgr)
                 mmode = "manual"
+        if mmode == "manual" and cur_mgr and _pick_left(db, ctx, c, cur_mgr, pc, unit_divs):
+            # A hand-picked «Boshqaruvchi» Verifix just moved out of the unit's
+            # cells is released like a seat that moved: the cell goes back to
+            # its Verifix seat on the next pass, and `_no_cell` dates the
+            # leader's cutoff from the transfer.
+            pl.act("manager", cap="seat_moves", cell=c.id, code=c.verifix_code, to=None,
+                   why="pick_left")
+            continue
         if len(seats) > 1:
             # Two leaders seated: nothing moves until the operator says which.
             pl.item("two_seats", f"cell:{c.id}", {"cell": c.id, "code": c.verifix_code,
@@ -1128,6 +1139,36 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
     return pl
 
 
+def _pick_left(db: Session, ctx: Ctx, c: Cell, pid: int, pc: dict, cache: dict) -> bool:
+    """A hand-picked «Boshqaruvchi» whom Verifix has just MOVED out of the
+    unit's cells (2026-11-21, the operator: «make sure this problem won't happen
+    again»). A pick may only be a worker Verifix places in a cell of the unit
+    (`cell_register.manager_pool`); one whose org unit CHANGED to a place outside
+    them — a department, another unit's cell — no longer is. Only on a change
+    (the unit the profile's `vfx_meta` last recorded ≠ Verifix's now), so a
+    leader who has always stood elsewhere on Verifix (an «o'rnida» picked by
+    hand) stays. Still working only: a dismissal has its own path."""
+    p = ctx.prof_by_id.get(pid)
+    if (p is None or p.role != "leader" or not p.vfx_employee_id
+            or p.vfx_employee_id not in ctx.prof_by_emp or ("profile", p.id) in ctx.held):
+        return False
+    e = ctx.by_emp.get(p.vfx_employee_id)
+    was, now = (p.vfx_meta or {}).get("unit"), (e or {}).get("unit_id")
+    if e is None or e["status"] != "W" or not was or not now or was == now:
+        return False
+    ok = {c.vfx_division_id}
+    units = {c.manager_id} | ({pc["manager_id"]["value"]} if "manager_id" in pc else set())
+    for u in units - {None}:
+        if u not in cache:
+            cache[u] = cell_register.unit_divisions(db, ctx.org, u)
+        ok |= set(cache[u])
+    if now in ok:
+        return False
+    # Still in a cell of the unit by its CODE — a division Verifix re-made
+    # under a new id (the 12 Nov twins) is not a move.
+    return not (e.get("cell") and any(e["cell"] in ctx.unit_keys(u) for u in units - {None}))
+
+
 def _no_cell(db: Session, ctx: Ctx, pl: Plan) -> None:
     """A leader who runs NO cell owes nothing (2026-11-13, Jozilov Diyor: moved
     by Verifix to a cell with two seats, his old cell released, and every day
@@ -1187,6 +1228,90 @@ def no_cell_acts(profiles, released: dict, linked: dict, holding: set,
             out.append(("cell_back", {**base, "date": meta["nocell_from"],
                                       "back": back.isoformat() if back else None}))
     return out
+
+
+# How far back a transfer's start may move a «no cell» cutoff. HR posts a
+# transfer days after it starts; a start further back than this is not the move
+# the release followed (the person came to that unit long before).
+MOVE_BACK_MAX_DAYS = 62
+TRANSFER_PAGES = 400            # ~40 pages in Nov 2026; each_page's own cap is 60
+TRANSFER_BUDGET_S = 180.0
+DEFER_DAYS = 2                  # a no_cell held this long applies with its release day
+
+
+def move_date(release: str, unit: Optional[str], transfers: list) -> str:
+    """The day a released leader really left, pure: the start of the latest
+    POSTED transfer into the org unit Verifix has them in now, when it began
+    before the release and at most MOVE_BACK_MAX_DAYS before it — HR types a
+    transfer late and dates it back (2026-11-21, Ibragimjonov Farrux: started
+    16 Nov, posted 20 Nov); otherwise the release day. `transfers` =
+    [(start date, org unit id)]."""
+    rel = date.fromisoformat(release[:10])
+    floor = rel - timedelta(days=MOVE_BACK_MAX_DAYS)
+    starts = [d for d, u in transfers if unit and u == unit and floor <= d < rel]
+    return max(starts).isoformat() if starts else rel.isoformat()
+
+
+def _transfers(cfg: dict, emps: set) -> dict:
+    """employee id → [(start, org unit id)] of their POSTED transfers — read
+    whole from `pro/transfer$list`, which takes no date filter, the way
+    `verifix_cell_hours._events` reads it. Only the ids asked for are kept, and
+    of them only the employee, the unit and the start: a transfer row carries
+    pay, and wages are closed."""
+    from app.services import verifix
+    from app.services.verifix_attendance import _day
+    out: dict = defaultdict(list)
+    deadline = _time.monotonic() + TRANSFER_BUDGET_S
+    with verifix.client(cfg) as cl:
+        for page in verifix.each_page(cl, "pro/transfer$list", {"journal_ids": []}, limit=100,
+                                      deadline=deadline, max_pages=TRANSFER_PAGES):
+            for j in page or []:
+                if str(j.get("journal_posted") or "Y").upper() != "Y":
+                    continue
+                for x in j.get("transfers") or []:
+                    eid, unit = str(x.get("employee_id") or ""), str(x.get("org_unit_id") or "")
+                    d = _day(x.get("transfer_begin"))
+                    if eid in emps and unit and d:
+                        out[eid].append((d, unit))
+    return dict(out)
+
+
+def _date_moves(db: Session, ctx: Ctx, pl: Plan) -> None:
+    """Date each planned `no_cell` from Verifix's transfer journal
+    (`move_date`) BEFORE it applies, so the cutoff and the one notice carry the
+    real day. Called with no transaction left open: the read is ~40 pages. A
+    read that fails holds the acts back to the next pass (`pl.deferred`) —
+    falling back to the release day is the very mistake this exists to stop."""
+    from app.services import verifix
+    acts = [a for a in pl.auto if a["kind"] == "no_cell"]
+    by_id = ctx.prof_by_id
+    emp_of = {a["profile"]: by_id[a["profile"]].vfx_employee_id for a in acts
+              if a["profile"] in by_id and by_id[a["profile"]].vfx_employee_id}
+    if not emp_of:
+        return                          # nobody tied: Verifix has no journal of theirs
+    try:
+        cfg = verifix.config(db, with_password=True)
+        db.commit()
+        tr = _transfers(cfg, set(emp_of.values()))
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("verifix sync: transfer journal unread — no_cell held to the next pass")
+        # Held — but not forever: an act released more than DEFER_DAYS ago
+        # applies with its release day, so a journal Verifix stops serving
+        # never keeps a leader who left on the hook.
+        floor = (_today() - timedelta(days=DEFER_DAYS)).isoformat()
+        pl.deferred = [a for a in acts if a["date"] > floor]
+        held = {id(a) for a in pl.deferred}
+        pl.auto = [a for a in pl.auto if id(a) not in held]
+        return
+    for a in acts:
+        emp = emp_of.get(a["profile"])
+        e = ctx.by_emp.get(emp) if emp else None
+        if e is None:
+            continue
+        day = move_date(a["date"], e.get("unit_id"), tr.get(emp, []))
+        if day != a["date"]:
+            a["released"], a["date"] = a["date"], day
 
 
 def _folded(name: str) -> str:
@@ -1373,7 +1498,8 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
         have = leader_cutoffs.record(leader_cutoffs.load(db), p.id, p.name)
         # A person's cutoff stands, whatever its date; only the sync's own moves.
         if have is None or ((have.set_by or "") == BY and str(have.from_date)[:10] > a["date"]):
-            reason = f"Verifix: no cell from {a['date']}"
+            reason = (f"Verifix: transferred {a['date']}" if a.get("released")
+                      else f"Verifix: no cell from {a['date']}")
             leader_cutoffs.set_cutoff(db, leader_id=p.id, leader_name=p.name, from_date=a["date"],
                                       manager_id=p.manager_id, reason=reason, actor=BY)
             leader_cutoffs.drop_pending_reviews(db, p.id, a["date"])
@@ -1416,7 +1542,10 @@ def _apply_one(db: Session, ctx: Ctx, a: dict, cells: dict, created_prof: dict,
                     fallback[c.id] = sp.id
         codes = cell_register.release_profile(db, p.id, src="verifix", by="Verifix",
                                               fallback=fallback)
-        cut = max(date.fromisoformat(a["date"][:10]), _today()).isoformat()
+        # From the dismissal date itself, even when HR typed it late and dated
+        # it back (2026-11-21, the operator, replacing ruling 6's «the later of
+        # the date and today»): the days after they left are no days of theirs.
+        cut = a["date"][:10]
         # A cutoff a PERSON set stands whatever its date — its reason
         # and author are theirs (an earlier one already cuts more; a later
         # one is their call). Only the sync's own is moved.
@@ -1687,6 +1816,8 @@ def _run(db: Session, *, force_read: bool, by: Optional[str], dry: bool,
             # share locks a deploy's boot ALTER TABLE would queue behind.
             db.commit()
             _prefetch_photos(db, pl)
+        if any(a["kind"] == "no_cell" for a in pl.auto):
+            _date_moves(db, ctx, pl)       # the same: the journal read holds no transaction
         for row, meta in pl.meta:
             row.vfx_meta = meta
         done = _apply(db, ctx, pl, notes)
@@ -1695,6 +1826,8 @@ def _run(db: Session, *, force_read: bool, by: Optional[str], dry: bool,
     counts = dict(Counter(d["kind"] for d in done)) if m == "on" else \
         dict(Counter(a["kind"] for a in pl.auto))
     counts.update({f"queue_{k}": v for k, v in q.items() if v})
+    if pl.deferred:
+        counts["no_cell_deferred"] = len(pl.deferred)
     rec = _save_run(db, "pass", ok=True, org_at=org_at, counts=counts,
                     changes={"done": done, "would": would}, t0=t0, mode=m, by=by)
     db.commit()
