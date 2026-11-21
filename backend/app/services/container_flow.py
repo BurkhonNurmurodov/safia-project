@@ -1077,6 +1077,11 @@ _TG = {
            "hint_send": "Split the crates across the brigadirs and give the dispatch containers and lids to dispatch."},
 }
 NOTIFY_PAGE = "/containers/flow"
+# The logistics side is a page of its own since 2026-11-21 («Konteyner
+# taqsimlash»): a Telegram card to a logistics person opens it. The in-app
+# notice keeps NOTIFY_PAGE — a tab opened before that day knows no other
+# address, and the page itself sends a logistics-only viewer across.
+LOGISTICS_PAGE = "/containers/split"
 
 
 def hour_span(h: int) -> str:
@@ -1126,14 +1131,19 @@ def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
     return "\n".join(rows)
 
 
-def _tg_markup(lang: str):
+def _tg_markup(lang: str, page: str = NOTIFY_PAGE):
     from telebot import types
     from app.config import settings as cfg
     t = _TG.get(lang) or _TG["uz"]
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(
-        t["btn"], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{NOTIFY_PAGE}")))
+        t["btn"], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{page}")))
     return kb
+
+
+def _logi_markup(lang: str):
+    """The button on a card sent to a LOGISTICS person — their own page."""
+    return _tg_markup(lang, LOGISTICS_PAGE)
 
 
 def addressees(db: Session, key: str) -> list:
@@ -1173,7 +1183,7 @@ def notify_request(request_id: int, kind: str, keys: Optional[list] = None) -> b
                  "due": f"{r.due_at.astimezone(TZ):%H:%M}", "by": r.created_by or "—",
                  "note": r.note or r.cancel_note or ""},
                 type="warning" if kind == "cancelled" else "info",
-                html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_tg_markup,
+                html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_logi_markup,
                 subject=("page", NOTIFY_PAGE), skip_accounts=done) or set()
         db.commit()
         return True
@@ -1492,7 +1502,7 @@ def notify_requests(request_ids: list) -> bool:
             done |= notify_profile(
                 db, key, "container_requests_new",
                 {"n": len(rows), "hours": ", ".join(hour_span(r.hour) for r in rows), "by": rows[0].created_by or "—"},
-                type="info", html_fn=body, markup_fn=_tg_markup, subject=("page", NOTIFY_PAGE),
+                type="info", html_fn=body, markup_fn=_logi_markup, subject=("page", NOTIFY_PAGE),
                 skip_accounts=done) or set()
         db.commit()
         return True

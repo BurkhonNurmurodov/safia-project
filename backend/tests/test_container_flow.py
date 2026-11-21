@@ -1696,6 +1696,38 @@ class CellBreakdownTest(unittest.TestCase):
         self.assertIn("<b>7416</b> · Tsentr. Moyka 1 smena — ", body)    # Russian → the reader's script
         self.assertIn("<b>A2894 · A</b> — ", body)                       # no cell: the key alone
 
+    def test_logistics_card_opens_the_logistics_page(self):
+        """21 Nov: logistics has a page of its own («Konteyner taqsimlash») —
+        a card sent to a logistics person opens it; AXO's and the managers'
+        alerts keep «Konteyner berish»."""
+        url = lambda kb: kb.keyboard[0][0].web_app.url                       # noqa: E731
+        self.assertTrue(url(flow._logi_markup("uz")).endswith("/containers/split"))
+        self.assertTrue(url(flow._tg_markup("uz")).endswith("/containers/flow"))
+
+    def test_requests_answer_names_each_split_cell(self):
+        """The logistics row prints a workshop name under every split cell:
+        the day's answer carries {code: {lang: name}} for the cells of its
+        parts — one lookup, none when nothing is split by cell."""
+        from app.routers import container_flow as r
+        rows = [{"id": 1, "parts": [{"manager_id": 1, "cells": {"7416": {"yellow": 30}, "A2894 · A": {"yellow": 2}}},
+                                    {"manager_id": 2, "cells": {}}]},
+                {"id": 2, "parts": []}]
+        roles = {"admin": False, "axo": False, "logistics": True, "watch": False}
+        with mock.patch.object(r, "_roles", return_value=roles), \
+                mock.patch.object(r, "_me", return_value="idle_owner:1"), \
+                mock.patch.object(r.flow, "requests_of", return_value=rows) as req, \
+                mock.patch.object(r.flow, "logistics_people", return_value=[{"key": "idle_owner:1"}]), \
+                mock.patch.object(r.flow, "cell_workshops", return_value={"7416": {"ru": "Мойка"}}) as shops:
+            out = r.get_requests(day=DAY, db=None, payload={})
+            self.assertEqual(out["workshops"], {"7416": {"ru": "Мойка"}})
+            self.assertEqual(shops.call_args[0][1], {"7416", "A2894 · A"})
+            self.assertEqual(req.call_args[0][2], "idle_owner:1")       # a logistics person: their own requests
+            self.assertTrue(out["logistics"])
+            shops.reset_mock()
+            req.return_value = [{"id": 2, "parts": []}]
+            self.assertEqual(r.get_requests(day=DAY, db=None, payload={})["workshops"], {})
+            shops.assert_not_called()
+
     def test_workshop_name_prefers_the_readers_language(self):
         self.assertEqual(flow.workshop_name({"uz": "Yuvish", "ru": "Мойка"}, "uz"), "Yuvish")
         self.assertEqual(flow.workshop_name({"ru": "Мойка"}, "ru"), "Мойка")

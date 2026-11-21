@@ -800,6 +800,9 @@ function AppWithLang() {
             <Route path="/containers" element={<AuthGate><RequirePage page="containers"><Containers /></RequirePage></AuthGate>} />
             {/* «Konteyner berish» — page key `container-flow` (AXO's steps; the rest admin-only). */}
             <Route path="/containers/flow" element={<AuthGate><RequirePage page={["container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"]}><ContainerFlow /></RequirePage></AuthGate>} />
+            {/* «Konteyner taqsimlash» — the logistics side as its own page (2026-11-21); a
+                logistics-only viewer opening /containers/flow is sent here by the page. */}
+            <Route path="/containers/split" element={<AuthGate><RequirePage page="container-logistics"><ContainerFlow side="logistics" /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><LeadersRoute /></RequirePage></AuthGate>} />

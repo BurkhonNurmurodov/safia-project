@@ -51,7 +51,7 @@ export const PAGES = [
   { tier: "test", key: "api", route: "/tokens", labelKey: "nav.api" },
   { tier: "test", key: "kitchen", route: "/kitchen", labelKey: "nav.kitchen" },
   { tier: "test", key: "container-flow", route: "/containers/flow", labelKey: "nav.containerFlow" },
-  { tier: "test", key: "container-logistics", route: "/containers/flow", labelKey: "nav.containerLogistics" },
+  { tier: "test", key: "container-logistics", route: "/containers/split", labelKey: "nav.containerSplit" },
   { tier: "test", key: "container-receive", route: "/containers/flow", labelKey: "nav.containerReceive" },
   { tier: "test", key: "container-watch", route: "/containers/flow", labelKey: "nav.containerWatch" },
   { tier: "test", key: "container-extra", route: "/containers/flow", labelKey: "nav.containerExtra" },

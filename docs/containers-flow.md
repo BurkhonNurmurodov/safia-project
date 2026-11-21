@@ -27,6 +27,65 @@ containers row from production and move it into the new button».
   - **«Konteyner berish»** (`/containers/flow`, `pages/ContainerFlow.jsx`) —
     page key **`container-flow`** (admin-only by default, `[]`; from
     2026-11-14 — it was `adminOnly` with no key on its first day).
+  - **«Konteyner taqsimlash»** (`/containers/split`, 2026-11-21) — the
+    LOGISTICS side as a row of its own, page key `container-logistics`. Its
+    record is «Logistics has a row of its own» below.
+- **Logistics has a row of its own — «Konteyner taqsimlash»**
+  (`/containers/split`, 2026-11-21). The operator, with a screenshot of the
+  sidebar's two rows: «add another row for logistics to splitting the
+  containers and make it visible the given name for all devices like laptops,
+  pc and mobile phones. I saw last version are not visible for logistics to
+  split the containers for supervisors. The thing which related to the
+  logistics bring to the new row». (The same words without the screenshot were
+  first read as a row inside the cell list — v4.625.1, below; the ROW meant
+  was the menu's.)
+  - **One component, two sides**: `pages/ContainerFlow.jsx` takes
+    `side="logistics"` on the new route. There the viewer is logistics and
+    nothing else (`roles` — no AXO strip, no «Qabul», no settings); the tabs
+    are «So'rovlar» · «Tahlil» · «Hisobot» (`LOGI_TABS`, remembered in
+    `cflow_split_tab`).
+  - **The split lives on that row ONLY.** On «Konteyner berish»
+    `roles.logistics` is always false, so nobody — an admin included — has
+    «Taqsimlash» / «Yetkazildi» there; an admin splits on the new row too. No
+    endpoint changed: `LOGI` guards what it guarded.
+  - **Who sees which row**: the new row asks `container-logistics`
+    (Nuriddin aka, Yusuf aka; admins), and «Konteyner berish» no longer lists
+    that key (`navLinks.js`), so a logistics person's menu has ONE containers
+    row. Its route still lets the key in, because the page sends a viewer
+    holding ONLY `container-logistics` across (`toSplit`, a `<Navigate
+    replace>` keeping the query) — a bookmark, an in-app notice, a Telegram
+    card from before. Somebody holding another key as well keeps both rows.
+  - **The workshop names, in sight on every screen.** On this row the requests
+    are CARDS at every width (`RequestsTab` `logiSide`: one column on a phone,
+    two from md, three from 2xl) — never the one-line table, which kept a
+    split's cells in a hover tooltip no phone can open and no laptop shows
+    until pointed at. Each card lists every brigadir's part cell by cell, the
+    cell's workshop name on its own wrapping row under the code (`CellList`
+    `workshops`). `GET /requests` carries `workshops` {code: {lang: name}} for
+    the cells of the day's parts (`cell_workshops`, one lookup, none when
+    nothing is split by cell; a bundle from before ignores it). AXO's page is
+    unchanged — table from md, cards on a phone, codes only (the earlier pick).
+  - **The name fits the sidebar in all four languages** (191px of label
+    room): «Konteyner taqsimlash» · «Контейнер тақсимлаш» · «Логистика
+    контейнеров» · «Container split». The Russian is NOT «Распределение
+    контейнеров»: that is 201px and the sidebar cut it to «Распределение
+    контейне…» — measured, do not lengthen it. The same key names the
+    `container-logistics` row on the Access tab (`config/pages.js`).
+  - **Telegram**: a card to a logistics person (a new / changed / moved /
+    cancelled request, «N ta so'rov») opens `/containers/split`
+    (`LOGISTICS_PAGE`, `_logi_markup`); AXO's and the managers' alerts and the
+    brigadirs' cards keep `/containers/flow`. The in-app notice's subject
+    stays `NOTIFY_PAGE` on purpose — a tab opened before this day knows no
+    other address, and the redirect above finishes the trip.
+  - **The sidebar**: a row with another row nested under its path
+    (`/containers` over `/containers/flow` and `/containers/split`) is now
+    `end`-matched (`Sidebar.jsx` `renderLink`), so on a containers sub-page
+    «Konteynerlar» no longer wears the active gold beside the row that has the
+    pill. A row with no nested row is untouched (`/cells/12` still lights
+    «Yacheykalar»).
+  - With a stored launcher layout the row shows up by itself in the app the
+    code puts it in (`docs/navigation-and-shell.md`, «a screen the layout does
+    not place»); the operator moves it on the org chart like any screen.
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».
@@ -248,10 +307,13 @@ After a review of the app the operator answered «make it» to two points:
   alone. **In the list the name has a row of its own, under the code and the
   counts, and WRAPS** (the same day, the operator: «add another row … make the
   given name visible for all devices … the last version is not visible for
-  logistics»): on one line with the counts it was cut to «0811 · T…» on a
+  logistics» — the ROW the operator meant was a MENU row for logistics, built
+  later that day as «Konteyner taqsimlash», above; this reading shipped first
+  and stays): on one line with the counts it was cut to «0811 · T…» on a
   phone whenever the counts were long (`CellList`). A tab opened before
   v4.624.0 shows no name until it reloads — that bundle reads `leaders`. Only the split dialog and the brigadir's card (the operator's pick for
-  the leader, kept); «Qabul» and the request cards keep the code only. **This
+  the leader, kept), and from v4.628.0 the request cards of the logistics row;
+  «Qabul» and AXO's request cards keep the code only. **This
   is the second place a workshop name is printed** (CLAUDE.md «Cell label»,
   `utils/cellName.js`) — the operator's own call, like the /cells register's.
   **The counts start from the hour's figure** (2026-11-14, the operator: «when

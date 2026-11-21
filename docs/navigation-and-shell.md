@@ -145,8 +145,9 @@ untouched.
   «Konteynerlar» (2026-11-14, the operator — `containers`, `Package`, hue
   `yellow`, after the kitchen) holds the «Konteynerlar» TV board, moved out of
   the Production app by its `app: "containers"` (page access unchanged; for
-  everybody else the row stays in the Production group), and the admin-only
-  «Konteyner berish» (docs/containers-flow.md);
+  everybody else the row stays in the Production group), the admin-only
+  «Konteyner berish» and, from 2026-11-21, the logistics people's own row
+  «Konteyner taqsimlash» (`/containers/split`; docs/containers-flow.md);
   the `admin` app's pages are `ADMIN_PAGE_LINKS`,
   derived from `config/adminNav.js` (see «The admin app»), and its `sections`
   group them in the sidebar. The assistant has no tile — the header's button

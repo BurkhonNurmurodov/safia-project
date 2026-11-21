@@ -244,7 +244,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
       <NavLink
         key={to}
         to={withSearch(to)}
-        end={to === "/"}
+        // a row with another row nested under its path (/containers over
+        // /containers/flow and /containers/split) lights on its own page only —
+        // else two names were gold at once, and only one carried the pill
+        end={to === "/" || links.some((l) => l.to.startsWith(`${to}/`))}
         onClick={onClose}
         title={!expanded ? (label ?? t(key)) : undefined}
         className="nav-item flex items-center rounded-lg text-sm transition-colors px-2.5 py-3 md:py-2"

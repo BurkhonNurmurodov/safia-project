@@ -9,7 +9,7 @@ import {
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
   MessageSquareWarning, MonitorDot, Network, Package, PackageCheck, PlaySquare, ScanFace, Settings, ShieldAlert, Sparkles, Target,
-  ScrollText, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, CalendarDays, TrendingUp, UsersRound, Wrench, Hammer, createLucideIcon,
+  ScrollText, Split, SquareKanban, TestTubes, CookingPot, Timer, Trophy, Truck, UserCheck, Users, CalendarDays, TrendingUp, UsersRound, Wrench, Hammer, createLucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV, ADMIN_GROUPS, adminPage } from "./adminNav";
 import { idleSolutionsRoles } from "./idleSolutions";
@@ -71,7 +71,16 @@ export const ALL_LINKS = [
   // `container-flow` is AXO (Fozilova Dilafruz), `container-logistics` is
   // Logistics (Nuriddin aka), `container-receive` a brigadir's «Qabul»,
   // `container-watch` the shift- and top-managers watching — any opens it.
-  { to: "/containers/flow", page: ["container-flow", "container-logistics", "container-receive", "container-watch", "container-extra"], key: "nav.containerFlow", icon: PackageCheck, group: "containers", app: "containers" },
+  // Logistics has a row of its own since 2026-11-21 («Konteyner taqsimlash»,
+  // below), so `container-logistics` no longer lists this one.
+  { to: "/containers/flow", page: ["container-flow", "container-receive", "container-watch", "container-extra"], key: "nav.containerFlow", icon: PackageCheck, group: "containers", app: "containers" },
+  // «Konteyner taqsimlash» — the logistics side of the same flow as a page of
+  // its own (2026-11-21, the operator: «add another row for logistics to
+  // splitting the containers … the thing related to the logistics bring to the
+  // new row»): the requests waiting for a split, the split itself, and every
+  // split read cell by cell with its workshop name. Page key
+  // `container-logistics` (Nuriddin aka, Yusuf aka) and admins.
+  { to: "/containers/split", page: "container-logistics", key: "nav.containerSplit", icon: Split, group: "containers", app: "containers" },
   // «Plan Bajarish» — out of the lab, beside the page whose ПЛАН/ФАКТ it reads.
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "prod" },
   // «Plan Prognoz» — on the launcher the «Planning» app's page (2026-11-15,
