@@ -1,6 +1,6 @@
 import {
   File, FileText, FileSpreadsheet, FileImage, FileVideo, FileAudio,
-  FileArchive, FileCode, Presentation, X, Loader2,
+  FileArchive, FileCode, Presentation, Link2, X, Loader2,
 } from "lucide-react";
 import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
 
@@ -19,12 +19,14 @@ import { CATEGORY_COLORS, FOLD_COLOR } from "../../utils/chartPalette";
  *
  *   fileKind(name)       → { key, Icon, color, ext }
  *   humanSize(bytes)     → "1.4 MB"
- *   <FileIcon name size> – the tinted chip alone
+ *   <FileIcon name size> – the tinted chip alone; `link` draws a web LINK's
+ *                          chip instead (cyan, «URL») — a material that is an
+ *                          address, not a file, listed among files
  *   <FileTile name size bytes onClick onRemove loading error> – chip + name +
  *                          size, the row a chat message and a composer both use
  */
 
-const [RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, TEAL, PINK, INDIGO] = CATEGORY_COLORS;
+const [RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, TEAL, PINK, INDIGO, , CYAN] = CATEGORY_COLORS;
 
 const TYPES = [
   { key: "pdf", Icon: FileText, color: RED, exts: ["pdf"] },
@@ -70,8 +72,11 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
-export default function FileIcon({ name, size = 36 }) {
-  const { Icon, color, ext } = fileKind(name);
+// A link is not a file type: one hue of its own, never an extension's.
+const LINK = { key: "link", Icon: Link2, color: CYAN, ext: "url" };
+
+export default function FileIcon({ name, size = 36, link = false }) {
+  const { Icon, color, ext } = link ? LINK : fileKind(name);
   return (
     <span className="relative inline-flex flex-col items-center justify-center rounded-lg flex-shrink-0"
       style={{ width: size, height: size, background: hexA(color, 0.14),

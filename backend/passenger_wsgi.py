@@ -159,6 +159,7 @@ try:
         add_pp_product_uom,
         add_assessment_answer_columns,
         add_assessment_ticket_numbers,
+        add_assessment_material_links,
         seed_hr_kaizen_questions,
         archive_sample_questions,
         seed_tb_safety_questions,
@@ -390,6 +391,7 @@ try:
     add_pp_product_uom()
     add_assessment_answer_columns()
     add_assessment_ticket_numbers()
+    add_assessment_material_links()
     seed_hr_kaizen_questions()
     archive_sample_questions()
     seed_tb_safety_questions()

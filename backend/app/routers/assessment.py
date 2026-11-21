@@ -669,16 +669,21 @@ def get_ticket(aid: int, db: Session = Depends(get_db), payload: dict = Depends(
 # the pieces one request each (`POST /materials/parts`), then completes the
 # upload (`POST /materials/complete`) — only then does the row exist. Such a
 # file is downloaded as its pieces in order and is never sent by the bot.
+#
+# A material may also be a LINK (`POST /materials/link`): a video or a file
+# kept on a drive, however large. Nothing is stored but the address; it is
+# opened in the browser and the bot sends it as a message.
 
 MAX_MATERIAL_FILES = 10   # one request; `relay_uploads` holds the same line
 
 
 def _m_dict(m: AssessmentMaterial) -> dict:
-    """`sendable`: the bot can put it into a chat — a file kept as ONE archive
-    document. One kept in pieces is downloaded in a browser only."""
+    """`url`: a link material's address (None for a file). `sendable`: the bot
+    can put it into a chat — a link, or a file kept as ONE archive document.
+    A file kept in pieces is downloaded in a browser only."""
     return {"id": m.id, "department": m.department or rules.GENERAL, "title": m.title,
             "note": m.note, "name": m.name, "mime": m.mime, "size": m.size,
-            "sendable": bool(m.file_id),
+            "url": m.url, "sendable": bool(m.file_id or m.url),
             "created_at": _iso(m.created_at), "created_by": m.created_by,
             "updated_at": _iso(m.updated_at), "updated_by": m.updated_by}
 
@@ -846,11 +851,42 @@ def complete_material(body: dict = Body(...), db: Session = Depends(get_db),
     return _m_dict(m)
 
 
+def _m_url(value) -> tuple[str, str]:
+    try:
+        return rules.material_url(value)
+    except ValueError:
+        _refuse(400, "bad_url", "This is not a web link.")
+
+
+@router.post("/materials/link")
+def add_material_link(body: dict = Body(...), db: Session = Depends(get_db),
+                      payload: dict = Depends(PAGE)):
+    """A material that is a LINK — a video or a file kept on a drive: `url`
+    (http / https), a `title` (required: a link has no name of its own to fall
+    back on), and the `department` / `note` a file takes. Nothing is fetched
+    or stored but the address."""
+    _require_admin(db, payload)
+    url, host = _m_url(body.get("url"))
+    title = _clean(body.get("title"), rules.MAX_MATERIAL_TITLE)
+    if not title:
+        _refuse(400, "title_required", "The material needs a title.")
+    dept = _m_department(body.get("department"))
+    m = AssessmentMaterial(department=dept, title=" ".join(title.split()),
+                           note=_clean(body.get("note"), rules.MAX_MATERIAL_NOTE) or None,
+                           name=host[:255], url=url, file_id="", created_by=_who(payload))
+    db.add(m)
+    db.commit()
+    action_log.enrich(target_kind="assessment_material", target_id=str(m.id), target_name=m.title,
+                      details=[("department", dept or rules.GENERAL), ("added", 1), ("link", host)])
+    return _m_dict(m)
+
+
 @router.put("/materials/{mid}")
 def edit_material(mid: int, body: dict = Body(...), db: Session = Depends(get_db),
                   payload: dict = Depends(PAGE)):
-    """Rename a material, move it to another department, rewrite its note. The
-    file itself is never replaced — a new version is a new upload."""
+    """Rename a material, move it to another department, rewrite its note. A
+    file itself is never replaced — a new version is a new upload; a LINK's
+    address may be changed (`url`), and only a link has one."""
     _require_admin(db, payload)
     m = _material(db, mid)
     dept = _m_department(body["department"]) if "department" in body else m.department
@@ -858,9 +894,16 @@ def edit_material(mid: int, body: dict = Body(...), db: Session = Depends(get_db
     if not title:
         _refuse(400, "title_required", "The material needs a title.")
     note = (_clean(body["note"], rules.MAX_MATERIAL_NOTE) or None) if "note" in body else m.note
+    url, name = m.url, m.name
+    if "url" in body and body["url"] != m.url:
+        if not m.url:
+            _refuse(400, "not_a_link", "A file's link cannot be set — add the link as a material of its own.")
+        url, name = _m_url(body["url"])
+        name = name[:255]
     changes = [(f, o, n) for f, o, n in (("department", m.department or rules.GENERAL, dept or rules.GENERAL),
-                                         ("title", m.title, title), ("note", m.note, note)) if o != n]
-    m.department, m.title, m.note = dept, title, note
+                                         ("title", m.title, title), ("note", m.note, note),
+                                         ("link", m.url, url)) if o != n]
+    m.department, m.title, m.note, m.url, m.name = dept, title, note, url, name
     if changes:
         m.updated_at, m.updated_by = _now(), _who(payload)
     db.commit()
@@ -891,6 +934,8 @@ def material_file(mid: int, db: Session = Depends(get_db), payload: dict = Depen
     pieces of a file too big to be one, in order."""
     _require_admin(db, payload)
     m = _material(db, mid)
+    if m.url:
+        _refuse(409, "is_link", "This material is a link — open it instead.")
     from app.routers.leader_tasks import _stream_tg_file, _stream_tg_parts
     mime = m.mime or "application/octet-stream"
     if not m.file_id:        # kept in pieces: the same bytes, stitched in order
@@ -907,10 +952,11 @@ def material_file(mid: int, db: Session = Depends(get_db), payload: dict = Depen
 def send_material(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     """Put the file into the caller's own Telegram chat, under its title and
     note — a mini app's WebView has no downloads folder, and a chat is where a
-    file is forwarded to a candidate from."""
+    file is forwarded to a candidate from. A link material goes as a message:
+    its title, its note, the address."""
     _require_admin(db, payload)
     m = _material(db, mid)
-    if not m.file_id:
+    if not m.file_id and not m.url:
         _refuse(409, "too_big_to_send", "The bot cannot send a file this large — download it in a browser.")
     tid = _tg(payload)
     if not tid:
@@ -918,7 +964,10 @@ def send_material(mid: int, db: Session = Depends(get_db), payload: dict = Depen
     caption = m.title if not m.note else f"{m.title}\n\n{m.note}"
     try:
         from app.telegram_bot import bot
-        bot.send_document(tid, m.file_id, caption=caption[:1024])
+        if m.url:        # a link: one message, the address on its own last line
+            bot.send_message(tid, f"{caption[:1500]}\n\n{m.url}")
+        else:
+            bot.send_document(tid, m.file_id, caption=caption[:1024])
     except Exception:
         _refuse(502, "send_failed", "Telegram did not accept the file — open the bot and try again.")
     action_log.enrich(target_kind="assessment_material", target_id=str(m.id), target_name=m.title)

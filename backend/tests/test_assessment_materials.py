@@ -6,8 +6,9 @@ how the pieces are streamed back as one file). The endpoints run where
 `SAFIA_TEST_PG` names a server, with the archive-channel relay stubbed: every
 file is one row; a title goes with one file only; a refused file adds nothing;
 editing never touches the file; a file over 20 MB arrives in pieces and is
-listed only once they are exactly the file; the list, the writes and the file
-itself are the admin's alone.
+listed only once they are exactly the file; a material may be a LINK — a web
+address and nothing else — opened, sent as a message, its address editable;
+the list, the writes and the file itself are the admin's alone.
 """
 import asyncio
 import io
@@ -45,6 +46,18 @@ class RulesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             rules.material_department("finance")
 
+    def test_a_link_is_a_web_address_and_nothing_else(self):
+        self.assertEqual(rules.material_url(" https://drive.google.com/file/d/1AbC/view?usp=sharing "),
+                         ("https://drive.google.com/file/d/1AbC/view?usp=sharing", "drive.google.com"))
+        # pasted without its scheme; `www.` is not part of the name shown
+        self.assertEqual(rules.material_url("www.youtube.com/watch?v=x"), ("https://www.youtube.com/watch?v=x", "youtube.com"))
+        self.assertEqual(rules.material_url("http://docs.safia.uz:8080/a")[1], "docs.safia.uz")
+        for bad in ("", None, "javascript:alert(1)", "data:text/html,<b>x", "file:///etc/passwd", "ftp://host.com/a",
+                    "https://", "https://localhost/x", "https://intranet/x", "https://user:pw@host.com/",
+                    "https://a b.com/x", "just some words", "https://host.com/\nx", "x" * (rules.MAX_MATERIAL_URL + 1)):
+            with self.assertRaises(ValueError, msg=repr(bad)[:40]):
+                rules.material_url(bad)
+
     def test_a_big_file_is_cut_into_full_pieces_and_a_remainder(self):
         P = rules.MATERIAL_PART_BYTES
         self.assertLess(P, rules.MATERIAL_WHOLE_MB * 1024 * 1024)      # a piece the bot API hands back
@@ -69,6 +82,7 @@ class RulesTest(unittest.TestCase):
         for method, path, action in (
             ("POST", "/api/assessment/materials", "assessment.material_added"),
             ("POST", "/api/assessment/materials/complete", "assessment.material_added"),
+            ("POST", "/api/assessment/materials/link", "assessment.material_added"),
             ("PUT", "/api/assessment/materials/7", "assessment.material_edited"),
             ("DELETE", "/api/assessment/materials/7", "assessment.material_deleted"),
             ("POST", "/api/assessment/materials/7/send", "assessment.material_sent"),
@@ -329,6 +343,58 @@ class MaterialsTest(unittest.TestCase):
         self._complete(2)
         self.assertEqual(sorted({p.upload for p in self._parts()}), sorted([fresh, self.KEY]))
 
+    LINK = "https://drive.google.com/file/d/1AbC/view?usp=sharing"
+
+    def _link(self, **body):
+        return self.r.add_material_link(body={"url": self.LINK, "title": "HACCP video", **body},
+                                        db=self.db, payload=self.admin)
+
+    def test_a_material_may_be_a_link(self):
+        out = self._link(department="okk", note=" 40 daqiqa ")
+        self.assertEqual((out["url"], out["title"], out["department"], out["note"]),
+                         (self.LINK, "HACCP video", "okk", "40 daqiqa"))
+        self.assertEqual((out["name"], out["size"], out["sendable"]), ("drive.google.com", None, True))
+        self.assertEqual(self.r.list_materials(db=self.db, payload=self.admin)["rows"][0]["url"], self.LINK)
+        # a link has no name of its own to fall back on, and must be a web address
+        self._refused("title_required", self._link, title="  ")
+        self._refused("bad_url", self._link, url="javascript:alert(1)")
+        self._refused("bad_url", self._link, url="")
+        self._refused("bad_department", self._link, department="finance")
+        self.assertEqual(len(self.r.list_materials(db=self.db, payload=self.admin)["rows"]), 1)
+        # nothing to download: the address is opened instead
+        self.assertEqual(self._refused("is_link", self.r.material_file, out["id"], db=self.db, payload=self.admin).status_code, 409)
+        # the bot sends it as a message: title, note, the address last
+        with mock.patch("app.telegram_bot.bot") as bot:
+            self.assertEqual(self.r.send_material(out["id"], db=self.db, payload={"sub": "777"}), {"ok": True})
+            bot.send_message.assert_called_once_with(777, f"HACCP video\n\n40 daqiqa\n\n{self.LINK}")
+            bot.send_document.assert_not_called()
+
+    def test_a_links_address_can_be_changed_and_a_file_has_none(self):
+        link = self._link()["id"]
+        out = self.r.edit_material(link, body={"url": "youtu.be/abc", "title": "HACCP video"}, db=self.db, payload=self.admin)
+        self.assertEqual((out["url"], out["name"]), ("https://youtu.be/abc", "youtu.be"))
+        self._refused("bad_url", self.r.edit_material, link, body={"url": "ftp://x.com/a"}, db=self.db, payload=self.admin)
+        # a key left out is left alone
+        self.assertEqual(self.r.edit_material(link, body={"note": "1-qism"}, db=self.db, payload=self.admin)["url"], "https://youtu.be/abc")
+        file_ = self._add(["a.pdf"])["rows"][0]
+        self.assertIsNone(file_["url"])
+        self._refused("not_a_link", self.r.edit_material, file_["id"], body={"url": self.LINK}, db=self.db, payload=self.admin)
+        # the page sends a file's (absent) address back unchanged: not a change
+        self.assertEqual(self.r.edit_material(file_["id"], body={"url": None, "title": "A"}, db=self.db, payload=self.admin)["title"], "A")
+
+    def test_the_link_column_is_added_to_a_table_from_before_it(self):
+        from sqlalchemy import text
+        from app import startup
+        self._add(["a.pdf"])
+        self.db.execute(text("ALTER TABLE assessment_materials DROP COLUMN url"))
+        self.db.commit()
+        for _ in range(2):          # idempotent
+            with mock.patch.object(startup, "SessionLocal", self.pg.Session):
+                startup.add_assessment_material_links()
+        self.db.expire_all()
+        rows = self.r.list_materials(db=self.db, payload=self.admin)["rows"]
+        self.assertEqual([(m["name"], m["url"]) for m in rows], [("a.pdf", None)])
+
     def test_everything_is_the_admins_alone(self):
         mid = self._add(["a.pdf"])["rows"][0]["id"]
         judge = {"sub": "5", "full_name": "Hakam"}
@@ -337,6 +403,7 @@ class MaterialsTest(unittest.TestCase):
                          lambda: self._add(["b.pdf"]),
                          lambda: self._piece(1, b"abcd"),
                          lambda: self._complete(4),
+                         lambda: self._link(),
                          lambda: self.r.edit_material(mid, body={"title": "x"}, db=self.db, payload=judge),
                          lambda: self.r.delete_material(mid, db=self.db, payload=judge),
                          lambda: self.r.material_file(mid, db=self.db, payload=judge),

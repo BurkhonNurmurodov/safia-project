@@ -137,6 +137,31 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
     Telegram the tap says to open the platform in a browser. NOT built: a
     second, whole copy for files of 20–50 MB (the most a bot can send), which
     would let the bot deliver those too.
+  - **A material may be a LINK instead of a file** (the same day, the
+    operator, with a file on Google Drive: «enable me to put the link of the
+    material»). The dialog «Material qo'shish» opens on a «Fayl | Havola»
+    switch; a link takes its address, a title — REQUIRED, a link has no name
+    of its own to fall back on (400 `title_required`) — and the department and
+    note a file takes. `POST /api/assessment/materials/link`; nothing is
+    fetched or stored but the address: `assessment_materials.url`
+    (`startup.add_assessment_material_links`, `run`, both entrypoints,
+    `_ensure_columns`, FATAL on failure), `name` = the link's host, `file_id`
+    "", `size` NULL. **A web address only** (`rules.material_url`): http /
+    https with a real dotted host, no user:password, no whitespace, ≤ 2000
+    characters; one pasted without its scheme gets `https://`; anything else
+    is 400 `bad_url` — so nothing that runs (`javascript:`, `data:`) is ever
+    stored or opened. On the list a link wears its own chip (`FileIcon link` —
+    cyan, «URL»), «—» for a size (its host on the phone card); **its title
+    OPENS the address** (a new tab; inside Telegram through
+    `WebApp.openLink`), and the ⋮ menu offers «Havolani ochish», «Havolani
+    nusxalash», «Telegramga yuborish», «Tahrirlash», «O'chirish». The bot
+    sends a link as a MESSAGE — title, note, the address last
+    (`sendable: true`). Its address is editable (`PUT …/materials/{id}` takes
+    `url` for a link and refuses it for a file, 400 `not_a_link`); asking for
+    its file is 409 `is_link`. **The platform cannot see whether the link is
+    open to the candidate** — the form's hint says to share it «to anyone
+    with the link». A v4.618 / v4.619 tab still open draws a link row as an
+    unknown file and cannot open it until it reloads.
   - **No candidate-facing view exists** (candidates are workers picked from
     the Verifix directory, most with no account), so a material reaches a
     candidate through the admin: «Telegramga yuborish» → forward from the bot
@@ -148,9 +173,9 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
     **Delete** (`DELETE`, danger confirm) removes the row; the archive
     channel's copy stays where every archived file stays.
   - The Jurnal files all four under «training»: `assessment.material_added` /
-    `_edited` / `_deleted` / `_sent`; a completed upload in pieces is a
-    `material_added` too, and the pieces themselves are in `_SKIP` (the
-    completion is the act). Pinned by `tests/test_assessment_materials.py`
+    `_edited` / `_deleted` / `_sent`; a completed upload in pieces and an
+    added link are a `material_added` too, and the pieces themselves are in
+    `_SKIP` (the completion is the act). Pinned by `tests/test_assessment_materials.py`
     (the rules and the stitched download without a database, the endpoints on
     Postgres with the relay stubbed).
 - **The candidate's face on the lists** (2026-11-20, the operator: «this table

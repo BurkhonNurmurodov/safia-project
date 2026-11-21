@@ -176,6 +176,7 @@ async def lifespan(app: FastAPI):
         add_pp_product_uom,
         add_assessment_answer_columns,
         add_assessment_ticket_numbers,
+        add_assessment_material_links,
         seed_hr_kaizen_questions,
         archive_sample_questions,
         seed_tb_safety_questions,
@@ -414,6 +415,7 @@ async def lifespan(app: FastAPI):
     run(add_pp_product_uom)
     run(add_assessment_answer_columns)
     run(add_assessment_ticket_numbers)   # «Bilet №» — every draw takes a number
+    run(add_assessment_material_links)   # «Materiallar» — a material may be a link
     # ⚠ TEMPORARY one-shot (2026-11-09): TB questions → OKK, the HR and Kaizen
     # documents' questions into the «Nomzodlarni baholash» bank. Remove with
     # startup.seed_hr_kaizen_questions and services/assessment_seed_hr_kaizen_nov09.py

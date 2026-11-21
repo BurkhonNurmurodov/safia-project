@@ -10240,6 +10240,20 @@ def add_assessment_answer_columns() -> None:
     _ensure_columns(_ASSESSMENT_ANSWER_DDL, "assessment_*.answer + candidates.employee_id")
 
 
+_ASSESSMENT_MATERIAL_LINK_DDL = (
+    ("assessment_materials", (("url", "TEXT"),), None),
+)
+
+
+def add_assessment_material_links() -> None:
+    """2026-11-21: a preparation material may be a LINK instead of a file
+    (`AssessmentMaterial.url` — the operator: «enable me to put the link of
+    the material»). NULL = a file. Pure DDL, idempotent, no flag; through
+    `_ensure_columns` and FATAL on failure — every read of «Materiallar»
+    selects the column. The table itself comes from `create_all`."""
+    _ensure_columns(_ASSESSMENT_MATERIAL_LINK_DDL, "assessment_materials.url")
+
+
 _ASSESSMENT_TICKET_DDL = (
     ("assessments", (("ticket_no", "INTEGER"),), None),
 )

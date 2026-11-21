@@ -417,6 +417,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     # «Materiallar» — the files a candidate prepares from (2026-11-21).
     (("POST",),   "/api/assessment/materials/{}/send",         "training", "assessment.material_sent"),
     (("POST",),   "/api/assessment/materials/complete",        "training", "assessment.material_added"),
+    (("POST",),   "/api/assessment/materials/link",            "training", "assessment.material_added"),
     (("POST",),   "/api/assessment/materials",                 "training", "assessment.material_added"),
     (("PUT",),    "/api/assessment/materials/{}",              "training", "assessment.material_edited"),
     (("DELETE",), "/api/assessment/materials/{}",              "training", "assessment.material_deleted"),

@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, Upload, Pencil, Trash2, Download, Send, Layers, Loader2, Info } from "lucide-react";
+import { FolderOpen, Upload, Pencil, Trash2, Download, Send, Layers, Loader2, Info, Plus, Link2, ExternalLink, Copy } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import SearchInput from "../ui/SearchInput";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import EmptyState from "../ui/EmptyState";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import ActionMenu from "../ui/ActionMenu";
@@ -17,8 +18,9 @@ import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { useToast } from "../ui/Toast";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { useTranslit } from "../../utils/transliterate";
-import { isWebSession } from "../../utils/session";
+import { isWebSession, inTelegram } from "../../utils/session";
 import { saveBlob } from "../../utils/exportXlsx";
+import { copyText } from "../../utils/copyText";
 import api from "../../utils/api";
 import { useAT, fill, errText, Chip, DEPT_ICON, fmtDate } from "./assessmentUtil";
 
@@ -59,6 +61,16 @@ async function sendPiece(make, onProgress) {
   }
 }
 
+/** A link material opens in the real browser — inside Telegram a
+ *  `target=_blank` is swallowed, so its own opener is asked first. */
+function openUrl(url) {
+  const tg = window?.Telegram?.WebApp;
+  if (inTelegram() && tg?.openLink) {
+    try { tg.openLink(url); return; } catch { /* the plain way below */ }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 const deptName = (d, T) => (d === GENERAL ? T.matGeneral : T.dept[d] || d);
 const deptIcon = (d) => (d === GENERAL ? Layers : DEPT_ICON[d]);
 
@@ -79,6 +91,9 @@ function DeptSelect({ value, onChange, T }) {
 }
 
 /**
+ * Add a material: a FILE (uploaded here) or a LINK (a video or a file kept on
+ * a drive, however large — only its address is stored).
+ *
  * Upload — pick the files first, send them with «Yuklash». Every file is one
  * material, sent on its own, so each has its own progress and a refused one
  * takes nothing else with it; the department and the note go with them all,
@@ -90,10 +105,20 @@ function DeptSelect({ value, onChange, T }) {
  * hands back no single file over 20 MB, and one long request for a big file
  * is the kind a phone line drops.
  */
-function UploadModal({ startDept, wholeMb, maxMb, partBytes, onClose, onDone, T }) {
+function AddModal({ startDept, wholeMb, maxMb, partBytes, onClose, onDone, onLinked, T }) {
+  const [mode, setMode] = useState("file");   // file | link
   const [dept, setDept] = useState(startDept);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
+  const [url, setUrl] = useState("");
+  const [linkErr, setLinkErr] = useState(null);
+  const link = mode === "link";
+  const addLink = useMutation({
+    mutationFn: () => api.post("/api/assessment/materials/link",
+      { url: url.trim(), title: title.trim(), department: dept, note: note.trim() }).then((r) => r.data),
+    onSuccess: () => onLinked(),
+    onError: (e) => setLinkErr(e),
+  });
   const [staged, setStaged] = useState([]);   // [{id, file}] — picked, not sent yet
   const [busy, setBusy] = useState(false);
   const fs = useFileStates();
@@ -158,57 +183,85 @@ function UploadModal({ startDept, wholeMb, maxMb, partBytes, onClose, onDone, T 
   };
 
   return (
-    <Modal open onClose={busy ? null : onClose} title={T.matUpload} subtitle={T.matUploadSub}
-      icon={<Upload size={18} />} maxWidth="max-w-xl" dismissable={!busy}
-      dirty={!busy && (staged.length > 0 || !!title.trim() || !!note.trim())}
+    <Modal open onClose={busy ? null : onClose} title={T.matAdd} subtitle={link ? T.matLinkSub : T.matUploadSub}
+      icon={link ? <Link2 size={18} /> : <Upload size={18} />} maxWidth="max-w-xl" dismissable={!busy}
+      dirty={!busy && (staged.length > 0 || !!title.trim() || !!note.trim() || !!url.trim())}
       footer={(
         <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>{fs.states.length && !staged.length ? T.close : T.cancel}</Button>
-          <Button icon={Upload} onClick={run} disabled={!ready.length} loading={busy}>{T.matUploadBtn}</Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>{!link && fs.states.length && !staged.length ? T.close : T.cancel}</Button>
+          {link
+            ? <Button icon={Plus} onClick={() => { setLinkErr(null); addLink.mutate(); }}
+                disabled={!url.trim() || !title.trim()} loading={addLink.isPending}>{T.matAddBtn}</Button>
+            : <Button icon={Upload} onClick={run} disabled={!ready.length} loading={busy}>{T.matUploadBtn}</Button>}
         </>
       )}>
+      <SegmentedToggle fill value={mode} onChange={(m) => { if (!busy && !addLink.isPending) setMode(m); }} ariaLabel={T.matAdd}
+        options={[
+          { value: "file", label: <><Upload size={13} aria-hidden="true" />{T.matModeFile}</> },
+          { value: "link", label: <><Link2 size={13} aria-hidden="true" />{T.matModeLink}</> },
+        ]} />
       <FormField label={T.colDept} required hint={T.matDeptHint}>
         <DeptSelect value={dept} onChange={setDept} T={T} />
       </FormField>
-      <FormField label={T.matFiles} required
-        hint={maxMb > wholeMb ? fill(T.matBigHint, { mb: wholeMb }) : null}>
-        <UploadDropzone multiple busy={busy} onFiles={pick} label={T.matDrop}
-          hint={fill(T.matDropHint, { mb: maxMb })} />
-        {staged.length > 0 && (
-          <div className="mt-2 space-y-1.5">
-            {staged.map((s) => (
-              <FileTile key={s.id} name={s.file.name} bytes={s.file.size}
-                error={tooBig(s.file) ? fill(T.matTooBig, { mb: maxMb }) : ""}
-                removeLabel={T.matRemoveFile}
-                onRemove={busy ? undefined : () => setStaged((prev) => prev.filter((x) => x.id !== s.id))} />
-            ))}
-          </div>
-        )}
-        <FileStateList states={fs.states} busy={busy} className="mt-2" />
-      </FormField>
-      <FormField label={T.matTitle} hint={many ? T.matTitleMany : T.matTitleHint}>
-        <input value={many ? "" : title} onChange={(e) => setTitle(e.target.value)} disabled={many || busy}
-          placeholder={T.matTitlePh} maxLength={200} autoComplete="off"
-          className={`${inputCls} disabled:opacity-50`} style={inputStyle} />
-      </FormField>
+      {link ? (
+        <FormField label={T.matUrl} required hint={T.matUrlHint}>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={T.matUrlPh}
+            maxLength={2000} autoComplete="off" inputMode="url" spellCheck={false}
+            className={inputCls} style={inputStyle} />
+        </FormField>
+      ) : (
+        <FormField label={T.matFiles} required
+          hint={maxMb > wholeMb ? fill(T.matBigHint, { mb: wholeMb }) : null}>
+          <UploadDropzone multiple busy={busy} onFiles={pick} label={T.matDrop}
+            hint={fill(T.matDropHint, { mb: maxMb })} />
+          {staged.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {staged.map((s) => (
+                <FileTile key={s.id} name={s.file.name} bytes={s.file.size}
+                  error={tooBig(s.file) ? fill(T.matTooBig, { mb: maxMb }) : ""}
+                  removeLabel={T.matRemoveFile}
+                  onRemove={busy ? undefined : () => setStaged((prev) => prev.filter((x) => x.id !== s.id))} />
+              ))}
+            </div>
+          )}
+          <FileStateList states={fs.states} busy={busy} className="mt-2" />
+        </FormField>
+      )}
+      {link ? (
+        <FormField label={T.matTitle} required hint={T.matLinkTitleHint}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)}
+            placeholder={T.matTitlePh} maxLength={200} autoComplete="off"
+            className={inputCls} style={inputStyle} />
+        </FormField>
+      ) : (
+        <FormField label={T.matTitle} hint={many ? T.matTitleMany : T.matTitleHint}>
+          <input value={many ? "" : title} onChange={(e) => setTitle(e.target.value)} disabled={many || busy}
+            placeholder={T.matTitlePh} maxLength={200} autoComplete="off"
+            className={`${inputCls} disabled:opacity-50`} style={inputStyle} />
+        </FormField>
+      )}
       <FormField label={T.matNote} hint={T.matNoteHint}>
         <textarea value={note} onChange={(e) => setNote(e.target.value)} disabled={busy}
           placeholder={T.matNotePh} rows={3} maxLength={1000}
           className={`${inputCls} resize-y disabled:opacity-50`} style={inputStyle} />
       </FormField>
+      {link && linkErr && <div role="alert" className="text-xs" style={{ color: "var(--status-bad)" }}>{errText(linkErr, T)}</div>}
     </Modal>
   );
 }
 
-/** Rename a material, move it to another department, rewrite its note. The
- *  file is shown, never replaced — a new version is a new upload. */
+/** Rename a material, move it to another department, rewrite its note. A
+ *  file is shown, never replaced — a new version is a new upload; a link's
+ *  address is a field like the rest. */
 function EditModal({ row, opening, onOpen, onClose, onSaved, T }) {
   const [dept, setDept] = useState(row.department);
   const [title, setTitle] = useState(row.title);
   const [note, setNote] = useState(row.note || "");
+  const [url, setUrl] = useState(row.url || "");
   const [err, setErr] = useState(null);
   const save = useMutation({
-    mutationFn: () => api.put(`/api/assessment/materials/${row.id}`, { department: dept, title, note }).then((r) => r.data),
+    mutationFn: () => api.put(`/api/assessment/materials/${row.id}`,
+      { department: dept, title, note, ...(row.url ? { url: url.trim() } : {}) }).then((r) => r.data),
     onSuccess: () => { onSaved(); onClose(); },
     onError: (e) => setErr(e),
   });
@@ -217,13 +270,21 @@ function EditModal({ row, opening, onOpen, onClose, onSaved, T }) {
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>{T.cancel}</Button>
-          <Button onClick={() => { setErr(null); save.mutate(); }} disabled={!title.trim()} loading={save.isPending}>{T.save}</Button>
+          <Button onClick={() => { setErr(null); save.mutate(); }} disabled={!title.trim() || (!!row.url && !url.trim())} loading={save.isPending}>{T.save}</Button>
         </>
       )}>
-      <FormField label={T.matFile} hint={T.matFileHint}>
-        <FileTile name={row.name} bytes={row.size} loading={opening === row.id}
-          title={isWebSession() ? T.matDownload : T.matSend} onClick={() => onOpen(row)} />
-      </FormField>
+      {row.url ? (
+        <FormField label={T.matUrl} required hint={T.matUrlHint}>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={T.matUrlPh}
+            maxLength={2000} autoComplete="off" inputMode="url" spellCheck={false}
+            className={inputCls} style={inputStyle} />
+        </FormField>
+      ) : (
+        <FormField label={T.matFile} hint={T.matFileHint}>
+          <FileTile name={row.name} bytes={row.size} loading={opening === row.id}
+            title={isWebSession() ? T.matDownload : T.matSend} onClick={() => onOpen(row)} />
+        </FormField>
+      )}
       <FormField label={T.colDept} required hint={T.matDeptHint}>
         <DeptSelect value={dept} onChange={setDept} T={T} />
       </FormField>
@@ -253,6 +314,10 @@ function EditModal({ row, opening, onOpen, onClose, onSaved, T }) {
  * candidate-facing view exists), so a browser offers both. A file over the
  * one-document limit is kept in pieces (`sendable: false`): the bot cannot
  * send it, a browser downloads it whole.
+ *
+ * A material may be a LINK (`url`) instead — a video or a file kept on a
+ * drive. Its title opens the address, the menu copies it, and the bot sends
+ * it as a message.
  */
 export default function MaterialList() {
   const T = useAT();
@@ -288,10 +353,12 @@ export default function MaterialList() {
     onError: (e) => setRemoveErr(errText(e, T)),
   });
 
-  // `how`: "download" (a browser), "send" (the reader's chat with the bot).
+  // `how`: "download" (a browser), "send" (the reader's chat with the bot),
+  // "open" (a link's address — what a tap on a link does everywhere).
   // A file kept in pieces is too big for the bot: a browser downloads it, and
   // inside Telegram — no downloads folder there — the tap says where to get it.
-  const openFile = async (row, how = web ? "download" : "send") => {
+  const openFile = async (row, how = row.url ? "open" : web ? "download" : "send") => {
+    if (how === "open") { openUrl(row.url); return; }
     if (opening) return;
     if (how === "send" && row.sendable === false) {
       toast.show(fill(T.matBigOpen, { mb: wholeMb }), "info");
@@ -311,7 +378,7 @@ export default function MaterialList() {
         saveBlob(r.data, row.name);
       } else {
         await api.post(`/api/assessment/materials/${row.id}/send`);
-        toast.success(T.matSent);
+        toast.success(row.url ? T.matLinkSent : T.matSent);
       }
     } catch (e) {
       // A blob request's refusal arrives as a blob too — nothing to read a code from.
@@ -326,7 +393,7 @@ export default function MaterialList() {
     const needle = q.trim().toLowerCase();
     const f = all.filter((r) =>
       (fDept === ALL || r.department === fDept)
-      && (!needle || `${r.title} ${tx(r.title)} ${r.note || ""} ${tx(r.note || "")} ${r.name}`.toLowerCase().includes(needle)));
+      && (!needle || `${r.title} ${tx(r.title)} ${r.note || ""} ${tx(r.note || "")} ${r.name} ${r.url || ""}`.toLowerCase().includes(needle)));
     const newest = (r) => String(1e9 - r.id).padStart(10, "0");
     const key = (r) => sort.k === "dept" ? `${DEPTS.indexOf(r.department)}-${newest(r)}`
       : sort.k === "title" ? r.title.toLowerCase()
@@ -349,9 +416,16 @@ export default function MaterialList() {
     },
   ];
 
+  const copyLink = async (r) => {
+    if (await copyText(r.url)) toast.success(T.matLinkCopied);
+    else toast.error(T.matCopyFailed);
+  };
+
   const menu = (r) => (
     <ActionMenu label={fill(T.matActions, { title: r.title })} items={[
-      web && { key: "download", label: T.matDownload, icon: Download, onSelect: () => openFile(r, "download") },
+      r.url && { key: "open", label: T.matOpenLink, icon: ExternalLink, onSelect: () => openFile(r, "open") },
+      r.url && { key: "copy", label: T.matCopyLink, icon: Copy, onSelect: () => copyLink(r) },
+      !r.url && web && { key: "download", label: T.matDownload, icon: Download, onSelect: () => openFile(r, "download") },
       {
         key: "send", label: T.matSend, icon: Send, onSelect: () => openFile(r, "send"),
         disabled: r.sendable === false, title: r.sendable === false ? fill(T.matBigOpen, { mb: wholeMb }) : undefined,
@@ -369,10 +443,11 @@ export default function MaterialList() {
         ? <Loader2 size={Math.round(size * 0.55)} className="animate-spin" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
         : <span className="text-[10px] font-semibold tabular-nums" style={{ color: "var(--brand-text)" }}>{openPct}%</span>}
     </span>
-  ) : <FileIcon name={r.name} size={size} />);
+  ) : <FileIcon name={r.name} size={size} link={!!r.url} />);
 
-  const openTip = (r) => (!web && r.sendable === false
-    ? fill(T.matBigOpen, { mb: wholeMb }) : `${web ? T.matDownload : T.matSend} — ${r.name}`);
+  const openTip = (r) => (r.url ? `${T.matOpenLink} — ${r.name}`
+    : !web && r.sendable === false ? fill(T.matBigOpen, { mb: wholeMb })
+    : `${web ? T.matDownload : T.matSend} — ${r.name}`);
 
   const empty = !list.isLoading && rows.length === 0;
   const emptyNode = list.isError ? (
@@ -380,7 +455,7 @@ export default function MaterialList() {
       action={<Button variant="secondary" onClick={() => list.refetch()}>{T.retry}</Button>} />
   ) : (list.data?.rows || []).length === 0 ? (
     <EmptyState title={T.matEmpty} message={fill(T.matEmptyMsg, { mb: maxMb })} showUploadLink={false} icon={FolderOpen}
-      action={<Button icon={Upload} onClick={() => setUploading(true)}>{T.matUpload}</Button>} />
+      action={<Button icon={Plus} onClick={() => setUploading(true)}>{T.matAdd}</Button>} />
   ) : (
     <EmptyState title={T.noMatch} message="" showUploadLink={false} icon={FolderOpen} />
   );
@@ -397,7 +472,7 @@ export default function MaterialList() {
             </button>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "var(--text-3)" }}>
               <MatDeptChip dept={r.department} T={T} />
-              <span className="tabular-nums">{humanSize(r.size)}</span>
+              <span className="tabular-nums">{r.url ? r.name : humanSize(r.size)}</span>
               <span className="tabular-nums">{fmtDate(r.created_at)}</span>
             </div>
             {r.note && <p className="mt-1.5 text-xs whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>{r.note}</p>}
@@ -416,7 +491,7 @@ export default function MaterialList() {
           <>
             <SearchInput value={q} onChange={setQ} placeholder={T.matSearch} className="w-full sm:w-64" />
             <FilterPanel sections={sections} />
-            <Button size="lg" icon={Upload} onClick={() => setUploading(true)} className="sm:ml-auto">{T.matUpload}</Button>
+            <Button size="lg" icon={Plus} onClick={() => setUploading(true)} className="sm:ml-auto">{T.matAdd}</Button>
           </>
         )}
         footer={(
@@ -469,7 +544,8 @@ export default function MaterialList() {
         </tbody>
       </TableCard>
       {uploading && (
-        <UploadModal T={T} wholeMb={wholeMb} maxMb={maxMb} partBytes={partBytes}
+        <AddModal T={T} wholeMb={wholeMb} maxMb={maxMb} partBytes={partBytes}
+          onLinked={() => { refresh(); setUploading(false); toast.success(T.matLinkAdded); }}
           startDept={fDept === ALL ? GENERAL : fDept}
           onClose={() => setUploading(false)}
           onDone={(ok, bad) => {

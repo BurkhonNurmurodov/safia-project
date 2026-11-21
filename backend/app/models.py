@@ -5788,7 +5788,12 @@ class AssessmentMaterial(Base):
     A file of up to 20 MB is ONE archive document, `file_id` — the bot can
     hand it back and send it on. A bigger one is stored in pieces
     (`AssessmentMaterialPart`) and `file_id` is "" — downloaded as the pieces
-    in order, never sent by the bot."""
+    in order, never sent by the bot.
+
+    A material may instead be a LINK (`url` — a video or a file kept on a
+    drive; the operator, 2026-11-21: «enable me to put the link of the
+    material»): nothing is stored, `file_id` is "", `name` is the link's host,
+    `size` NULL. Opened in the browser, sent by the bot as a message."""
     __tablename__ = "assessment_materials"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -5798,7 +5803,8 @@ class AssessmentMaterial(Base):
     name          = Column(String(255), nullable=False)             # the file's own name
     mime          = Column(String(160), nullable=True)
     size          = Column(Integer, nullable=True)
-    file_id       = Column(String, nullable=False)                  # "" = stored in parts
+    file_id       = Column(String, nullable=False)                  # "" = stored in parts, or a link
+    url           = Column(Text, nullable=True)                     # a link material's address; NULL = a file
     tg_message_id = Column(BigInteger, nullable=True)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     created_by    = Column(String, nullable=True)

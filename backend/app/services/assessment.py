@@ -68,6 +68,7 @@ MATERIAL_WHOLE_MB = 20  # ONE archive document (`upload_guard.CHAT_FILE_MAX`): t
 # hand back; the browser cuts it and the download stitches it together again.
 MATERIAL_PART_BYTES = 19 * 1024 * 1024
 MAX_MATERIAL_MB = 300   # a material in pieces — past this, a long video belongs behind a link
+MAX_MATERIAL_URL = 2000  # a link material's address
 
 
 @dataclass
@@ -198,7 +199,7 @@ def meta() -> dict:
                    # `material_mb` is the ONE-document limit, as a bundle from
                    # before the pieces reads it; the cap itself is `material_max_mb`.
                    "material_mb": MATERIAL_WHOLE_MB, "material_max_mb": MAX_MATERIAL_MB,
-                   "material_part_bytes": MATERIAL_PART_BYTES},
+                   "material_part_bytes": MATERIAL_PART_BYTES, "material_url": MAX_MATERIAL_URL},
     }
 
 
@@ -210,6 +211,27 @@ def material_department(value) -> Optional[str]:
     if value in DEPARTMENTS:
         return value
     raise ValueError("unknown department")
+
+
+def material_url(value) -> tuple[str, str]:
+    """(address, host) of a link material, or ValueError. A web address only —
+    http or https with a real host — so nothing that runs (`javascript:`,
+    `data:`) or points into the plant's own network by name alone is stored.
+    An address pasted without its scheme («drive.google.com/…») gets https."""
+    from urllib.parse import urlsplit
+    url = str(value or "").strip()
+    if not url or len(url) > MAX_MATERIAL_URL or any(ch.isspace() or ord(ch) < 32 for ch in url):
+        raise ValueError("not a link")
+    if "://" not in url:
+        url = "https://" + url
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        raise ValueError("not a link")
+    if parts.scheme.lower() not in ("http", "https") or "." not in host.strip(".") or parts.username or parts.password:
+        raise ValueError("not a link")
+    return url, host[4:] if host.startswith("www.") else host
 
 
 def material_part_count(size: int) -> int:
