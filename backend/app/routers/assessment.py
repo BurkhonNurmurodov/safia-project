@@ -3,7 +3,8 @@
 Page key `assessment` (Laboratory): admin-only until the operator opens it on
 the Access tab. Two kinds of right live here, and the server decides both:
 
-  * the BANK, creating / closing / redrawing / deleting a sitting — admins only;
+  * the BANK, the preparation MATERIALS, creating / closing / redrawing /
+    deleting a sitting — admins only;
   * a SEAT (one of five departments) — anybody who may open the page claims one
     and grades on it. A seat belongs to the claiming PROFILE; only its judge
     grades on it, ONLY the questions of its own department (the operator,
@@ -31,10 +32,11 @@ from app.database import get_db
 from app.identity import viewer_profile_key
 from app.models import (
     Assessment, AssessmentCandidate, AssessmentGrade, AssessmentItem,
-    AssessmentQuestion, JudgeEvaluation, TurnoverPerson, TurnoverRead,
+    AssessmentMaterial, AssessmentQuestion, JudgeEvaluation, TurnoverPerson, TurnoverRead,
 )
 from app.translit import transliterate
 from app.permissions import require_page
+from app.routers.leaders import appeal_body, relay_uploads
 from app.services import action_log
 from app.services import assessment as rules
 from app.services import people
@@ -648,6 +650,156 @@ def get_ticket(aid: int, db: Session = Depends(get_db), payload: dict = Depends(
         "candidate": _cand_dict(c, _photo_emps(db)),
         "items": [_item_dict(i) for i in _items(db, aid)],
     }
+
+
+# ── «Materiallar» — what a candidate prepares from (admins) ───────────────────
+# A table of files beside the bank (2026-11-21, the operator: «another table in
+# which I can upload the materials for candidates to prepare»). Every file is
+# one row: a title, the department it belongs to (or none — «Umumiy») and an
+# optional note. The file itself goes the way every attachment on the platform
+# goes — into the archive channel (`relay_uploads`), streamed back as a
+# download, or put into the caller's own Telegram chat, from where it is
+# forwarded to a candidate. No candidate-facing view exists.
+
+MAX_MATERIAL_FILES = 10   # one request; `relay_uploads` holds the same line
+
+
+def _m_dict(m: AssessmentMaterial) -> dict:
+    return {"id": m.id, "department": m.department or rules.GENERAL, "title": m.title,
+            "note": m.note, "name": m.name, "mime": m.mime, "size": m.size,
+            "created_at": _iso(m.created_at), "created_by": m.created_by,
+            "updated_at": _iso(m.updated_at), "updated_by": m.updated_by}
+
+
+def _material(db: Session, mid: int) -> AssessmentMaterial:
+    m = db.query(AssessmentMaterial).filter(AssessmentMaterial.id == mid).first()
+    if not m:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Material not found."})
+    return m
+
+
+def _m_department(value) -> Optional[str]:
+    try:
+        return rules.material_department(value)
+    except ValueError:
+        _refuse(400, "bad_department", "Unknown department.")
+
+
+@router.get("/materials")
+def list_materials(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Every preparation material, newest first. Admins only, like the bank."""
+    _require_admin(db, payload)
+    rows = db.query(AssessmentMaterial).order_by(AssessmentMaterial.id.desc()).all()
+    return {"rows": [_m_dict(m) for m in rows], "meta": rules.meta()}
+
+
+@router.post("/materials")
+def add_materials(parsed: dict = Depends(appeal_body), db: Session = Depends(get_db),
+                  payload: dict = Depends(PAGE)):
+    """Upload materials — every file of the multipart body is one row, under
+    the `department` and `note` sent with it. A `title` is taken only when
+    exactly ONE file is sent (it could name no file in particular otherwise);
+    a file with none is called by its own name. Every file is checked and
+    stored BEFORE any row is written, so a refused file adds nothing."""
+    _require_admin(db, payload)
+    fields = parsed.get("fields") or {}
+    uploads = list(parsed.get("files") or [])
+    if not uploads:
+        _refuse(400, "file_required", "Attach at least one file.")
+    if len(uploads) > MAX_MATERIAL_FILES:
+        _refuse(400, "too_many_files", f"At most {MAX_MATERIAL_FILES} files at once.")
+    dept = _m_department(fields.get("department"))
+    note = _clean(fields.get("note"), rules.MAX_MATERIAL_NOTE) or None
+    title = _clean(fields.get("title"), rules.MAX_MATERIAL_TITLE)
+    if title and len(uploads) > 1:
+        _refuse(400, "title_one", "A title goes with one file at a time.")
+    try:
+        stored = relay_uploads(uploads)
+    except HTTPException as e:
+        # `relay_uploads` words its refusals in English for a chat; here each
+        # becomes a code the page words in the reader's language.
+        code = {413: "file_too_big", 502: "store_failed"}.get(e.status_code, "bad_file")
+        _refuse(e.status_code, code, str(e.detail))
+    rows = [AssessmentMaterial(department=dept, title=rules.material_title(title, f["name"]),
+                               note=note, name=f["name"], mime=f["mime"], size=f["size"],
+                               file_id=f["file_id"], tg_message_id=f["message_id"],
+                               created_by=_who(payload)) for f in stored]
+    db.add_all(rows)
+    db.commit()
+    action_log.enrich(target_kind="assessment_material",
+                      target_id=str(rows[0].id) if len(rows) == 1 else None,
+                      target_name=rows[0].title if len(rows) == 1 else None,
+                      details=[("department", dept or rules.GENERAL), ("added", len(rows)),
+                               ("files", ", ".join(m.name for m in rows))])
+    return {"added": len(rows), "rows": [_m_dict(m) for m in rows]}
+
+
+@router.put("/materials/{mid}")
+def edit_material(mid: int, body: dict = Body(...), db: Session = Depends(get_db),
+                  payload: dict = Depends(PAGE)):
+    """Rename a material, move it to another department, rewrite its note. The
+    file itself is never replaced — a new version is a new upload."""
+    _require_admin(db, payload)
+    m = _material(db, mid)
+    dept = _m_department(body["department"]) if "department" in body else m.department
+    title = _clean(body.get("title", m.title), rules.MAX_MATERIAL_TITLE)
+    if not title:
+        _refuse(400, "title_required", "The material needs a title.")
+    note = (_clean(body["note"], rules.MAX_MATERIAL_NOTE) or None) if "note" in body else m.note
+    changes = [(f, o, n) for f, o, n in (("department", m.department or rules.GENERAL, dept or rules.GENERAL),
+                                         ("title", m.title, title), ("note", m.note, note)) if o != n]
+    m.department, m.title, m.note = dept, title, note
+    if changes:
+        m.updated_at, m.updated_by = _now(), _who(payload)
+    db.commit()
+    action_log.enrich(target_kind="assessment_material", target_id=str(m.id), target_name=m.title,
+                      changes=changes)
+    return _m_dict(m)
+
+
+@router.delete("/materials/{mid}")
+def delete_material(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Take a material off the list. Its copy in the archive channel stays
+    where every archived file stays; nothing here points at it any more."""
+    _require_admin(db, payload)
+    m = _material(db, mid)
+    was = {"target_id": str(m.id), "target_name": m.title,
+           "details": [("department", m.department or rules.GENERAL), ("file", m.name), ("size", m.size)]}
+    db.delete(m)
+    db.commit()
+    action_log.enrich(target_kind="assessment_material", **was)
+    return {"ok": True}
+
+
+@router.get("/materials/{mid}/file")
+def material_file(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """The file itself, always as a DOWNLOAD behind `nosniff` — an uploaded
+    page or SVG must never run in our own origin."""
+    _require_admin(db, payload)
+    m = _material(db, mid)
+    from app.routers.leader_tasks import _stream_tg_file
+    return _stream_tg_file(m.file_id, name=m.name, mime=m.mime or "application/octet-stream",
+                           download=True)
+
+
+@router.post("/materials/{mid}/send")
+def send_material(mid: int, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
+    """Put the file into the caller's own Telegram chat, under its title and
+    note — a mini app's WebView has no downloads folder, and a chat is where a
+    file is forwarded to a candidate from."""
+    _require_admin(db, payload)
+    m = _material(db, mid)
+    tid = _tg(payload)
+    if not tid:
+        _refuse(400, "no_chat", "No Telegram chat to send to.")
+    caption = m.title if not m.note else f"{m.title}\n\n{m.note}"
+    try:
+        from app.telegram_bot import bot
+        bot.send_document(tid, m.file_id, caption=caption[:1024])
+    except Exception:
+        _refuse(502, "send_failed", "Telegram did not accept the file — open the bot and try again.")
+    action_log.enrich(target_kind="assessment_material", target_id=str(m.id), target_name=m.title)
+    return {"ok": True}
 
 
 @router.get("/assessments/{aid}")

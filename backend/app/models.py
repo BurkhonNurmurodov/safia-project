@@ -5777,6 +5777,30 @@ class AssessmentGrade(Base):
     updated_at    = Column(DateTime(timezone=True), nullable=True)
 
 
+class AssessmentMaterial(Base):
+    """One file a candidate prepares from («Materiallar», 2026-11-21, the
+    operator: «another table in which I can upload the materials for
+    candidates to prepare»). The ARCHIVE-CHANNEL copy, like a chat's file
+    (`LeaderTaskCommentFile`): any type, up to 20 MB, streamed through
+    `/api/assessment/materials/{id}/file`. The bytes never live in this
+    database. `department` NULL = for every department («Umumiy»)."""
+    __tablename__ = "assessment_materials"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    department    = Column(String(16), nullable=True, index=True)   # okk · hr · production · tb · kaizen · NULL = general
+    title         = Column(String(200), nullable=False)
+    note          = Column(Text, nullable=True)
+    name          = Column(String(255), nullable=False)             # the file's own name
+    mime          = Column(String(160), nullable=True)
+    size          = Column(Integer, nullable=True)
+    file_id       = Column(String, nullable=False)
+    tg_message_id = Column(BigInteger, nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    created_by    = Column(String, nullable=True)
+    updated_at    = Column(DateTime(timezone=True), nullable=True)
+    updated_by    = Column(String, nullable=True)
+
+
 # ── «Xodim kartasi» — one person's card (/people/:employee_id) ──────────────
 # Everything on the card is read from tables that already exist; this is the
 # ONE register the page adds (services/people.py, routers/people.py).

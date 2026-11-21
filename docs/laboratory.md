@@ -10,7 +10,7 @@ Laboratory nav group (on the launcher a page of the «HR» app from
 2026-11-20 — `docs/navigation-and-shell.md` «Ilovalar»), **ADMIN-ONLY until the operator opens it** (to the
 judges) on the Access / Permissions tab. `services/assessment.py` is THE rule,
 `routers/assessment.py` (`/api/assessment`) the door, `pages/Assessment.jsx`
-(list + bank tabs) and `pages/AssessmentGrade.jsx` (`/assessment/:id`, the
+(the list, tickets, bank and materials tabs) and `pages/AssessmentGrade.jsx` (`/assessment/:id`, the
 Judge Grading Dashboard) + `components/assessment/` the page, words in
 `pages/assessmentText.js` (four languages).
 
@@ -68,6 +68,58 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   opens. «Baholashni ochish» goes to the sitting. **A redrawn set is replaced
   by the new one, never kept** (the redraw deletes its items), so a retired
   number has no row. The search box finds a number or a name.
+- **«Materiallar» — the files a candidate prepares from** (2026-11-21, the
+  operator: «we need another table in which I can upload the materials for
+  candidates to prepare»). A fourth tab, after «Savollar banki», ADMIN-ONLY
+  like the bank and the tickets (`_require_admin`, so it is grantable through
+  «assessment — admin»). `components/assessment/MaterialList.jsx`; table
+  `assessment_materials` (`AssessmentMaterial`, made by `create_all`, no
+  startup step). **Every file is ONE row**: the department it belongs to — one
+  of the five, or none, «Umumiy» (stored NULL, sent `general`,
+  `rules.material_department`) — a title, an optional note, the file's own
+  name and size, who uploaded it and when. One line per row: the department
+  chip, the file's type icon (`FileIcon`) + title with the note after it on
+  the same line, size, date, and the ⋮ menu (`ActionMenu`); «Umumiy» is listed
+  first, then the panel's order. The search finds a title, a note or a file
+  name; the one filter is the department.
+  - **Upload** («Material yuklash»): pick the department, drop files
+    (`UploadDropzone`), press «Yuklash». One request PER FILE
+    (`POST /api/assessment/materials`, multipart read by `leaders.appeal_body`),
+    so each has its own progress and a refused one takes nothing else with it;
+    a failed file stays listed with its reason and the dialog stays open. The
+    department and the note go with every file of the batch; a TITLE only with
+    a single file (400 `title_one` otherwise — the bank's `answer_one` rule),
+    and a file with none is called by its own name without the extension
+    (`rules.material_title`). A file over 20 MB is marked in the dialog before
+    anything is sent.
+  - **The file is the ARCHIVE-CHANNEL copy**, like every chat attachment
+    (`leaders.relay_uploads` → `leader_appeal_chat.relay_file`): any type, at
+    most **20 MB** (the most the bot API hands back —
+    `upload_guard.CHAT_FILE_MAX`, `rules.MAX_MATERIAL_MB`), the bytes never in
+    this database, `file_id` never sent to the browser. `relay_uploads`' English
+    refusals become codes the page words (`file_too_big` 413, `store_failed`
+    502, `bad_file` 400). **Consequence: no archive channel or no Telegram, no
+    upload** (502 `store_failed`) — the cloud stack cannot store one.
+  - **Getting the file**: `GET …/materials/{id}/file` streams it, ALWAYS as a
+    download behind `nosniff` (`leader_tasks._stream_tg_file`);
+    `POST …/materials/{id}/send` puts it into the caller's own chat with the
+    bot, captioned with the title and the note. Inside Telegram a tap on the
+    title sends (a WebView has no downloads folder); in a browser it downloads,
+    and the ⋮ menu offers both.
+  - **No candidate-facing view exists** (candidates are workers picked from
+    the Verifix directory, most with no account), so a material reaches a
+    candidate through the admin: «Telegramga yuborish» → forward from the bot
+    chat, or the downloaded file. The table's footer says so. Opening the
+    list to candidates or judges is NOT built — it needs the operator's ruling
+    on who counts as a candidate and where they would read it.
+  - **Edit** (`PUT …/materials/{id}`: title, department, note — a key left out
+    is left alone) never replaces the file: a new version is a new upload.
+    **Delete** (`DELETE`, danger confirm) removes the row; the archive
+    channel's copy stays where every archived file stays.
+  - The Jurnal files all four under «training»: `assessment.material_added` /
+    `_edited` / `_deleted` / `_sent`. Pinned by
+    `tests/test_assessment_materials.py` (the rules without a database, the
+    endpoints on Postgres with the relay stubbed).
 - **The candidate's face on the lists** (2026-11-20, the operator: «this table
   also should show the image of the candidate»): «Baholashlar» and «Biletlar»
   draw each candidate's Verifix photo — the one «Xodim kartasi» shows — beside
@@ -81,7 +133,7 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   (`StrictMode`), a photo already cached when a tab switch mounts its avatar
   shows broken — `ProfileAvatar` revokes its object URL in the double-mounted
   effect; a production build mounts once and is unaffected.
-- **Six tables** (created by `create_all`; later columns through startup steps — the expected answer, the candidate's Verifix id, the ticket number):
+- **Six tables** (created by `create_all`; later columns through startup steps — the expected answer, the candidate's Verifix id, the ticket number; a seventh, `assessment_materials`, holds the preparation files — «Materiallar» above):
   `assessment_candidates` (a worker of the plant + an optional note — see the
   next bullet), `assessment_questions` (the bank; never
   deleted, `archived_at` takes one out of the draw), `assessments` (one sitting:
@@ -284,7 +336,8 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   scorecards and grades go with it (`deleteMsgTest`). A real graded sitting
   stays undeletable.
 - Not built: notifications to judges, an export, a candidate-facing view (by
-  the request), a pass mark.
+  the request — so the preparation materials reach a candidate through an
+  admin, see «Materiallar»), a pass mark.
 
 ## «Xodim kartasi» — one person of the plant (`/people`, Laboratory, 2026-10-31)
 

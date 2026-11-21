@@ -3,6 +3,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import AssessmentList from "../components/assessment/AssessmentList";
 import QuestionBank from "../components/assessment/QuestionBank";
 import TicketList from "../components/assessment/TicketList";
+import MaterialList from "../components/assessment/MaterialList";
 import { useAT } from "../components/assessment/assessmentUtil";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -13,10 +14,11 @@ import { usePersistentState } from "../hooks/usePersistentState";
  * candidate in a live, verbal assessment. Laboratory, page key `assessment`
  * (admin-only until the operator opens it to the judges).
  *
- * Three tabs: the sittings (every judge's door into a scorecard, /assessment/:id),
+ * Four tabs: the sittings (every judge's door into a scorecard, /assessment/:id),
  * «Biletlar» — every drawn set as a numbered ticket, opened whole (2026-11-20) —
- * and the question bank the 20 questions are drawn from. The tickets and the
- * bank are the admin's alone, and the server refuses them to anybody else.
+ * the question bank the 20 questions are drawn from, and «Materiallar» — the
+ * files a candidate prepares from (2026-11-21). The tickets, the bank and the
+ * materials are the admin's alone, and the server refuses them to anybody else.
  */
 export default function Assessment() {
   const T = useAT();
@@ -31,9 +33,10 @@ export default function Assessment() {
       <div className="space-y-4">
         {isAdmin && (
           <SegmentedToggle asTabs value={view} onChange={setTab} ariaLabel={T.title}
-            options={[["list", T.tabList], ["tickets", T.tabTickets], ["bank", T.tabBank]]} />
+            options={[["list", T.tabList], ["tickets", T.tabTickets], ["bank", T.tabBank], ["materials", T.tabMaterials]]} />
         )}
-        {view === "bank" ? <QuestionBank /> : view === "tickets" ? <TicketList /> : <AssessmentList isAdmin={isAdmin} />}
+        {view === "bank" ? <QuestionBank /> : view === "tickets" ? <TicketList />
+          : view === "materials" ? <MaterialList /> : <AssessmentList isAdmin={isAdmin} />}
       </div>
     </Layout>
   );

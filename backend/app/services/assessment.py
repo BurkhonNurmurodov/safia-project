@@ -58,6 +58,13 @@ MAX_ANSWER = 4000      # its expected answer
 MAX_NOTE = 2000        # a judge's note on one answer
 MAX_FEEDBACK = 8000    # a judge's overall feedback
 
+# «Materiallar» — the files a candidate prepares from (2026-11-21). A material
+# belongs to one department or to none («Umumiy», stored NULL, sent "general").
+GENERAL = "general"
+MAX_MATERIAL_TITLE = 200
+MAX_MATERIAL_NOTE = 1000
+MAX_MATERIAL_MB = 20   # the archive channel's limit (`upload_guard.CHAT_FILE_MAX`)
+
 
 @dataclass
 class Short:
@@ -182,8 +189,32 @@ def meta() -> dict:
                     "types": b.get("types"), "min_each": b.get("min_each"), "count": b.get("count"),
                     "parts": _parts(b)} for b in BLOCKS],
         "total": TOTAL,
-        "limits": {"text": MAX_TEXT, "answer": MAX_ANSWER, "note": MAX_NOTE, "feedback": MAX_FEEDBACK},
+        "limits": {"text": MAX_TEXT, "answer": MAX_ANSWER, "note": MAX_NOTE, "feedback": MAX_FEEDBACK,
+                   "material_title": MAX_MATERIAL_TITLE, "material_note": MAX_MATERIAL_NOTE,
+                   "material_mb": MAX_MATERIAL_MB},
     }
+
+
+def material_department(value) -> Optional[str]:
+    """The department a material is stored under: one of the five, or None for
+    «Umumiy» (sent as "general", "" or nothing). Anything else → ValueError."""
+    if value in (None, "", GENERAL):
+        return None
+    if value in DEPARTMENTS:
+        return value
+    raise ValueError("unknown department")
+
+
+def material_title(title: Optional[str], filename: Optional[str]) -> str:
+    """What a material is called on the list: the title typed for it, else the
+    file's own name without its extension («Kaizen qo'llanma.pdf» → «Kaizen
+    qo'llanma»); a name that is nothing but an extension keeps it."""
+    t = " ".join(str(title or "").split())
+    if not t:
+        name = str(filename or "").replace("\\", "/").split("/")[-1].strip()
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        t = " ".join((stem or name).replace("_", " ").split())
+    return (t or "file")[:MAX_MATERIAL_TITLE]
 
 
 def _pct(a: int, b: int) -> Optional[float]:
