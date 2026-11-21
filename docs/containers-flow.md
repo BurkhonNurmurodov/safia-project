@@ -245,7 +245,12 @@ After a review of the app the operator answered «make it» to two points:
   through `cellName` + `tx`, the split card and its reminder through
   `workshop_name` (the reader's column, else Russian, transliterated as text,
   never as a name). A work-centre key and a cell with no name print the code
-  alone. Only the split dialog and the brigadir's card (the operator's pick for
+  alone. **In the list the name has a row of its own, under the code and the
+  counts, and WRAPS** (the same day, the operator: «add another row … make the
+  given name visible for all devices … the last version is not visible for
+  logistics»): on one line with the counts it was cut to «0811 · T…» on a
+  phone whenever the counts were long (`CellList`). A tab opened before
+  v4.624.0 shows no name until it reloads — that bundle reads `leaders`. Only the split dialog and the brigadir's card (the operator's pick for
   the leader, kept); «Qabul» and the request cards keep the code only. **This
   is the second place a workshop name is printed** (CLAUDE.md «Cell label»,
   `utils/cellName.js`) — the operator's own call, like the /cells register's.

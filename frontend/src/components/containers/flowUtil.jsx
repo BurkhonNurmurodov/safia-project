@@ -178,9 +178,12 @@ export function cellBreakdown(entry, counts, keys) {
 
 // The breakdown as rows: the cell — its verifix CODE, how a cell is named
 // (`utils/cellName.js`); a team with no cell by its work centre — and its counts.
-// `workshops` ({code: {lang: name}}) puts the cell's WORKSHOP name beside its code
+// `workshops` ({code: {lang: name}}) names the cell's WORKSHOP under its code
 // (2026-11-21, the operator, on the split dialog: «remove the names, put just
 // workshop names») — the one place outside /cells that prints it (`utils/cellName.js`).
+// The name has a ROW OF ITS OWN and wraps (the operator, the same day: «add
+// another row … make the given name visible for all devices»): on one line with
+// the counts it was cut to «0811 · T…» on a phone, whenever the counts were long.
 export function CellList({ t, cells, workshops, className = "" }) {
   const { tx, lang } = useTranslit();
   const rows = Object.entries(cells ?? {});
@@ -191,14 +194,16 @@ export function CellList({ t, cells, workshops, className = "" }) {
         const text = countsText(t, n);
         const who = workshops?.[c] ? tx(cellName(workshops[c], lang, "")) : "";
         return (
-          <div key={c || "_"} className="flex items-start gap-2 px-2.5 py-1.5 text-xs"
+          <div key={c || "_"} className="px-2.5 py-1.5 text-xs" title={cellLabel(c, who) || undefined}
             style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
-            <LayoutGrid size={13} className="shrink-0 mt-px" aria-hidden style={{ color: "var(--text-3)" }} />
-            <span className="flex-1 min-w-0 truncate" title={cellLabel(c, who) || undefined}>
-              <b className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{c || "—"}</b>
-              {who && <span style={{ color: "var(--text-2)" }}> · {who}</span>}
-            </span>
-            <span className="max-w-[65%] text-right tabular-nums" style={{ color: text ? "var(--text-2)" : "var(--text-4)" }}>{text || "—"}</span>
+            <div className="flex items-start gap-2">
+              <LayoutGrid size={13} className="shrink-0 mt-px" aria-hidden style={{ color: "var(--text-3)" }} />
+              <b className="shrink-0 font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{c || "—"}</b>
+              <span className="flex-1 min-w-0 text-right tabular-nums" style={{ color: text ? "var(--text-2)" : "var(--text-4)" }}>{text || "—"}</span>
+            </div>
+            {who && (
+              <div className="mt-0.5 pl-[21px] leading-snug break-words" style={{ color: "var(--text-2)" }}>{who}</div>
+            )}
           </div>
         );
       })}
