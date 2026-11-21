@@ -683,6 +683,43 @@ answers for yet. Tests: `tests/test_almaty_plant.py`.
 be its team — 8898, 6866 or 9888 — for the Команда to be joined to the cell
 (`cell_lookup.by_sap`); then «Zagruzka hisoblanadi» on.
 
+## …and its four cells, on that unit (`startup.add_almaty_cells`, 2026-11-21)
+
+The operator: «we're adding Almaty Plant … for 2 or 3 days we don't calculate
+workload for them. Nor the leader owes a check-list for now. But we need to add
+the cells» — with a screenshot of Verifix's tree: **«Алмата Фабрика»** (division
+1761, under «Производство») holds 8898 Комплектация, 6866 Сборка
+сэндвичей-круассанов, 9888 Предзаготовка and 6668 Холодильная и морозильная
+камера. Then: «attach all cells to the unit».
+
+Production's stored org (read through the report door, Burkhon's tap) showed
+exactly those four divisions under it and **none a cell of ours**: the live
+sync creates a cell only for an open Verifix cell «people work in»
+(`verifix_sync.plan_pass`), and nobody is hired there yet. So
+`almaty_plant.add_cells` makes them, once (flag
+`oneshot:almaty_cells_nov21`, after the steps above in both entrypoints):
+
+- each on the plant's one live unit (so they sit in the plant — a cell's plant
+  is its unit's), tied to its Verifix division by id (`vfx_division_id`,
+  `vfx_meta`), named by Verifix's name without the code, so the sync follows
+  them from its first pass;
+- **«Zagruzka hisoblanadi» OFF** on each (`in_load` false): no загрузка is
+  calculated, and a leader whose cells are all off and who filed nothing owes
+  nothing (`leader_load`, `docs/checklist-not-counting.md`) — the sync's new
+  leader profiles start UNCLAIMED too (`leader_owes`). **The switch to
+  switch on when the plant goes live is the cells' «Zagruzka hisoblanadi»
+  (and the unit's)**, not a cutoff to lift;
+- **«SAP kodi» = the cell's own code for 8898 · 6866 · 9888** — they ARE the
+  catalogue's teams (the legend of the second form), so each Команда now joins
+  its cell (`cell_lookup.by_sap`); 6668, the cold room, is no team and has none.
+
+A code that is already a cell is left as it is and named in the admins' DM;
+no single unit on the plant changes nothing. Tests: `tests/test_almaty_plant.py`.
+
+This closes the second form's «Still to do by hand» for the SAP codes; the
+Verifix people, the leaders and «Zagruzka hisoblanadi» stay for when the plant
+is staffed.
+
 ## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
 
 The operator: «Maksudov Alisher can you add the container page for him». He

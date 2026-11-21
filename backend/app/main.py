@@ -334,6 +334,10 @@ async def lifespan(app: FastAPI):
     # 6866 · 9888 (once, 2026-11-21; after both steps above, in both entrypoints).
     from app.startup import replace_almaty_catalog
     later(replace_almaty_catalog)
+    # …and its four cells, on that unit (once, 2026-11-21; after the steps above,
+    # in both entrypoints).
+    from app.startup import add_almaty_cells
+    later(add_almaty_cells)
     from app.startup import seed_container_send_areas
     later(seed_container_send_areas)
     from app.startup import container_flow_notify_on, containers_tv_managers

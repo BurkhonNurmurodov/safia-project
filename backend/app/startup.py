@@ -11389,6 +11389,61 @@ def replace_almaty_catalog() -> None:
         db.close()
 
 
+# ── 21 Nov: the Almaty plant's cells (docs/data-fixes.md) ───────────────────
+# The operator, 2026-11-21: «we need to add the cells» of the Almaty plant —
+# «Алмата Фабрика» in Verifix, four coded subdivisions, none a cell of ours yet
+# (the live sync makes a cell only once people work in it) — «attach all cells
+# to the unit». `almaty_plant.add_cells` is the change. ONCE, after the steps
+# above in both entrypoints; a plant with no single unit changes nothing and
+# the admins are told.
+ALMATY_CELLS_FLAG = "oneshot:almaty_cells_nov21"
+
+
+def add_almaty_cells() -> None:
+    from app.services import almaty_plant, cell_register
+
+    title = "Almaty · yacheykalar"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": almaty_plant.LOCK_KEY})
+        if db.query(AppSetting).filter_by(key=ALMATY_CELLS_FLAG).first():
+            return
+        try:
+            res = almaty_plant.add_cells(db)
+        except almaty_plant.Refused as why:
+            db.rollback()
+            db.add(AppSetting(key=ALMATY_CELLS_FLAG, value=f"refused: {why}"[:250]))
+            db.commit()
+            print(f"[startup] Almaty cells: nothing changed — {why}")
+            _dm_report("warn", title, status="Yacheykalar qo'shilmadi",
+                       rows=[("🔎", "Sabab", str(why))],
+                       notes=[("👉", "Yacheykalarni «Yacheykalar» sahifasida qo'lda qo'shing: "
+                                    + " · ".join(c for _, c, _, _ in almaty_plant.CELLS) + ".")],
+                       open=_REPORT_FACTORIES)
+            return
+        db.add(AppSetting(key=ALMATY_CELLS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        cell_register.after_commit()
+        print(f"[startup] Almaty cells: unit {res['unit_id']} — made {res['made']}, "
+              f"already there {res['kept']}")
+        _dm_report("ok", title, status="Yacheykalar bo'linmaga biriktirildi",
+                   rows=[("👤", "Bo'linma", f"{res['unit_name']} · №{res['unit_id']}"),
+                         ("➕", "Qo'shildi", res["made"]),
+                         ("⏭", "Avvaldan bor (tegilmadi)",
+                          [f"{c} · bo'linma №{m or '—'}" for c, m in res["kept"]])],
+                   notes=[("ℹ️", "«Zagruzka hisoblanadi» o'chiq: yuklama hisoblanmaydi, "
+                                "liderlar chek-list topshirmaydi."),
+                          ("ℹ️", "8898 · 6866 · 9888 yacheykalarining «SAP kodi» o'zining "
+                                "kodi — katalogdagi komandaga ulanadi.")],
+                   open=("Profilni ochish", f"/profile/supervisor/{res['unit_id']}"))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Almaty cells failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
+
+
 # ── 18 Nov: Cat E → Nuriddin aka (docs/data-fixes.md) ───────────────────────
 # The operator, 2026-11-18: «for idle time make visible Cat E» to Nuriddin. A
 # «Kutish mas'uli» reads /downtime and /idle-cell through the categories he

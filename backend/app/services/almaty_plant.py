@@ -62,7 +62,7 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import Factory, Manager, PPProduct, PPWorkCenter
+from app.models import Cell, Factory, Manager, PPProduct, PPWorkCenter
 from app.services import pp_catalog
 
 # One boot at a time takes the step (`pg_advisory_xact_lock`); arbitrary, and
@@ -552,3 +552,46 @@ def replace_catalog(db: Session, now: Optional[datetime] = None) -> dict:
         "unjoined": [code for code, _n, _l in FORM_NOV21_TEAMS
                      if cell_lookup.resolve_sap(cells, code, mid) is None],
     }
+
+
+# The four Verifix subdivisions under «Алмата Фабрика» (division 1761), as
+# production's stored org read on 2026-11-21: (division id, code, Verifix's name,
+# SAP code). The first three ARE the catalogue's teams, so their SAP code is
+# their own code — that joins a Команда to its cell (`cell_lookup.by_sap`); the
+# cold room is no team and carries none.
+PLANT_DIVISION = "1761"
+CELLS = (
+    ("8681", "8898", "8898 Комплектация", "8898"),
+    ("8682", "6866", "6866 Сборка сэндвичей-круассанов", "6866"),
+    ("8683", "9888", "9888 Предзаготовка", "9888"),
+    ("8684", "6668", "6668 Холодильная и морозильная камера", None),
+)
+
+
+def add_cells(db: Session) -> dict:
+    """Create the plant's cells on its one unit, inside the caller's
+    transaction (the caller commits). «Zagruzka hisoblanadi» is OFF on each, so
+    no загрузка is counted and a leader of them owes no checklist
+    (`leader_load`); each is tied to its Verifix division, so the live sync
+    follows it from the first pass. A code that is already a cell is left as it
+    is and reported — whose it is, is a person's call. Raises :class:`Refused`
+    when the plant has no single unit."""
+    from app.services import cell_register, verifix_org
+
+    unit = _the_unit(db)
+    made: list[str] = []
+    kept: list[tuple[str, Optional[int]]] = []
+    for div, code, vname, sap in CELLS:
+        have = db.query(Cell).filter(Cell.verifix_code == cell_register.norm_code(code)).first()
+        if have is not None:
+            kept.append((code, have.manager_id))
+            continue
+        cell = cell_register.create_cell(
+            db, code, name_ru=verifix_org.vx_name(vname, code), manager_id=unit.id,
+            in_load=False, vfx_division_id=div,
+            vfx_meta={"name": vname, "raw": code, "code": code, "src": "code", "state": "A",
+                      "parent": PLANT_DIVISION, "opened": None, "closed": None})
+        cell.sap_code = sap
+        made.append(code)
+    db.flush()
+    return {"unit_id": unit.id, "unit_name": unit.name, "made": made, "kept": kept}

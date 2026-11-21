@@ -34,6 +34,7 @@ from app import startup
 from app.models import (AppSetting, Factory, Manager, PPCatalogMove, PPCatalogVersion,
                         PPDaily, PPLineDaily, PPProduct, PPWorkCenter,
                         PPWorkCenterDaily, TelegramUserRole)
+from app.models import Cell
 from app.services import almaty_plant, pp_catalog
 from app.services.pp_calc import daily_key, line_keys, takes_sap
 
@@ -111,7 +112,7 @@ class AlmatyPlantTest(unittest.TestCase):
         self.db = self.pg.Session()
         self.db.execute(text("TRUNCATE pp_products, pp_work_centers, pp_catalog_versions, "
                              "pp_daily, pp_line_daily, pp_work_center_daily, pp_catalog_moves, "
-                             "managers, factories, app_settings, telegram_user_roles, "
+                             "cells, managers, factories, app_settings, telegram_user_roles, "
                              "translations RESTART IDENTITY CASCADE"))
         # Production's shape on 2026-11-20: Uchtepa and Keles, units up to №30.
         uch = Factory(code="Uchtepa", name_ru="Учтепа", sort_order=0)
@@ -166,6 +167,54 @@ class AlmatyPlantTest(unittest.TestCase):
     def _line(self, name, unit=31):
         return self.db.query(PPProduct).filter(PPProduct.manager_id == unit,
                                                PPProduct.name == name).one()
+
+    def _cells(self):
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+                mock.patch.object(startup, "_dm_report",
+                                  lambda tone, title, **kw: self.cards.append((tone, kw))):
+            startup.add_almaty_cells()
+        self.db.expire_all()
+
+    def test_the_four_cells_stand_on_the_unit(self):
+        self._boot()
+        self._cells()
+        cells = {c.verifix_code: c for c in self.db.query(Cell).all()}
+        self.assertEqual(sorted(cells), ["6668", "6866", "8898", "9888"])
+        for c in cells.values():
+            self.assertEqual(c.manager_id, 31)
+            self.assertFalse(c.in_load)
+            self.assertIsNone(c.leader_id)
+            self.assertIsNone(c.archived_at)
+        self.assertEqual({k: c.sap_code for k, c in cells.items()},
+                         {"8898": "8898", "6866": "6866", "9888": "9888", "6668": None})
+        self.assertEqual(cells["8898"].name_workshop_ru, "Комплектация")
+        self.assertEqual(cells["6668"].vfx_division_id, "8684")
+        self.assertEqual(self.db.query(Cell).filter(Cell.vfx_division_id.isnot(None)).count(), 4)
+        self.assertEqual([t for t, _ in self.cards], ["ok", "ok"])
+
+    def test_the_cells_run_once(self):
+        self._boot()
+        self._cells()
+        self.db.query(Cell).filter(Cell.verifix_code == "6668").delete()
+        self.db.commit()
+        self._cells()
+        self.assertEqual(self.db.query(Cell).count(), 3)
+
+    def test_a_code_that_is_a_cell_already_is_left_alone(self):
+        self._boot()
+        self.db.add(Cell(verifix_code="9888", manager_id=1))
+        self.db.commit()
+        self._cells()
+        self.assertEqual(self.db.query(Cell.manager_id).filter(Cell.verifix_code == "9888").scalar(), 1)
+        self.assertEqual(self.db.query(Cell).count(), 4)
+        rows = dict((label, value) for _, label, value in self.cards[-1][1]["rows"])
+        self.assertEqual(rows["Qo'shildi"], ["8898", "6866", "6668"])
+        self.assertEqual(rows["Avvaldan bor (tegilmadi)"], ["9888 · bo'linma №1"])
+
+    def test_no_unit_no_cells(self):
+        self._cells()
+        self.assertEqual(self.db.query(Cell).count(), 0)
+        self.assertEqual([t for t, _ in self.cards], ["warn"])
 
     def _plant(self):
         return self.db.query(Factory).filter(Factory.code == "Almaty").one()
