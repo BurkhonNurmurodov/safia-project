@@ -8,6 +8,7 @@ import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
+import { cellLabel } from "../../utils/cellName";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { ontimeTone } from "../../utils/statusBands";
 
@@ -177,18 +178,25 @@ export function cellBreakdown(entry, counts, keys) {
 
 // The breakdown as rows: the cell — its verifix CODE, how a cell is named
 // (`utils/cellName.js`); a team with no cell by its work centre — and its counts.
-export function CellList({ t, cells, className = "" }) {
+// `leaders` ({code: name}) puts the cell's leader beside its code — `cellLabel`, the
+// one way a cell is named with its leader (the split dialog, 2026-11-21).
+export function CellList({ t, cells, leaders, className = "" }) {
+  const { tl } = useTranslit();
   const rows = Object.entries(cells ?? {});
   if (!rows.length) return null;
   return (
     <div className={`rounded-lg overflow-hidden ${className}`} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
       {rows.map(([c, n], i) => {
         const text = countsText(t, n);
+        const who = leaders?.[c] ? tl(leaders[c]) : "";
         return (
           <div key={c || "_"} className="flex items-start gap-2 px-2.5 py-1.5 text-xs"
             style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
             <LayoutGrid size={13} className="shrink-0 mt-px" aria-hidden style={{ color: "var(--text-3)" }} />
-            <span className="flex-1 min-w-0 truncate font-semibold tabular-nums" title={c} style={{ color: "var(--text-1)" }}>{c || "—"}</span>
+            <span className="flex-1 min-w-0 truncate" title={cellLabel(c, who) || undefined}>
+              <b className="font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{c || "—"}</b>
+              {who && <span style={{ color: "var(--text-2)" }}> · {who}</span>}
+            </span>
             <span className="max-w-[65%] text-right tabular-nums" style={{ color: text ? "var(--text-2)" : "var(--text-4)" }}>{text || "—"}</span>
           </div>
         );
