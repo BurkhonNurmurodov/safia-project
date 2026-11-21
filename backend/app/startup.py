@@ -11848,6 +11848,46 @@ def containers_who_sees_what() -> None:
         db.close()
 
 
+# ── 21 Nov, later: the shift managers see ONLY «Konteynerlar» ───────────────
+# `containers_who_sees_what` (above) left them «Konteyner berish» as watchers.
+# The operator, the same evening: «shift managers should see only the
+# containers page». So the role leaves `container-watch` in the STORED access
+# matrix (the new default alone would not reach it); top-managers keep
+# watching, and the board (`containers`) is untouched. Once, under a flag: a
+# tick on the Access tab later sticks.
+CONTAINER_WATCH_SM_OFF_FLAG = "oneshot:container_watch_shift_managers_off_nov21"
+
+
+def container_watch_shift_managers_off() -> None:
+    from app.permissions import get_page_access, set_page_access
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_WATCH_SM_OFF_FLAG).first():
+            return
+        matrix = get_page_access(db)
+        roles = list(matrix.get("container-watch", []))
+        had = "shift-manager" in roles
+        matrix["container-watch"] = [r for r in roles if r != "shift-manager"]
+        db.add(AppSetting(key=CONTAINER_WATCH_SM_OFF_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the flag with the matrix
+        board = "shift-manager" in matrix.get("containers", [])
+        print(f"[startup] container watch: shift-manager {'removed' if had else 'was not on it'}; "
+              f"board {'open' if board else 'NOT open'} to shift-manager")
+        _dm_report("ok", "Konteynerlar · smena menejerlari faqat «Konteynerlar»ni ko'radi",
+                   status="«Konteyner berish» smena menejerlaridan olib tashlandi" if had
+                   else "«Konteyner berish» smena menejerlarida yo'q edi",
+                   rows=[("👁", "Smena menejerlari ko'radi", "Konteynerlar" if board else "hech narsa — «Konteynerlar» ham yopiq"),
+                         ("👁", "Top menejerlar", "o'zgarmadi")],
+                   notes=[("ℹ️", "Qaytarish: «Ruxsatlar» → «Konteyner berish — kuzatish».")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container watch off for shift managers failed: {exc}")
+        _dm_report("fail", "Konteynerlar · smena menejerlaridan «Konteyner berish» olib tashlanmadi", error=exc)
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every

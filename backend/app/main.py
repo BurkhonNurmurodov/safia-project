@@ -354,6 +354,8 @@ async def lifespan(app: FastAPI):
     # container alerts off (after the 17 Nov one-shot that switched them on)
     from app.startup import containers_who_sees_what
     later(containers_who_sees_what)
+    from app.startup import container_watch_shift_managers_off
+    later(container_watch_shift_managers_off)   # the same evening: only the board for them
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)

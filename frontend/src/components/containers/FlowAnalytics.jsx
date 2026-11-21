@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  ArrowRight, BarChart3, BellRing, CalendarCheck, CalendarDays, Layers, ListFilter, ClipboardList, Clock, Eye, Gauge, PackageCheck, Split, Timer, UsersRound,
+  ArrowRight, BarChart3, BellRing, CalendarCheck, CalendarDays, Layers, ListFilter, ClipboardList, Clock, Eye, Gauge, PackageCheck, Scale, Split, Timer, UsersRound,
 } from "lucide-react";
 import DateRangePicker from "../ui/DateRangePicker";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
@@ -86,6 +86,9 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
         <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.an.scope")}</span>
       </div>
 
+      {/* THE answer the tab opens with: the plan against what arrived, all brigadirs */}
+      {!q.isError && <PlanVsGot t={t} rows={a?.need_vs_got} loading={loading} live={to >= today} />}
+
       {q.isError ? (
         <EmptyState tone="danger" showUploadLink={false} title={t("cflow.loadFailed")} message={errText(t, q.error)} />
       ) : !loading && !s?.requests ? (
@@ -153,6 +156,102 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
       {/* AXO's stock closes the tab — its own read, so it stands on a period with no requests too */}
       <FlowStock t={t} from={from} to={to} canEdit={canStock} toast={toast} />
     </div>
+  );
+}
+
+// «Reja va haqiqat — jami» (2026-11-21, the operator: «add for the analytics
+// part: for the plan all supervisors have to get this amount and they actually
+// got this amount — I need just numbers, like overall»). The whole period, every
+// brigadir, as NUMBERS: what the plan says they need («Konteynerlar»'s own
+// figure, `day_need`), what logistics split to them, what they confirmed on
+// «Qabul», and the difference — then the same three per container type. It is
+// `need_vs_got` (the table further down, a row per brigadir per day) summed, so
+// the two can never disagree. What is split and not confirmed yet is named
+// apart, so it does not read as a shortfall; a period reaching today says the
+// day is still running, since the plan is the whole day's.
+function PlanVsGot({ t, rows, loading, live }) {
+  const all = rows ?? [];
+  const tot = useMemo(() => {
+    const z = { need: 0, given: 0, received: 0, unconfirmed: 0, types: {} };
+    for (const r of all) {
+      z.need += r.need; z.given += r.given; z.received += r.received; z.unconfirmed += r.unconfirmed;
+      for (const [k, v] of Object.entries(r.types ?? {})) {
+        const e = (z.types[k] ??= { need: 0, given: 0, received: 0 });
+        e.need += v.need ?? 0; e.given += v.given ?? 0; e.received += v.received ?? 0;
+      }
+    }
+    return z;
+  }, [all]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!loading && (rows == null || (!tot.need && !tot.given))) return null;   // unread, or nothing planned and nothing split
+  const share = (n) => (tot.need ? Math.round((100 * n) / tot.need) : null);
+  const diff = tot.received - tot.need;
+  const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : "0");
+  const diffHue = (n) => (n < 0 ? "var(--status-bad)" : "var(--status-ok)");
+  const pctSub = (n) => (share(n) == null ? "" : t("cflow.ov.ofPlan").replace("{p}", share(n)));
+  const tone = ngTone(share(tot.received));
+  const stat = (label, value, sub, color) => (
+    <div className="min-w-0 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="text-[22px] font-semibold tabular-nums leading-tight mt-0.5" style={{ color: color ?? "var(--text-1)" }}>
+        {loading ? "…" : value}
+      </div>
+      {/* always drawn, so the four tiles stay one height */}
+      <div className="text-xs tabular-nums mt-0.5 min-h-[16px]" style={{ color: "var(--text-3)" }}>{loading ? "" : sub}</div>
+    </div>
+  );
+  const types = KEYS.filter((k) => tot.types[k] && (tot.types[k].need || tot.types[k].given || tot.types[k].received));
+  const num = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
+  return (
+    <TableCard icon={Scale} title={t("cflow.ov.title")} subtitle={t("cflow.ov.sub")} headSize="lg"
+      toolbar={(
+        <div className="flex flex-col gap-2.5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {stat(t("cflow.ov.need"), fmt(tot.need), t("cflow.ov.needSub"))}
+            {stat(t("cflow.ng.col.given"), fmt(tot.given), pctSub(tot.given))}
+            {stat(t("cflow.ov.received"), fmt(tot.received), pctSub(tot.received), tone ? `var(--status-${tone})` : undefined)}
+            {stat(t("cflow.ng.col.diff"), signed(diff),
+              t(diff < 0 ? "cflow.ov.less" : diff > 0 ? "cflow.ov.more" : "cflow.ov.even"), diffHue(diff))}
+          </div>
+          {/* both lines keep their place, so the table under them never moves */}
+          <p className="text-xs min-h-[16px]" style={{ color: "var(--text-3)" }}>
+            {[!loading && tot.unconfirmed > 0 ? t("cflow.ov.waiting").replace("{n}", fmt(tot.unconfirmed)) : null,
+              live ? t("cflow.ov.today") : null].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      )}>
+      <thead>
+        <tr>
+          <Th label={t("cflow.ov.type")} />
+          <Th label={t("cflow.ng.col.need")} align="right" hint={t("cflow.ng.hint.need")} />
+          <Th label={t("cflow.ov.got")} align="right" hint={t("cflow.ng.hint.received")} />
+          <Th label={t("cflow.ng.col.diff")} align="right" hint={t("cflow.ng.hint.diff")} />
+        </tr>
+      </thead>
+      <tbody>
+        {loading ? [0, 1, 2].map((i) => (
+          <tr key={i}><td colSpan={4} className="px-3 py-2"><SkeletonBlock className="h-5 w-full" /></td></tr>
+        )) : types.map((k) => {
+          const e = tot.types[k];
+          return (
+            <tr key={k} className="text-sm">
+              {/* the short name, so four columns fit a phone; the full one on hover */}
+              <td className="px-3 py-2 whitespace-nowrap" title={t(`production.cont.${k}`)} style={{ color: "var(--text-1)" }}>{t(`cflow.ct.${k}`)}</td>
+              <td className={num} style={{ color: "var(--text-2)" }}>{fmt(e.need)}</td>
+              <td className={num} style={{ color: "var(--text-1)" }}>{fmt(e.received)}</td>
+              <td className={`${num} font-medium`} style={{ color: diffHue(e.received - e.need) }}>{signed(e.received - e.need)}</td>
+            </tr>
+          );
+        })}
+        {!loading && (
+          <tr className="text-sm font-semibold" style={{ background: "var(--bg-inner)" }}>
+            <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-1)" }}>{t("cflow.ov.total")}</td>
+            <td className={num} style={{ color: "var(--text-1)" }}>{fmt(tot.need)}</td>
+            <td className={num} style={{ color: "var(--text-1)" }}>{fmt(tot.received)}</td>
+            <td className={num} style={{ color: diffHue(diff) }}>{signed(diff)}</td>
+          </tr>
+        )}
+      </tbody>
+    </TableCard>
   );
 }
 

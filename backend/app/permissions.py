@@ -204,7 +204,9 @@ DEFAULT_PAGE_ACCESS = {
     # Watching the whole «Konteyner berish» page, no button on it (2026-11-15,
     # the operator: «make it visible for shift managers and top managers too» —
     # watch only).
-    "container-watch": ["top-manager", "shift-manager"],
+    # top-managers only since 2026-11-21: the shift managers «should see only
+    # the containers page» (the board) — `startup.container_watch_shift_managers_off`
+    "container-watch": ["top-manager"],
     # A brigadir asking AXO for EXTRA containers past their limit (2026-11-18,
     # the operator: «add the request page for supervisors if they need extra
     # containers, and this request goes through AXO») — opened to the

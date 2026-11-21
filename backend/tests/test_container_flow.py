@@ -604,6 +604,33 @@ class FlowTest(unittest.TestCase):
             self.assertTrue(flow.settings(self.db)["notify_managers"])
             self.assertEqual(dm.call_count, 1)
 
+    def test_watch_off_for_shift_managers_once(self):
+        """21 Nov: the shift managers leave «Konteyner berish» (the watch key)
+        and keep the board; a tick put back later sticks."""
+        from app import startup
+        from app.permissions import get_page_access, set_page_access
+        m = get_page_access(self.db)
+        m["container-watch"] = ["top-manager", "shift-manager"]
+        m["containers"] = ["top-manager", "shift-manager"]
+        set_page_access(self.db, m)
+
+        def access():
+            s = self.pg.Session()
+            try:
+                return get_page_access(s)
+            finally:
+                s.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.container_watch_shift_managers_off()
+            self.assertEqual(access()["container-watch"], ["top-manager"])
+            self.assertEqual(access()["containers"], ["top-manager", "shift-manager"])
+            s = self.pg.Session()
+            m = get_page_access(s); m["container-watch"] = ["top-manager", "shift-manager"]; set_page_access(s, m); s.close()
+            startup.container_watch_shift_managers_off()
+            self.assertEqual(access()["container-watch"], ["top-manager", "shift-manager"])   # a re-tick sticks
+            self.assertEqual(dm.call_count, 1)
+
     def test_extra_oneshot_opens_to_brigadirs_once(self):
         from app import startup
         from app.permissions import get_page_access, set_page_access
@@ -1669,7 +1696,9 @@ class PageKeyTest(unittest.TestCase):
             self.assertIn(f"page.view.{key}", {c["key"] for c in capabilities.CAPABILITIES})
         # the managers watch the whole page and press nothing on it
         self.assertIn("container-watch", PAGE_KEYS)
-        self.assertEqual(DEFAULT_PAGE_ACCESS["container-watch"], ["top-manager", "shift-manager"])
+        # …the top-managers; the shift managers see only the board since 2026-11-21
+        self.assertEqual(DEFAULT_PAGE_ACCESS["container-watch"], ["top-manager"])
+        self.assertIn("shift-manager", DEFAULT_PAGE_ACCESS["containers"])
 
     def test_axo_doors_and_admin_doors(self):
         """AXO's steps and the reads take the page key; the settings write and

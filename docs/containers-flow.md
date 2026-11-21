@@ -159,15 +159,39 @@ containers row from production and move it into the new button».
     touched, and the one-shot reads who they are at the moment it runs — a
     person granted AXO's or the logistics page LATER gets the board by hand
     («Shaxsiy vakolatlar»).
-  - **Shift managers WATCH and hear nothing**: they keep «Konteynerlar» (the
-    role is re-ticked on the board should the stored matrix have lost it) and
-    «Konteyner berish» as watchers (`container-watch`: every reading tab, no
-    button — the test that walks every POST / PUT guards it), and the
+  - **Shift managers see ONLY «Konteynerlar» and hear nothing**: the role is
+    re-ticked on the board should the stored matrix have lost it, and the
     «Sozlamalar» switch `notify_managers` goes **OFF** — neither «not split by
     its deadline» nor «still unconfirmed» reaches them. AXO's own alerts
-    (`notify_axo`) stay on. They do not see «Konteyner taqsimlash».
+    (`notify_axo`) stay on. That first one-shot left them «Konteyner berish»
+    as watchers; the operator, the same evening: «shift managers should see
+    only the containers page» — so `startup.container_watch_shift_managers_off`
+    (v4.633.0, its own flag) takes the role off `container-watch` in the
+    stored matrix, and the key's default is `["top-manager"]` in
+    `permissions.py` and `config/pages.js`. **Top-managers still watch**
+    «Konteyner berish» (nobody asked otherwise). Neither sees «Konteyner
+    taqsimlash».
   - Once: a grant taken back, or the switch turned on again, sticks. The run
     DMs the admins who got what.
+- **«Reja va haqiqat — jami» opens «Tahlil»** (`PlanVsGot` in
+  `components/containers/FlowAnalytics.jsx`, v4.633.0, 2026-11-21). The
+  operator: «add for the analytics part: for the plan all supervisors have to
+  get this amount and they actually got this amount — I need just numbers,
+  like overall». The FIRST card of the tab, above the request figures, for the
+  tab's period and every brigadir: four numbers — **Reja bo'yicha** (the plan:
+  `day_need`, «Konteynerlar»'s own per-brigadir figure), **Taqsimlangan**
+  (split to them, with its share of the plan), **Aslida olindi** (confirmed on
+  «Qabul», its share, coloured by the vyp band) and **Farq** (received − plan,
+  signed, red below the plan) — then the same per container type as a
+  four-column table with a «Jami» row (short type names, so it fits a phone at
+  336px; the full name on hover). No new read: it is `need_vs_got` — the rows of
+  «Kerak va olingan — kunlar bo'yicha» further down — summed in the browser,
+  so the two cannot disagree. One line under the numbers names what is split
+  and not yet confirmed («… kamchilik emas») and, when the period reaches
+  today, that the day is still running while the plan is the whole day's; the
+  line keeps its height. Hidden when the need could not be read or the period
+  has neither a plan nor a split. Both pages' «Tahlil» show it («Konteyner
+  berish» and «Konteyner taqsimlash»).
 - **Not touched** (the operator, asked the same day): the «Konteynerlar» /
   «Soatlik» views on «Zagruzka fayli»'s «Jamoalar» card and «Konteynerlar —
   jami» on «Smena kunligi».

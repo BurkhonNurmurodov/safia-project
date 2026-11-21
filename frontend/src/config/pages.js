@@ -127,7 +127,7 @@ export const DEFAULT_PAGE_ACCESS = {
   // …as Logistics: a request addressed to them, split across brigadirs.
   "container-logistics": [],
   "container-receive": ["supervisor"],   // brigadirs from 2026-11-15
-  "container-watch": ["top-manager", "shift-manager"],
+  "container-watch": ["top-manager"],   // shift managers see only «Konteynerlar» (2026-11-21)
   // A brigadir asking AXO for extra containers — closed to brigadirs for now (2026-11-18).
   "container-extra": [],
   // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
