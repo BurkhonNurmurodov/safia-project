@@ -6373,3 +6373,21 @@ class PanelAuditRow(Base):
     comment = Column(Text, nullable=True)
     top = Column(Integer, nullable=True)
     read_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PanelAuditDay(Base):
+    """One audit of the panel's «По дням» report — a workshop's rating on one
+    day, 100 % ones too (services/panel_audits.py). The technologists' source
+    for a cell's month («Texnologlar auditi», services/tech_audit.py). A month
+    of one kind is REPLACED whole on every read, like `panel_audit_rows`."""
+    __tablename__ = "panel_audit_days"
+    __table_args__ = (Index("ix_panel_audit_days_kind_month", "kind", "month"),)
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(8), nullable=False)
+    month = Column(Date, nullable=False)
+    day = Column(Date, nullable=False)
+    workshop_id = Column(Integer, nullable=True)  # the panel's own workshop id
+    workshop = Column(String(300), nullable=True)
+    rating = Column(Float, nullable=False)
+    read_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

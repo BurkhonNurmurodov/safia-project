@@ -15,7 +15,10 @@ Now one run fetches all of them, in the order they depend on each other:
      scheduled sync at all, so before this the KPI moved only when somebody
      pressed a refresh. A CLOSED month reads its frozen copy; the button
      takes that copy again after a good pull (`foreign_objects.freeze`,
-     2026-11-17), the automatic run only for a month that has none yet;
+     2026-11-17), the automatic run only for a month that has none yet.
+     After it, on the same thread, the panel's technical audits of the month
+     on screen («По дням», the audit KPI's source — `panel_audits.refresh`,
+     2026-11-21); a month never read is read even when all else is fresh;
   2. the Verifix directory (turnover) — minutes. For a PAST month
      (`turnover.PAST_FROM` ≤ m < `START_MONTH`) the same read also computes the
      month and saves it, as «Hisoblash» did; for a CLOSED month the button
@@ -53,7 +56,8 @@ from typing import Callable, Optional
 
 from app.database import SessionLocal
 from app.models import QualitySyncMeta, SheetSource
-from app.services import action_log, category_compliance as cc, category_sync, foreign_objects, turnover, turnover_sync
+from app.services import (action_log, category_compliance as cc, category_sync, foreign_objects, panel_audits,
+                          turnover, turnover_sync)
 
 log = logging.getLogger(__name__)
 
@@ -193,6 +197,30 @@ def _freeze_foreign(m: date) -> dict:
         db.close()
 
 
+def _audit_due(db, m: Optional[date]) -> bool:
+    """The month on screen has never had its panel audits read — a run on open
+    reads it even when every other source is fresh."""
+    return m is not None and m <= turnover.month_start(turnover.local(turnover.now_aware()).date()) \
+        and panel_audits.days_read_at(db, "tech", m) is None
+
+
+def _audit(m: date, by: str, auto: bool) -> dict:
+    """The panel's technical audits of month `m` («По дням», the audit KPI's
+    source) — the same read the two-hour job does, on a session of its own."""
+    db = SessionLocal()
+    try:
+        res = panel_audits.refresh(db, ["tech"], [m], actor=by, auto=auto)
+        if res.get("code") == "busy":
+            return {"ok": True, "joined": True}
+        return {"ok": bool(res.get("ok")), "error": res.get("code") or None}
+    except Exception as exc:  # noqa: BLE001 — a background step reports, never dies silently
+        db.rollback()
+        log.exception("kpi-recalc: the panel audit read failed")
+        return {"ok": False, "error": str(exc)[:300]}
+    finally:
+        db.close()
+
+
 def _refreeze(m: date, by: str) -> dict:
     db = SessionLocal()
     try:
@@ -222,7 +250,8 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
             _queued = (month, by, on_done)
     if busy:
         return {"started": False, "reason": "queued" if not auto else "running", **status(db)}
-    if auto and compute is None and refreeze is None and foreign is None and _all_fresh(db, _now()):
+    if auto and compute is None and refreeze is None and foreign is None and not _audit_due(db, month) \
+            and _all_fresh(db, _now()):
         return {"started": False, "reason": "fresh", **status(db)}
     # `status` takes `_lock` itself: it is read AFTER the block, never inside
     # it — two pages opening at once race here, and a non-reentrant lock
@@ -233,12 +262,12 @@ def start(db, *, month: Optional[date], by: str, auto: bool,
             _run = {
                 "started_at": _now(), "finished_at": None, "auto": auto,
                 "month": turnover.ym(month) if month else None, "by": by,
-                "steps": {"quality": None, "turnover": None, "compliance": None},
+                "steps": {"quality": None, "audit": None, "turnover": None, "compliance": None},
             }
     if lost:
         return {"started": False, "reason": "running", **status(db)}
     threading.Thread(target=_work, args=(compute, refreeze, by, auto, on_done),
-                     kwargs={"foreign": foreign}, name="kpi-recalc", daemon=True).start()
+                     kwargs={"foreign": foreign, "month": month}, name="kpi-recalc", daemon=True).start()
     return {"started": True, "reason": None, **status(db)}
 
 
@@ -311,11 +340,16 @@ def _read(run_fn, running_fn, *args) -> dict:
 
 
 def _work(compute: Optional[date], refreeze: Optional[date], by: str, auto: bool, on_done,
-          foreign: Optional[date] = None) -> None:
+          foreign: Optional[date] = None, month: Optional[date] = None) -> None:
     global _run, _last, _queued
     trigger = f"{'auto' if auto else 'recalc'}:{by}"[:120]
     try:
-        q = threading.Thread(target=lambda: _set("quality", _quality()), name="kpi-recalc-quality", daemon=True)
+        audit_m = month or turnover.month_start(turnover.local(turnover.now_aware()).date())
+
+        def sheets():          # the register, then the panel's audits — both seconds
+            _set("quality", _quality())
+            _set("audit", _audit(audit_m, by, auto))
+        q = threading.Thread(target=sheets, name="kpi-recalc-quality", daemon=True)
         q.start()
         if compute is not None:
             tv_args = (f"compute:{turnover.ym(compute)}", compute, by)

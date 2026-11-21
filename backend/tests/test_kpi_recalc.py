@@ -51,6 +51,9 @@ class StartTest(unittest.TestCase):
         self.fm = mock.patch.object(kr, "_foreign_month", return_value=None)
         self.fm.start()
         self.addCleanup(self.fm.stop)
+        self.ad = mock.patch.object(kr, "_audit_due", return_value=False)
+        self.ad.start()
+        self.addCleanup(self.ad.stop)
 
     def test_auto_skips_when_every_source_is_fresh(self):
         with mock.patch.object(kr, "_past_compute", return_value=None), \
@@ -100,6 +103,7 @@ class StartTest(unittest.TestCase):
         self.assertEqual(kr._queued[:2], (date(2026, 10, 1), "hr"))
         th.assert_called_once()
         with mock.patch.object(kr, "_quality", return_value={"ok": True}), \
+                mock.patch.object(kr, "_audit", return_value={"ok": True}), \
                 mock.patch.object(kr, "_read", return_value={"ok": True}), \
                 mock.patch.object(kr, "_start_queued") as sq:
             kr._work(None, None, "page", True, None)
@@ -124,6 +128,7 @@ class RaceTest(unittest.TestCase):
 
         out = {}
         with mock.patch.object(kr, "_past_compute", return_value=None), \
+                mock.patch.object(kr, "_audit_due", return_value=False), \
                 mock.patch.object(kr, "_all_fresh", side_effect=other_page_wins), \
                 mock.patch.object(kr.turnover_sync, "running", return_value=False), \
                 mock.patch.object(kr.category_sync, "running", return_value=False), \
@@ -144,10 +149,12 @@ class WorkTest(unittest.TestCase):
                    "by": "hr", "steps": {"quality": None, "turnover": None, "compliance": None}}
         forgot = []
         with mock.patch.object(kr, "_quality", return_value={"ok": True}), \
+                mock.patch.object(kr, "_audit", return_value={"ok": True}), \
                 mock.patch.object(kr, "_read", side_effect=[{"ok": True}, {"ok": False, "error": "x"}]):
             kr._work(None, None, "hr", False, lambda: forgot.append(1))
         self.assertIsNone(kr._run)
-        self.assertEqual(kr._last["steps"], {"quality": {"ok": True}, "turnover": {"ok": True},
+        self.assertEqual(kr._last["steps"], {"quality": {"ok": True}, "audit": {"ok": True},
+                                             "turnover": {"ok": True},
                                              "compliance": {"ok": False, "error": "x"}})
         self.assertIsNotNone(kr._last["finished_at"])
         self.assertEqual(forgot, [1])
@@ -178,6 +185,7 @@ class ForeignFreezeTest(unittest.TestCase):
         kr._run = {"started_at": kr._now(), "finished_at": None, "auto": True, "month": "2026-10",
                    "by": "hr", "steps": {"quality": None, "turnover": None, "compliance": None}}
         with mock.patch.object(kr, "_quality", return_value=quality), \
+                mock.patch.object(kr, "_audit", return_value={"ok": True}), \
                 mock.patch.object(kr, "_read", return_value={"ok": True}), \
                 mock.patch.object(kr, "_freeze_foreign", return_value={"frozen": "2026-10"}) as fz:
             kr._work(None, None, "hr", True, None, foreign=self.OCT)
@@ -238,6 +246,7 @@ class RefreezeMonthTest(unittest.TestCase):
                 mock.patch.object(kr, "_past_compute", return_value=None), \
                 mock.patch.object(kr, "_refreeze_month", return_value=self.OCT), \
                 mock.patch.object(kr, "_foreign_month", return_value=None), \
+                mock.patch.object(kr, "_audit_due", return_value=False), \
                 mock.patch.object(kr, "_all_fresh", return_value=True), \
                 mock.patch.object(threading, "Thread") as th:
             out = kr.start(None, month=self.OCT, by="hr", auto=True)

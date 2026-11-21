@@ -30,13 +30,14 @@ from typing import Any, Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import PanelAuditRow
+from app.models import PanelAuditDay, PanelAuditRow
 from app.services import sd_panel
 from app.services.verifix import TZ, _get, _put
 
 log = logging.getLogger(__name__)
 
 KINDS = {"kru": 10, "tech": 16}
+DAY_KINDS = {"tech"}             # «По дням» is read too: the audit KPI's source (tech_audit)
 K_STATE = "panel_audits_state"   # JSON: {"months": {kind: {YYYY-MM: {...}}}, "refused": fp}
 MAX_MONTHS = 6                   # one press reads at most this many months
 BUDGET_S = 70.0                  # inside Cloudflare's 100 s
@@ -123,12 +124,16 @@ def refresh(db: Session, kinds: list[str], months: list[date], actor: str = "",
         plan = {(k, m): sd_panel.report_path(m.isoformat(), (next_month(m) - timedelta(days=1)).isoformat(),
                                              KINDS[k])
                 for k in kinds for m in months}
+        days = {(k, m): sd_panel.days_path(m.isoformat(), (next_month(m) - timedelta(days=1)).isoformat(),
+                                           KINDS[k])
+                for (k, m) in plan if k in DAY_KINDS}
+        readers = {p: (lambda page, y=m.year: sd_panel.parse_days(page, y)) for (_k, m), p in days.items()}
         db.rollback()  # hand the connection back for the network wait
         now = datetime.now(TZ)
         results: list[dict] = []
         try:
-            got = sd_panel.read_reports(user, password, list(plan.values()),
-                                        deadline=started + BUDGET_S - 25)
+            got = sd_panel.read_reports(user, password, list(plan.values()) + list(days.values()),
+                                        deadline=started + BUDGET_S - 25, reader=readers)
         except sd_panel.PanelError as e:
             if e.code == "refused":
                 st["refused"] = fp
@@ -141,7 +146,8 @@ def refresh(db: Session, kinds: list[str], months: list[date], actor: str = "",
             slot = st["months"].setdefault(kind, {})
             if isinstance(res, list):
                 _replace(db, kind, m, res, now)
-                slot[_mkey(m)] = {"at": now.isoformat(timespec="seconds"), "rows": len(res), "ok": True,
+                kept = {k: v for k, v in (slot.get(_mkey(m)) or {}).items() if k.startswith("days")}
+                slot[_mkey(m)] = {**kept, "at": now.isoformat(timespec="seconds"), "rows": len(res), "ok": True,
                                   "by": actor or ("auto" if auto else "")}
                 results.append({"kind": kind, "month": _mkey(m), "ok": True, "rows": len(res)})
             else:
@@ -150,6 +156,18 @@ def refresh(db: Session, kinds: list[str], months: list[date], actor: str = "",
                 slot[_mkey(m)] = {**prev, "error": e.code, "error_at": now.isoformat(timespec="seconds")}
                 results.append({"kind": kind, "month": _mkey(m), "ok": False, "code": e.code,
                                 "message": e.message})
+        for (kind, m), path in days.items():
+            res = got.get(path)
+            slot = st["months"].setdefault(kind, {}).setdefault(_mkey(m), {})
+            if isinstance(res, list):
+                _replace_days(db, kind, m, res, now)
+                slot.update(days=len(res), days_at=now.isoformat(timespec="seconds"))
+                slot.pop("days_error", None)
+            else:
+                e = res if isinstance(res, sd_panel.PanelError) else sd_panel.PanelError("missing")
+                slot["days_error"] = e.code
+                results.append({"kind": kind, "month": _mkey(m), "report": "days", "ok": False,
+                                "code": e.code, "message": e.message})
         _save_state(db, st)
         ms = int((time.monotonic() - started) * 1000)
         log.info("panel audits: %s read in %s ms (%s)", len(results), ms, actor or "auto")
@@ -169,6 +187,32 @@ def _replace(db: Session, kind: str, m: date, rows: list[dict], now: datetime) -
         question=r.get("question") or None, comment=r.get("comment") or None, top=r.get("top"),
         read_at=now) for r in rows])
     db.commit()
+
+
+def _replace_days(db: Session, kind: str, m: date, rows: list[dict], now: datetime) -> None:
+    db.query(PanelAuditDay).filter(PanelAuditDay.kind == kind, PanelAuditDay.month == m).delete(
+        synchronize_session=False)
+    db.bulk_save_objects([PanelAuditDay(
+        kind=kind, month=m, day=date.fromisoformat(r["day"]), workshop_id=r.get("workshop_id"),
+        workshop=(r.get("workshop") or "")[:300] or None, rating=r["rating"], read_at=now) for r in rows])
+    db.commit()
+
+
+def days_read_at(db: Session, kind: str, m: date, slot: Optional[dict] = None) -> Optional[str]:
+    """When month `m`'s «По дням» was last read well, if ever."""
+    if slot is None:
+        slot = (state(db)["months"].get(kind) or {}).get(_mkey(m)) or {}
+    return slot.get("days_at")
+
+
+def days_of(db: Session, kind: str, m: date) -> tuple[Optional[dict], list[PanelAuditDay]]:
+    """(what the last read of month `m`'s «По дням» said, its audits) — the
+    state slot is None when that month was never read."""
+    slot = (state(db)["months"].get(kind) or {}).get(_mkey(m)) or {}
+    if not days_read_at(db, kind, m, slot):
+        return None, []
+    return slot, (db.query(PanelAuditDay).filter(PanelAuditDay.kind == kind, PanelAuditDay.month == m)
+                  .order_by(PanelAuditDay.day.desc(), PanelAuditDay.workshop).all())
 
 
 def _save_state(db: Session, st: dict) -> None:

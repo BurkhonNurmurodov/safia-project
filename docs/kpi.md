@@ -978,37 +978,76 @@ it; never add it back to the leaders' board without the operator asking.
 
 ## «Texnologlar auditi» — the technologists' audit KPI (`/leaders-kpi` → «Audit», 2026-11-06)
 
-The fifth of HR's five (weight 0.1, scored 0–3), with no source until the
-operator found `public.audit`: a table this codebase neither creates nor
-writes (owner `safia_prod_rw`, appended by something outside — 16,719 rows
-18.04.2024 → 04.11.2026 on the first read). Columns: `date`, `type_name`,
-`factory_id` (THEIR workshop id, not our plant), `division_name` («7213
-Медовые коржи»), `division_group_name`, `foreman`, `avg_rating` (0–100).
-`services/tech_audit.py` is THE rule; the «Audit jadvali» screen (`/audit`)
-shows the raw table.
+The fifth of HR's five (weight 0.1, scored 0–3). `services/tech_audit.py` is
+THE rule.
 
-- **Only `type_name` «Технический аудит»** (`AUDIT_TYPE`, ~5,700 rows). The
-  other type, «КРУ Производство» (~11,000), is the KRU audit the brigadirs'
-  KPI waits for — not read here.
-- **A cell's month is the AVERAGE of that month's audits** (the operator's
-  ruling): every audit row of the cell dated in the month, each counted once,
-  mean of `avg_rating`, ONE decimal half up, judged as printed by HR's bands —
-  above 90 % → 3, above 80 % → 2, above 70 % → 1, else 0 (`audit_rule` in
+- **The source is panel.safiabakery.uz's «По дням» report** (2026-11-21, the
+  technologists: «take the avg for the cell from this link» —
+  `/task-factory-reports/days?start=…&end=…&type=16`): a workshop × day grid of
+  every technical audit's rating, **100 % ones included** («-» = no audit),
+  ending in «Кол-во» and «Среднее». The «Минусы» report «Auditlar» keeps
+  (docs/audits.md) lists only the inspections that lost points, so it cannot
+  give an average. `panel_audits.refresh` reads «По дням» beside «Минусы» for
+  the technical kind (`sd_panel.parse_days`, refused as `shape` when a row's
+  «Кол-во» is not its count of rated days) and KEEPS it in `panel_audit_days`,
+  a month replaced whole: every two hours for the current month, and
+  «Qayta hisoblash» for the month on screen (`kpi_recalc._audit` — a month
+  never read is read even when every other source is fresh). October 2026,
+  read through the admin door `GET /api/admin/tasker/panel/peek`: 163 audited
+  workshops, 442 audits, «Кол-во» right on every row.
+- **Why not `public.audit`** (the source from 2026-11-06 to 2026-11-21): its
+  `factory_id` is the panel's workshop id, but its `division_name` sits on the
+  wrong workshop for every id, so audits were credited to the wrong cells
+  (found 2026-11-17); it also held only about half of the panel's audits. The
+  table is no longer read by the KPI; `drop_older_loads` still cleans its
+  reloads for the «Audit jadvali» screen (`/audit`).
+- **A cell's month is the AVERAGE of that month's audits** (the operator,
+  2026-11-06), **as the panel prints it — two decimals** (2026-11-21, «the avg
+  from this link»; one decimal until then, which moved no October band). For a
+  cell on one panel row that is the row's «Среднее» exactly. HR's bands judge
+  it: above 90 % → 3, above 80 % → 2, above 70 % → 1, else 0 (`audit_rule` in
   app_settings overrides weight, bands and worst; a malformed one never blanks
-  a score). **A 0.00 rating is a real 0** (432 of them on the first read).
-  **No audit in the month → no figure** («—», 0 in the total).
-- **Which cell**: the code `division_name` starts with (`turnover.unit_code`,
-  3–5 digits), else the four digits it ends with, else the whole name —
-  through `turnover.code_key` against the month's cell map. On the first read
-  112 of 132 divisions named a cell of ours; a division that names none counts
-  toward nobody and is NAMED in the notes (`unregistered`, unscoped views only).
+  a score). **A 0 % rating is a real 0. No audit in the month → no figure**
+  («—», 0 in the total).
+- **Which cell** — chosen 2026-11-21 when the operator left the questions open
+  (each a line of code to change):
+  - every 3–5-digit code in the workshop's name, through `turnover.code_key`,
+    against the month's cell map. A list number («1 - …») and a floor («2
+    этаж») are too short to be codes, a decimal («Печенье2.1») is not one;
+  - **a workshop naming two cells counts for both** — six in October
+    («8911 бисконти, 7411 - …», «6711 …, 4511 …», «8920 …, 9414 …», «9422
+    …,9122 …», «7121 … 6722 …», «7323 … 7331 …»). HR's sheet gives it to the
+    first code only;
+  - **several workshops carrying one code all count** (8920, 9122, 9429, 9411
+    two each, 6611 and 6621 three) — the «every audit of the month» rule. HR's
+    VLOOKUP takes the first row only, the best scored: 8920, 9122 and 9429 are a
+    3 in HR's file and a 2 here;
+  - **a workshop the panel still names by an OLD code is placed by its panel
+    id** (`PANEL_WORKSHOP_CELL`): 2322 «Оф.Мел.Изд.Экл2» → 7315, 8914 «Цех
+    Печенье4» → 7414, 4324 «Оф.Тортов.нап4» → 7223 — HR's own pairs (column O
+    of its October «Аудит Техн», which its formulas never applied) — and 0611
+    «Обработка яиц» → A0061, which Verifix itself names «0611 Обработка яиц».
+    Still OFF, counting toward nobody until the technologists say: 8921 «Цех
+    Печенье2.1» (HR pairs it with 7424 «Цех Печенье4»; «2.1» reads as shift 2,
+    line 1 — 7421) and 8917 «Цех Печенье7» (no cell of that name);
+  - a workshop that names no cell of ours counts toward nobody and is NAMED in
+    the notes (`unregistered`, unscoped views only).
+- **Against HR's October file** (its «Аудит Техн» is the panel's month figure
+  per workshop, read by an exact VLOOKUP of the cell code): 92 of the 99 owned,
+  KPI-counted cells score the same. The 7: 7315, 7414, 7223 get the scores HR
+  left #N/A (the old codes); 8920, 9122, 9429 fall to 2 (all their rows);
+  A0061 is HR's 0611 row under today's code (0 both). HR's file also misses
+  5 cells whose code it typed as a NUMBER against the sheet's text (6611, 6621,
+  6711, 6712, 3611 — #N/A), none of them owned.
 - **Credited like every leaders' KPI**: one row per cell with an owner on the
   month's last day (`turnover.cell_map` + `owned`).
-- **Live only while the table can be read.** `read_month` runs in a savepoint
-  and asks the catalog first: a missing table (`missing`), a revoked GRANT
-  (`no_read`) or a failed read (`error`) leaves `source.ok` False — the board
-  then marks the KPI not `live` (its meta line names the shortfall again) and
-  the tab says which of the three it is, never «0».
+- **Live only while the month has been read.** A month never read is `missing`
+  («not read yet — «Qayta hisoblash» reads it»), a missing or refused panel
+  login `no_read`, a broken read `error`; each leaves `source.ok` False, so the
+  board marks the KPI not `live` and the tab says which, never «0». A failed
+  re-read keeps the rows of the last good one (`source.stale` names the error).
+- **Not frozen**: a month is the panel as last read, so an audit the
+  technologists re-score (9413's 15.10, 72.73 → 100) moves it on the next read.
 - **The board** (`leaders_kpi.board`): the half is `data.audit` (source,
   totals, the month's audits, unregistered divisions, rule) and each row's
   `audit` {audits, pct, min, max, score, points}; its points join the total.
@@ -1022,8 +1061,7 @@ shows the raw table.
   amber); `kpiUtil.auditScoreOf` is the client twin of `tech_audit.score_of`.
 - **The workbook**: a «Texnologlar auditi» sheet (the ranking, then every audit
   of the month), the audit column on the board sheet, its rule on the summary.
-- Nothing is stored; a month is re-read as the table stands (the board's 60 s
-  keep applies). Not built: the KRU half for «Brigadirlar KPI».
+- The board's 60 s keep applies. Not built: the KRU half for «Brigadirlar KPI».
 
 ## Who answers for a Quality record (`quality_attribution`, 2026-11-02)
 

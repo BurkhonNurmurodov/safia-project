@@ -9,7 +9,7 @@ import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import { fill } from "../../pages/leadersKpiText";
 import { ScoreChip } from "./KpiBits";
-import { auditScoreOf, bandLines, dmy, fracTone, maxScore, n0, pct1, pts, toneInk, w100 } from "./kpiUtil";
+import { auditScoreOf, bandLines, dmy, fracTone, maxScore, n0, pct2, pts, toneInk, w100 } from "./kpiUtil";
 
 function Scale({ bands, score, max }) {
   return (
@@ -45,7 +45,7 @@ export default function AuditExplain({ open, onClose, item, data, T, tx, title, 
         <div className="flex items-center gap-3">
           <span className="text-[28px] font-bold tabular-nums leading-none"
             style={{ color: a.pct == null ? "var(--text-4)" : toneInk(fracTone(a.score, max)) }}>
-            {a.pct == null ? "—" : pct1(a.pct)}
+            {a.pct == null ? "—" : pct2(a.pct)}
           </span>
           <ScoreChip score={a.score} max={max} />
         </div>
@@ -54,8 +54,8 @@ export default function AuditExplain({ open, onClose, item, data, T, tx, title, 
         ) : (
           <>
             <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>
-              {[fill(T.auExFig, { n: n0(a.audits), pct: pct1(a.pct) }),
-                a.audits > 1 ? fill(T.auExRange, { min: pct1(a.min), max: pct1(a.max) }) : null].filter(Boolean).join(" · ")}
+              {[fill(T.auExFig, { n: n0(a.audits), pct: pct2(a.pct) }),
+                a.audits > 1 ? fill(T.auExRange, { min: pct2(a.min), max: pct2(a.max) }) : null].filter(Boolean).join(" · ")}
             </p>
             <p className="text-xs" style={{ color: "var(--text-3)" }}>{T.auExMean}</p>
           </>
@@ -84,7 +84,7 @@ export default function AuditExplain({ open, onClose, item, data, T, tx, title, 
                   {x.division}{x.foreman ? <span style={{ color: "var(--text-3)" }}> · {tx(x.foreman)}</span> : null}
                 </span>
                 <span className="font-semibold tabular-nums whitespace-nowrap"
-                  style={{ color: toneInk(fracTone(auditScoreOf(x.rating, rule), max)) }}>{pct1(x.rating)}</span>
+                  style={{ color: toneInk(fracTone(auditScoreOf(x.rating, rule), max)) }}>{pct2(x.rating)}</span>
               </li>
             ))}
           </ul>

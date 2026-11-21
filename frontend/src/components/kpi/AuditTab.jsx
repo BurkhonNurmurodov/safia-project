@@ -15,7 +15,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { fill } from "../../pages/leadersKpiText";
 import { Count, EmptyRow, MobileRow, Notes, RulesButton, ScoreChip, Summary, ViewHead } from "./KpiBits";
 import KpiRulesModal from "./KpiRulesModal";
-import { auditScoreOf, dmy, fracTone, maxScore, n0, pct1, pts, sortRows, toneInk, useSort } from "./kpiUtil";
+import { auditScoreOf, dmy, fracTone, maxScore, n0, pct2, pts, sortRows, toneInk, useSort } from "./kpiUtil";
 
 export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
   const au = data?.audit || {};
@@ -70,7 +70,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
   }
 
   const summary = (
-    <Summary value={tot?.pct == null ? "—" : pct1(tot.pct)}
+    <Summary value={tot?.pct == null ? "—" : pct2(tot.pct)}
       label={tot?.pct == null ? T.figAuditNone
         : `${T.sumAudit} · ${fill(T.sumAuditOf, { n: n0(tot.ranked_audits), c: n0(tot.scored_cells) })}`}
       meta={[data?.state === "open" && T.notOver, src.last ? fill(T.auSrc, { d: dmy(src.last) }) : T.auSrcNone]}
@@ -85,7 +85,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
   const pctCell = (x) => {
     const a = x.audit || {};
     if (a.pct == null) return <span style={{ color: "var(--text-4)" }}>{T.auNoAudit}</span>;
-    return <span className="font-semibold" style={{ color: toneInk(fracTone(a.score, max)) }}>{pct1(a.pct)}</span>;
+    return <span className="font-semibold" style={{ color: toneInk(fracTone(a.score, max)) }}>{pct2(a.pct)}</span>;
   };
 
   const rankingTable = (
@@ -125,7 +125,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
               <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{x.brigadir ? tl(x.brigadir) : "—"}</td>
               <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{n0(a.audits ?? 0)}</td>
               <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{pctCell(x)}</td>
-              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{a.min == null ? "—" : pct1(a.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{a.min == null ? "—" : pct2(a.min)}</td>
               <td className="px-3 py-1.5 text-center"><ScoreChip score={a.score} size="sm" max={max} /></td>
               <td className="px-3 py-2 text-right tabular-nums">{a.points == null ? "0" : pts(a.points)}</td>
             </tr>
@@ -142,7 +142,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
         <div key={`${a.date}-${a.division}-${i}`} className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex items-start justify-between gap-3">
             <span className="text-sm font-medium min-w-0 truncate" style={{ color: "var(--text-1)" }}>{a.division}</span>
-            <span className="text-sm font-semibold tabular-nums whitespace-nowrap" style={{ color: ratingInk(a.rating) }}>{pct1(a.rating)}</span>
+            <span className="text-sm font-semibold tabular-nums whitespace-nowrap" style={{ color: ratingInk(a.rating) }}>{pct2(a.rating)}</span>
           </div>
           <div className="text-xs mt-0.5 flex flex-wrap gap-x-2" style={{ color: "var(--text-3)" }}>
             <span className="tabular-nums">{dmy(a.date)}</span>
@@ -175,7 +175,7 @@ export default function AuditTab({ T, tl, tx, data, rows, needle, onExplain }) {
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-2)" }}>
               <span className="block max-w-[12rem] truncate" title={a.foreman || ""}>{a.foreman ? tx(a.foreman) : "—"}</span>
             </td>
-            <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: ratingInk(a.rating) }}>{pct1(a.rating)}</td>
+            <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: ratingInk(a.rating) }}>{pct2(a.rating)}</td>
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: a.counted === "owner" ? "var(--text-2)" : "var(--status-warn)" }}>{counted(a)}</td>
           </tr>
         ))}

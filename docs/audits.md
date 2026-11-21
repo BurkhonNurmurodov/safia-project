@@ -29,6 +29,12 @@ was built and dropped the same day: it duplicated that card.)
   first five days); one catch-up three minutes after boot when the current month
   was never read (`panel_audits.register_jobs`, both entrypoints). What each
   month last read, and its last error, is `app_settings.panel_audits_state`.
+- **«По дням» is read too, for the technical kind** (2026-11-21): the
+  workshop × day grid of every audit, 100 % ones included, kept in
+  `panel_audit_days` — the source of the leaders' audit KPI (docs/kpi.md
+  «Texnologlar auditi»). The page itself still shows «Минусы» only. What each
+  month's «По дням» last read is `days` / `days_at` / `days_error` in the same
+  state.
 - **A refused login is never repeated by the clock**: the refusal is kept with a
   fingerprint of the sealed password, and the job stays off until the password
   on the card changes — a wrong password cannot lock the account. A press on

@@ -226,6 +226,54 @@ def peek(db: Session, report: str, start: str, end: str, type_id: int) -> dict:
     return {"path": path, "tables": got}
 
 
+def days_path(start: str, end: str, type_id: int) -> str:
+    """The «По дням» report: a workshop × day grid of every audit's rating,
+    100 % ones too — the technologists' source for a cell's month average."""
+    return f"/task-factory-reports/days?start={start}&end={end}&type={int(type_id)}"
+
+
+_DAY_HEAD = re.compile(r"(\d{2})\.(\d{2})")
+_WS_ID = re.compile(r"/task-factory/list\?id=(\d+)")
+
+
+def parse_days(page: str, year: int) -> list[dict]:
+    """«По дням» as one row per audit: {workshop_id, workshop, day, rating}.
+    Columns: # · Цех · one per day («dd.mm», «-» = no audit) · Кол-во · Среднее ·
+    Обратная связь. Raises ``PanelError('shape')`` when the page no longer looks
+    like that, or a row's «Кол-во» is not its count of rated days."""
+    m = _ANY_TABLE.search(page)
+    if not m:
+        raise PanelError("shape", "no table on the page")
+    trs = _ANY_TR.findall(m.group(1))
+    heads = [_text(c) for c in _CELL.findall(trs[0])] if trs else []
+    days = [_DAY_HEAD.fullmatch(h) for h in heads[2:-3]]
+    if heads[:2] != ["#", "Цех"] or heads[-3:-1] != ["Кол-во", "Среднее"] or not days or not all(days):
+        raise PanelError("shape", " | ".join(heads)[:300])
+    out = []
+    for tr in trs[1:]:
+        td = _CELL.findall(tr)
+        if len(td) <= 1:
+            continue                       # a spacer row
+        if len(td) != len(heads):
+            raise PanelError("shape", f"a row with {len(td)} cells")
+        ws = _WS_ID.search(tr)
+        name = _text(td[1])
+        rated = []
+        for d, cell in zip(days, td[2:-3]):
+            v = _text(cell)
+            if v not in ("", "-"):
+                pct = _pct(v)
+                if pct is None:
+                    raise PanelError("shape", f"«{v}» in {name[:60]}")
+                rated.append({"workshop_id": int(ws.group(1)) if ws else None, "workshop": name,
+                              "day": f"{year}-{d.group(2)}-{d.group(1)}", "rating": pct})
+        n = _text(td[-3])
+        if (int(n) if n.isdigit() else 0) != len(rated):
+            raise PanelError("shape", f"{name[:60]}: «Кол-во» {n}, {len(rated)} rated days")
+        out.extend(rated)
+    return out
+
+
 def read_reports(user: str, password: str, paths: list[str],
                  deadline: Optional[float] = None, reader=None) -> dict[str, Any]:
     """Log in ONCE and read each report path — one attempt, redirects never
@@ -262,7 +310,9 @@ def read_reports(user: str, password: str, paths: list[str],
                     raise PanelError("no_access")
                 if res.status_code != 200:
                     raise PanelError("status", "GET report", res.status_code)
-                out[path] = (reader or parse)(res.text)
+                # `reader`: one function for every path, or {path: function}
+                fn = reader.get(path) if isinstance(reader, dict) else reader
+                out[path] = (fn or parse)(res.text)
             except PanelError as e:
                 if e.code in ("no_access", "network", "timeout"):
                     raise

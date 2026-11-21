@@ -6,9 +6,10 @@
 import { usePersistentState } from "../../hooks/usePersistentState";
 import api from "../../utils/api";
 import { fill } from "../../pages/leadersKpiText";
-import { n0, pct1 } from "../turnover/turnoverUtil";
 
 export { n0, pts, pct1, dmy, dmHm, monthLabel, todayISO, scoreTone, toneInk, PAST_FROM, START_MONTH } from "../turnover/turnoverUtil";
+// The audit's figures as the panel prints them — two decimals (tech_audit.mean1).
+export const pct2 = (v) => (v == null ? "—" : `${Number(v).toFixed(2)}%`);
 
 export const KPI_KEYS = ["concerns", "turnover", "foreign", "compliance", "audit"];
 // The fallback when a payload carries no `kpis` — the server's `kpis[].live`
@@ -80,7 +81,7 @@ export function bandLines(key, rule) {
     return out;
   }
   if (key === "audit") {
-    // HR's IFS on the month's average, one decimal as printed: strictly above → score.
+    // HR's IFS on the month's average as the panel prints it: strictly above → score.
     const bands = [...(rule.bands || [])].sort((a, b) => b.above - a.above);
     const low = bands.length ? `≤ ${bands[bands.length - 1].above}%` : "";
     return [...bands.map((b) => [`> ${b.above}%`, b.score]), [low, rule.worst ?? 0]];
@@ -135,7 +136,7 @@ export function figureOf(row, key, T) {
     const a = row.audit;
     if (!a) return T.notLive;
     if (a.pct == null) return T.figAuditNone;
-    return fill(T.figAudit, { n: a.audits, pct: pct1(a.pct) });
+    return fill(T.figAudit, { n: a.audits, pct: pct2(a.pct) });
   }
   return T.cmNotLive;
 }

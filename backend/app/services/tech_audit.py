@@ -1,16 +1,14 @@
 """«Texnologlar auditi» — the leaders' technologists'-audit KPI. THE rule.
 
-The 5th of HR's five leaders' KPIs (weight 0.1, scored 0–3). Until 2026-11-06 the
-platform had no source for it and it counted 0 for every cell. Its source is
-`public.audit` — a table this codebase does NOT create or write: something
-outside it (owner `safia_prod_rw`) appends one row per audit of a workshop:
-
-    date · type_name · factory_id (THEIR workshop id, not our plant)
-    division_name («7213 Медовые коржи») · division_group_name · foreman · avg_rating (0–100)
-
-Two kinds of audit live there; this KPI reads `type_name` «Технический аудит»
-alone (`AUDIT_TYPE`). The other, «КРУ Производство», is the KRU audit the
-brigadirs' KPI waits for — not read here.
+The 5th of HR's five leaders' KPIs (weight 0.1, scored 0–3). **Its source is
+panel.safiabakery.uz's «По дням» report** (2026-11-21, the technologists: «take
+the avg for the cell from this link» — `/task-factory-reports/days?…&type=16`):
+a workshop × day grid of every technical audit's rating, 100 % ones included,
+kept in `panel_audit_days` by `panel_audits.refresh` (every two hours for the
+current month, and by «Qayta hisoblash» for the month on screen). From
+2026-11-06 to 2026-11-21 it read `public.audit`, whose division names turned
+out to sit on the wrong workshops (docs/kpi.md); that table is no longer read
+here (`drop_older_loads` still cleans it for the «Audit jadvali» screen).
 
 The operator's rulings (2026-11-06, asked one by one):
 
@@ -19,22 +17,25 @@ The operator's rulings (2026-11-06, asked one by one):
 * **A 0.00 rating is a real 0** — it is averaged in like any other.
 * **A cell with no audit in the month has no figure** («—», 0 in the total —
   how every KPI treats a missing figure).
-* **Which cell**: the code `division_name` starts with (3–5 digits —
-  `turnover.unit_code`'s reading, the Verifix org-unit names' own shape), else
-  the four digits it ends with, else the whole name; resolved through
-  `turnover.code_key` («0028» and «28» are one cell) against the month's cell
-  map. A division that names no cell of ours counts toward nobody and is NAMED.
+* **Which cell**: every code the panel workshop's name carries (3–5 digits, or
+  «A» + 4), resolved through `turnover.code_key` («0028» and «28» are one cell)
+  against the month's cell map — so a workshop naming two cells («8911 бисконти,
+  7411 - Цех Пирог и печенье») counts for both, and several workshops carrying
+  one code all count for it (2026-11-21, chosen when the operator left both
+  questions open; HR's VLOOKUP took only the first). A workshop the panel still
+  names by an OLD code is placed by its panel id (`PANEL_WORKSHOP_CELL`). A
+  workshop that names no cell of ours counts toward nobody and is NAMED.
 * **Credited like every leaders' KPI**: one row per cell with an OWNER («Egasi»)
   on the month's last day, standing on it (`turnover.cell_map` + `owned`).
-* **HR's bands on the mean, ONE decimal, judged as printed** (the turnover and
-  compliance rule): above 90 % → 3, above 80 % → 2, above 70 % → 1, else 0.
+* **HR's bands on the mean as the panel prints it — TWO decimals** (2026-11-21:
+  «the avg from this link»; until then one decimal, which moved no October
+  band): above 90 % → 3, above 80 % → 2, above 70 % → 1, else 0.
   `audit_rule` in app_settings overrides it (weight, bands, worst); a malformed
   override never blanks a score.
 
-Read-only, in a savepoint: a table that is missing, unreadable (no GRANT) or
-broken leaves the KPI NOT live (`source.ok` False — the board then counts it 0
-and says so), never a failed board. Nothing is stored; a month is re-read as the
-table stands.
+A month the panel was never read for, a missing or refused login, or a failed
+read of «По дням» leaves the KPI NOT live (`source.ok` False — the board then
+counts it 0 and says so), never a failed board.
 """
 from __future__ import annotations
 
@@ -63,6 +64,13 @@ DEFAULT_RULE = {
     "max_score": 3,
 }
 _TAIL4 = re.compile(r"(?<!\d)(\d{4})\s*$")
+_CODES = re.compile(r"(?<![\d.])(\d{3,5})(?![\d.])")   # «самса,9122» is a code; «2.1» is not
+# Panel workshops still named by a code the cell no longer has → today's cell.
+# HR's own notes in its October file (column O of «Аудит Техн»), and 0611, which
+# Verifix itself names A0061. 8921 «Цех Печенье2.1» (HR: 7424, the name reads
+# 7421) and 8917 «Цех Печенье7» wait for the technologists.
+# shortcut: a constant, changed in code — make it an admin list when it moves often.
+PANEL_WORKSHOP_CELL = {11: "7315", 176: "A0061", 122: "7414", 39: "7223"}
 
 
 # ── the rule ──────────────────────────────────────────────────────────────────
@@ -87,7 +95,7 @@ def rule(db: Session) -> dict:
 
 
 def score_of(pct: Optional[float], r: dict) -> Optional[int]:
-    """The ONE-decimal mean, judged as printed. None = no audit, no score."""
+    """The mean as the panel prints it. None = no audit, no score."""
     if pct is None:
         return None
     for b in sorted(r["bands"], key=lambda b: -float(b["above"])):
@@ -103,11 +111,11 @@ def points_of(score: Optional[int], r: dict) -> Optional[float]:
 
 
 def mean1(vals: list[float]) -> Optional[float]:
-    """The month's average to one decimal, half up (as printed)."""
+    """The month's average as the panel prints it: two decimals, half up."""
     if not vals:
         return None
     m = sum(vals) / len(vals)
-    return float(int(m * 10 + 0.5 + 1e-9)) / 10
+    return float(int(m * 100 + 0.5 + 1e-9)) / 100
 
 
 # ── the source ────────────────────────────────────────────────────────────────
@@ -152,35 +160,28 @@ def drop_older_loads(db: Session) -> tuple[int, int]:
 
 
 def read_month(db: Session, m: date) -> tuple[dict, list[dict]]:
-    """(source, the month's technical audits as stored). Never raises: a table
-    that cannot be read returns `source.ok` False and no rows."""
+    """(source, month `m`'s technical audits from the panel's «По дням» as last
+    read). Never raises: a month never read, a login that cannot be used or a
+    failed read returns `source.ok` False and no rows."""
+    from app.services import panel_audits
+
     src: dict = {"ok": False, "why": None, "type": AUDIT_TYPE, "first": None, "last": None, "total": 0}
     rows: list[dict] = []
     try:
         with db.begin_nested():
-            p = _probe(db)
-            if not p["present"]:
-                src["why"] = "missing"
+            slot, days = panel_audits.days_of(db, "tech", m)
+            if slot is None:
+                login = panel_audits.configured(db)
+                bad = not login["configured"] or login["refused"] or login["readable"] is False
+                src["why"] = "no_read" if bad else "missing"
                 return src, rows
-            if not p["readable"]:
-                src["why"] = "no_read"
-                return src, rows
-            span = db.execute(sql(
-                "SELECT count(*) AS n, min(date) AS first, max(date) AS last FROM public.audit "
-                "WHERE btrim(type_name) = :t"), {"t": AUDIT_TYPE}).first()
-            src.update(ok=True, total=int(span.n or 0),
-                       first=span.first.isoformat() if span.first else None,
-                       last=span.last.isoformat() if span.last else None)
-            res = db.execute(sql(
-                "SELECT date, division_name, foreman, avg_rating FROM public.audit "
-                "WHERE btrim(type_name) = :t AND date >= :a AND date <= :b AND avg_rating IS NOT NULL "
-                "ORDER BY date DESC, division_name"),
-                {"t": AUDIT_TYPE, "a": m, "b": last_day(m)})
-            for r in res:
-                rows.append({"date": r.date.isoformat() if r.date else None,
-                             "division": (r.division_name or "").strip(),
-                             "foreman": (r.foreman or "").strip() or None,
-                             "rating": float(r.avg_rating)})
+            src.update(ok=True, total=len(days), read_at=slot.get("days_at"),
+                       stale=slot.get("days_error"),
+                       first=min(d.day for d in days).isoformat() if days else None,
+                       last=max(d.day for d in days).isoformat() if days else None)
+            rows = [{"date": d.day.isoformat(), "division": (d.workshop or "").strip(),
+                     "workshop_id": d.workshop_id, "foreman": None, "rating": float(d.rating)}
+                    for d in days]
     except Exception as exc:  # noqa: BLE001 — a broken source must not break the board
         src.update(ok=False, why="error", error=f"{type(exc).__name__}: {str(exc).splitlines()[0][:200]}")
         rows = []
@@ -194,6 +195,19 @@ def division_key(name: str, cmap: dict) -> Optional[str]:
         if k and k in cmap:
             return k
     return None
+
+
+def division_keys(a: dict, cmap: dict) -> list[str]:
+    """Every cell of `cmap` a panel workshop counts for (the module notes)."""
+    to = PANEL_WORKSHOP_CELL.get(a.get("workshop_id"))
+    name = a.get("division") or ""
+    codes = [to] if to else (_CODES.findall(name) or [division_key(name, cmap)])
+    keys: list[str] = []
+    for c in codes:
+        k = code_key(c) if c else None
+        if k and k in cmap and k not in keys:
+            keys.append(k)
+    return keys
 
 
 # ── the month ─────────────────────────────────────────────────────────────────
@@ -219,22 +233,26 @@ def aggregate(audits: list[dict], cmap: dict[str, dict], r: dict, scope: Optiona
     out: list[dict] = []
     tot = {"audits": 0, "owner": 0, "no_owner": 0, "no_cell": 0}
     for a in audits:
-        k = division_key(a["division"], cmap)
-        c = cmap.get(k) if k else None
-        if any_scope and (c is None or not _in_scope(c, scope)):
-            continue           # a division on no cell belongs to no plant, shift or unit
-        if c is None:
-            counted = "no_cell"
+        cells = [(k, cmap[k]) for k in division_keys(a, cmap)]
+        if any_scope:
+            cells = [(k, c) for k, c in cells if _in_scope(c, scope)]
+            if not cells:
+                continue       # a workshop on no cell belongs to no plant, shift or unit
+        tot["audits"] += 1
+        if not cells:
+            tot["no_cell"] += 1
             u = unreg.setdefault(a["division"], {"division": a["division"], "count": 0, "ratings": []})
             u["count"] += 1
             u["ratings"].append(a["rating"])
-        else:
+            out.append({**a, "key": None, "code": None, "cell_id": None, "counted": "no_cell",
+                        "owner": None, "brigadir": None})
+            continue
+        for k, c in cells:     # one row per cell the audit counts for
             counted = "owner" if owned(c) else "no_owner"
             per[k].append(a["rating"])
-        tot["audits"] += 1
-        tot[counted] += 1
-        out.append({**a, "key": k, "code": (c or {}).get("code"), "cell_id": (c or {}).get("id"),
-                    "counted": counted, "owner": (c or {}).get("owner"), "brigadir": (c or {}).get("brigadir")})
+            tot[counted] += 1
+            out.append({**a, "key": k, "code": c.get("code"), "cell_id": c.get("id"), "counted": counted,
+                        "owner": c.get("owner"), "brigadir": c.get("brigadir")})
 
     ranking = []
     for k, c in cmap.items():
