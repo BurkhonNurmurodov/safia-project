@@ -171,6 +171,12 @@ export default function DateRangePicker({
                        // hold uploaded data) — a hint, never a restriction
   fillPhone = false,   // below sm: the trigger stretches to the space its row
                        // gives it (DayStepper's `fillPhone`); sm+ unchanged
+  label = null,        // a node shown on the trigger instead of the date — a
+                       // value read as a sentence on its row («Muddat 16 Noyabr
+                       // · 6 kun kechikdi»), the picker opening on it
+  bare = false,        // the trigger without its box: no fill, a border only on
+                       // hover/open — a date edited in place inside a list row
+  ariaLabel,           // the trigger's accessible name when `label` is not text
 }) {
   const { t } = useLang();
   const markDraft = useMarkDraft();
@@ -435,20 +441,24 @@ export default function DateRangePicker({
   const inputBorder = (active) => `1px solid ${active ? "var(--brand)" : "var(--border-md)"}`;
 
   return (
-    <div className={`relative flex-shrink-0${fillPhone ? " max-sm:flex-1 max-sm:min-w-0" : ""}`} ref={wrapRef}>
+    <div className={`relative ${bare ? "min-w-0 max-w-full" : "flex-shrink-0"}${fillPhone ? " max-sm:flex-1 max-sm:min-w-0" : ""}`} ref={wrapRef}>
       {/* Trigger */}
       <button
         ref={triggerRef}
         onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-2 rounded-lg transition-colors ${triggerClassName}${fillPhone ? " max-sm:w-full max-sm:justify-center" : ""}`}
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        className={`flex items-center gap-2 rounded-lg transition-colors ${triggerClassName}${fillPhone ? " max-sm:w-full max-sm:justify-center" : ""}${bare ? " drp-bare min-w-0 max-w-full" : ""}`}
         style={{
-          background: "var(--bg-inner)",
-          border: `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,
+          background: bare ? "transparent" : "var(--bg-inner)",
+          border: `1px solid ${open ? "var(--brand)" : bare ? "transparent" : "var(--border-md)"}`,
           color: dateFrom ? "var(--text-1)" : "var(--text-3)",
         }}
       >
         <CalendarDays size={13} className={`flex-shrink-0${compactLabel === "xl" ? " max-[359px]:hidden" : ""}`} style={{ color:"var(--text-3)" }} />
-        {compactLabel === "xl" ? (
+        {label != null ? (
+          <span className="min-w-0 truncate">{label}</span>
+        ) : compactLabel === "xl" ? (
           <>
             <span className="whitespace-nowrap min-[360px]:hidden">{tinyRange}</span>
             <span className="whitespace-nowrap max-[359px]:hidden xl:hidden">{compactRange}</span>

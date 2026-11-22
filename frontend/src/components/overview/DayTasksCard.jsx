@@ -56,6 +56,7 @@ import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
 import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR, StatusSelect } from "../ui/TaskQueue";
 import Button from "../ui/Button";
+import DateRangePicker from "../ui/DateRangePicker";
 import CommentsModal, { CommentsButton } from "../ui/CommentsModal";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
@@ -176,6 +177,15 @@ export default function DayTasksCard({ params }) {
     onError: (e) => { toast.error(e?.response?.data?.detail || t("tasks.saveError")); refresh(); },
   });
   const savingStatusId = setStatus.isPending ? setStatus.variables?.task?.id : null;
+
+  // The deadline, moved where it is read (2026-11-22) — an admin, the task's
+  // creator, or the shift manager over the unit (the server's `can_due`).
+  const setDue = useMutation({
+    mutationFn: ({ task, due }) =>
+      api.patch(`${endpointFor(task.kind)}/${task.id}/due`, { due_date: due }).then((r) => r.data),
+    onSuccess: () => { toast.success(t("dayTasks.dueSaved")); refresh(); },
+    onError: (e) => { toast.error(e?.response?.data?.detail || t("tasks.saveError")); refresh(); },
+  });
   const statusLabel = (s) => t(`tasks.status.${s}`);
 
   // Folding from the END of a long list would leave the reader a screen below
@@ -251,10 +261,22 @@ export default function DayTasksCard({ params }) {
           style={{ color: "var(--text-1)" }} title={tx(task.text)}>
           {tx(task.text)}
         </span>
-        <span className="text-[11px] font-semibold sm:truncate max-sm:order-4" style={{ color: due.ink }}
-          title={due.title ? `${due.text} · ${due.title}` : due.text}>
-          {due.text}
-        </span>
+        {task.can_due ? (
+          <span className="min-w-0 max-sm:order-4 -ml-1.5" title={due.title ? `${due.text} · ${due.title}` : due.text}>
+            <DateRangePicker single bare
+              dateFrom={task.due_date} dateTo={task.due_date}
+              setDateFrom={(d) => { if (d && d !== task.due_date) setDue.mutate({ task, due: d }); }}
+              setDateTo={() => {}}
+              triggerClassName="px-1.5 py-0.5 text-[11px] font-semibold"
+              ariaLabel={`${t("dayTasks.dueEdit")}: ${due.text}`}
+              label={<span style={{ color: due.ink }}>{due.text}</span>} />
+          </span>
+        ) : (
+          <span className="text-[11px] font-semibold sm:truncate max-sm:order-4" style={{ color: due.ink }}
+            title={due.title ? `${due.text} · ${due.title}` : due.text}>
+            {due.text}
+          </span>
+        )}
         <span className="text-[11px] truncate max-lg:hidden" style={{ color: "var(--text-3)" }}
           title={setter ? t("dayTasks.setBy").replace("{name}", setter) : undefined}>
           {setter ? t("dayTasks.setBy").replace("{name}", setter) : ""}

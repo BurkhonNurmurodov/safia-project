@@ -587,6 +587,7 @@ def day_tasks(
             # own rule: whoever runs the unit's board finishes it.
             options = tb.status_choices(finisher=thread, mover=thread,
                                         from_top=True, current=t.status)
+            can_due = bool(door and _bt.may_move_due(db, payload, t))
         elif kind == tb.KIND_LEADER and t.leader_profile_id is not None:
             prof = leaders.get(t.leader_profile_id)
             person = {"kind": kind, "id": t.leader_profile_id,
@@ -599,6 +600,7 @@ def day_tasks(
             # (`_status_choices`), through the TASK page's router.
             options = tb.status_choices(finisher=can_comment, mover=can_comment,
                                         from_top=True, current=t.status)
+            can_due = bool(task_page and may_move_due(db, payload, t))
         else:
             continue            # a shift manager's own task, a legacy row no profile names
         entries.append((person, {
@@ -618,6 +620,8 @@ def day_tasks(
             "thread": thread,
             "can_comment": can_comment,
             "status_options": options,
+            # The deadline's own picker on the row (2026-11-22).
+            "can_due": can_due,
             # «Eslatish» — only about a task still open on the day shown.
             "can_remind": bool(can_remind and st["state"] != "done" and t.status != "done"),
         }))
@@ -834,6 +838,46 @@ def update_task(
     )
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
     return _serialize(t, count, payload, db)
+
+
+def may_move_due(db: Session, payload: dict, t: LeaderTask) -> bool:
+    """The deadline alone: whoever may edit the task (its creator, an admin),
+    and — on a task set from the top — the shift manager covering its unit
+    (the operator, 2026-11-22, «Rahbariyat vazifalari»)."""
+    if _can_edit_core(db, payload, t):
+        return True
+    return (payload.get("role") == "shift-manager" and tb.set_from_above(t)
+            and shift_scope.covers(db, payload.get("role_id"), t.supervisor_manager_id))
+
+
+class DueIn(BaseModel):
+    due_date: date
+
+
+@router.patch("/{task_id}/due")
+def set_due(
+    task_id: int,
+    body: DueIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("tasks")),
+):
+    """Move a leader task's deadline — nothing else on it changes."""
+    t = _get_visible_task(task_id, payload, db)
+    if not may_move_due(db, payload, t):
+        raise HTTPException(status_code=403, detail="Only a shift manager, the task's creator or an admin can do this")
+    was_due = t.due_date
+    t.due_date = body.due_date
+    db.commit()
+    db.refresh(t)
+    if was_due != t.due_date:
+        action_log.enrich(
+            target_kind="task", target_id=t.id, target_name=_snippet(t.task_text),
+            unit_id=t.supervisor_manager_id, unit_name=t.supervisor_name,
+            day=t.due_date,
+            details=[("leader", t.leader_name)],
+            changes=[("deadline", str(was_due), str(t.due_date))],
+        )
+    return {"id": t.id, "due_date": t.due_date.isoformat() if t.due_date else None}
 
 
 @router.delete("/{task_id}", status_code=204)

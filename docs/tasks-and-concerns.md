@@ -336,6 +336,17 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   **«Vazifa berish» in the block offers the tiers the block shows** — a
   brigadir's, and a leader's for a viewer who holds «Vazifalar» and acts from
   the top; never a task the block would not then show.
+- **The deadline is editable on the row** (the operator, 2026-11-22: «make the
+  date editable for shift managers and admins»). The date line is a
+  `DateRangePicker single bare` (a `label` node keeps «Muddat … · N kun
+  kechikdi» on the trigger) wherever the row's `can_due` says so, and a pick
+  goes to `PATCH {tier}/{id}/due` — the deadline alone, journalled like the
+  PUT's «deadline» change. Who: whoever may edit the task (its creator, an
+  admin) AND the shift manager covering the unit (`shift_scope.covers`; on a
+  leader's task only one set from the top). `may_move_due` in
+  `routers/brigadir_tasks.py` and `routers/tasks.py` is the rule, and the
+  row's `can_due` asks it. The /tasks board's own edit form is unchanged
+  (creator or admin).
 - **Which day**: set on or before it AND (still open on it OR finished on it).
   Finished earlier = left; set later = not arrived. A day is Tashkent's
   calendar day, never the shift frame.

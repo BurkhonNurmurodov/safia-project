@@ -1033,6 +1033,8 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    ring INSIDE, where the card's rounded clip cannot cut it into a stray box. */
 .sec-fold { border-radius: 10px; transition: background-color .12s ease; }
 @media (hover: hover) { .sec-fold:hover { background: var(--hover-bg); } }
+/* DateRangePicker `bare`: a date edited in place on a list row shows its box on hover. */
+@media (hover: hover) { .drp-bare:hover { background: var(--hover-bg) !important; } }
 .sec-fold:active { background: var(--press-wash); }
 .sec-fold:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
 .kelish-hit:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand), inset 0 0 0 3px var(--bg-card); }
