@@ -645,7 +645,10 @@ last columns, after «Pareto» (the operator's call, same day), and
   `startup.container_cols_three_brigadirs` (`later`, both entrypoints, flag
   `oneshot:container_cols_three_brigadirs_nov22`; a name matches exactly one
   non-archived unit, whole or by its first words, or is reported in the admins'
-  DM). Taking it away again is an untick on the Permissions tab.
+  DM). Taking it away again is an untick on the Permissions tab. The same
+  day the operator added a fourth, Aripova Manzura — its own one-shot,
+  `startup.container_cols_aripova` (flag `oneshot:container_cols_aripova_nov22`),
+  through the same `_grant_container_cols`; another name needs another flag.
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 

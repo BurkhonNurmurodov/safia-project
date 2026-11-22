@@ -333,6 +333,8 @@ try:
     container_watch_shift_managers_off()
     from app.startup import container_cols_three_brigadirs
     container_cols_three_brigadirs()
+    from app.startup import container_cols_aripova
+    container_cols_aripova()
     from app.startup import idle_4412_not_stopped
     idle_4412_not_stopped()
     from app.startup import restore_wiped_accounts

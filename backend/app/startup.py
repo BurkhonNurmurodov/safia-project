@@ -12452,18 +12452,36 @@ CONTAINER_COLS_GRANT_NAMES = ("Erkanboyev Zafarjon", "Suvonov Elshod", "Xakimov 
 
 
 def container_cols_three_brigadirs() -> None:
+    _grant_container_cols(CONTAINER_COLS_GRANT_FLAG, CONTAINER_COLS_GRANT_NAMES,
+                          "Zagruzka fayli · konteyner ustunlari uch brigadirga ochildi")
+
+
+# ── 22 Nov, later: and a fourth — Aripova Manzura (the operator: «also open it
+# for Aripova Manzura»). Its own flag, since the three's has already run.
+CONTAINER_COLS_ARIPOVA_FLAG = "oneshot:container_cols_aripova_nov22"
+
+
+def container_cols_aripova() -> None:
+    _grant_container_cols(CONTAINER_COLS_ARIPOVA_FLAG, ("Aripova Manzura",),
+                          "Zagruzka fayli · konteyner ustunlari Aripova Manzuraga ochildi")
+
+
+def _grant_container_cols(flag: str, names: tuple, title: str) -> None:
+    """Grant `CAP_CONTAINER_COLS` to the unit profiles named, once under `flag`.
+    A name must fold to exactly ONE non-archived unit (whole, or its first
+    words); anything else is reported in the admins' DM, never guessed."""
     from app import capabilities
     from app.services.people import fold_name
 
     db = SessionLocal()
     try:
-        if db.query(AppSetting).filter_by(key=CONTAINER_COLS_GRANT_FLAG).first():
+        if db.query(AppSetting).filter_by(key=flag).first():
             return
         units = db.query(Manager).filter(Manager.archived.is_(False)).all()
         # A Cyrillic «Хакимов» folds to «khakimov»: x and kh are one letter here.
         fold = lambda s: fold_name(s).replace("kh", "x")  # noqa: E731
         found, missing = [], []
-        for want in CONTAINER_COLS_GRANT_NAMES:
+        for want in names:
             w = fold(want)
             hits = [m for m in units if fold(m.name) == w or fold(m.name).startswith(w + " ")]
             if len(hits) == 1:
@@ -12475,18 +12493,17 @@ def container_cols_three_brigadirs() -> None:
                 db, [f"supervisor:{m.id}" for m in found],
                 grants={capabilities.CAP_CONTAINER_COLS: "all"},
                 actor_name="system (one-shot 2026-11-22)")
-        db.add(AppSetting(key=CONTAINER_COLS_GRANT_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
-        print(f"[startup] container columns granted to {[m.name for m in found]}; missing {missing}")
-        _dm_report("ok" if not missing else "fail",
-                   "Zagruzka fayli · konteyner ustunlari uch brigadirga ochildi",
-                   status=f"{len(found)} / {len(CONTAINER_COLS_GRANT_NAMES)} brigadir",
+        print(f"[startup] container columns ({flag}) granted to {[m.name for m in found]}; missing {missing}")
+        _dm_report("ok" if not missing else "fail", title,
+                   status=f"{len(found)} / {len(names)} brigadir",
                    rows=[("📦", "Ochildi", [m.name for m in found] or ["hech kim"])]
                    + ([("⚠️", "Topilmadi", missing)] if missing else []),
                    notes=[("ℹ️", "Qo'lda: Ruxsatlar → «Zagruzka fayli — Konteynerlar».")])
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        print(f"[startup] container columns grant failed: {exc}")
+        print(f"[startup] container columns grant ({flag}) failed: {exc}")
         _dm_report("fail", "Zagruzka fayli · konteyner ustunlari ochilmadi", error=exc)
     finally:
         db.close()
