@@ -462,6 +462,58 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(capabilities.perms_for_profile(self.db, "supervisor:7101"), {})
         self.assertEqual(dm.call_count, 2)                           # the miss, then the grant
 
+    def test_asqar_gets_alishers_containers_and_no_idle_time(self):
+        """22 Nov: Karimov Asqar's profile takes Maksudov Alisher's container
+        grants AS THEY STAND (the board included), loses /downtime and
+        /idle-cell and lets go of the causes he answered for — Abdukarimov
+        Asqar and Verifix's leader twin aside; once, nothing while none is found."""
+        from app import capabilities, startup
+        from app.models import Manager, ProfilePermission, RoleProfile
+        from app.services import idle_scope
+        for sql in ("DELETE FROM profile_permissions", "DELETE FROM idle_category_owners",
+                    "DELETE FROM role_profiles WHERE name LIKE '%Alisher%' OR name LIKE '%Asqar%' "
+                    "OR name LIKE '%Askar%' OR name LIKE 'Nuriddin%'",
+                    "DELETE FROM managers WHERE id IN (7101, 7102, 7103)"):
+            self.db.execute(flow.text(sql))
+        self.db.execute(flow.text("DELETE FROM app_settings WHERE key = :k"), {"k": startup.ASQAR_FLAG})
+        n = RoleProfile(role="idle-owner", name="Nuriddin aka")
+        other = RoleProfile(role="idle-owner", name="Abdukarimov Asqar")          # folds apart: «abdukarimov»
+        self.db.add_all([n, other, Manager(id=7102, name="Максудов Алишер", shift=2)])
+        self.db.flush()
+        nk, ak, ok = f"idle-owner:{n.id}", "supervisor:7102", f"idle-owner:{other.id}"
+        for key, caps in ((nk, [flow.LOGISTICS_CAP, "page.view.container-watch"]),
+                          (ak, [flow.LOGISTICS_CAP, "page.view.containers", "page.view.container-watch"])):
+            for cap in caps:
+                self.db.add(ProfilePermission(profile_key=key, capability=cap, mode="grant", scope="all"))
+        self.db.add(ProfilePermission(profile_key=ak, capability="page.view.downtime", mode="grant", scope="all"))
+        self.db.commit()
+        cats = list(idle_scope.CATEGORIES)
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            startup.asqar_containers_no_idle()                       # no «Karimov Asqar» yet: nothing
+            self.assertEqual(capabilities.perms_for_profile(self.db, ok), {})
+            q = RoleProfile(role="idle-owner", name="Karimov Asqar", name_ru="Каримов Асқар")
+            twin = RoleProfile(role="leader", name="Karimov Askar")                  # Verifix's leader twin
+            self.db.add_all([q, twin])
+            self.db.commit()
+            qk = f"idle-owner:{q.id}"
+            idle_scope.set_owner(self.db, cats[0], qk)
+            idle_scope.set_owner(self.db, cats[1], ok)
+            self.db.commit()
+            startup.asqar_containers_no_idle()
+            startup.asqar_containers_no_idle()                       # the flag: once
+        self.db.expire_all()
+        got = capabilities.perms_for_profile(self.db, qk)
+        self.assertEqual(sorted(k for k, v in got.items() if v["mode"] == "grant"),
+                         [flow.LOGISTICS_CAP, "page.view.container-watch", "page.view.containers"])
+        self.assertEqual(capabilities.denied_pages_for_profile(self.db, qk), {"downtime", "idle-cell"})
+        self.assertIn(qk, [p["key"] for p in flow.logistics_people(self.db)])
+        self.assertEqual(idle_scope.categories_of(self.db, qk), [])
+        self.assertEqual(idle_scope.owners(self.db), {cats[1]: ok})             # nobody else's touched
+        self.assertEqual(capabilities.perms_for_profile(self.db, f"leader:{twin.id}"), {})
+        self.assertEqual(capabilities.perms_for_profile(self.db, ok), {})
+        self.assertEqual(dm.call_count, 2)                           # the miss, then the change
+
     def test_davron_loses_idle_time_keeps_containers(self):
         """18 Nov: Davron's profile is denied /downtime and /idle-cell and lets
         go of the ojidaniya categories he answered for; logistics stays; once."""

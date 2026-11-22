@@ -720,6 +720,38 @@ This closes the second form's «Still to do by hand» for the SAP codes; the
 Verifix people, the leaders and «Zagruzka hisoblanadi» stay for when the plant
 is staffed.
 
+## Karimov Asqar → containers like Maksudov Alisher, and no idle time (`startup.asqar_containers_no_idle`, 2026-11-22)
+
+The operator: «Karimov Asqar can you make his profile same with Maksudov
+Alisher for container app, and remove IDLE time from his page». One step,
+once (flag `oneshot:asqar_containers_no_idle_nov22`, `later`, after
+Alisher's step):
+
+- **Containers.** It copies Alisher's own `page.view.container*` grants AS
+  THEY STAND, read off his live profile (`_alisher_profile`). Today those
+  are the Logistics page (so «Konteyner taqsimlash»), the «Konteynerlar»
+  board the 21 Nov step gave every logistics person, and the watch key. If
+  Alisher cannot be found, or holds no Logistics page, it copies Nuriddin
+  aka's (`_nuriddin_container_grants`). The Logistics page makes Asqar an
+  addressee AXO can pick and one of «Hammasi». He gets the request messages
+  in Telegram, since logistics messages are on.
+- **No idle time.** This is Davron's step: `/downtime` (with «Kutish
+  yechimlari») and `/idle-cell` are DENIED to his profile, whatever its role
+  opens. Any ojidaniya category he answers for is released (no owner), so no
+  «Kutish yechimlari» reminder reaches him either. The admins' DM names the
+  categories released.
+
+How the profile is found:
+- It searches live units (`managers`, not archived) and live role profiles
+  (no `ended_on`).
+- It takes the one whose name has BOTH a «Karimov…» word and an «Asqar…»
+  word (Askar, Асқар, Аскар — q folded to k). «Abdukarimov» folds to its own
+  word and never matches.
+- With two such, it takes the one that is not a leader (Verifix's twin).
+
+If nothing settles on one profile, nothing changes. The admins get the list
+of names that matched, and the step runs again on the next start.
+
 ## Maksudov Alisher → «Konteyner berish» as Logistics, like Davron (`startup.alisher_container_logistics`, 2026-11-20)
 
 The operator: «Maksudov Alisher can you add the container page for him». He

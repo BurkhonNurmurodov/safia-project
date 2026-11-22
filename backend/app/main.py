@@ -322,6 +322,8 @@ async def lifespan(app: FastAPI):
     later(davron_no_idle_time)          # after it: no ojidaniya for him
     from app.startup import alisher_container_logistics
     later(alisher_container_logistics)
+    from app.startup import asqar_containers_no_idle
+    later(asqar_containers_no_idle)          # after it: copies Alisher's grants
     # The Almaty plant (Kazakhstan), its unit and its 83-line catalogue (once,
     # 2026-11-20, mirrored in passenger_wsgi.py).
     from app.startup import add_almaty_plant

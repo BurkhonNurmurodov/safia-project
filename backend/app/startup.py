@@ -11178,6 +11178,110 @@ def alisher_container_logistics() -> None:
         db.close()
 
 
+# ── 22 Nov: Karimov Asqar → containers like Maksudov Alisher, no idle time ───
+# The operator, 2026-11-22: «Karimov Asqar can you make his profile same with
+# Maksudov Alisher for container app, and remove IDLE time from his page».
+#   - Containers: Alisher's OWN container grants as they stand today
+#     (`page.view.container*` — the logistics page, the board «Konteynerlar»
+#     the 21 Nov step gave every logistics person, anything since), read off
+#     his live profile; Nuriddin aka's if Alisher cannot be found. The
+#     logistics page is always among them, so Asqar becomes an addressee AXO
+#     can pick and one of «Hammasi».
+#   - No idle time: Davron's step (`DAVRON_IDLE_PAGES`) — /downtime and
+#     /idle-cell DENIED to his profile whatever its role opens, and any
+#     ojidaniya category he answers for released (no owner), so no «Kutish
+#     yechimlari» reminder reaches him either.
+# His profile is the ONE live unit or role profile whose name carries both
+# «Karimov» and «Asqar» (Askar, Асқар, Аскар) — Verifix's leaders last; none
+# or several change nothing, the admins are told, and it tries again on the
+# next start. Never a bare «Asqar» or «Karimov»: Abdukarimov folds apart.
+ASQAR_FLAG = "oneshot:asqar_containers_no_idle_nov22"
+
+
+def _asqar_profile(db):
+    """(profile, candidates): the one profile to change, or None + who matched
+    («name · key»). A brigadir's unit counts as role «supervisor»."""
+    from types import SimpleNamespace
+
+    from app.services.people import fold_name
+
+    def named(*names):
+        ts = {t.replace("q", "k") for n in names if n for t in fold_name(n).split()}
+        return any(t.startswith("karimov") for t in ts) and any(t.startswith("askar") for t in ts)
+
+    units = [SimpleNamespace(name=m.name, role="supervisor", id=m.id)
+             for m in db.query(Manager).filter(Manager.archived.is_(False)).all() if named(m.name)]
+    profs = [p for p in db.query(RoleProfile).filter(RoleProfile.ended_on.is_(None)).all()
+             if named(p.name, p.name_uz_cyrl, p.name_ru, p.name_en)]
+    pool = units + profs
+    listed = [f"{p.name} · {p.role}:{p.id}" for p in pool]
+    for group in (pool, [p for p in pool if p.role != "leader"]):
+        if len(group) == 1:
+            return group[0], listed
+    return None, listed
+
+
+def asqar_containers_no_idle() -> None:
+    from app import capabilities
+    from app.identity import profile_holders
+    from app.services import container_flow as flow
+    from app.services import idle_scope
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ASQAR_FLAG).first():
+            return
+        prof, listed = _asqar_profile(db)
+        if prof is None:
+            print(f"[startup] Asqar containers/idle: {len(listed)} profiles named Karimov Asqar — nothing changed")
+            _dm_report("warn", "Karimov Asqar · konteynerlar va «Ojidaniya» o'zgarmadi",
+                       rows=[("🔎", "«Karimov Asqar» nomli profillar", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da Maksudov Alisherniki kabi konteyner "
+                                    "sahifalarini yoqing va «Ojidaniya», «Yacheyka ojidaniyasi»ni o'chiring.")],
+                       open=_REPORT_PERMS)
+            return
+        key = f"{prof.role}:{prof.id}"
+        # Alisher's own container grants — the source the operator named
+        source, grants = "Maksudov Alisher", {}
+        ali, _l = _alisher_profile(db)
+        if ali is not None:
+            for cap, v in capabilities.perms_for_profile(db, f"{ali.role}:{ali.id}").items():
+                if cap.startswith("page.view.container") and v["mode"] == "grant":
+                    grants[cap] = v["scope"]
+        if flow.LOGISTICS_CAP not in grants:
+            source, grants = "Nuriddin aka", _nuriddin_container_grants(db)
+        capabilities.apply_profile_perms(
+            db, [key], grants=grants, denies=[capabilities.page_cap(pg) for pg in DAVRON_IDLE_PAGES],
+            actor_name="system (one-shot 2026-11-22)")
+        released = idle_scope.categories_of(db, key)
+        for cat in released:
+            idle_scope.set_owner(db, cat, None)
+        db.add(AppSetting(key=ASQAR_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        closed = sorted(capabilities.denied_pages_for_profile(db, key))
+        tg = len(profile_holders(db, key))
+        print(f"[startup] Asqar containers/idle: {key} → {sorted(grants)} (as {source}), "
+              f"denied {closed}, released {released or '—'} (Telegram: {tg})")
+        pages = {"downtime": "Ojidaniya", "idle-cell": "Yacheyka ojidaniyasi"}
+        _dm_report("ok", f"{prof.name} · konteynerlar {source}niki kabi, «Ojidaniya» yopildi",
+                   status="Logistika sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("📦", "Berilgan sahifalar", sorted(grants)),
+                         ("🚫", "Yopilgan sahifalar", [pages.get(c, c) for c in closed]),
+                         ("♻️", "Bo'shatilgan toifalar", released),
+                         ("📲", "Telegram", f"{tg} ta akkaunt" if tg else "ulanmagan")],
+                   notes=([("⚠️", "Bu admin profili — adminlarga taqiq ishlamaydi.")]
+                          if prof.role == "admin" else [])
+                         + ([] if tg else [("⚠️", "Profilga hali hech kim ulanmagan — xabarlar bormaydi.")]),
+                   open=_report_open(prof))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Asqar containers/idle failed: {exc}")
+        _dm_report("fail", "Karimov Asqar · konteynerlar va «Ojidaniya» o'zgarmadi", error=exc)
+    finally:
+        db.close()
+
+
 # ── 20 Nov: the Almaty plant, its unit and its catalogue (docs/data-fixes.md) ─
 # The operator, 2026-11-20, sent the Kazakhstan supervisor's form («Almata
 # zagruzka», 83 positions over the teams A · B · C): «please add this

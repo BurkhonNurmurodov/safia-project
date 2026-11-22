@@ -299,6 +299,8 @@ try:
     davron_no_idle_time()          # after it: no ojidaniya for him
     from app.startup import alisher_container_logistics
     alisher_container_logistics()
+    from app.startup import asqar_containers_no_idle
+    asqar_containers_no_idle()          # after it: copies Alisher's grants
     # The Almaty plant (Kazakhstan), its unit and its 83-line catalogue (once,
     # 2026-11-20, mirrored from main.py).
     from app.startup import add_almaty_plant
