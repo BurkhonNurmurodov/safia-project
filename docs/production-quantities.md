@@ -649,6 +649,8 @@ last columns, after «Pareto» (the operator's call, same day), and
   day the operator added a fourth, Aripova Manzura — its own one-shot,
   `startup.container_cols_aripova` (flag `oneshot:container_cols_aripova_nov22`),
   through the same `_grant_container_cols`; another name needs another flag.
+  Then a fifth, Abdukarimov Sanjar — `startup.container_cols_abdukarimov`
+  (flag `oneshot:container_cols_abdukarimov_nov22`).
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 

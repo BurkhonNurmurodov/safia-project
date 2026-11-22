@@ -12466,6 +12466,16 @@ def container_cols_aripova() -> None:
                           "Zagruzka fayli · konteyner ustunlari Aripova Manzuraga ochildi")
 
 
+# ── 22 Nov, later still: and a fifth — Abdukarimov Sanjar (the operator: «also
+# open it for Abdukarimov Sanjar»). Its own flag, like Aripova's.
+CONTAINER_COLS_ABDUKARIMOV_FLAG = "oneshot:container_cols_abdukarimov_nov22"
+
+
+def container_cols_abdukarimov() -> None:
+    _grant_container_cols(CONTAINER_COLS_ABDUKARIMOV_FLAG, ("Abdukarimov Sanjar",),
+                          "Zagruzka fayli · konteyner ustunlari Abdukarimov Sanjarga ochildi")
+
+
 def _grant_container_cols(flag: str, names: tuple, title: str) -> None:
     """Grant `CAP_CONTAINER_COLS` to the unit profiles named, once under `flag`.
     A name must fold to exactly ONE non-archived unit (whole, or its first
