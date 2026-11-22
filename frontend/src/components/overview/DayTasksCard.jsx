@@ -6,23 +6,24 @@
  * and shift managers to brigadirs and liders should be shown in the shift
  * day», and, once he had seen a board of names: «when open shift day page i
  * have to see the task for brigadirs and remind them did you do this or not».
- * So the TASKS are on the page — nothing to open first:
+ * So the TASKS are on the page — nothing to open first.
  *
- *   a person (worst first)  →  their tasks, each on its own line: its state,
- *   its text, its deadline with the days late, who set it —
- *   and «Eslatish», one press that asks them in the bot whether it is done.
+ * IT IS A BOARD (2026-11-22, the operator: «each task should be card and in
+ * the bottom should be written person who is this assigned, and the columns
+ * should be to do, doing, and done»). Three columns by STATUS; each task one
+ * card — late / urgent chips and the status control on top, the text, the
+ * deadline (a picker where `can_due`), who set it, «Eslatish» and the chat —
+ * and its foot names the person it was set for (avatar, name, brigadir or
+ * leader · unit). «Muddati o'tgan» is no status, so a late card stays in its
+ * column, red-edged, first. Below lg (the sidebar leaves three columns too
+ * narrow) one column at a time, picked by a `SegmentedToggle` over the board. A search box filters by text or person.
  *
- * EACH TASK'S STATUS IS SET HERE TOO (2026-11-15, the operator: «can you put
- * here done or in process or to do»): the row's pill is `StatusSelect`, the
- * one Vazifalar uses, offering exactly the server's `status_options` — the
- * owning router's own rule (`task_board.status_choices`), so it never offers
- * what the PATCH would refuse. «Muddati o'tgan» is no status, so a late task
- * keeps a red ⚠ beside its pill (and its red deadline line).
- *
- * A person's line carries their answer in one mark: red — something is past
- * its date; green — everything they were set is done; grey — open work, all of
- * it in time. A task the unit's own brigadir set for a leader is not here, and
- * neither is a shift manager's own — both stay on /tasks.
+ * WHO MOVES A CARD (the same day): on a brigadir's task only an admin and the
+ * unit's shift manager set the status or the deadline
+ * (`brigadir_tasks.runs_status`) — the brigadir answers in the thread, on their
+ * own «Vazifalar» page, and a top-manager sets, flames, reminds and writes but
+ * moves nothing. A leader's task keeps its own rule (`tasks._status_choices`).
+ * The card offers exactly the server's `status_options` / `can_due`.
  *
  * IT FOLDS (the operator, 2026-11-14: «make this foldable, after pressing it
  * should open all»). Folded — the default, remembered per browser — it is the
@@ -51,12 +52,15 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BellRing, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Hourglass, Plus } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
 import { SplitBar, SplitLegend } from "../ui/Meter";
-import { STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR, StatusSelect } from "../ui/TaskQueue";
+import { STATUSES, STATUS_COLOR, CHART_OVERDUE, URGENT_COLOR, StatusSelect } from "../ui/TaskQueue";
 import Button from "../ui/Button";
 import DateRangePicker from "../ui/DateRangePicker";
+import ProfileAvatar from "../ui/ProfileAvatar";
+import SearchInput from "../ui/SearchInput";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import CommentsModal, { CommentsButton } from "../ui/CommentsModal";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
@@ -69,7 +73,7 @@ import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fmtDate } from "../../utils/targets";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
-import { TIERS, KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
+import { KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
 
 // Worst first — the order of the bar, its legend and a person's own tasks.
 const STATE_ORDER = ["overdue", "todo", "doing", "done"];
@@ -86,25 +90,8 @@ const STATE_LABEL = {
   done: "tasks.status.done",
 };
 
-// A person's one-word answer (services/task_day.tone).
-const TONE = {
-  late:  { Icon: AlertTriangle, fill: CHART_OVERDUE,     ink: "var(--status-bad)" },
-  going: { Icon: Hourglass,     fill: STATUS_COLOR.todo, ink: "var(--text-3)" },
-  done:  { Icon: Check,         fill: STATUS_COLOR.done, ink: "var(--status-ok)" },
-};
-
-const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 const line = "1px solid var(--border)";
-
-function ToneChip({ tone, label }) {
-  const { Icon, fill, ink } = TONE[tone] || TONE.going;
-  return (
-    <span className="grid place-items-center w-5 h-5 rounded-full flex-shrink-0"
-      style={{ background: `${fill}24`, color: ink }} title={label} aria-label={label} role="img">
-      <Icon size={11} strokeWidth={2.5} />
-    </span>
-  );
-}
+const cardStyle = { background: "var(--bg-card)", border: line };
 
 export default function DayTasksCard({ params }) {
   const { auth } = useAuth();
@@ -120,6 +107,9 @@ export default function DayTasksCard({ params }) {
   const [form, setForm] = useState(null);               // the task form's opening state
   // Folded or open — remembered per browser (a convenience, never a right).
   const [open, setOpen] = usePersistentState("day_tasks_open", false);
+  const [search, setSearch] = useState("");             // the board's text filter
+  // The one column a phone shows (below md the three cannot stand side by side).
+  const [phoneCol, setPhoneCol] = useState("todo");
   const cardRef = useRef(null);
   // Whether this browser was shown the block last time — so a reader who has
   // it gets its skeleton while it loads instead of a block dropping in above
@@ -142,10 +132,27 @@ export default function DayTasksCard({ params }) {
 
   const people = useMemo(() => data?.people || [], [data]);
   const totals = data?.totals;
-  // Brigadirs, then leaders — the org chart's own order.
-  const groups = useMemo(
-    () => TIERS.map((kind) => ({ kind, rows: people.filter((p) => p.kind === kind) })).filter((g) => g.rows.length),
-    [people]);
+  // The board: every task once, carrying the person it was set for, in the
+  // column its STATUS names. Late is no column — a late card stays where its
+  // status puts it, marked red, and comes first there (longest late first,
+  // then the flamed, then the nearest deadline); «Bajarildi» lists the most
+  // recently finished first.
+  const columns = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const all = people.flatMap((p) => (p.tasks || []).map((task) => ({ ...task, person: p })));
+    const hit = (task) => !needle || [task.text, task.person.name, task.person.unit_name, task.created_by_name]
+      .some((v) => v && (`${tx(v)} ${tl(v)}`).toLowerCase().includes(needle));
+    const open = (a, b) => (b.state === "overdue") - (a.state === "overdue")
+      || (b.days_late || 0) - (a.days_late || 0)
+      || (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0)
+      || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999"))
+      || a.id - b.id;
+    const done = (a, b) => String(b.done_day || "").localeCompare(String(a.done_day || "")) || b.id - a.id;
+    return STATUSES.map((key) => {
+      const tasks = all.filter((task) => task.status === key && hit(task)).sort(key === "done" ? done : open);
+      return { key, tasks, late: tasks.filter((task) => task.state === "overdue").length };
+    });
+  }, [people, search, tl, tx]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["day-tasks"] });
@@ -208,133 +215,173 @@ export default function DayTasksCard({ params }) {
   const createKinds = [KIND_SUP, KIND_LEADER].filter((k) => data?.can_create?.[k]);
   const subtitle = t("dayTasks.subNow");
 
-  // What a task's date line says, and in which ink.
+  // What a card's date line says, and in which ink. Lateness has its own
+  // chip at the card's top, so the line states the date alone.
   const dueLine = (task) => {
     const due = t("dayTasks.due").replace("{d}", fmtDate(task.due_date, t));
-    if (task.state === "overdue") return { text: `${due} · ${t("dayTasks.lateBy").replace("{n}", task.days_late)}`, ink: "var(--status-bad)" };
+    if (task.state === "overdue") return { text: due, ink: "var(--status-bad)" };
     // A finished task says WHEN it was finished — it stays a week — and
     // whether that was in time; its deadline moves to the hover.
     if (task.state === "done") {
-      const doneOn = t("dayTasks.doneOn").replace("{d}", fmtDate(task.done_day, t));
-      return task.late
-        ? { text: `${doneOn} · ${t("dayTasks.doneLate").replace("{n}", task.days_late)}`, ink: "var(--status-over)", title: due }
-        : { text: `${doneOn} · ${t("dayTasks.onTime")}`, ink: "var(--status-ok)", title: due };
+      return { text: t("dayTasks.doneOn").replace("{d}", fmtDate(task.done_day, t)), ink: "var(--text-2)", title: due };
     }
-    return { text: due, ink: "var(--text-3)" };
+    return { text: due, ink: "var(--text-2)" };
   };
 
-  // One task, on one line from sm up (state · text · deadline · who set it ·
-  // actions, in fixed columns so they line up down the list); stacked on a
-  // phone, where the text gets the width.
-  const taskRow = (p, task) => {
+  // One task = one card: what is wrong with it (late, urgent) and the status
+  // control on top, the text, the deadline and who set it, the actions — and
+  // at the bottom the person it was set for.
+  const taskCard = (task) => {
+    const p = task.person;
     const due = dueLine(task);
     const role = task.creator_role && ROLE_LABEL_KEYS[task.creator_role] ? t(ROLE_LABEL_KEYS[task.creator_role]) : null;
     const setter = task.created_by_name ? `${tl(task.created_by_name)}${role ? ` (${role})` : ""}` : "";
     const name = tl(p.name) || "—";
+    const late = task.state === "overdue";
+    const done = task.state === "done";
+    const canStatus = (task.status_options || []).length > 0;
+    // A finished card's verdict: in time, or how many days after its date.
+    const verdict = done && (task.late
+      ? { text: t("dayTasks.doneLate").replace("{n}", task.days_late), color: "#f97316", ink: "var(--status-over)" }
+      : { text: t("dayTasks.onTime"), color: STATUS_COLOR.done, ink: "var(--status-ok)" });
+    const caption = p.kind === KIND_LEADER && p.unit_name
+      ? `${t("dayTasks.kind.leader")} · ${tl(p.unit_name)}`
+      : t(`dayTasks.kind.${p.kind}`);
     return (
-      <li key={task.id}
-        className="px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 sm:grid sm:grid-cols-[12.5rem_minmax(0,1fr)_13rem_9.5rem] lg:grid-cols-[12.5rem_minmax(0,1fr)_13rem_11rem_9.5rem]"
-        style={{ borderTop: line }}>
-        <span className="inline-flex items-center gap-1.5 min-w-0 max-sm:order-1">
-          <StatusSelect
-            status={task.status}
-            statusLabel={statusLabel}
-            saving={savingStatusId === task.id}
-            editable={(task.status_options || []).length > 0}
-            options={task.status_options || []}
-            onChange={(s) => setStatus.mutate({ task, status: s })}
-          />
-          {task.state === "overdue" && (
-            <span className="inline-flex flex-shrink-0" style={{ color: "var(--status-bad)" }}
-              title={`${stateLabel("overdue")} · ${t("dayTasks.lateBy").replace("{n}", task.days_late)}`}
-              aria-label={stateLabel("overdue")} role="img">
-              <AlertTriangle size={13} />
-            </span>
+      <li key={`${task.kind}:${task.id}`} className="rounded-xl overflow-hidden flex flex-col flex-shrink-0"
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${late ? `${CHART_OVERDUE}73` : "var(--border)"}`,
+          boxShadow: late ? `inset 3px 0 0 ${CHART_OVERDUE}` : undefined,
+        }}>
+        <div className="px-3 pt-2.5 pb-3 flex flex-col gap-2 min-w-0">
+          {(late || task.urgent || verdict) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {late && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: `${CHART_OVERDUE}1f`, color: "var(--status-bad)" }}>
+                  <AlertTriangle size={11} /> {t("dayTasks.lateBy").replace("{n}", task.days_late)}
+                </span>
+              )}
+              {task.urgent && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: `${URGENT_COLOR}1f`, color: URGENT_COLOR }}>
+                  <Flame size={11} /> {t("tasks.urgentOn")}
+                </span>
+              )}
+              {verdict && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: `${verdict.color}1f`, color: verdict.ink }}>
+                  <Check size={11} /> {verdict.text}
+                </span>
+              )}
+            </div>
           )}
-          {task.urgent && (
-            <span className="inline-flex flex-shrink-0" style={{ color: URGENT_COLOR }} title={t("tasks.urgentOn")} aria-label={t("tasks.urgentOn")} role="img">
-              <Flame size={13} />
-            </span>
+          <p className="text-sm leading-snug break-words line-clamp-4" style={{ color: "var(--text-1)" }} title={tx(task.text)}>
+            {tx(task.text)}
+          </p>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {task.can_due && !done ? (
+              <span className="min-w-0 -ml-1.5" title={due.title ? `${due.text} · ${due.title}` : due.text}>
+                <DateRangePicker single bare
+                  dateFrom={task.due_date} dateTo={task.due_date}
+                  setDateFrom={(d) => { if (d && d !== task.due_date) setDue.mutate({ task, due: d }); }}
+                  setDateTo={() => {}}
+                  triggerClassName="px-1.5 py-0.5 text-xs font-semibold"
+                  ariaLabel={`${t("dayTasks.dueEdit")}: ${due.text}`}
+                  label={<span style={{ color: due.ink }}>{due.text}</span>} />
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold min-w-0" style={{ color: due.ink }}
+                title={due.title ? `${due.text} · ${due.title}` : due.text}>
+                <CalendarDays size={13} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+                <span className="truncate">{due.text}</span>
+              </span>
+            )}
+            {setter && (
+              <span className="text-[11px] truncate" style={{ color: "var(--text-3)" }}
+                title={t("dayTasks.setBy").replace("{name}", setter)}>
+                {t("dayTasks.setBy").replace("{name}", setter)}
+              </span>
+            )}
+          </div>
+          {(canStatus || task.can_remind || task.thread) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {canStatus && (
+                <StatusSelect
+                  status={task.status}
+                  statusLabel={statusLabel}
+                  saving={savingStatusId === task.id}
+                  editable
+                  options={task.status_options}
+                  onChange={(st) => setStatus.mutate({ task, status: st })}
+                />
+              )}
+              {task.can_remind && (task.reminded ? (
+                <Button size="sm" variant="success" tint disabled icon={<Check size={12} />}
+                  title={t("dayTasks.remindSentTip")}>
+                  {t("dayTasks.remindSent")}
+                </Button>
+              ) : (
+                <Button size="sm" variant="primary" tint icon={<BellRing size={12} />}
+                  loading={remindingId === task.id} title={t("dayTasks.remindTip")}
+                  aria-label={`${t("dayTasks.remind")}: ${name}`}
+                  onClick={() => remind.mutate({ task, name })}>
+                  {t("dayTasks.remind")}
+                </Button>
+              ))}
+              {task.thread && (
+                <span className="ml-auto">
+                  <CommentsButton count={task.comment_count} label={t("tasks.commentsTitle")} onClick={() => setThread(task)} />
+                </span>
+              )}
+            </div>
           )}
-        </span>
-        <span className="text-sm min-w-0 sm:truncate max-sm:order-3 max-sm:w-full max-sm:line-clamp-3 max-sm:break-words"
-          style={{ color: "var(--text-1)" }} title={tx(task.text)}>
-          {tx(task.text)}
-        </span>
-        {task.can_due ? (
-          <span className="min-w-0 max-sm:order-4 -ml-1.5" title={due.title ? `${due.text} · ${due.title}` : due.text}>
-            <DateRangePicker single bare
-              dateFrom={task.due_date} dateTo={task.due_date}
-              setDateFrom={(d) => { if (d && d !== task.due_date) setDue.mutate({ task, due: d }); }}
-              setDateTo={() => {}}
-              triggerClassName="px-1.5 py-0.5 text-[11px] font-semibold"
-              ariaLabel={`${t("dayTasks.dueEdit")}: ${due.text}`}
-              label={<span style={{ color: due.ink }}>{due.text}</span>} />
+        </div>
+        {/* WHO it was set for — the card's foot, on every card. */}
+        <div className="mt-auto flex items-center gap-2 px-3 py-2 min-w-0"
+          style={{ background: "var(--bg-inner)", borderTop: line }}>
+          <ProfileAvatar name={name} colorKey={p.name} size={24} />
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={name}>{name}</span>
+            <span className="block text-[11px] truncate" style={{ color: "var(--text-3)" }} title={caption}>{caption}</span>
           </span>
-        ) : (
-          <span className="text-[11px] font-semibold sm:truncate max-sm:order-4" style={{ color: due.ink }}
-            title={due.title ? `${due.text} · ${due.title}` : due.text}>
-            {due.text}
-          </span>
-        )}
-        <span className="text-[11px] truncate max-lg:hidden" style={{ color: "var(--text-3)" }}
-          title={setter ? t("dayTasks.setBy").replace("{name}", setter) : undefined}>
-          {setter ? t("dayTasks.setBy").replace("{name}", setter) : ""}
-        </span>
-        <span className="inline-flex items-center justify-end gap-1.5 max-sm:order-2 max-sm:ml-auto">
-          {/* On a phone the label hides behind the bell (the status picker
-              needs the line's width); the button keeps its name. */}
-          {task.can_remind && (task.reminded ? (
-            <Button size="sm" variant="success" tint disabled icon={<Check size={12} />}
-              title={t("dayTasks.remindSentTip")} aria-label={t("dayTasks.remindSent")}>
-              <span className="max-sm:hidden">{t("dayTasks.remindSent")}</span>
-            </Button>
-          ) : (
-            <Button size="sm" variant="primary" tint icon={<BellRing size={12} />}
-              loading={remindingId === task.id} title={t("dayTasks.remindTip")}
-              aria-label={`${t("dayTasks.remind")}: ${name}`}
-              onClick={() => remind.mutate({ task, name })}>
-              <span className="max-sm:hidden">{t("dayTasks.remind")}</span>
-            </Button>
-          ))}
-          {task.thread && (
-            <CommentsButton count={task.comment_count} label={t("tasks.commentsTitle")} onClick={() => setThread(task)} />
+          {createKinds.includes(p.kind) && (
+            <Button size="sm" variant="ghost" icon={<Plus size={12} />}
+              aria-label={`${t("dayTasks.add")}: ${name}`} title={t("dayTasks.add")}
+              onClick={() => setForm({ kind: p.kind, assignee_id: p.id })} />
           )}
-        </span>
+        </div>
       </li>
     );
   };
 
-  // A person: their line (the answer in one mark, done/total, how many late),
-  // then every task they were set.
-  const personBlock = (p) => (
-    <div key={p.key} className="rounded-xl overflow-hidden" style={{ border: line }}>
-      <div className="flex items-center gap-2 px-3 py-2" style={{ background: "var(--bg-inner)" }}>
-        <ToneChip tone={p.tone} label={t(`dayTasks.tone.${p.tone}`)} />
-        <span className="flex-1 min-w-0 truncate text-sm font-semibold" style={{ color: "var(--text-1)" }}
-          title={p.unit_name ? `${tl(p.name)} · ${tl(p.unit_name)}` : tl(p.name)}>
-          {tl(p.name) || "—"}
-          {p.unit_name && <span className="font-normal" style={{ color: "var(--text-3)" }}> · {tl(p.unit_name)}</span>}
-        </span>
-        {p.overdue > 0 && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full flex-shrink-0"
+  // One column of the board: its status, how many cards and how many of them
+  // are late, then the cards. On a phone only the picked column is drawn.
+  const column = (c) => (
+    <section key={c.key} aria-label={statusLabel(c.key)}
+      className={`rounded-xl flex flex-col min-w-0 ${c.key === phoneCol ? "" : "max-lg:hidden"}`}
+      style={{ background: "var(--bg-inner)", border: line }}>
+      <header className="flex items-center gap-2 px-3 py-2.5" style={{ borderBottom: line }}>
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: STATUS_COLOR[c.key] }} />
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>{statusLabel(c.key)}</span>
+        <span className="text-xs font-bold tabular-nums" style={{ color: "var(--text-3)" }}>{c.tasks.length}</span>
+        {c.late > 0 && (
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold tabular-nums px-1.5 py-0.5 rounded-full"
             style={{ background: `${CHART_OVERDUE}1f`, color: "var(--status-bad)" }}
-            title={`${stateLabel("overdue")}: ${p.overdue}`}>
-            <AlertTriangle size={10} /> {p.overdue}
+            title={`${stateLabel("overdue")}: ${c.late}`}>
+            <AlertTriangle size={11} /> {c.late}
           </span>
         )}
-        <span className="text-xs font-bold tabular-nums whitespace-nowrap flex-shrink-0" style={{ color: "var(--text-1)" }}
-          title={t("dayTasks.doneOf").replace("{d}", p.done).replace("{n}", p.total)}>
-          {p.done}<span style={{ color: "var(--text-3)" }}>/{p.total}</span>
-        </span>
-        {createKinds.includes(p.kind) && (
-          <Button size="sm" variant="ghost" icon={<Plus size={12} />}
-            aria-label={`${t("dayTasks.add")}: ${tl(p.name)}`} title={t("dayTasks.add")}
-            onClick={() => setForm({ kind: p.kind, assignee_id: p.id })} />
-        )}
-      </div>
-      <ul>{p.tasks.map((task) => taskRow(p, task))}</ul>
-    </div>
+      </header>
+      {c.tasks.length ? (
+        <ul className="p-2 flex flex-col gap-2 lg:max-h-[44rem] lg:overflow-y-auto">{c.tasks.map(taskCard)}</ul>
+      ) : (
+        <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
+          {search.trim() ? t("dayTasks.noMatch") : t("dayTasks.colEmpty")}
+        </div>
+      )}
+    </section>
   );
 
   return (
@@ -383,14 +430,13 @@ export default function DayTasksCard({ params }) {
               </Button>
             ) : (
               <>
-                {groups.map((g) => (
-                  <div key={g.kind} className="mt-4">
-                    <div className="text-[11px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-3)" }}>
-                      {t(`dayTasks.grp.${g.kind}`)} · {g.rows.length}
-                    </div>
-                    <div className="space-y-2">{g.rows.map(personBlock)}</div>
-                  </div>
-                ))}
+                <div className="flex flex-wrap items-center gap-2 mt-4 mb-3">
+                  <SearchInput value={search} onChange={setSearch} placeholder={t("dayTasks.search")}
+                    className="w-full sm:w-80" />
+                  <SegmentedToggle className="lg:hidden w-full" fill value={phoneCol} onChange={setPhoneCol}
+                    options={columns.map((c) => ({ value: c.key, label: `${statusLabel(c.key)} · ${c.tasks.length}` }))} />
+                </div>
+                <div className="grid gap-3 lg:grid-cols-3 items-start">{columns.map(column)}</div>
                 <Button className="w-full mt-3" variant="ghost" icon={<ChevronUp size={14} />}
                   aria-expanded onClick={fold}>
                   {t("dayTasks.fold")}

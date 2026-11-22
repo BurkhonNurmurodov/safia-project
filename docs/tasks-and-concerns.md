@@ -336,17 +336,48 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   **«Vazifa berish» in the block offers the tiers the block shows** — a
   brigadir's, and a leader's for a viewer who holds «Vazifalar» and acts from
   the top; never a task the block would not then show.
-- **The deadline is editable on the row** (the operator, 2026-11-22: «make the
-  date editable for shift managers and admins»). The date line is a
-  `DateRangePicker single bare` (a `label` node keeps «Muddat … · N kun
-  kechikdi» on the trigger) wherever the row's `can_due` says so, and a pick
-  goes to `PATCH {tier}/{id}/due` — the deadline alone, journalled like the
-  PUT's «deadline» change. Who: whoever may edit the task (its creator, an
-  admin) AND the shift manager covering the unit (`shift_scope.covers`; on a
-  leader's task only one set from the top). `may_move_due` in
-  `routers/brigadir_tasks.py` and `routers/tasks.py` is the rule, and the
-  row's `can_due` asks it. The /tasks board's own edit form is unchanged
-  (creator or admin).
+- **IT IS A BOARD — To do · Doing · Done** (v4.637.0, the operator,
+  2026-11-22: «each task should be card and in the bottom should be written
+  person who is this assigned, and the columns should be to do, doing, and
+  done»). Three columns by STATUS; each task is ONE card: a red «N kun
+  kechikdi» chip and the «Shoshilinch» flame on top (a finished card: «o'z
+  vaqtida» or «N kun kechikib»), the text (up to four lines, whole on hover),
+  the deadline (a picker where `can_due`), «Berdi: …», then the status pill,
+  «Eslatish» and the chat — and the card's FOOT names the person it was set
+  for (avatar, name, «Brigadir» or «Lider · unit»), with the «+» that sets
+  them another. A late card stays in its status's column, red-edged, and comes
+  first there (longest late, then flamed, then nearest deadline); «Bajarildi»
+  lists the most recently finished first. Each column caps at 44rem and
+  scrolls itself; **its cards are `flex-shrink-0`** — without it the capped
+  flex column squeezed the cards and clipped their foot. Below `lg` (the
+  sidebar leaves three columns too narrow) ONE column at a time, picked by a
+  `SegmentedToggle` («Bajarilishi kerak · 3»). A `SearchInput` over the board
+  filters by text, person, unit or setter. The fold, the bar and «N kishidan M
+  nafari kechikmoqda» are unchanged; the per-person blocks are gone.
+- **WHO MOVES A BRIGADIR'S TASK** (the same day: «brigadir should give the
+  comment to the task, and only shift managers and admins can control their
+  deadlines and process like to do, doing or done»; asked whether
+  top-managers keep it — «Only SM and admins»). **Status and deadline: an
+  admin and the shift manager covering the unit, nobody else** —
+  `brigadir_tasks.runs_status`, asked by the status PATCH, `may_move_due`
+  (the `/due` PATCH) and the PUT (a moved deadline from anybody else is
+  refused; the creator still edits the text). The brigadir lost the To do ⇄
+  Doing move they had since 2026-11-15 and ANSWERS IN THE THREAD, on their
+  own «Vazifalar» page (the bot's cards already said «reply in its
+  comments»); a top-manager still sets, flames, reminds and writes in the
+  thread, but moves neither status nor date — not even on a task they set.
+  Every row carries `can_due` and `status_options` from that one rule (the
+  board's `_rights`, the day read, `_serialize`). **A leader's task keeps its
+  own rule** (the operator: «idc about other page») — the leader and their
+  brigadir still move one set from the top between To do and Doing, and its
+  date is the creator's, an admin's or the unit's shift manager's
+  (`tasks.may_move_due`).
+- **The deadline is edited on the card** (v4.635.0, the operator,
+  2026-11-22: «make the date editable for shift managers and admins»): a
+  `DateRangePicker single bare` (its `label` node prints «Muddat …» on the
+  trigger) wherever `can_due`, sending `PATCH {tier}/{id}/due` — the deadline
+  alone, journalled like the PUT's «deadline» change. Never on a finished
+  card.
 - **Which day**: set on or before it AND (still open on it OR finished on it).
   Finished earlier = left; set later = not arrived. A day is Tashkent's
   calendar day, never the shift frame.

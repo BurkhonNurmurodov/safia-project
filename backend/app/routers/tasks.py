@@ -413,7 +413,10 @@ def board(
 
         if kind == tb.KIND_SUPERVISOR:
             manage = is_admin or top or t.supervisor_manager_id in managed
-            return {"can_edit": _owns(t), **_status(manage, manage or unit_mine, True),
+            # Status and deadline: an admin or the unit's shift manager only
+            # (`brigadir_tasks.runs_status`); the brigadir answers in the thread.
+            runs = is_admin or t.supervisor_manager_id in managed
+            return {"can_edit": _owns(t), **_status(runs, runs, True), "can_due": runs,
                     "can_reorder": manage, "can_comment": manage or unit_mine}
         if kind == tb.KIND_SHIFT_MANAGER:
             manage = is_admin or top
@@ -583,11 +586,12 @@ def day_tasks(
             thread = bool(door and (is_admin or top or m.id in managed))
             can_comment = thread
             can_remind = bool(thread and acts_from_top)
-            # The status picker on the row (2026-11-15) — the brigadir PATCH's
-            # own rule: whoever runs the unit's board finishes it.
-            options = tb.status_choices(finisher=thread, mover=thread,
+            # The status picker on the card — the brigadir PATCH's own rule
+            # (`runs_status`: an admin or the unit's shift manager, 2026-11-22).
+            runs = bool(door and (is_admin or m.id in managed))
+            options = tb.status_choices(finisher=runs, mover=runs,
                                         from_top=True, current=t.status)
-            can_due = bool(door and _bt.may_move_due(db, payload, t))
+            can_due = runs
         elif kind == tb.KIND_LEADER and t.leader_profile_id is not None:
             prof = leaders.get(t.leader_profile_id)
             person = {"kind": kind, "id": t.leader_profile_id,

@@ -117,6 +117,21 @@ def _can_manage(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
     return False
 
 
+def runs_status(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
+    """May the caller set a brigadir task's STATUS or move its DEADLINE?
+
+    Only an admin and the shift manager covering the unit (the operator,
+    2026-11-22: «only shift managers and admins can control their deadlines
+    and process like to do, doing or done»). Narrower than `_can_manage`: a
+    top-manager still sets tasks, flames, reminds and writes in the thread,
+    and the brigadir answers in the thread — neither moves the task.
+    """
+    if tb.admin(db, payload):
+        return True
+    return (payload.get("role") == "shift-manager"
+            and shift_scope.covers(db, payload.get("role_id"), manager_id))
+
+
 def _is_assignee(payload: dict, t: LeaderTask) -> bool:
     """True when the viewer IS the brigadir the task was set for — from any of
     that person's logins, since a brigadir profile is keyed by unit."""
@@ -148,9 +163,10 @@ def _serialize(t: LeaderTask, comment_count: int, payload: dict, db: Session,
     mine = kind == tb.KIND_SUPERVISOR
     manage = mine and _can_manage(db, payload, t.supervisor_manager_id)
     assignee = mine and _is_assignee(payload, t)
-    # Every brigadir task is from the top: the brigadir moves it, a manager
-    # marks it done (`tb.status_choices`).
-    options = tb.status_choices(finisher=manage, mover=manage or assignee,
+    # Status is the admins' and the unit's shift manager's alone
+    # (`runs_status`); the brigadir answers in the thread.
+    runs = mine and runs_status(db, payload, t.supervisor_manager_id)
+    options = tb.status_choices(finisher=runs, mover=runs,
                                 from_top=True, current=t.status) if mine else []
     return {
         "id": t.id,
@@ -174,6 +190,7 @@ def _serialize(t: LeaderTask, comment_count: int, payload: dict, db: Session,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "comment_count": comment_count,
         "can_edit": mine and _owns_row(db, payload, t),
+        "can_due": runs,
         "can_status": bool(options),
         "status_options": options,
         "can_reorder": manage,
@@ -406,6 +423,8 @@ def update_task(
     _assert(_owns_row(db, payload, t), "Only the task's creator or an admin can do this")
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
+    _assert(body.due_date == t.due_date or may_move_due(db, payload, t),
+            "Only the shift manager or an admin can change the deadline")
     was_text, was_due = t.task_text, t.due_date
     t.task_text = body.task_text.strip()
     t.due_date = body.due_date
@@ -425,13 +444,9 @@ def update_task(
 
 
 def may_move_due(db: Session, payload: dict, t: LeaderTask) -> bool:
-    """The deadline alone: whoever may edit the task (its creator, an admin),
-    and the shift manager covering the unit (the operator, 2026-11-22: the
-    date on «Rahbariyat vazifalari» editable for shift managers and admins)."""
-    if _owns_row(db, payload, t):
-        return True
-    return (payload.get("role") == "shift-manager"
-            and shift_scope.covers(db, payload.get("role_id"), t.supervisor_manager_id))
+    """The deadline: an admin or the shift manager covering the unit — the
+    status rule (`runs_status`), never the task's creator as such."""
+    return runs_status(db, payload, t.supervisor_manager_id)
 
 
 class DueIn(BaseModel):
@@ -447,7 +462,7 @@ def set_due(
 ):
     """Move a brigadir task's deadline — nothing else on it changes."""
     t = _mine(task_id, payload, db)
-    _assert(may_move_due(db, payload, t), "Only a shift manager, the task's creator or an admin can do this")
+    _assert(may_move_due(db, payload, t), "Only the shift manager or an admin can change the deadline")
     was_due = t.due_date
     t.due_date = body.due_date
     db.commit()
@@ -504,12 +519,11 @@ def set_status(
     if body.status not in tb.VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     t = _mine(task_id, payload, db)
-    manage = _can_manage(db, payload, t.supervisor_manager_id)
-    allowed = tb.status_choices(finisher=manage, mover=manage or _is_assignee(payload, t),
+    runs = runs_status(db, payload, t.supervisor_manager_id)
+    allowed = tb.status_choices(finisher=runs, mover=runs,
                                 from_top=True, current=t.status)
     _assert(body.status in allowed,
-            "Only a shift manager, a top manager or an admin can mark this task done"
-            if allowed else "You can't change this task's status")
+            "Only the shift manager or an admin can change this task's status")
 
     old = t.status
     if body.status != old:
