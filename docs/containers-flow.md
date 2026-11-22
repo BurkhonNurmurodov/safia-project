@@ -110,6 +110,16 @@ containers row from production and move it into the new button».
     small for a thumb. Nothing animates its height (`docs/motion.md`); the
     chevron turns. The full cards of v4.630.0 are gone from this row;
     `RequestCard` is AXO's phone card again, exactly as before the row existed.
+  - **Each brigadir's `PartBlock` is a card in that brigadir's own hue**
+    (2026-11-22, the operator: «add visible color for names of brigadirs or
+    just for box — it should be visible for logistics at least»): a 12% tint,
+    a border mixed 45% toward the hue, a 3px left edge, and the name in the
+    hue through `.chat-ink` (legible on both themes). The hue is `nameHue` of
+    the brigadir's raw name — the one their avatar's initials and their name
+    in a chat are painted in — so a brigadir wears the SAME colour on every
+    request and every day, never one handed out by position in a split. It is
+    an identity, not a status: the receipt chip beside it stays the one
+    verdict.
   - **The split dialog reads in the order it is filled** (`AssignModal`, the
     same release; nothing in what it sends changed). **How much is handed out
     is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi

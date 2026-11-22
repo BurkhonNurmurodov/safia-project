@@ -28,6 +28,7 @@ import ActionMenu from "../ui/ActionMenu";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { SplitBar, SplitLegend } from "../ui/Meter";
+import { nameHue } from "../ui/ProfileAvatar";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
 import {
@@ -571,16 +572,29 @@ function SplitBoard({ t, list, loading, empty, ctx }) {
   );
 }
 
+// A brigadir's own hue — the one `ProfileAvatar` paints their initials on (and
+// the chat their name in), so a brigadir wears ONE colour on every request.
+const unitInk = (name) => `hsl(${nameHue(name || "")}, 58%, 55%)`;
+
 // One brigadir's part on the board: who, how many, whether they confirmed —
-// and, under it, to which cell how many.
+// and, under it, to which cell how many. Each part is a card in the brigadir's
+// own hue (2026-11-22, the operator: logistics must tell the brigadirs of a
+// split apart at a glance) — a soft tint, a coloured left edge, the name in
+// the hue through `.chat-ink`, so it reads on both themes.
 function PartBlock({ p, t, tl, shops }) {
   const got = p.received;
   const short = got && KEYS.some((k) => (got[k] ?? 0) < (p.counts[k] ?? 0));
+  const ink = unitInk(p.unit);
   return (
-    <li className="min-w-0 flex flex-col gap-1.5">
+    <li className="min-w-0 flex flex-col gap-1.5 rounded-xl py-2 pl-3 pr-2"
+      style={{
+        background: `color-mix(in srgb, ${ink} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${ink} 45%, var(--border))`,
+        boxShadow: `inset 3px 0 0 ${ink}`,
+      }}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold leading-snug break-words" style={{ color: "var(--text-1)" }}>{tl(p.unit) || "—"}</div>
+          <div className="chat-ink text-[13px] font-semibold leading-snug break-words" style={{ "--ink": ink }}>{tl(p.unit) || "—"}</div>
           <div className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>{countsText(t, p.counts)}</div>
           {short && (
             <div className="text-xs tabular-nums font-medium" style={{ color: "var(--status-bad)" }}>
@@ -686,7 +700,7 @@ function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, ma
             <p className="text-xs" style={{ color: "var(--text-2)" }}>{t("cflow.snd.gave").replace("{x}", countsText(t, r.given))}</p>
           )}
           {r.status === "assigned" && r.parts.length > 0 && (
-            <ul className="grid gap-x-5 gap-y-3 pt-2.5 md:grid-cols-2 2xl:grid-cols-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <ul className="grid gap-3 pt-2.5 md:grid-cols-2 2xl:grid-cols-3" style={{ borderTop: "1px solid var(--border)" }}>
               {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} />)}
             </ul>
           )}
