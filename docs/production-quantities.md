@@ -655,8 +655,9 @@ last columns, after «Pareto» (the operator's call, same day), and
   `startup.container_cols_close_five` (flag
   `oneshot:container_cols_close_five_nov22`) REVOKES the grant from their unit
   profiles through `_grant_container_cols(…, revoke=True)`, registered after
-  the three grants. The capability stays on the Permissions tab; nobody holds
-  it through these one-shots any more.
+  the three grants. The capability stays on the Permissions tab. The Almaty
+  unit's grant (`startup.container_cols_almaty`, by its plant, not by name) is
+  not among the five and stays.
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 
