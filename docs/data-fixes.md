@@ -892,3 +892,32 @@ operator: «His scores shouldn't be calculated starting from 16th».
   results, including the day he filed (19 Nov). Days before 16 Nov are
   unchanged. Delete the step, its flag constants and both calls once the flag
   is set.
+
+## Cell 4412's 08:10–15:50 wait was not a stop (`startup.idle_4412_not_stopped`, 2026-11-22)
+
+The operator, with the stop window open: «by mistake this is written in the
+cell stopped, can you change it to cell not stopped». The record is cell 4412's
+«Xolodilnikdan mahsulot kutish» (Cat A), 08:10 → 15:50 (7 h 40), reason
+«MALINA 3», filed «To'xtaganda».
+
+- **What it does, once** (TEMPORARY `startup.idle_4412_not_stopped`, flag
+  `oneshot:idle_4412_not_stopped_nov22`, `later` in the lifespan, both
+  entrypoints): the screen named no date and the build machine could not read
+  production, so the step looks for the row by what the screen did name — cell
+  4412, Cat A, 08:10 → 15:50, approved, filed as stopped, on a day of
+  1–22 Nov — and sets `stopped = False` only when that is exactly ONE row. It
+  writes an `idle.interval_edited` Jurnal row (source system) and DMs the
+  admins the day it found.
+- **Anything else changes nothing and is reported**: two or more such rows
+  (the DM lists each with its day and number), none at all, or one that is
+  already «To'xtamaganda» (corrected by hand meanwhile). The flag is set
+  either way — a second look needs a new flag.
+- **The day's close is not asked** (`idle_lock`): the page refuses an edit on a
+  closed day, this is the operator's own correction.
+- **Consequences**: the 7 h 40 leave the cell's stopped minutes for that day,
+  so that day's ojidaniya, its загрузка and everything read from them
+  (/downtime, «Kutish yechimlari», the cost tab) drop by it on their next
+  read or recalculation. The solution written to the
+  stop stays on the record, but «Kutish yechimlari» lists only the stopped
+  half, so the stop leaves its «Muammolar» list. Delete the step, its
+  constants, `tests/test_idle_4412_fix.py` and both calls once the flag is set.

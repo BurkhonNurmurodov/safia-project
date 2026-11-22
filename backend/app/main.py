@@ -358,6 +358,8 @@ async def lifespan(app: FastAPI):
     later(container_watch_shift_managers_off)   # the same evening: only the board for them
     from app.startup import container_cols_three_brigadirs
     later(container_cols_three_brigadirs)       # 22 Nov: three brigadirs see the container columns
+    from app.startup import idle_4412_not_stopped
+    later(idle_4412_not_stopped)                # 22 Nov: 4412's 08:10–15:50 wait was not a stop
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)

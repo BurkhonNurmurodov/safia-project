@@ -12490,3 +12490,74 @@ def container_cols_three_brigadirs() -> None:
         _dm_report("fail", "Zagruzka fayli · konteyner ustunlari ochilmadi", error=exc)
     finally:
         db.close()
+
+
+# ── 22 Nov: cell 4412's 08:10–15:50 wait was filed «To'xtaganda» by mistake (docs/data-fixes.md) ──
+# The operator, 2026-11-22, with the stop window on screen: «by mistake this is
+# written in the cell stopped, can you change it to cell not stopped». The
+# record is 4412's «Xolodilnikdan mahsulot kutish» (Cat A), 08:10 → 15:50
+# (7 h 40), reason «MALINA 3». The screen names no date, and the build machine
+# cannot read production, so the step finds the row by what the screen DOES
+# name — the cell, the category, both clocks, approved, filed as stopped, on a
+# day of this November — and flips it only when that names exactly ONE row.
+# None stopped but one already not stopped = corrected by hand meanwhile, and
+# nothing is touched. Anything else is reported with the candidates, never
+# guessed. The day's close is not asked (`idle_lock`): this is the operator's
+# own correction. Once, whatever it finds — a second look needs a new flag.
+IDLE_4412_FLAG = "oneshot:idle_4412_not_stopped_nov22"
+IDLE_4412_ROW = ("4412", "Cat A", "08:10", "15:50")
+IDLE_4412_DAYS = ("2026-11-01", "2026-11-22")
+
+
+def idle_4412_not_stopped() -> None:
+    from app.models import Cell, CellOjidaniyaInterval as Iv
+    from app.services import action_log
+
+    code, cat, start, end = IDLE_4412_ROW
+    title = f"Yacheyka {code} · {start}–{end} kutish «To'xtamaganda» qilindi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=IDLE_4412_FLAG).first():
+            return
+        rows = (db.query(Iv).join(Cell, Cell.id == Iv.cell_id)
+                .filter(Cell.verifix_code == code, Iv.category == cat,
+                        Iv.start == start, Iv.end == end, Iv.status == "approved",
+                        Iv.date >= IDLE_4412_DAYS[0], Iv.date <= IDLE_4412_DAYS[1])
+                .order_by(Iv.date, Iv.id).all())
+        hot = [r for r in rows if r.stopped]
+        seen = [f"{r.date} · №{r.id} · {'To`xtaganda' if r.stopped else 'To`xtamaganda'} · "
+                f"{(r.note or '').strip()[:60]}" for r in rows]
+        fixed = hot[0] if len(hot) == 1 else None
+        if fixed is not None:
+            fixed.stopped = False
+        db.add(AppSetting(key=IDLE_4412_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        if fixed is not None:
+            action_log.record_system(
+                "shopfloor", "idle.interval_edited", target_kind="interval",
+                target_id=fixed.id, target_name=code, day=fixed.date,
+                details=[("cell", code), ("date", fixed.date), ("time", f"{start}–{end}")],
+                changes=[("stopped", True, False)],
+                reason="Xato bilan «To'xtaganda» deb yozilgan (one-shot 2026-11-22)")
+            print(f"[startup] idle 4412: interval {fixed.id} ({fixed.date}) is not stopped now")
+            _dm_report("ok", title,
+                       rows=[("🏭", "Yacheyka", code), ("📅", "Kun", fixed.date),
+                             ("⏱", "Vaqt", f"{start}–{end}"),
+                             ("📝", "Izoh", (fixed.note or "").strip()[:120])],
+                       notes=[("ℹ️", "Bu vaqt endi yacheykaning to'xtash daqiqalariga kirmaydi.")])
+        elif not hot and len(rows) == 1:
+            print(f"[startup] idle 4412: interval {rows[0].id} was already not stopped")
+            _dm_report("ok", title, status="Allaqachon «To'xtamaganda» — hech narsa o'zgarmadi",
+                       rows=[("📅", "Yozuv", seen)])
+        else:
+            print(f"[startup] idle 4412: {len(hot)} stopped of {len(rows)} matching — nothing changed")
+            _dm_report("warn", f"Yacheyka {code} · {start}–{end} kutish o'zgartirilmadi",
+                       rows=[("🔎", "Mos yozuvlar", seen or ["topilmadi"])],
+                       notes=[("👉", "Kutish kiritish sahifasida kerakli yozuvni qo'lda "
+                                    "«To'xtamaganda» qiling.")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] idle 4412 failed: {exc}")
+        _dm_report("fail", f"Yacheyka {code} · {start}–{end} kutish o'zgartirilmadi", error=exc)
+    finally:
+        db.close()
