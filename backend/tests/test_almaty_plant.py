@@ -34,7 +34,8 @@ from app import startup
 from app.models import (AppSetting, Factory, Manager, PPCatalogMove, PPCatalogVersion,
                         PPDaily, PPLineDaily, PPProduct, PPWorkCenter,
                         PPWorkCenterDaily, TelegramUserRole)
-from app.models import Cell
+from app.models import Cell, ProfilePermission
+from app.capabilities import CAP_CONTAINER_COLS
 from app.services import almaty_plant, pp_catalog
 from app.services.pp_calc import daily_key, line_keys, takes_sap
 
@@ -589,6 +590,39 @@ class AlmatyPlantTest(unittest.TestCase):
         self.assertEqual([(p.name, p.work_center) for p in keles], [("Олча тозалаш", "1612")])
         self.assertEqual(self.db.query(PPCatalogVersion).filter(
             PPCatalogVersion.manager_id != 31).count(), 0)
+
+    # 22 Nov: the container columns of «Zagruzka fayli» opened for the unit
+    # (`startup.container_cols_almaty`) — on its PROFILE, found by the plant.
+    def _cols(self):
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+                mock.patch.object(startup, "_dm_report",
+                                  lambda tone, title, **kw: self.cards.append((tone, kw))):
+            startup.container_cols_almaty()
+        self.db.expire_all()
+
+    def _col_grants(self):
+        return sorted((p.profile_key, p.mode, p.scope) for p in self.db.query(ProfilePermission)
+                      .filter(ProfilePermission.capability == CAP_CONTAINER_COLS).all())
+
+    def test_the_container_columns_open_on_the_units_profile(self):
+        self.db.execute(text("TRUNCATE profile_permissions RESTART IDENTITY"))
+        self.db.commit()
+        self._boot()
+        self._cols()
+        self.assertEqual(self._col_grants(), [("supervisor:31", "grant", "all")])
+        self.assertEqual(self.cards[-1][0], "ok")
+        # Once: a grant somebody takes back on the Permissions tab stays taken back.
+        self.db.query(ProfilePermission).delete()
+        self.db.commit()
+        self._cols()
+        self.assertEqual(self._col_grants(), [])
+
+    def test_no_plant_no_container_columns(self):
+        self.db.execute(text("TRUNCATE profile_permissions RESTART IDENTITY"))
+        self.db.commit()
+        self._cols()
+        self.assertEqual(self._col_grants(), [])
+        self.assertEqual([t for t, _ in self.cards], ["warn"])
 
 
 if __name__ == "__main__":

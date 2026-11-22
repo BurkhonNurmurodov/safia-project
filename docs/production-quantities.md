@@ -658,6 +658,15 @@ last columns, after «Pareto» (the operator's call, same day), and
   the three grants. The capability stays on the Permissions tab. The Almaty
   unit's grant (`startup.container_cols_almaty`, by its plant, not by name) is
   not among the five and stays.
+- **…and the Almaty unit holds it** (2026-11-22, the operator, the column
+  picker's container columns on screen: «can you open for him container page
+  for almata filial»). `startup.container_cols_almaty` (`later`, both
+  entrypoints, flag `oneshot:container_cols_almaty_nov22`) grants it on the
+  plant's ONE live unit profile — Akramova Munisa's, «Brigadir o'rnida» —
+  found by its PLANT (`almaty_plant._the_unit`), never by the head's name; no
+  plant or several units grant nothing and say so in the admins' DM. Whoever
+  holds that profile sees the ten columns and types the capacities of its
+  84 lines. Its own flag, so a close aimed at brigadirs by name leaves it.
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 

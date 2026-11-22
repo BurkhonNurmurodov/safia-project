@@ -12586,8 +12586,8 @@ def container_cols_abdukarimov() -> None:
 # found by its PLANT like every Almaty step (`almaty_plant._the_unit`), never by
 # the head's name: only a one-shot wrote that name, and a name match would miss
 # a unit still called «Almaty». No plant, or several units on it, grants
-# nothing and says so. Its own flag, once; the five brigadirs' close below
-# names them only, so it leaves this grant standing.
+# nothing and says so. Its own flag, once, so a close aimed at brigadirs by
+# name leaves this grant standing.
 CONTAINER_COLS_ALMATY_FLAG = "oneshot:container_cols_almaty_nov22"
 
 

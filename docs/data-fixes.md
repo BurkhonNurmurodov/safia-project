@@ -720,6 +720,10 @@ This closes the second form's «Still to do by hand» for the SAP codes; the
 Verifix people, the leaders and «Zagruzka hisoblanadi» stay for when the plant
 is staffed.
 
+The unit's «Zagruzka fayli» container columns (sig'im · soni) were opened for
+it on 2026-11-22 (`startup.container_cols_almaty`) — the record is in
+`docs/production-quantities.md`, beside the brigadirs' personal grants.
+
 ## Karimov Asqar → containers like Maksudov Alisher, and no idle time (`startup.asqar_containers_no_idle`, 2026-11-22)
 
 The operator: «Karimov Asqar can you make his profile same with Maksudov
