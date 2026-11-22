@@ -1033,6 +1033,9 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    ring INSIDE, where the card's rounded clip cannot cut it into a stray box. */
 .sec-fold { border-radius: 10px; transition: background-color .12s ease; }
 @media (hover: hover) { .sec-fold:hover { background: var(--hover-bg); } }
+/* «Rahbariyat vazifalari»: while a card is dragged between columns the hand
+   stays closed everywhere and nothing gets selected. */
+body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* DateRangePicker `bare`: a date edited in place on a list row shows its box on hover. */
 @media (hover: hover) { .drp-bare:hover { background: var(--hover-bg) !important; } }
 .sec-fold:active { background: var(--press-wash); }

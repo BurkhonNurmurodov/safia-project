@@ -16,7 +16,10 @@
  * and its foot names the person it was set for (avatar, name, brigadir or
  * leader · unit). «Muddati o'tgan» is no status, so a late card stays in its
  * column, red-edged, first. Below lg (the sidebar leaves three columns too
- * narrow) one column at a time, picked by a `SegmentedToggle` over the board. A search box filters by text or person.
+ * narrow) one column at a time, picked by a `SegmentedToggle` over the board.
+ * A card is DRAGGED between columns with a mouse or pen from lg up (the drop
+ * is the status PATCH, within `status_options`); the board's own shift toggle
+ * filters the cards while the page's «Smena» filter names none. A search box filters by text or person.
  *
  * WHO MOVES A CARD (the same day): on a brigadir's task only an admin and the
  * unit's shift manager set the status or the deadline
@@ -50,7 +53,8 @@
  * /tasks board where overdue is a flag beside three statuses: that page counts
  * what the status column says, this block asks who is late.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BellRing, CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, Flame, Plus } from "lucide-react";
 import { SectionHead } from "../ui/DataTable";
@@ -72,6 +76,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { fmtDate } from "../../utils/targets";
+import { localISO } from "../ui/DateRangePicker";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 import { KIND_SUP, KIND_LEADER, endpointFor } from "../../utils/taskTiers";
 
@@ -110,6 +115,23 @@ export default function DayTasksCard({ params }) {
   const [search, setSearch] = useState("");             // the board's text filter
   // The one column a phone shows (below md the three cannot stand side by side).
   const [phoneCol, setPhoneCol] = useState("todo");
+  // The board's own shift filter (2026-11-22, «add filter for them for
+  // shift»): null = every shift. Remembered per browser — a convenience.
+  const [boardShift, setBoardShift] = usePersistentState("day_tasks_shift", null);
+  // A card being dragged between columns: {task, width, x, y, dx, dy}; the
+  // column it would land in; the floating copy that follows the pointer.
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+  const colRefs = useRef({});
+  const ghostRef = useRef(null);
+  const ghostAt = useRef(null);                        // its last top-left, applied when it mounts
+  const ghostTransform = (pt) => `translate(${pt.x}px, ${pt.y}px) rotate(1.5deg)`;
+  const ghostMount = (el) => {
+    ghostRef.current = el;
+    if (el && ghostAt.current) el.style.transform = ghostTransform(ghostAt.current);
+  };
+  const dragEnd = useRef(null);
+  useEffect(() => () => dragEnd.current?.(), []);
   const cardRef = useRef(null);
   // Whether this browser was shown the block last time — so a reader who has
   // it gets its skeleton while it loads instead of a block dropping in above
@@ -137,11 +159,24 @@ export default function DayTasksCard({ params }) {
   // status puts it, marked red, and comes first there (longest late first,
   // then the flamed, then the nearest deadline); «Bajarildi» lists the most
   // recently finished first.
+  // The page's own «Smena» filter already narrows the read; while it names a
+  // shift the board's toggle is not drawn and filters nothing.
+  const pageShift = params?.shift || null;
+  const shiftPick = pageShift ? null : boardShift;
+  const allTasks = useMemo(
+    () => people.flatMap((p) => (p.tasks || []).map((task) => ({ ...task, person: p }))),
+    [people]);
+  const shiftCounts = useMemo(() => {
+    const n = { 1: 0, 2: 0 };
+    allTasks.forEach((task) => { if (task.person.shift in n) n[task.person.shift] += 1; });
+    return n;
+  }, [allTasks]);
   const columns = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const all = people.flatMap((p) => (p.tasks || []).map((task) => ({ ...task, person: p })));
-    const hit = (task) => !needle || [task.text, task.person.name, task.person.unit_name, task.created_by_name]
-      .some((v) => v && (`${tx(v)} ${tl(v)}`).toLowerCase().includes(needle));
+    const hit = (task) => (shiftPick == null || task.person.shift === shiftPick)
+      && (!needle || [task.text, task.person.name, task.person.unit_name, task.created_by_name]
+        .some((v) => v && (`${tx(v)} ${tl(v)}`).toLowerCase().includes(needle)));
+    const all = allTasks;
     const open = (a, b) => (b.state === "overdue") - (a.state === "overdue")
       || (b.days_late || 0) - (a.days_late || 0)
       || (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0)
@@ -152,7 +187,7 @@ export default function DayTasksCard({ params }) {
       const tasks = all.filter((task) => task.status === key && hit(task)).sort(key === "done" ? done : open);
       return { key, tasks, late: tasks.filter((task) => task.state === "overdue").length };
     });
-  }, [people, search, tl, tx]);
+  }, [allTasks, search, shiftPick, tl, tx]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["day-tasks"] });
@@ -177,13 +212,94 @@ export default function DayTasksCard({ params }) {
 
   // The row's status, set where it is read — through the router that owns the
   // task's tier, exactly as on Vazifalar. A refusal says why, in a toast.
+  // The card moves AT ONCE (a drop that snapped back until the server answered
+  // would read as refused); the read that follows puts the server's word on it.
   const setStatus = useMutation({
     mutationFn: ({ task, status }) =>
       api.patch(`${endpointFor(task.kind)}/${task.id}/status`, { status }).then((r) => r.data),
+    onMutate: ({ task, status }) => {
+      const today = localISO(new Date());
+      const days = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
+      const moved = (x) => {
+        if (status === "done") {
+          const late = !!x.due_date && today > x.due_date;
+          return { ...x, status, state: "done", done_day: today, late, days_late: late ? days(today, x.due_date) : 0 };
+        }
+        const late = !!x.due_date && x.due_date < today;
+        return { ...x, status, state: late ? "overdue" : status, done_day: null, late, days_late: late ? days(today, x.due_date) : 0 };
+      };
+      qc.setQueryData(["day-tasks", query], (old) => old?.people ? {
+        ...old,
+        people: old.people.map((p) => ({
+          ...p, tasks: (p.tasks || []).map((x) => (x.id === task.id && x.kind === task.kind ? moved(x) : x)),
+        })),
+      } : old);
+    },
     onSuccess: refresh,
     onError: (e) => { toast.error(e?.response?.data?.detail || t("tasks.saveError")); refresh(); },
   });
   const savingStatusId = setStatus.isPending ? setStatus.variables?.task?.id : null;
+
+  // DRAG A CARD TO ANOTHER COLUMN (2026-11-22) — the status pill's own right
+  // (`status_options`), so a drop never asks for what the PATCH refuses. With
+  // a mouse or a pen and only while the three columns stand side by side (lg+);
+  // a finger keeps the pill (a phone shows one column). The press becomes a
+  // drag after 6px, so a click on the card's buttons and text selection are
+  // untouched; Escape cancels.
+  const canDrag = (task) => (task.status_options || []).some((st) => st !== task.status);
+  const startDrag = (e, task) => {
+    if (e.button !== 0 || e.pointerType === "touch" || !canDrag(task)) return;
+    if (e.target.closest("button, a, input, textarea, select, [role='button'], [data-no-drag]")) return;
+    if (!window.matchMedia?.("(min-width: 1024px)").matches) return;
+    const card = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY;
+    let dx = 0, dy = 0, started = false, target = null;
+    const colAt = (x, y) => {
+      for (const [key, el] of Object.entries(colRefs.current)) {
+        const r = el?.getBoundingClientRect();
+        if (r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return key;
+      }
+      return null;
+    };
+    const place = (x, y) => {
+      ghostAt.current = { x: x - dx, y: y - dy };
+      if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ghostAt.current);
+    };
+    const onMove = (ev) => {
+      if (!started) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+        const r = card.getBoundingClientRect();
+        dx = sx - r.left; dy = sy - r.top; started = true;
+        window.getSelection?.()?.removeAllRanges();
+        document.body.classList.add("board-dragging");
+        setDrag({ task, width: r.width, x: ev.clientX - dx, y: ev.clientY - dy });
+      }
+      ev.preventDefault();
+      place(ev.clientX, ev.clientY);
+      const col = colAt(ev.clientX, ev.clientY);
+      const ok = col && col !== task.status && task.status_options.includes(col) ? col : null;
+      if (ok !== target) { target = ok; setOver(ok); }
+    };
+    const end = (drop) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey, true);
+      document.body.classList.remove("board-dragging");
+      dragEnd.current = null;
+      ghostAt.current = null;
+      if (started) { setDrag(null); setOver(null); }
+      if (drop && started && target) setStatus.mutate({ task, status: target });
+    };
+    const onUp = () => end(true);
+    const onCancel = () => end(false);
+    const onKey = (ev) => { if (ev.key === "Escape" && started) { ev.preventDefault(); ev.stopPropagation(); end(false); } };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey, true);
+    dragEnd.current = () => end(false);
+  };
 
   // The deadline, moved where it is read (2026-11-22) — an admin, the task's
   // creator, or the shift manager over the unit (the server's `can_due`).
@@ -231,7 +347,7 @@ export default function DayTasksCard({ params }) {
   // One task = one card: what is wrong with it (late, urgent) and the status
   // control on top, the text, the deadline and who set it, the actions — and
   // at the bottom the person it was set for.
-  const taskCard = (task) => {
+  const taskCard = (task, ghost = false) => {
     const p = task.person;
     const due = dueLine(task);
     const role = task.creator_role && ROLE_LABEL_KEYS[task.creator_role] ? t(ROLE_LABEL_KEYS[task.creator_role]) : null;
@@ -248,11 +364,14 @@ export default function DayTasksCard({ params }) {
       ? `${t("dayTasks.kind.leader")} · ${tl(p.unit_name)}`
       : t(`dayTasks.kind.${p.kind}`);
     return (
-      <li key={`${task.kind}:${task.id}`} className="rounded-xl overflow-hidden flex flex-col flex-shrink-0"
+      <li key={`${task.kind}:${task.id}`}
+        className={`rounded-xl overflow-hidden flex flex-col flex-shrink-0${!ghost && canDrag(task) ? " lg:cursor-grab" : ""}`}
+        onPointerDown={ghost ? undefined : (e) => startDrag(e, task)}
         style={{
           background: "var(--bg-card)",
           border: `1px solid ${late ? `${CHART_OVERDUE}73` : "var(--border)"}`,
-          boxShadow: late ? `inset 3px 0 0 ${CHART_OVERDUE}` : undefined,
+          boxShadow: [late ? `inset 3px 0 0 ${CHART_OVERDUE}` : null, ghost ? "0 18px 40px rgba(0,0,0,0.35)" : null].filter(Boolean).join(", ") || undefined,
+          opacity: !ghost && drag && drag.task.id === task.id && drag.task.kind === task.kind ? 0.35 : undefined,
         }}>
         <div className="px-3 pt-2.5 pb-3 flex flex-col gap-2 min-w-0">
           {(late || task.urgent || verdict) && (
@@ -358,10 +477,21 @@ export default function DayTasksCard({ params }) {
 
   // One column of the board: its status, how many cards and how many of them
   // are late, then the cards. On a phone only the picked column is drawn.
-  const column = (c) => (
-    <section key={c.key} aria-label={statusLabel(c.key)}
-      className={`rounded-xl flex flex-col min-w-0 ${c.key === phoneCol ? "" : "max-lg:hidden"}`}
-      style={{ background: "var(--bg-inner)", border: line }}>
+  // While a card is dragged: the column it would land in is outlined in
+  // brand, a column its rights cannot reach dims.
+  const column = (c) => {
+    const target = drag && over === c.key;
+    const blocked = drag && c.key !== drag.task.status && !(drag.task.status_options || []).includes(c.key);
+    return (
+    <section key={c.key} aria-label={statusLabel(c.key)} ref={(el) => { colRefs.current[c.key] = el; }}
+      className={`rounded-xl flex flex-col min-w-0 transition-opacity ${c.key === phoneCol ? "" : "max-lg:hidden"}`}
+      style={{
+        background: target ? "color-mix(in srgb, var(--brand) 9%, var(--bg-inner))" : "var(--bg-inner)",
+        border: line,
+        outline: target ? "2px dashed var(--brand)" : "none",
+        outlineOffset: -2,
+        opacity: blocked ? 0.5 : undefined,
+      }}>
       <header className="flex items-center gap-2 px-3 py-2.5" style={{ borderBottom: line }}>
         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: STATUS_COLOR[c.key] }} />
         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>{statusLabel(c.key)}</span>
@@ -375,14 +505,15 @@ export default function DayTasksCard({ params }) {
         )}
       </header>
       {c.tasks.length ? (
-        <ul className="p-2 flex flex-col gap-2 lg:max-h-[44rem] lg:overflow-y-auto">{c.tasks.map(taskCard)}</ul>
+        <ul className="p-2 flex flex-col gap-2 lg:max-h-[44rem] lg:overflow-y-auto">{c.tasks.map((task) => taskCard(task))}</ul>
       ) : (
         <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
-          {search.trim() ? t("dayTasks.noMatch") : t("dayTasks.colEmpty")}
+          {search.trim() || shiftPick != null ? t("dayTasks.noMatch") : t("dayTasks.colEmpty")}
         </div>
       )}
     </section>
-  );
+    );
+  };
 
   return (
     <div ref={cardRef} className="rounded-xl overflow-hidden mb-6" style={cardStyle}>
@@ -433,10 +564,18 @@ export default function DayTasksCard({ params }) {
                 <div className="flex flex-wrap items-center gap-2 mt-4 mb-3">
                   <SearchInput value={search} onChange={setSearch} placeholder={t("dayTasks.search")}
                     className="w-full sm:w-80" />
+                  {!pageShift && (
+                    <SegmentedToggle value={boardShift} onChange={setBoardShift}
+                      options={[
+                        { value: null, label: `${t("filter.all")} · ${allTasks.length}` },
+                        { value: 1, label: `S1 · ${shiftCounts[1]}`, title: `${t("filter.shift")} 1` },
+                        { value: 2, label: `S2 · ${shiftCounts[2]}`, title: `${t("filter.shift")} 2` },
+                      ]} />
+                  )}
                   <SegmentedToggle className="lg:hidden w-full" fill value={phoneCol} onChange={setPhoneCol}
                     options={columns.map((c) => ({ value: c.key, label: `${statusLabel(c.key)} · ${c.tasks.length}` }))} />
                 </div>
-                <div className="grid gap-3 lg:grid-cols-3 items-start">{columns.map(column)}</div>
+                <div className="grid gap-3 lg:grid-cols-3 items-start lg:items-stretch">{columns.map(column)}</div>
                 <Button className="w-full mt-3" variant="ghost" icon={<ChevronUp size={14} />}
                   aria-expanded onClick={fold}>
                   {t("dayTasks.fold")}
@@ -471,6 +610,14 @@ export default function DayTasksCard({ params }) {
           onClose={() => setThread(null)}
         />
       )}
+
+      {/* The dragged card's floating copy — follows the pointer, takes no clicks. */}
+      {drag && createPortal(
+        <ul ref={ghostMount} aria-hidden className="fixed top-0 left-0 pointer-events-none"
+          style={{ width: drag.width, zIndex: 300 }}>
+          {taskCard(drag.task, true)}
+        </ul>,
+        document.body)}
 
       {toast.node}
     </div>

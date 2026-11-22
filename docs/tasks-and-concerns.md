@@ -354,6 +354,30 @@ no database in the fold, `tests/test_task_day.py` feeds it plain objects).
   `SegmentedToggle` («Bajarilishi kerak · 3»). A `SearchInput` over the board
   filters by text, person, unit or setter. The fold, the bar and «N kishidan M
   nafari kechikmoqda» are unchanged; the per-person blocks are gone.
+- **A card is DRAGGED to another column** (v4.638.0, the operator,
+  2026-11-22: «make the cards drag and drop between columns»). The drop IS the
+  status PATCH, so it obeys the card's `status_options` exactly as the pill
+  does — a card the viewer may not move is not draggable (no grab cursor), a
+  column its rights cannot reach dims while it is carried, the one it would
+  land in is outlined in brand. Pointer events, MOUSE or PEN only, and only
+  from `lg` up where the three columns stand side by side: a finger keeps the
+  pill (a phone shows one column, and a long-press drag would fight the page's
+  scroll). The press turns into a drag after 6px, so the card's buttons, its
+  chat and text selection are untouched; Escape cancels; a floating copy
+  follows the pointer (`createPortal`, its position written straight to the
+  node — a re-render per mouse move would redraw the whole board) while the
+  original dims. The columns stretch to the tallest one so a drop below a
+  short column's last card still lands in it. **The move is optimistic** —
+  the card changes column at once (`onMutate` rewrites the cached day read:
+  status, state, a done card's day and lateness) and the read that follows
+  puts the server's answer on it; a refusal is a toast and the card goes back.
+- **The board has its own SHIFT filter** (the same day: «add filter for them
+  for shift for now»): a `SegmentedToggle` «Barchasi · N | S1 · N | S2 · N»
+  beside the search, filtering the cards by the person's shift (a brigadir's
+  unit, a leader's unit), remembered per browser (`day_tasks_shift`). It
+  narrows the board alone — the bar above it still counts every task. While
+  the page's own «Smena» filter names a shift the server already reads only
+  that shift, so the toggle is not drawn and filters nothing.
 - **WHO MOVES A BRIGADIR'S TASK** (the same day: «brigadir should give the
   comment to the task, and only shift managers and admins can control their
   deadlines and process like to do, doing or done»; asked whether
