@@ -269,25 +269,28 @@ LOGISTICS_CAP = "page.view.container-logistics"
 ALL_KEY = "*"
 
 
-# The flow is ONE plant's (2026-11-20, the operator: «remove Axmedova Munisa
+# The flow is these plants' (2026-11-20, the operator: «remove Axmedova Munisa
 # from the container page — she is in another factory»). Keles has its own AXO
-# and its own floor; these containers move inside Uchtepa. Resolved by NAME,
-# never by id (ids differ between a checkout and production — the weekly
-# deck's `DECK_FACTORY` rule). A unit placed in ANOTHER plant is never offered,
-# split to, or counted in a need; a unit no plant was set for yet stays — as
-# everywhere in `factory_scope`, an unplaced row is never silently dropped. No
-# plant by that name → nothing is narrowed.
-FLOW_FACTORY = "Uchtepa"
+# and its own floor; these containers move inside Uchtepa — and, from
+# 2026-11-22, the Almaty plant too (the operator: «open the page like for all
+# supervisors like in Uchtepa» — its brigadirs get «Qabul» and are split to
+# like Uchtepa's). Resolved by NAME, never by id (ids differ between a
+# checkout and production — the weekly deck's `DECK_FACTORY` rule). A unit
+# placed in ANY OTHER plant is never offered, split to, or counted in a need;
+# a unit no plant was set for yet stays — as everywhere in `factory_scope`, an
+# unplaced row is never silently dropped. No plant by any of these names →
+# nothing is narrowed.
+FLOW_FACTORIES = ("Uchtepa", "Almaty")
 
 
-def flow_factory_id(db: Session) -> Optional[int]:
+def flow_factory_ids(db: Session) -> list:
+    """The ids of the plants the flow serves (`FLOW_FACTORIES`, by code or any
+    name column) — empty when none is found, which narrows nothing."""
     from app.models import Factory
-    wanted = FLOW_FACTORY.casefold()
-    for f in db.query(Factory).filter(Factory.archived.is_(False)).all():
-        if any((n or "").strip().casefold() == wanted
-               for n in (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en)):
-            return f.id
-    return None
+    wanted = {n.casefold() for n in FLOW_FACTORIES}
+    return [f.id for f in db.query(Factory).filter(Factory.archived.is_(False)).order_by(Factory.id).all()
+            if any((n or "").strip().casefold() in wanted
+                   for n in (f.code, f.name_uz, f.name_uz_cyrl, f.name_ru, f.name_en))]
 
 
 def flow_units(db: Session):
@@ -295,9 +298,9 @@ def flow_units(db: Session):
     (a query, ordered by name — callers add `.all()` or read ids)."""
     from sqlalchemy import or_
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    fid = flow_factory_id(db)
-    if fid is not None:
-        q = q.filter(or_(Manager.factory_id == fid, Manager.factory_id.is_(None)))
+    fids = flow_factory_ids(db)
+    if fids:
+        q = q.filter(or_(Manager.factory_id.in_(fids), Manager.factory_id.is_(None)))
     return q.order_by(Manager.name)
 
 

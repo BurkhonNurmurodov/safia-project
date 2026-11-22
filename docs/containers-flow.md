@@ -1059,7 +1059,7 @@ other seven bugs» (the eighth, the day dispatch round at 06:00, was fixed by
    whole next production day plus requests made ahead for tomorrow: 23,333
    dispatch containers at 00:09.
 
-### The flow is Uchtepa's — another plant's brigadirs are left out (2026-11-20)
+### The flow is Uchtepa's (and Almaty's from 22 Nov) — another plant's brigadirs are left out (2026-11-20)
 
 The operator: «remove Axmedova Munisa from the container page — she is in
 another factory, and we are in another factory». Her «Цех» sits in Keles,
@@ -1083,6 +1083,16 @@ which has its own AXO; these containers move inside Uchtepa.
   the units register. No plant named «Uchtepa» at all → nothing is narrowed.
 - Past requests and their parts keep their names; only what is offered and
   counted from now on changes.
+- **…and Almaty's too (2026-11-22).** The operator, asked which page the
+  Almaty brigadirs should get: «open the page like for all supervisors like in
+  Uchtepa». So `FLOW_FACTORIES = ("Uchtepa", "Almaty")` (`flow_factory_ids`,
+  by name as before): the Almaty plant's units are served exactly as
+  Uchtepa's — logistics is offered them in the split, their plan counts in the
+  limits, the need and «Tahlil», and their brigadir confirms on «Qabul» (the
+  role already holds `container-receive`) and gets the split card. Today that
+  is one unit, Akramova Munisa's («Brigadir o'rnida», `docs/data-fixes.md`).
+  Keles — and any plant not named here — stays out. The AXO and the logistics
+  people are the same ones; nothing about who asks or splits changed.
 
 ### Not built (the plan's remaining parts — ask first)
 
