@@ -342,8 +342,46 @@ def _notify_doc(db: Session, doc: LiveDocument, event: str, actor: int) -> None:
         except Exception:  # noqa: BLE001
             db.rollback()
             log.exception("staff-live: approval card for document %s failed", doc.id)
+    # A decision is news to whoever holds «Ko'chirish so'rovlarini ko'rib
+    # chiqish» over either end too (the operator, 2026-11-22: Abdukarimov
+    # Sanjar — he gets the draft's card, so he is told how it ended). A draft
+    # already reached them as the card.
+    grantees = _grantee_profiles(db, doc) if event != "created" else ()
     _notify(db, nkey, _doc_params(doc), units=(doc.manager_id,), supervisors=sups,
-            actor=actor, subject=("live_doc", doc.id), dm_skip=tuple(carded))
+            profiles=grantees, actor=actor, subject=("live_doc", doc.id),
+            dm_skip=tuple(carded))
+
+
+def _grantee_profiles(db: Session, doc: LiveDocument) -> tuple:
+    """One profile per account holding CAP_DOCUMENTS_APPROVE over the document's
+    sending or receiving unit (`cap_recipients`, the card's own rule) — the
+    first of the account's approved profiles that can open /staff, so the
+    account gets one bell row and one DM. Never raises."""
+    try:
+        from app.capabilities import cap_recipients
+        from app.models import TelegramUserRole
+        pl = doc.payload or {}
+        tids = cap_recipients(db, CAP_DOCUMENTS_APPROVE, doc.manager_id,
+                              pl.get("target_manager_id"))
+        if not tids:
+            return ()
+        access = get_page_access(db)
+        out: list = []
+        for tid in sorted(tids):
+            rows = (db.query(TelegramUserRole)
+                    .filter(TelegramUserRole.telegram_id == tid,
+                            TelegramUserRole.status == "approved")
+                    .order_by(TelegramUserRole.id).all())
+            for r in rows:
+                key = r.profile_key or identity.role_row_profile_key(db, r)
+                if key and live_staff.can_open(db, key, access):
+                    out.append(key)
+                    break
+        return tuple(out)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("staff-live: approve grantees for document %s failed", doc.id)
+        return ()
 
 
 # ── the Telegram cards (`app.approvals`, codes lv / lb) ──────────────────────

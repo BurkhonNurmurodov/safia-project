@@ -384,6 +384,14 @@ Everything below is the ENGINE, and it is what /staff's live days run on.
     handled». A documents grantee who is neither admin nor receiver taps
     through `_grantee_caller`, so the card they were sent can be acted on (the
     /staff `hr` card still cannot — parity there is a separate change).
+    **The decision reaches the documents grantees too** (the operator,
+    2026-11-22, for Abdukarimov Sanjar): «tasdiqlandi» / «bekor qilindi» of an
+    exchange or a role change goes, bell + DM, to every account holding
+    «Ko'chirish so'rovlarini ko'rib chiqish» over either end
+    (`_grantee_profiles` — `cap_recipients`, the card's rule; one profile per
+    account, the first that opens /staff). The draft still reaches them as the
+    card only. Who gets them is the grant, never a name in code: give or take
+    it on the Permissions tab (at «Hammasi» to see every unit's requests).
     `staff_live.py`: `_notify` takes `dm_skip` (bell row kept, no DM — a card
     recipient is not DMed twice; the /staff `admin_dm=False` rule),
     `_notify_doc("created")` sends the card FIRST, and every decision path
