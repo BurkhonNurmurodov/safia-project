@@ -364,6 +364,10 @@ async def lifespan(app: FastAPI):
     later(container_cols_aripova)               # 22 Nov, later: and Aripova Manzura
     from app.startup import container_cols_abdukarimov
     later(container_cols_abdukarimov)           # 22 Nov, later still: and Abdukarimov Sanjar
+    from app.startup import container_cols_almaty
+    later(container_cols_almaty)                # 22 Nov, later again: and the Almaty unit
+    from app.startup import container_cols_close_five
+    later(container_cols_close_five)            # 22 Nov, last: closed again for all five
     from app.startup import idle_4412_not_stopped
     later(idle_4412_not_stopped)                # 22 Nov: 4412's 08:10–15:50 wait was not a stop
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).

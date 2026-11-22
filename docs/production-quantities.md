@@ -650,7 +650,13 @@ last columns, after «Pareto» (the operator's call, same day), and
   `startup.container_cols_aripova` (flag `oneshot:container_cols_aripova_nov22`),
   through the same `_grant_container_cols`; another name needs another flag.
   Then a fifth, Abdukarimov Sanjar — `startup.container_cols_abdukarimov`
-  (flag `oneshot:container_cols_abdukarimov_nov22`).
+  (flag `oneshot:container_cols_abdukarimov_nov22`). **Closed again for all
+  five the same day** (the operator: «ok close for them») —
+  `startup.container_cols_close_five` (flag
+  `oneshot:container_cols_close_five_nov22`) REVOKES the grant from their unit
+  profiles through `_grant_container_cols(…, revoke=True)`, registered after
+  the three grants. The capability stays on the Permissions tab; nobody holds
+  it through these one-shots any more.
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 

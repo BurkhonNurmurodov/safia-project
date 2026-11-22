@@ -12580,10 +12580,76 @@ def container_cols_abdukarimov() -> None:
                           "Zagruzka fayli · konteyner ustunlari Abdukarimov Sanjarga ochildi")
 
 
-def _grant_container_cols(flag: str, names: tuple, title: str) -> None:
-    """Grant `CAP_CONTAINER_COLS` to the unit profiles named, once under `flag`.
-    A name must fold to exactly ONE non-archived unit (whole, or its first
-    words); anything else is reported in the admins' DM, never guessed."""
+# ── 22 Nov, later again: and the Almaty unit (the operator, the column picker's
+# container columns on screen: «can you open for him container page for almata
+# filial»). The plant's ONE live unit — Akramova Munisa's, «Brigadir o'rnida» —
+# found by its PLANT like every Almaty step (`almaty_plant._the_unit`), never by
+# the head's name: only a one-shot wrote that name, and a name match would miss
+# a unit still called «Almaty». No plant, or several units on it, grants
+# nothing and says so. Its own flag, once; the five brigadirs' close below
+# names them only, so it leaves this grant standing.
+CONTAINER_COLS_ALMATY_FLAG = "oneshot:container_cols_almaty_nov22"
+
+
+def container_cols_almaty() -> None:
+    from app import capabilities
+    from app.services import almaty_plant
+
+    failed = "Zagruzka fayli · konteyner ustunlari Almaty bo'linmasiga ochilmadi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_COLS_ALMATY_FLAG).first():
+            return
+        try:
+            unit = almaty_plant._the_unit(db)
+        except almaty_plant.Refused as why:
+            db.rollback()
+            db.add(AppSetting(key=CONTAINER_COLS_ALMATY_FLAG, value=f"refused: {why}"[:250]))
+            db.commit()
+            print(f"[startup] container columns (Almaty): nothing granted — {why}")
+            _dm_report("warn", failed, rows=[("🔎", "Sabab", str(why))],
+                       notes=[("ℹ️", "Qo'lda: Ruxsatlar → «Zagruzka fayli — Konteynerlar».")],
+                       open=_REPORT_FACTORIES)
+            return
+        capabilities.apply_profile_perms(
+            db, [f"supervisor:{unit.id}"],
+            grants={capabilities.CAP_CONTAINER_COLS: "all"},
+            actor_name="system (one-shot 2026-11-22)")
+        db.add(AppSetting(key=CONTAINER_COLS_ALMATY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] container columns (Almaty) granted to unit {unit.id} «{unit.name}»")
+        _dm_report("ok", "Zagruzka fayli · konteyner ustunlari Almaty bo'linmasiga ochildi",
+                   status="1 / 1 bo'linma",
+                   rows=[("📦", "Ochildi", [f"{unit.name} · №{unit.id}"]),
+                         ("🏭", "Zavod", almaty_plant.PLANT["code"])],
+                   notes=[("ℹ️", "Qo'lda: Ruxsatlar → «Zagruzka fayli — Konteynerlar».")],
+                   open=("Profilni ochish", f"/profile/supervisor/{unit.id}"))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container columns (Almaty) failed: {exc}")
+        _dm_report("fail", failed, error=exc)
+    finally:
+        db.close()
+
+
+# ── 22 Nov, last: the five lose them again (the operator: «ok close for them»).
+# The grant is REVOKED from the same five unit profiles; the capability itself
+# stays on the Permissions tab for whoever is ticked later.
+CONTAINER_COLS_CLOSE_FLAG = "oneshot:container_cols_close_five_nov22"
+CONTAINER_COLS_CLOSE_NAMES = CONTAINER_COLS_GRANT_NAMES + ("Aripova Manzura", "Abdukarimov Sanjar")
+
+
+def container_cols_close_five() -> None:
+    _grant_container_cols(CONTAINER_COLS_CLOSE_FLAG, CONTAINER_COLS_CLOSE_NAMES,
+                          "Zagruzka fayli · konteyner ustunlari besh brigadirdan yopildi",
+                          revoke=True)
+
+
+def _grant_container_cols(flag: str, names: tuple, title: str, revoke: bool = False) -> None:
+    """Grant (or, with `revoke`, take back) `CAP_CONTAINER_COLS` on the unit
+    profiles named, once under `flag`. A name must fold to exactly ONE
+    non-archived unit (whole, or its first words); anything else is reported in
+    the admins' DM, never guessed."""
     from app import capabilities
     from app.services.people import fold_name
 
@@ -12605,14 +12671,16 @@ def _grant_container_cols(flag: str, names: tuple, title: str) -> None:
         if found:
             capabilities.apply_profile_perms(
                 db, [f"supervisor:{m.id}" for m in found],
-                grants={capabilities.CAP_CONTAINER_COLS: "all"},
+                **({"revokes": [capabilities.CAP_CONTAINER_COLS]} if revoke
+                   else {"grants": {capabilities.CAP_CONTAINER_COLS: "all"}}),
                 actor_name="system (one-shot 2026-11-22)")
         db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
-        print(f"[startup] container columns ({flag}) granted to {[m.name for m in found]}; missing {missing}")
+        verb = "revoked from" if revoke else "granted to"
+        print(f"[startup] container columns ({flag}) {verb} {[m.name for m in found]}; missing {missing}")
         _dm_report("ok" if not missing else "fail", title,
                    status=f"{len(found)} / {len(names)} brigadir",
-                   rows=[("📦", "Ochildi", [m.name for m in found] or ["hech kim"])]
+                   rows=[("📦", "Yopildi" if revoke else "Ochildi", [m.name for m in found] or ["hech kim"])]
                    + ([("⚠️", "Topilmadi", missing)] if missing else []),
                    notes=[("ℹ️", "Qo'lda: Ruxsatlar → «Zagruzka fayli — Konteynerlar».")])
     except Exception as exc:  # noqa: BLE001
