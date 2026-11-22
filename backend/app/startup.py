@@ -12435,3 +12435,58 @@ def farrux_cutoff_nov16() -> None:
         _dm_report("fail", "Ibragimjonov Farrux · 16.11 dan hisobdan chiqarilmadi", error=exc)
     finally:
         db.close()
+
+
+# ── 22 Nov: three brigadirs get the container columns back (docs/production-quantities.md) ──
+# The ten container columns of «Zagruzka fayli» left every brigadir on
+# 2026-11-15 (`production.CONTAINER_ROLES`). The operator, 2026-11-22: «for now
+# open the containers for Erkanboyev Zafarjon, Suvonov Elshod and Xakimov
+# Ruslan». Each one's UNIT profile (`supervisor:<id>`) gets the personal grant
+# `CAP_CONTAINER_COLS`, so whoever holds that profile sees and types them in it.
+# A name is matched folded (Latin, no apostrophes) against the non-archived
+# units, whole or as the first words («Suvonov Elshod OF»), and only when it
+# names exactly ONE unit — anything else is reported, never guessed. Once,
+# under a flag: a grant taken back on the Permissions tab later sticks.
+CONTAINER_COLS_GRANT_FLAG = "oneshot:container_cols_three_brigadirs_nov22"
+CONTAINER_COLS_GRANT_NAMES = ("Erkanboyev Zafarjon", "Suvonov Elshod", "Xakimov Ruslan")
+
+
+def container_cols_three_brigadirs() -> None:
+    from app import capabilities
+    from app.services.people import fold_name
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_COLS_GRANT_FLAG).first():
+            return
+        units = db.query(Manager).filter(Manager.archived.is_(False)).all()
+        # A Cyrillic «Хакимов» folds to «khakimov»: x and kh are one letter here.
+        fold = lambda s: fold_name(s).replace("kh", "x")  # noqa: E731
+        found, missing = [], []
+        for want in CONTAINER_COLS_GRANT_NAMES:
+            w = fold(want)
+            hits = [m for m in units if fold(m.name) == w or fold(m.name).startswith(w + " ")]
+            if len(hits) == 1:
+                found.append(hits[0])
+            else:
+                missing.append(f"{want} — {len(hits)} ta mos" if hits else f"{want} — topilmadi")
+        if found:
+            capabilities.apply_profile_perms(
+                db, [f"supervisor:{m.id}" for m in found],
+                grants={capabilities.CAP_CONTAINER_COLS: "all"},
+                actor_name="system (one-shot 2026-11-22)")
+        db.add(AppSetting(key=CONTAINER_COLS_GRANT_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] container columns granted to {[m.name for m in found]}; missing {missing}")
+        _dm_report("ok" if not missing else "fail",
+                   "Zagruzka fayli · konteyner ustunlari uch brigadirga ochildi",
+                   status=f"{len(found)} / {len(CONTAINER_COLS_GRANT_NAMES)} brigadir",
+                   rows=[("📦", "Ochildi", [m.name for m in found] or ["hech kim"])]
+                   + ([("⚠️", "Topilmadi", missing)] if missing else []),
+                   notes=[("ℹ️", "Qo'lda: Ruxsatlar → «Zagruzka fayli — Konteynerlar».")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container columns grant failed: {exc}")
+        _dm_report("fail", "Zagruzka fayli · konteyner ustunlari ochilmadi", error=exc)
+    finally:
+        db.close()

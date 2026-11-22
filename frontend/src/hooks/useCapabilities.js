@@ -89,6 +89,9 @@ export const CAP = {
   // «Zagruzka fayli — SAP kodlari»: add positions to any unit's catalog and
   // change an existing line's SAP code (backend CAP_CATALOG_SAP).
   CATALOG_SAP:       "production.catalog.sap",
+  // «Zagruzka fayli — Konteynerlar»: the ten container columns for a person
+  // outside admin / shift-manager (backend CAP_CONTAINER_COLS).
+  CONTAINER_COLS:    "production.containers",
 };
 
 // Page-view grants are generated per page rather than listed, exactly as on the

@@ -150,6 +150,11 @@ CAP_LEADERS_ADMIN     = "leaders.admin"
 # codes on the workload file page). Every other catalog field, the archive, the
 # delete, the bulk editor and the import stay a real admin's.
 CAP_CATALOG_SAP       = "production.catalog.sap"
+# «Zagruzka fayli — Konteynerlar»: the ten container columns (capacity · count)
+# of the «Pozitsiyalar» table, seen and typed in the holder's OWN units (the
+# operator, 2026-11-22: brigadirs lost them on 2026-11-15 and three got them
+# back «for now»). Admins and shift managers have them by role.
+CAP_CONTAINER_COLS    = "production.containers"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
 # never drifts from permissions.PAGE_KEYS.
@@ -282,6 +287,11 @@ CAPABILITIES = [
     # unscoped. Two doors of its own in routers/production.py, never a role
     # widened on the admin catalog endpoints.
     {"key": CAP_CATALOG_SAP,       "group": "production", "pages": ["production"],
+     "tab": None, "scoped": False, "page": None},
+    # The container columns for a person outside the roles that have them
+    # (production.CONTAINER_ROLES) — their own units only, so it neither reads
+    # the page whole nor is scoped.
+    {"key": CAP_CONTAINER_COLS,    "group": "production", "pages": ["production"],
      "tab": None, "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first

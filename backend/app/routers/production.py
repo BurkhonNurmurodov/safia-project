@@ -51,7 +51,7 @@ from app.models import (
     PPDaily, PPLineDaily, PPDaySetting, PPReconciliation, PPUpload, PPManagerSetting, ForecastCallNotice,
     TelegramUser, TelegramUserRole, RoleProfile,
 )
-from app.capabilities import (CAP_CATALOG_SAP, page_admin, page_admin_cap, page_scope_is_all,
+from app.capabilities import (CAP_CATALOG_SAP, CAP_CONTAINER_COLS, has_cap, page_admin, page_admin_cap, page_scope_is_all,
                               require_cap, require_page_admin, require_tab, tab_cap)
 from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
@@ -5062,8 +5062,11 @@ def set_catalog_container(body: CatalogContainerBody,
     (UOM_ROLES until 2026-11-15, CONTAINER_ROLES since), the same scope, the
     same dating, the same «nothing changed freezes nothing». Like the measure,
     no figure reads a capacity — the page computes the container counts from
-    it — so it moves no stored quantity."""
-    if payload.get("role") not in CONTAINER_ROLES and not page_admin(db, payload, PAGE):
+    it — so it moves no stored quantity. A person outside those roles types
+    them with the personal grant `CAP_CONTAINER_COLS` (2026-11-22), in the
+    units the page already lets them reach."""
+    if (payload.get("role") not in CONTAINER_ROLES and not page_admin(db, payload, PAGE)
+            and not has_cap(db, payload, CAP_CONTAINER_COLS)):
         raise HTTPException(status_code=403,
                             detail="Not allowed to set container capacities")
     if body.field not in pp_containers.CONTAINERS:

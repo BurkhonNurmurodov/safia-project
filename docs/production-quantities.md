@@ -632,6 +632,20 @@ last columns, after «Pareto» (the operator's call, same day), and
   `CONTAINER_ROLES` (admin, shift-manager), no longer `UOM_ROLES`, so a stale
   brigadir tab gets a 403. The capacities they typed stay and keep feeding the
   «Jamoalar» → «Konteynerlar» cards, «Smena kunligi» and «Konteynerlar».
+- **…and a PERSONAL grant gives them back to a brigadir** (2026-11-22, the
+  operator: «for now open the containers for Erkanboyev Zafarjon, Suvonov
+  Elshod and Xakimov Ruslan»). `production.containers`
+  (`capabilities.CAP_CONTAINER_COLS`, «Zagruzka fayli — Konteynerlar», group
+  «Ishlab chiqarish» on the Permissions tab, unscoped, per profile or per
+  account): the holder sees the ten columns and types capacities in the units
+  the page already lets them reach — `containerRole` / `canEditCaps` in
+  Production.jsx and `set_catalog_container` each add `can` / `has_cap` of it.
+  It does NOT read the page whole (not in `_READS_PAGE_WHOLE`). The three got it
+  on their UNIT profiles (`supervisor:<id>`) through the one-shot
+  `startup.container_cols_three_brigadirs` (`later`, both entrypoints, flag
+  `oneshot:container_cols_three_brigadirs_nov22`; a name matches exactly one
+  non-archived unit, whole or by its first words, or is reported in the admins'
+  DM). Taking it away again is an untick on the Permissions tab.
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 

@@ -2086,7 +2086,9 @@ export default function Production() {
   const canPickRows = canEditCatalog || canEditUom;
   // Container capacities keep their own audience (`CONTAINER_ROLES`), no
   // longer the measure's since the measure became admin-only.
-  const canEditCaps = (prodAdmin || CONTAINER_ROLES.includes(auth?.role)) && catalogEditable && !isPlaceholderData;
+  // A person outside them holds the personal grant (`CAP.CONTAINER_COLS`).
+  const canEditCaps = (prodAdmin || CONTAINER_ROLES.includes(auth?.role) || can(CAP.CONTAINER_COLS))
+    && catalogEditable && !isPlaceholderData;
   // …and each catalog form says so BEFORE it is saved.
   const catalogFromHint = catalogInfo?.from
     ? t("production.catalog.fromHint").replace("{d}", ddmmyyyy(catalogInfo.from))
@@ -2116,8 +2118,8 @@ export default function Production() {
   const isAdmin = prodAdmin;
   // May this viewer see the «SAP» columns and the two cards (`SAP_ROLES`)?
   const sapRole = prodAdmin || SAP_ROLES.includes(auth?.role);
-  // …and the container columns (`CONTAINER_ROLES`)?
-  const containerRole = prodAdmin || CONTAINER_ROLES.includes(auth?.role);
+  // …and the container columns (`CONTAINER_ROLES`, or the personal grant)?
+  const containerRole = prodAdmin || CONTAINER_ROLES.includes(auth?.role) || can(CAP.CONTAINER_COLS);
   // Does the unit on screen carry any group at all — a centre that lists groups,
   // or a line with a letter? Read off the dashboard, so the «Guruh» column and
   // the group controls appear the day a letter lands and not a moment before.
