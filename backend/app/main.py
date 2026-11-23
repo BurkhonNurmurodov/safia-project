@@ -682,6 +682,11 @@ async def lifespan(app: FastAPI):
     # (mirrored in passenger_wsgi.py).
     from app.services.verifix_month_kinds import register_jobs as register_vfx_month_jobs
     run(register_vfx_month_jobs)
+    # «Verifix (test)» «Отчёт по посещениям»: today's and yesterday's reports
+    # read at 00:10 and 06:10, and after boot when not kept, so the page never
+    # opens on a day nobody read (mirrored in passenger_wsgi.py).
+    from app.services.verifix_explore import register_jobs as register_vfx_ts_jobs
+    run(register_vfx_ts_jobs)
     # «Hisobotlar»: the default report's three months kept built — every hour
     # at :10 and two minutes after a start — and STORED, so a deploy's new
     # worker serves them at once (mirrored in passenger_wsgi.py).

@@ -6,8 +6,9 @@ back exactly. No database: the store here is an in-memory twin of
 import threading
 import unittest
 from datetime import date, datetime, timedelta
+from unittest import mock
 
-from app.services import kept_store, verifix, verifix_explore as vx
+from app.services import kept_store, verifix, verifix_explore as vx, verifix_live
 
 
 class FakeStore:
@@ -90,6 +91,26 @@ class KeptVerifixAnswers(unittest.TestCase):
         vx.keep(store, ("g",), datetime.now(verifix.TZ), {"v": 2})
         self.assertEqual(store.saves, 1)
         self.assertEqual(store.rows[("g",)][1], {"v": 1})
+
+    def _warm(self, trigger, kept_days=()):
+        """`warm_timesheet` with the days it reads recorded, the store holding `kept_days`."""
+        store, read = FakeStore(), []
+        c = {"host": "h", "filial_id": 1}
+        for day in kept_days:
+            store.rows[vx._key(c, "ts", day.isoformat())] = (datetime.now(verifix.TZ), {})
+        with mock.patch.object(vx, "_CACHE", vx._Cache(store=store)), \
+                mock.patch.object(vx, "config", return_value=c), \
+                mock.patch.object(vx, "timesheet", side_effect=lambda db, day: read.append(day)), \
+                mock.patch("app.database.SessionLocal", return_value=mock.MagicMock()):
+            vx.warm_timesheet(trigger)
+        return read
+
+    def test_the_warm_up_reads_yesterday_and_today(self):
+        today = verifix_live.now_local().date()
+        yesterday = today - timedelta(days=1)
+        self.assertEqual(self._warm("schedule", kept_days=[yesterday]), [yesterday, today])
+        # after a boot, a day the store already holds is not read again
+        self.assertEqual(self._warm("boot", kept_days=[yesterday]), [today])
 
 
 if __name__ == "__main__":

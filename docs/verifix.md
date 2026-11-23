@@ -654,7 +654,11 @@ the role opens. **Admin-only**, three ways (`adminOnly` nav entries,
   `tests/test_vfx_kept.py`) and a key memory
   lacks is served from there AT ONCE — with its own time on the stamp — and
   read again behind it ONCE (`refreshing`), as «Hisobotlar» does. Only a key
-  never read anywhere still waits.
+  never read anywhere still waits — and «Отчёт по посещениям», which opens on
+  YESTERDAY (a new key every morning), is read by the clock so it never does:
+  today's and yesterday's reports at 00:10 and 06:10 Tashkent, and after a boot
+  when the store holds neither (`warm_timesheet`, job `vfx-timesheet-warm`;
+  the operator: «Yes, add it»).
 - **Nothing heavy is held whole.** A list whose rows carry every line of a
   document (timebooks) is read a few documents per page (`PAGE_SIZE`) and kept
   as one SUMMARY row per document (`project`); a document's lines are read when

@@ -53,7 +53,7 @@ import re
 import threading
 import time
 from collections import Counter, OrderedDict
-from datetime import date, datetime, time as dtime, timedelta
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 import httpx
@@ -1021,6 +1021,54 @@ def schedule_days(db: Session, schedule_id: str, year: Optional[int] = None) -> 
 
 def _ttl_for(day: date) -> int:
     return TTL_TODAY if day >= verifix_live.now_local().date() - timedelta(days=1) else TTL_PAST
+
+
+# ── «Отчёт по посещениям» kept warm (2026-11-23) ──────────────────────────────
+# The page opens on YESTERDAY, a new key every morning, so its first open of
+# the day met a report nobody had read and waited on Verifix (the operator:
+# «Yes, add it»). Today's and yesterday's reports are read at 00:10 and 06:10
+# Tashkent — the night shift has clocked out by the second — and after a boot
+# when the store holds neither; from then on every open is served at once.
+
+WARM_BOOT_DELAY_S = 180
+
+
+def warm_timesheet(trigger: str = "schedule") -> None:
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        try:
+            c = config(db)
+        except NotConfigured:
+            return
+        today = verifix_live.now_local().date()
+        for day in (today - timedelta(days=1), today):
+            key = _key(c, "ts", day.isoformat())
+            if trigger == "boot" and (_CACHE.peek(key) or (_CACHE._store and _CACHE._store.load(key))):
+                continue
+            try:
+                timesheet(db, day)
+                log.info("verifix-test: the report of %s kept warm (%s)", day, trigger)
+            except Exception:  # noqa: BLE001 — the page reads it on open, as before
+                log.warning("verifix-test: warming the report of %s failed", day, exc_info=True)
+    finally:
+        db.close()
+
+
+def register_jobs() -> None:
+    """00:10 and 06:10 Tashkent, and a catch-up after boot. Mirrored in
+    passenger_wsgi.py."""
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+        from app.scheduler import SCHEDULER_TZ, get_scheduler, schedule_at
+        get_scheduler().add_job(
+            warm_timesheet, trigger=CronTrigger(hour="0,6", minute=10, timezone=SCHEDULER_TZ),
+            id="vfx-timesheet-warm", replace_existing=True)
+        schedule_at("vfx-timesheet-warm-boot",
+                    datetime.now(timezone.utc) + timedelta(seconds=WARM_BOOT_DELAY_S),
+                    warm_timesheet, args=("boot",))
+    except Exception:  # noqa: BLE001
+        log.exception("verifix-test: could not register the report warm-up")
 
 
 def timesheet(db: Session, day: date, force: bool = False) -> dict:

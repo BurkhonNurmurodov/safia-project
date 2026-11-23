@@ -845,6 +845,9 @@ try:
     register_ontime_jobs()
     from app.services.verifix_month_kinds import register_jobs as register_vfx_month_jobs
     register_vfx_month_jobs()
+    # «Verifix (test)» «Отчёт по посещениям» kept warm (mirrors main.py).
+    from app.services.verifix_explore import register_jobs as register_vfx_ts_jobs
+    register_vfx_ts_jobs()
     # «Hisobotlar»: the default report's months kept built and stored (mirrors main.py).
     from app.routers.reports import register_jobs as register_reports_jobs
     register_reports_jobs()
