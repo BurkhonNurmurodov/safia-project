@@ -129,6 +129,12 @@ containers row from production and move it into the new button».
     no bo'lim prints no line. The brigadir's Telegram card is unchanged (a
     brigadir knows where their team is). The record of bo'lims is in
     `docs/cells-and-org.md`, «Bo'lims».
+  - **…and at the BRIGADIR** (the same day, the operator chose «brigadir level
+    in split»): under a brigadir's name — on the board's card, and in the
+    dialog as soon as the brigadir is picked, before any count — one pinned
+    line per bo'lim their cells work in, the cells in brackets: «Pirog
+    tayyorlash sexi · 2.07 · A blok · 2-qavat (7411, 7416)» (`BolimSummary`
+    in `flowUtil.jsx`). The per-cell line stays.
   - **The split dialog reads in the order it is filled** (`AssignModal`, the
     same release; nothing in what it sends changed). **How much is handed out
     is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi

@@ -38,7 +38,7 @@ import {
   refreshFlow, LIVE_LIST, requestsEvery, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
   defaultHour, COUNT_GRID, COUNT_PAIR,
-  CellList, cellBreakdown, cellsText,
+  CellList, cellBreakdown, cellsText, BolimSummary,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
@@ -656,6 +656,7 @@ function PartBlock({ p, t, tl, shops, places }) {
         <div className="min-w-0 flex-1">
           <div className="chat-ink text-[13px] font-semibold leading-snug break-words" style={{ "--ink": ink }}>{tl(p.unit) || "—"}</div>
           <div className="text-xs tabular-nums" style={{ color: "var(--text-2)" }}>{countsText(t, p.counts)}</div>
+          <BolimSummary t={t} codes={Object.keys(p.cells ?? {})} places={places} className="mt-1" />
           {short && (
             <div className="text-xs tabular-nums font-medium" style={{ color: "var(--status-bad)" }}>
               {t("cflow.board.got").replace("{x}", countsText(t, got) || "0")}
@@ -1389,6 +1390,11 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
                   )}
                 </div>
               </FormField>
+              {/* WHERE this brigadir's teams are — their bo'lims, as soon as
+                  the brigadir is picked (2026-11-23) */}
+              {picked && (
+                <BolimSummary t={t} codes={cellEntry(row.unit)?.names} places={cellEntry(row.unit)?.places} />
+              )}
               <div className={`${COUNT_GRID} gap-2.5`}>
                 {types.map((k) => {
                   const cap = row.unit == null ? r.lines[k] : capOf(row.unit, k);

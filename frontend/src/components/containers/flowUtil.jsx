@@ -221,6 +221,39 @@ export function CellList({ t, cells, workshops, places, className = "" }) {
   );
 }
 
+// A brigadir's BO'LIMS at a glance (2026-11-23, the operator: on the split,
+// at the BRIGADIR — «📍 room · A blok · 2-qavat (7411, 7416)»): the rooms
+// their cells work in, one line each, the cells in brackets. `codes` are the
+// brigadir's cells, `places` the split answer's {code: {names, code, block,
+// floor}}; cells with no bo'lim are left out, and nothing is drawn when none
+// has one.
+export function BolimSummary({ t, codes, places, className = "" }) {
+  const { tx, lang } = useTranslit();
+  const groups = new Map();
+  for (const c of codes ?? []) {
+    const p = places?.[c];
+    if (!p) continue;
+    const line = bolimLine(t, tx, lang, p);
+    if (!line) continue;
+    if (!groups.has(line)) groups.set(line, []);
+    groups.get(line).push(c);
+  }
+  if (!groups.size) return null;
+  return (
+    <ul className={`flex flex-col gap-1 ${className}`}>
+      {[...groups].map(([line, cs]) => (
+        <li key={line} className="flex items-start gap-1.5 text-xs leading-snug">
+          <MapPin size={13} className="shrink-0 mt-[1px]" aria-hidden style={{ color: "var(--brand-text)" }} />
+          <span className="min-w-0 break-words">
+            <span className="font-semibold" style={{ color: "var(--text-1)" }}>{line}</span>
+            <span className="tabular-nums" style={{ color: "var(--text-3)" }}> ({cs.join(", ")})</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // «9123: 120 to'rtburchak; 7331: …» in one line — a tooltip.
 export const cellsText = (t, cells) => Object.entries(cells ?? {})
   .filter(([, n]) => countsText(t, n))
