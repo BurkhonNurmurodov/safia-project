@@ -92,8 +92,9 @@ const CONTAINERS = [
 const CONTAINER_BY_KEY = Object.fromEntries(CONTAINERS.flatMap((c) =>
   [[`cap_${c.id}`, { ...c, kind: "cap" }], [`cnt_${c.id}`, { ...c, kind: "cnt" }]]));
 // «Jamoalar» → «Soatlik» is shown to these roles only (the operator,
-// 2026-11-12) while it is being tried out.
-const HOURLY_ROLES = ["admin", "shift-manager"];
+// 2026-11-12, admins and shift managers; supervisors — brigadirs — added
+// 2026-11-23).
+const HOURLY_ROLES = ["admin", "shift-manager", "supervisor"];
 const containerCount = (r, field) => {
   const cap = Number(r[field]);
   const plan = r.plan_qty;
@@ -2623,8 +2624,8 @@ export default function Production() {
   // of the row's own count (`containerCount`, the table's «soni» columns). A
   // whole-centre card sums every line at its Команда; a group card the lines
   // carrying its letter. «—» where no line of the team states a capacity.
-  // «Soatlik» (hourly containers) is offered to HOURLY_ROLES only (admins and
-  // shift managers, the operator 2026-11-12); anyone else who had saved
+  // «Soatlik» (hourly containers) is offered to HOURLY_ROLES only (admins,
+  // shift managers and — from 2026-11-23 — supervisors); anyone else who had saved
   // "hourly" reads «Yuklama».
   const showHourly = prodAdmin || HOURLY_ROLES.includes(auth?.role);
   const [teamsViewSaved, setTeamsView] = usePersistentState("production_teams_view", "load");

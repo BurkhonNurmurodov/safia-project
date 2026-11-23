@@ -672,8 +672,9 @@ last columns, after «Pareto» (the operator's call, same day), and
 
 ### Hourly containers — «Jamoalar» → «Soatlik» (2026-11-12)
 
-**Shown to admins and shift managers only** (the operator, 2026-11-12,
-v4.479.0; hidden from everybody in v4.475.0): `HOURLY_ROLES` in
+**Shown to admins, shift managers and supervisors (brigadirs)** (the operator,
+2026-11-12, v4.479.0, admins and shift managers; supervisors added 2026-11-23;
+hidden from everybody in v4.475.0): `HOURLY_ROLES` in
 `Production.jsx`; anyone else who had saved `hourly` reads «Yuklama». The
 backend serves the shift clocks to every caller — this is a display choice,
 not a permission. The hourly TELEGRAM message is wanted LATER and is not built
