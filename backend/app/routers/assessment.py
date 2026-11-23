@@ -423,8 +423,9 @@ def search_workers(q: str = Query(default=""), limit: int = Query(default=30, ge
 
 def _photo_emps(db: Session) -> dict:
     """{employee id: their Verifix record} — the one place a person's photo
-    hash is kept (the «Xodim kartasi» photo, `/api/people/{eid}/photo`). Read
-    once per answer; a failure costs the faces, never the list."""
+    hash is kept (the «Xodim kartasi» photo; a candidate's is served by
+    `candidate_photo` below). Read once per answer; a failure costs the faces,
+    never the list."""
     try:
         from app.services import verifix_org
         org, _ = verifix_org.stored(db)
@@ -452,6 +453,22 @@ def list_candidates(db: Session = Depends(get_db), _: dict = Depends(PAGE)):
     rows = db.query(AssessmentCandidate).order_by(AssessmentCandidate.full_name).all()
     return [{"id": c.id, "full_name": c.full_name, "note": c.note, "assessments": counts.get(c.id, 0)}
             for c in rows]
+
+
+@router.get("/candidates/{cid}/photo")
+def candidate_photo(cid: int, size: int = Query(default=96, ge=32, le=960),
+                    db: Session = Depends(get_db), _: dict = Depends(PAGE)):
+    """A candidate's face — their Verifix photo, the one «Xodim kartasi» shows
+    — for ANYBODY who may open this page (the operator, 2026-11-23: a shift
+    manager on the panel saw initials, because the photo sat behind the
+    `people` page). Keyed by the CANDIDATE, never by an employee id: this door
+    answers for the people of this page's sittings and for nobody else, and
+    opens nothing else of the card."""
+    c = db.query(AssessmentCandidate).filter(AssessmentCandidate.id == cid).first()
+    if not c or not c.employee_id:
+        _refuse(404, "no_photo", "This candidate has no photo.")
+    from app.routers.people import photo_response
+    return photo_response(db, str(c.employee_id), size)
 
 
 def _seats(evs: list[JudgeEvaluation], grades: dict[int, dict[int, dict]], me: str,

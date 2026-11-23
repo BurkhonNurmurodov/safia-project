@@ -18,8 +18,7 @@ import SeatStrip, { SeatRing } from "../components/assessment/SeatStrip";
 import useIsMobile from "../hooks/useIsMobile";
 import ScoreCard from "../components/assessment/ScoreCard";
 import ResultsView from "../components/assessment/ResultsView";
-import { useAT, fill, errText, fmtDate, TicketChip } from "../components/assessment/assessmentUtil";
-import { useCanOpen } from "../components/people/peopleUtil";
+import { useAT, fill, errText, fmtDate, TicketChip, candidatePhotoUrl } from "../components/assessment/assessmentUtil";
 
 /**
  * The Judge Grading Dashboard (/assessment/:id). Every judge opens the same
@@ -41,7 +40,6 @@ export default function AssessmentGrade() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
-  const canPeople = useCanOpen("people");
   const key = ["assessment", id];
   // The seat on screen. One person may hold several seats of a sitting — up
   // to all five (the operator, 2026-11-23) — and switches between them;
@@ -184,7 +182,6 @@ export default function AssessmentGrade() {
   // Verifix spells the candidate in capitals; the page reads it in title case.
   const cand = d.candidate;
   const candName = cand ? nameCase(tl(cand.full_name)) : null;
-  const eid = cand?.employee_id;
   const place = [cand?.job, cand?.code && `${T.cell} ${cand.code}`, cand?.unit ? tl(cand.unit) : null].filter(Boolean).join(" · ");
   const menuItems = [
     r.redraw && { key: "redraw", label: T.redrawA, icon: Shuffle, onSelect: () => openAsk("redraw") },
@@ -202,7 +199,7 @@ export default function AssessmentGrade() {
         <section className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <div className="p-4 sm:p-5 flex items-start gap-4">
             <ProfileAvatar muted name={candName || "—"} colorKey={cand?.full_name || ""} size={phone ? 48 : 60}
-              photoUrl={canPeople && eid && cand?.photo !== false ? `/api/people/${encodeURIComponent(eid)}/photo?size=192` : undefined} />
+              photoUrl={candidatePhotoUrl(cand, 60)} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 <h2 className="text-lg sm:text-[22px] font-semibold leading-tight tracking-[-0.01em] break-words" style={{ color: "var(--text-1)" }}>

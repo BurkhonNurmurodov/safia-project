@@ -170,8 +170,16 @@ def photo(eid: str, size: int = Query(default=96, ge=32, le=960),
     """The person's Verifix identification photo, squared (96) or a view
     (960) — `verifix_explore.photo`, the «Verifix (test)» door, served only
     for a person the viewer may read."""
-    from app.services import verifix_explore, verifix_org
     _person(db, payload, eid)
+    return photo_response(db, eid, size)
+
+
+def photo_response(db: Session, eid: str, size: int) -> Response:
+    """The Verifix photo of `eid`, as the answer. WHO may see it is the
+    caller's question, settled before this is called: «Xodim kartasi» asks
+    `_person`; «Nomzodlarni baholash» serves its own candidates' faces
+    (`routers/assessment.candidate_photo`)."""
+    from app.services import verifix_explore, verifix_org
     org, _ = verifix_org.stored(db)
     sha = (((org or {}).get("emps") or {}).get(str(eid)) or {}).get("photo")
     if not sha:

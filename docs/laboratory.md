@@ -185,9 +185,23 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   none (`CandidateAvatar` in `assessmentUtil.jsx`). The server says per
   candidate whether Verifix holds a photo (`candidate.photo`, from the stored
   org read — `_photo_emps`), so no row asks for one that is not there; the
-  grading page's avatar follows the same flag. **The photo is the «Xodim
-  kartasi» photo and keeps its guard**: a viewer who may not open `people`
-  (a judge, today) sees initials, exactly as on the grading page. In dev only
+  grading page's avatar follows the same flag. **The face is the PAGE's own since 2026-11-23**
+  (the operator, viewing as a shift manager on the panel: «why candidates
+  images are not visible when I go into program as shift manager» — then
+  «second one», of: grant «Xodim kartasi», or show this page's candidates'
+  photos to whoever opens this page). Until then it was asked from
+  `/api/people/{eid}/photo` and kept that page's guard, so a viewer without
+  `people` (every judge) saw initials. Now `GET
+  /api/assessment/candidates/{cid}/photo?size=` (`candidate_photo`, guarded
+  by the `assessment` page alone) serves it — **keyed by the CANDIDATE, never
+  by an employee id**, so it answers for the people of this page's sittings
+  and nobody else, and opens nothing else of the card (the name stays a
+  `PersonLink`, inert without `people`). The bytes are the card's own
+  (`routers/people.photo_response`, the serving half both doors share); a
+  candidate typed before the picker, one Verifix holds no photo of and an
+  unknown id are 404 `no_photo`. `candidatePhotoUrl` in `assessmentUtil.jsx`
+  is the ONE place the address is built (the lists, «Biletlar», the grading
+  page). Pinned by `tests/test_assessment_photo.py` (Postgres). In dev only
   (`StrictMode`), a photo already cached when a tab switch mounts its avatar
   shows broken — `ProfileAvatar` revokes its object URL in the double-mounted
   effect; a production build mounts once and is unaffected.

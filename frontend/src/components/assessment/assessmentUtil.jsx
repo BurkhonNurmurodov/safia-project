@@ -6,7 +6,6 @@ import { BadgeCheck, Users, Factory, HardHat, Sparkles, BookOpen, Wrench, Ticket
 import { useLang } from "../../context/LangContext";
 import { TXT, fill } from "../../pages/assessmentText";
 import ProfileAvatar from "../ui/ProfileAvatar";
-import { useCanOpen } from "../people/peopleUtil";
 
 export { fill };
 
@@ -62,19 +61,25 @@ export function TicketChip({ n, T }) {
 
 /** The candidate's face — their Verifix photo, the one «Xodim kartasi» shows
  *  (2026-11-20, the operator: «this table also should show the image of the
- *  candidate»). Asked for only when the viewer may open «Xodim kartasi» (the
- *  photo's own guard) and the server says there is one (`photo`); initials
- *  otherwise, on the neutral surface the grading page's avatar uses. */
+ *  candidate»). Shown to everybody who may open this page (`candidatePhotoUrl`)
+ *  where the server says there is one (`photo`); initials otherwise, on the
+ *  neutral surface the grading page's avatar uses. */
 export function CandidateAvatar({ cand, size = 28, tl = (s) => s }) {
-  const canPeople = useCanOpen("people");
-  const eid = cand?.employee_id;
   return (
     <ProfileAvatar muted size={size} name={tl(cand?.full_name || "—")} colorKey={cand?.full_name || ""}
-      className="flex-shrink-0"
-      photoUrl={canPeople && eid && cand?.photo !== false
-        ? `/api/people/${encodeURIComponent(eid)}/photo?size=${size > 48 ? 192 : 96}` : undefined} />
+      className="flex-shrink-0" photoUrl={candidatePhotoUrl(cand, size)} />
   );
 }
+
+/**
+ * Where a candidate's face is asked for: the assessment's OWN door, keyed by
+ * the candidate, open to everybody who may open this page (2026-11-23) — a
+ * judge without «Xodim kartasi» saw initials while it was the card's photo
+ * door. Nothing is asked where the server says Verifix holds no photo.
+ */
+export const candidatePhotoUrl = (cand, size) => (
+  cand?.id && cand?.employee_id && cand?.photo !== false
+    ? `/api/assessment/candidates/${cand.id}/photo?size=${size > 48 ? 192 : 96}` : undefined);
 
 /** A whole percent, «—» when there is nothing to divide. */
 export const pct0 = (v) => (v == null ? "—" : `${Math.round(v)}%`);
