@@ -561,6 +561,20 @@ After a review of the app the operator answered «make it» to two points:
   «always»); the kept copy shows only for the moment the new one takes. A
   card confirmed on a request deleted meanwhile says so («So'rov o'chirilgan»)
   and leaves the list.
+- **The logistics row re-reads the requests every 10 seconds** (2026-11-23,
+  the operator asked why a request AXO had sent took a while to show on the
+  logistics page). The server stored it at once and the bot's card went
+  out at once (`notify_later`, its own thread); only the open page lagged,
+  because it re-read the list once a minute, so a new request appeared
+  0–60 s late unless the reader tapped the card or brought the app back to
+  the front. «Konteyner taqsimlash» now re-reads every 10 s; every other
+  row keeps the minute. `flowUtil.requestsEvery(logiSide)` is the one
+  answer, and both readers of the list on a page (the «So'rovlar» badge and
+  the tab) take it, because two intervals on one query let the faster one set
+  the pace anyway. The read is four small queries (`requests_of`) and stops
+  while the app is in the background, so the cost is a few logistics people
+  with the page open. There is no push channel on the platform; a live push
+  would be one to build, not a setting.
 - **A brigadir's LIMIT** (2026-11-15, the operator: «we have to put a limit
   for brigadirs, they don't have to get extra containers — after the
   calculation they have a limit, and the extra they don't have to take»):

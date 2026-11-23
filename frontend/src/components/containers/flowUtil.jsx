@@ -261,6 +261,13 @@ export const onTimeTone = (pct) => (pct == null ? null : ontimeTone(pct / 100));
 export const refreshFlow = (qc) =>
   qc.invalidateQueries({ predicate: (q) => String(q.queryKey?.[0] ?? "").startsWith("cflow-") });
 export const LIVE_LIST = { staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: "always" };
+// How often an OPEN page re-reads the day's requests (2026-11-23). The server
+// has a new request at once and the bot's card goes out at once, but a
+// logistics person watching «Konteyner taqsimlash» waited up to a minute for it
+// to appear — so the logistics row reads every 10 s, everything else every
+// minute. Both readers of `["cflow-requests", day]` on a page (the tab badge and
+// «So'rovlar») take the SAME interval, or the faster one sets the pace anyway.
+export const requestsEvery = (logiSide) => (logiSide ? 10_000 : 60_000);
 
 // ── a brigadir's EXTRA request (2026-11-18, components in FlowExtras.jsx) ────
 export const EXTRA_REASONS = ["plan", "damaged", "short", "other"];

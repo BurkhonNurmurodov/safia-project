@@ -10,7 +10,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { tashkentNow } from "../components/production/HourlyContainers";
-import { errText, refreshFlow, LIVE_LIST, useExtras, extraWaiting, liveDay } from "../components/containers/flowUtil";
+import { errText, refreshFlow, LIVE_LIST, requestsEvery, useExtras, extraWaiting, liveDay } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, PreparedModal, isFresh } from "../components/containers/FlowRequests";
@@ -108,7 +108,7 @@ export default function ContainerFlow({ side = "flow" }) {
   const reqs = useQuery({
     queryKey: ["cflow-requests", day],
     queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: requestsEvery(logiSide),
     enabled: flowSide,
     ...LIVE_LIST,
   });

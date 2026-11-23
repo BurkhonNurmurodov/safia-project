@@ -34,15 +34,14 @@ import api from "../../utils/api";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS, SOON_MIN,
-  refreshFlow, LIVE_LIST, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
+  refreshFlow, LIVE_LIST, requestsEvery, useExtras, ALL_KEY, useLogisticsPick, LogisticsField, toName,
   ALL_KEYS, SEND_KEYS, isSend, TypeName, TYPE_COLORS, useSendAreas, shiftName,
   defaultHour, COUNT_GRID, COUNT_PAIR,
   CellList, cellBreakdown, cellsText,
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
-const REFRESH_MS = 60_000;
-const LEAD_MIN = 60;            // a request is due an hour before its hour
+const LEAD_MIN = 60;           // a request is due an hour before its hour
 const SOON_HOURS = 2;           // an hour with no request inside this window reads yellow
 
 // A request still waiting that its addressee has not opened yet (2026-11-14,
@@ -197,7 +196,7 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
   const q = useQuery({
     queryKey: ["cflow-requests", day],
     queryFn: () => api.get("/api/container-flow/requests", { params: { day } }).then((r) => r.data),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: requestsEvery(logiSide),
     ...LIVE_LIST,
   });
   const [assign, setAssign] = useState(null);
