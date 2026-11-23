@@ -52,6 +52,7 @@ import { CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON } from "../utils/concernCateg
 import { cellLabel } from "../utils/cellName";
 import useIsMobile from "../hooks/useIsMobile";
 import useLeaderPhone from "../hooks/useLeaderPhone";
+import useElementWidth from "../hooks/useElementWidth";
 // The phone-only words and THE date a phone prints here (2026-11-20).
 import { phoneText, phoneDay } from "./concernsPhoneText";
 
@@ -1218,12 +1219,15 @@ function AnalysisTab({ t, stats, toolbar, phone, lang }) {
              color={s.overdue ? "#ef4444" : undefined} sub={t("cellConcerns.kpi.overdueSub")} />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: phone ? "minmax(0,1fr)" : "repeat(auto-fit,minmax(400px,1fr))" }}>
+      {/* One card a row: three of these grow with their data, and two growing
+          cards never share a row (the operator, 2026-09-30) — a long list
+          splits into two columns INSIDE its card on a wide screen instead. */}
+      <div className="grid gap-4">
         <Panel icon={LayoutGrid} title={t("cellConcerns.chart.byCategory")}>
-          {s.by_category.length === 0 ? <NoData t={t} /> : s.by_category.map((c) => (
+          {s.by_category.length === 0 ? <NoData t={t} /> : <Cols n={s.by_category.length}>{s.by_category.map((c) => (
             <Bar key={c.key} label={t(`concerns.category.${c.key}`)} n={c.n}
                  pct={(c.n / maxCat) * 100} color={CATEGORY_COLOR[c.key] || "#94a3b8"} />
-          ))}
+          ))}</Cols>}
         </Panel>
 
         <Panel icon={TrendingUp} title={t("cellConcerns.chart.trend")}>
@@ -1236,8 +1240,8 @@ function AnalysisTab({ t, stats, toolbar, phone, lang }) {
         </Panel>
 
         <Panel icon={ListChecks} title={t("cellConcerns.chart.byCell")}>
-          {s.by_cell.length === 0 ? <NoData t={t} /> : s.by_cell.map((c) => (
-            <div key={c.code} className="grid items-center gap-3 mb-3"
+          {s.by_cell.length === 0 ? <NoData t={t} /> : <Cols n={s.by_cell.length}>{s.by_cell.map((c) => (
+            <div key={c.code} className="grid items-center gap-3 mb-3 break-inside-avoid"
                  style={{ gridTemplateColumns: "72px 1fr 44px" }}>
               <span className="text-[13px] font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{c.code}</span>
               <span className="h-[22px] flex rounded-md overflow-hidden" style={{ background: "var(--bg-inner)" }}>
@@ -1248,15 +1252,15 @@ function AnalysisTab({ t, stats, toolbar, phone, lang }) {
               </span>
               <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{c.n}</span>
             </div>
-          ))}
+          ))}</Cols>}
           <Legend items={STATUSES.map((st) => [t(`cellConcerns.st.${st}`), ST[st].color])} />
         </Panel>
 
         <Panel icon={Users} title={t("cellConcerns.chart.byWorker")}>
-          {s.by_worker.length === 0 ? <NoData t={t} /> : s.by_worker.map((w) => (
+          {s.by_worker.length === 0 ? <NoData t={t} /> : <Cols n={s.by_worker.length}>{s.by_worker.map((w) => (
             <Bar key={w.name} label={w.name} n={w.n} pct={(w.n / maxWorker) * 100}
                  color="var(--brand)" />
-          ))}
+          ))}</Cols>}
           <div className="flex gap-2.5 px-3.5 py-3 mt-4 rounded-xl text-xs leading-relaxed max-md:hidden"
                style={{ background: rgba("#eab308", 0.09), border: `1px solid ${rgba("#eab308", 0.25)}`, color: "var(--text-2)" }}>
             <AlertTriangle size={15} style={{ color: "#eab308", flex: "none", marginTop: 1 }} />
@@ -1287,8 +1291,14 @@ const Panel = ({ icon, title, children }) => (
   </div>
 );
 
+// A ranking longer than six rows reads in two columns on a wide screen, top to
+// bottom then across; a phone and a laptop keep one.
+const Cols = ({ n, children }) => (
+  <div className={n > 6 ? "xl:columns-2 xl:gap-x-12" : undefined}>{children}</div>
+);
+
 const Bar = ({ label, n, pct, color }) => (
-  <div className="grid items-center gap-3 mb-3" style={{ gridTemplateColumns: "116px 1fr 40px" }}>
+  <div className="grid items-center gap-3 mb-3 break-inside-avoid" style={{ gridTemplateColumns: "116px 1fr 40px" }}>
     <span className="text-xs truncate" style={{ color: "var(--text-2)" }} title={label}>{label}</span>
     <span className="h-[22px] rounded-md overflow-hidden" style={{ background: "var(--bg-inner)" }}>
       <span className="block h-full rounded-md" style={{ background: color, width: `${pct}%` }} />
@@ -1318,8 +1328,11 @@ const NoData = ({ t }) => (
 // need no chart engine, and no engine means no tooltip wrapper to strip.
 // `compact` (a phone): a narrower drawing, so its numbers render at a readable
 // size once the 480-wide one is scaled down to a 300px card.
+// Wider than a phone it is drawn at its own measured width, so a full-row card
+// keeps 10px labels and a 160px height instead of scaling the drawing up.
 function Trend({ data, max, compact = false, fmt = (d) => d.slice(5) }) {
-  const W = compact ? 320 : 480, H = compact ? 150 : 160, L = compact ? 30 : 26, R = 8, T = 10, B = compact ? 24 : 22;
+  const [boxRef, boxW] = useElementWidth();
+  const W = compact ? 320 : boxW ? Math.max(boxW, 320) : 480, H = compact ? 150 : 160, L = compact ? 30 : 26, R = 8, T = 10, B = compact ? 24 : 22;
   const fs = compact ? 12 : 10;
   const iw = W - L - R, ih = H - T - B, n = data.length;
   const x = (i) => L + (n <= 1 ? iw / 2 : (i * iw) / (n - 1));
@@ -1328,7 +1341,7 @@ function Trend({ data, max, compact = false, fmt = (d) => d.slice(5) }) {
   const ticks = [0, Math.round(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }} role="img" aria-hidden="true">
+    <svg ref={boxRef} viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }} role="img" aria-hidden="true">
       {ticks.map((v) => (
         <g key={v}>
           <line x1={L} y1={y(v)} x2={W - R} y2={y(v)} stroke="var(--border)" strokeWidth="1" />
