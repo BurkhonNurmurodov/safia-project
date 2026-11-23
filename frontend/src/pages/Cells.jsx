@@ -287,7 +287,7 @@ function OwnerMark({ c, tl, t }) {
 // Phone-only card: code + SAP chip and the ⋮ menu up top, the cell's name
 // under them, brigadir + leader pinned to the footer so a stack lines up.
 // The whole card opens the cell's page; the menu stops propagation.
-function CellCard({ c, name, place, tl, t, menu, onOpen, issue }) {
+function CellCard({ c, name, tl, t, menu, onOpen, issue }) {
   return (
     <div
       className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
@@ -313,12 +313,6 @@ function CellCard({ c, name, place, tl, t, menu, onOpen, issue }) {
       {name && <NameCell name={name} className="-mt-1.5 text-sm" />}
 
       <div className="mt-auto pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-2 text-xs min-w-0">
-          <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-          <span className="truncate min-w-0" style={{ color: place ? "var(--text-2)" : "var(--text-4)" }} title={place || undefined}>
-            {place || t("bolim.none")}
-          </span>
-        </div>
         <div className="flex items-center gap-2 text-xs min-w-0">
           <Users size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
           <LinkName name={c.supervisor} empty="admin.profiles.cellNoSupervisor"
@@ -369,11 +363,9 @@ export default function Cells() {
   const cells = data?.cells ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
   const leaders = data?.leaders ?? [];
-  // The bo'lims (room · block · floor, 2026-11-23) — a column, a filter and
-  // the «Bo'limlar» editor.
+  // The bo'lims (room · block · floor, 2026-11-23) — a filter and the
+  // «Bo'limlar» editor; no column (the operator, the same day).
   const bolims = data?.bolims ?? [];
-  const bolimById = useMemo(() => new Map((data?.bolims ?? []).map((b) => [b.id, b])), [data]);
-  const placeOf = (c) => (c.bolim_id && bolimById.get(c.bolim_id) ? bolimLine(t, tx, lang, bolimById.get(c.bolim_id)) : "");
   const [bolimsOpen, setBolimsOpen] = useState(false);
 
   // Workshop name in the viewer's language, Russian as the fallback (shared
@@ -542,7 +534,7 @@ export default function Cells() {
   const filtered = useMemo(() => {
     const q = latinFold(search.trim());
     return cells.filter((c) => {
-      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${shownName(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""} ${tl(c.owner) || ""} ${placeOf(c)}`)
+      if (q && !latinFold(`${c.verifix_code || ""} ${wcGroupLabel(c.sap_code, c.wc_group)} ${wname(c)} ${shownName(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""} ${tl(c.owner) || ""}`)
             .includes(q)) return false;
       if (brigadirSel === "none" ? c.manager_id : brigadirSel && String(c.manager_id) !== brigadirSel) return false;
       if (leaderSel === "none" ? c.leader_id : leaderSel && String(c.leader_id) !== leaderSel) return false;
@@ -567,7 +559,6 @@ export default function Cells() {
     const val = (c) => {
       switch (sort.key) {
         case "name":       return shownName(c);
-        case "bolim":      return placeOf(c) || "\uffff";
         case "sap_code":   return c.sap_code || "";
         case "wc_group":   return c.wc_group || "";
         case "supervisor": return tl(c.supervisor) || "";
@@ -614,7 +605,7 @@ export default function Cells() {
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
-  const colSpan = showActions ? 11 : 10;
+  const colSpan = showActions ? 10 : 9;
 
   const brigadirOpts = [
     { value: "", label: t("admin.profiles.cellFilterAllBrigadirs") },
@@ -677,7 +668,6 @@ export default function Cells() {
           key={c.id}
           c={c}
           name={shownName(c)}
-          place={placeOf(c)}
           tl={tl}
           t={t}
           menu={rowMenu(c)}
@@ -757,7 +747,7 @@ export default function Cells() {
         fixed
         // Ten columns since the name joined them (2026-10-19): below this the
         // table scrolls sideways instead of cutting every header short.
-        minWidth={1160}
+        minWidth={1060}
         mobile={mobileList}
         mobileCards
         right={
@@ -887,16 +877,15 @@ export default function Cells() {
       >
         <thead>
           <tr>
-            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[9%]" />
-            <Th icon={Tag} label={t("admin.profiles.colWorkshop")} k="name" sort={sort} onSort={onSort} cls="w-[13%]" />
-            <Th icon={MapPin} label={t("bolim.label")} k="bolim" sort={sort} onSort={onSort} cls="w-[15%]" />
-            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[7%]" />
-            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[5%]" />
-            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[11%]" />
-            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[10%]" />
-            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[8%]" />
-            <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[8%]" />
+            <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[10%]" />
+            <Th icon={Tag} label={t("admin.profiles.colWorkshop")} k="name" sort={sort} onSort={onSort} cls="w-[16%]" />
+            <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} cls="w-[8%]" />
+            <Th icon={Layers} label={t("admin.profiles.colGroup")} k="wc_group" sort={sort} onSort={onSort} cls="w-[6%]" />
+            <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} cls="w-[11%]" />
+            <Th icon={Flag} label={t("admin.profiles.colCellManager")} k="leader" sort={sort} onSort={onSort} cls="w-[14%]" />
+            <Th icon={UserCheck} label={t("admin.profiles.colCellOwner")} k="owner" sort={sort} onSort={onSort} cls="w-[12%]" />
+            <Th icon={Gauge} label={t("admin.profiles.colZagruzka")} k="in_load" sort={sort} onSort={onSort} cls="w-[9%]" />
+            <Th icon={Workflow} label={t("cellPage.oneProcess")} k="one_process" sort={sort} onSort={onSort} cls="w-[9%]" />
             {/* The ⋮ column: a 56px slot, its name for screen readers only. */}
             {showActions && <Th label={<span className="sr-only">{t("admin.profiles.colActions")}</span>} align="center" cls="w-[56px]" />}
           </tr>
@@ -927,9 +916,6 @@ export default function Cells() {
               </td>
               <td className="px-3 py-2">
                 <NameCell name={shownName(c)} />
-              </td>
-              <td className="px-3 py-2">
-                <NameCell name={placeOf(c)} />
               </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
               <td className="px-3 py-2 whitespace-nowrap">

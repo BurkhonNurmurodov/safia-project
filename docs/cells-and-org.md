@@ -806,10 +806,11 @@ kind of information — about the team, they have to know where it is located».
   oshxona» (8611 — the plans also list it in «Go'sht bo'limi» by its SAP code;
   its own Verifix code won). `startup.seed_bolims` is flag-guarded
   (`oneshot:bolims_seed_nov23`) and never moves a cell already placed.
-- **Kept on /cells**: a «Bo'lim» column (the name · room number · «A blok ·
-  2-qavat», `utils/bolim.js` `bolimLine` is THE print), a «Bo'lim» filter
-  («Bo'limsiz» = not placed), the line on the phone card, the picker on the
-  ONE cell form (`CellFormModal`, `bolim_id` — 0 clears, absent = untouched),
+- **Kept on /cells**, with NO column (the operator removed it the same day:
+  the bo'lim is for the container app, «remove the bo'lim column from the
+  cells page» — so no phone-card line and no search match either): a
+  «Bo'lim» filter («Bo'limsiz» = not placed; `utils/bolim.js` `bolimLine` is
+  THE print of a bo'lim), the picker on the ONE cell form (`CellFormModal`, `bolim_id` — 0 clears, absent = untouched),
   and «Bo'limlar» on the toolbar (`BolimsModal`): add, rename, move, delete —
   deleting un-places its cells and deletes nothing else. Read with the page,
   written with the cells-manage power (`/api/profiles/admin/bolims`).
