@@ -11335,6 +11335,100 @@ def asqar_containers_no_idle() -> None:
         db.close()
 
 
+# ── 24 Nov: yesterday's plan and headcount carried into today (docs/data-fixes.md) ─
+# The operator, 2026-11-24, after the 06:00 container figures came out empty:
+# «put the plan and the workers for today getting information from yesterday
+# to know the number of containers for Sultonova Umida, Xakimov Ruslan,
+# Aripova Manzura and Talipova Mamura». ONCE, 23 Nov → 24 Nov, through
+# `services/plan_carry.carry_day`: only into what 24 Nov leaves empty — a unit
+# that typed any plan for the 24th keeps it, a team with a headcount typed for
+# the 24th keeps it, nobody's typing is overwritten. Booting after 24 Nov
+# (Tashkent) it does nothing — a past day is not refilled — and says so.
+PLAN_CARRY_FLAG = "oneshot:plan_carry_nov23_to_nov24"
+PLAN_CARRY_FROM = date(2026, 11, 23)
+PLAN_CARRY_TO = date(2026, 11, 24)
+PLAN_CARRY_LOCK = 742_011_24
+# (surname prefixes, given-name prefixes) — Latin after `fold_name`, which
+# turns «Хакимов» into «xakimov»
+PLAN_CARRY_WHO = (
+    ("Sultonova Umida", ("sultonova", "sultanova"), ("umida",)),
+    ("Xakimov Ruslan", ("xakimov", "hakimov", "khakimov"), ("ruslan",)),
+    ("Aripova Manzura", ("aripova",), ("manzura",)),
+    ("Talipova Mamura", ("talipova",), ("mamura",)),
+)
+_REPORT_PRODUCTION = ("Zagruzka fayli", "/production")
+
+
+def _plan_carry_units(db) -> dict:
+    """{label: [Manager]} — every active unit whose name holds both the
+    surname and the given name (several only when the brigadir runs several)."""
+    from app.services.people import fold_name
+
+    units = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.id).all()
+    out = {}
+    for label, sur, given in PLAN_CARRY_WHO:
+        def hit(m):
+            ts = fold_name(m.name).split()
+            return any(t.startswith(s) for t in ts for s in sur) and any(t.startswith(g) for t in ts for g in given)
+        out[label] = [m for m in units if hit(m)]
+    return out
+
+
+def carry_plan_nov24() -> None:
+    from zoneinfo import ZoneInfo
+
+    from app.services import plan_carry
+
+    title = "Reja va odam soni · 23 → 24 noyabr"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": PLAN_CARRY_LOCK})
+        if db.query(AppSetting).filter_by(key=PLAN_CARRY_FLAG).first():
+            db.rollback()
+            return
+        today = datetime.now(ZoneInfo("Asia/Tashkent")).date()
+        if today > PLAN_CARRY_TO:
+            db.add(AppSetting(key=PLAN_CARRY_FLAG, value=f"skipped {today.isoformat()}"))
+            db.commit()
+            print(f"[startup] plan carry 23→24 Nov: skipped, today is {today}")
+            _dm_report("warn", title, status=f"O'tkazilmadi — bugun {today:%d.%m}, 24 noyabr o'tib ketgan")
+            return
+        found = _plan_carry_units(db)
+        rows, notes = [], []
+        for label, units in found.items():
+            if not units:
+                rows.append(("🔎", label, "bo'linma topilmadi"))
+                continue
+            for m in units:
+                r = plan_carry.carry_day(db, m.id, PLAN_CARRY_FROM, PLAN_CARRY_TO)
+                plan = (f"{r['lines']} pozitsiya ko'chirildi" if r["plan"] == "copied"
+                        else "24-noyabr rejasi bor — tegilmadi" if r["plan"] == "kept"
+                        else "23-noyabrda reja yo'q")
+                ppl = ", ".join(f"{wc}{' · ' + g if g else ''}: {n}" for wc, g, n in r["people"])
+                ppl = ppl or "ko'chirilmadi"
+                parts = [f"reja: {plan}", f"odam soni: {ppl}"]
+                if r["people_kept"]:
+                    parts.append(f"o'zi kiritgan: {', '.join(r['people_kept'])}")
+                if r["people_skipped"]:
+                    parts.append(f"bugun rejasiz: {', '.join(r['people_skipped'])}")
+                rows.append(("👷", f"{m.name} (#{m.id})", parts))
+                print(f"[startup] plan carry 23→24 Nov: unit {m.id} {m.name} → {r}")
+        db.add(AppSetting(key=PLAN_CARRY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        if any(not u for u in found.values()):
+            notes.append(("👉", "Topilmagan brigadir uchun reja va «Bugungi fakt»ni «Zagruzka fayli»da qo'lda kiriting."))
+        notes.append(("ℹ️", "Faqat 24-noyabrda bo'sh joylar to'ldirildi; brigadir o'zi kiritgan reja va odam soni o'zgarmadi."))
+        _dm_report("ok", title, status="Kechagi reja va odam soni bugunga ko'chirildi",
+                   rows=[(ic, label, value) for ic, label, value in rows], notes=notes,
+                   open=_REPORT_PRODUCTION)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] plan carry 23→24 Nov failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
+
+
 # ── 20 Nov: the Almaty plant, its unit and its catalogue (docs/data-fixes.md) ─
 # The operator, 2026-11-20, sent the Kazakhstan supervisor's form («Almata
 # zagruzka», 83 positions over the teams A · B · C): «please add this

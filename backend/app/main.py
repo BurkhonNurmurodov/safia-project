@@ -334,6 +334,10 @@ async def lifespan(app: FastAPI):
     later(alisher_container_logistics)
     from app.startup import asqar_containers_no_idle
     later(asqar_containers_no_idle)          # after it: copies Alisher's grants
+    # 24 Nov: four brigadirs' plan and headcount carried 23 → 24 Nov, into
+    # what the 24th leaves empty (once; mirrored in passenger_wsgi.py).
+    from app.startup import carry_plan_nov24
+    later(carry_plan_nov24)
     # The Almaty plant (Kazakhstan), its unit and its 83-line catalogue (once,
     # 2026-11-20, mirrored in passenger_wsgi.py).
     from app.startup import add_almaty_plant

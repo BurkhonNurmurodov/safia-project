@@ -976,3 +976,41 @@ or nobody, e.g. «Sarsenova Yulduz» for SARSENOVA JULDIZAY). Undo per row:
 `worker_name = concern_owner = worker_typed, worker_id = NULL, worker_typed =
 NULL`.
 
+
+## Four brigadirs' 23 Nov plan and headcount carried into 24 Nov (`startup.carry_plan_nov24`, 2026-11-24)
+
+The operator, after the 06:00 container figures came out thin: «put the plan
+and the workers for today getting information from yesterday to know the
+number of containers for Sultonova Umida, Xakimov Ruslan, Aripova Manzura and
+Talipova Mamura». AXO asks at 06:00 for 08:00 (docs/containers-flow.md «A plan
+written the day before gives the 06:00 figures»), and the hour's figure needs
+the day's ПЛАН and each team's «Bugungi fakt».
+
+ONCE (flag `oneshot:plan_carry_nov23_to_nov24`), through
+`services/plan_carry.carry_day(db, unit, 23 Nov, 24 Nov)`, on every active unit
+whose name holds the surname and the given name (`_plan_carry_units`, folded
+to Latin — «Хакимов» is «xakimov»; «Abdutalipova» is not Talipova):
+
+- **ПЛАН** only into a unit-day with NO typed plan for the 24th (no
+  `pp_line_daily.plan_override` > 0, no legacy `pp_daily.plan_override` > 0):
+  every line the 23rd planned gets the same ПЛАН, and its «Navbat» where the
+  24th's row has none. A unit that typed even one line for the 24th (Talipova
+  had) keeps its plan exactly — a partial carry would add products nobody
+  planned.
+- **«Bugungi fakt»** per work centre: only where the 24th has no people pin for
+  that centre (whole or any group), and only on a centre the 24th plans
+  (`zagruzka_source.planned_wcs`, the «Odam soni» form's rule) — then the
+  23rd's pins of that centre as they were. The ШТАТКА pin, ФАКТ, «Kontiner
+  krishka» and the efficiency are never copied.
+- Under the quantities lock (`pp_catalog.NS_QTY`, shared — the `/override`
+  door's). Booting after 24 Nov (Tashkent) it copies nothing and says so.
+
+The admins get one report: per unit, how many lines were copied (or «24-noyabr
+rejasi bor — tegilmadi»), each copied headcount, the centres left as the
+brigadir typed them and those skipped for having no plan; a brigadir with no
+matching unit is named so it is done by hand on «Zagruzka fayli». **What it
+does to the day**: the copied figures are the day's typed values — the
+загрузка, «Bajarish %» and the KPIs read them until the brigadir retypes; a
+retyped value simply replaces the copy. Undo: clear the 24th's ПЛАН /
+«Bugungi fakt» for those units on «Zagruzka fayli» (the rows the copy made are
+plain typed values). Not a standing rule: every other day and unit is untouched.
