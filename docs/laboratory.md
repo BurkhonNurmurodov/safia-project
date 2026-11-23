@@ -258,6 +258,16 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   `from` such a tab sends is ignored. One person submitting all five closes
   the sitting like any fifth submission. Pinned by
   `tests/test_assessment_seats.py` (Postgres; a non-admin on a real sitting).
+- **The free seats stand OPEN whenever the reader has nothing in progress**
+  (2026-11-23, the same day: the operator, Kaizen submitted, asked «why I
+  still cant open another departments' questions» — «Shu o'rinni olish» was
+  there, folded behind «Boshqarish»). `nextSeat` in `AssessmentGrade.jsx`: a
+  seat can be taken (`rights.claim`) and no seat of the reader's is
+  unsubmitted → the panel is unfolded by itself, so the next department is
+  one press away — right after a submit too. With a scorecard in progress it
+  stays folded to the row of rings, as before. The fold is the page's choice
+  until the reader presses the toggle (`panelOpen` null → true / false), and
+  a seat taken, switched or submitted hands the choice back to the page.
 - **Grading is saved per tap**: `PUT /api/assessment/draft/{id}/grades/{item}`
   (`verdict` and/or `note`, a key left out is left alone) and
   `PUT …/draft/{id}/feedback` (debounced, flushed on blur). `/api/assessment/draft/`

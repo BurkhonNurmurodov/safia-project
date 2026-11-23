@@ -76,8 +76,12 @@ export default function AssessmentGrade() {
   const view = mine ? tab || "card" : "results";
 
   const phone = useIsMobile();
-  const [panelOpen, setPanelOpen] = useState(false);
-  useEffect(() => { setPanelOpen(false); }, [mineId]);   // a seat taken / switched → back to the questions
+  // The panel's fold: null = the page's own choice (`nextSeat` below), true /
+  // false once the reader pressed the toggle. A seat taken, switched or
+  // SUBMITTED hands the choice back to the page.
+  const [panelOpen, setPanelOpen] = useState(null);
+  const mineDone = !!mine?.submitted_at;
+  useEffect(() => { setPanelOpen(null); }, [mineId, mineDone]);
 
   const [ask, setAsk] = useState(null);   // {kind, seat}
   const [askErr, setAskErr] = useState(null);
@@ -138,7 +142,12 @@ export default function AssessmentGrade() {
   const anyGraded = d.seats.some((s) => s.graded > 0 || s.submitted);
   // No seat yet and one can be taken: picking it IS this judge's job right now.
   const mustPick = !mine && r.claim;
-  const panelShown = mustPick || panelOpen || (!mine && !phone);
+  // Nothing of this reader's waits for a grade and a seat can still be taken:
+  // the free seats ARE the next step, so they stand open — the reader who had
+  // submitted Kaizen never found «Shu o'rinni olish» behind «Boshqarish»
+  // (2026-11-23). With a scorecard in progress the panel stays folded.
+  const nextSeat = r.claim && !d.seats.some((s) => s.mine && !s.submitted);
+  const panelShown = mustPick || (panelOpen ?? nextSeat) || (!mine && !phone);
 
   const dialogs = {
     leave: ask?.seat && {
@@ -262,7 +271,7 @@ export default function AssessmentGrade() {
                 ))}
               </div>
               {!mustPick && (mine || phone) && (
-                <button type="button" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelShown}
+                <button type="button" onClick={() => setPanelOpen(!panelShown)} aria-expanded={panelShown}
                   className="ml-auto inline-flex items-center gap-1 text-xs font-medium min-h-[36px] px-2 -mr-2 rounded-lg"
                   style={{ color: "var(--text-2)" }}>
                   {panelShown ? T.hide : T.manage}
