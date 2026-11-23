@@ -31,7 +31,7 @@ from app.services import verifix, verifix_live
 
 log = logging.getLogger(__name__)
 
-DAYS = 365               # how far back the history goes
+DAYS = 730               # how far back the history goes — two of every holiday and Ramadan (2026-11-23)
 LAG_DAYS = 2             # a day is read once it is this old
 CHUNK_DAYS = 7           # one read: a week of the whole plant (~30 pages of 100 people)
 BIN_MIN = 10             # clock-ins / clock-outs are counted per this many minutes

@@ -130,6 +130,14 @@ after, through the report door.
   week's days are replaced whole in one transaction, so a re-read never
   doubles a count. A failed read parks the job for an hour. With the year
   stored a tick is one query.
+- **Two years from 2026-11-23** (`DAYS` 365 → 730; the operator: «if you
+  need more data, take as much as it needed»). The first year, read whole
+  on 2026-11-23 (20,587 rows, 11 Nov 2025 – 21 Nov 2026, five door asks by
+  date range), holds ONE of each holiday — New Year, Navruz, both Eids — and
+  one Ramadan, the days the forecast misses most, so a «same holiday last
+  year» rule could not be checked against anything. The job reads the
+  second year back the same way, newest first, after the deploy that ships
+  it; a week Verifix has nothing for is stored as empty days.
 - **What it is for — NOT built yet**: the analysis (turnout per shift window
   by weekday / month / season, how early people clock in and how late they
   leave) and, from it, the forecast of the shifts that have not started. Ask
