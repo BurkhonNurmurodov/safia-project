@@ -472,9 +472,9 @@ def load(db: Session, today: date) -> dict:
     def rows_between(first: date, last: date) -> list:
         return db.query(K.day, K.starts, K.ends, K.planned, K.came, K.no_out, K.arr, K.dep) \
             .filter(K.day >= first, K.day <= last).all()
-    db.rollback()                                    # the caller's reads: no transaction held across the decree read
-    eids, settled = eid_dates(today)
     try:
+        db.rollback()                                # the caller's reads: no transaction held across the decree read
+        eids, settled = eid_dates(today)
         model = dict(learn(rows_between(today - timedelta(days=LAG + LOOKBACK - 1), today), today))
         model["hol"] = holidays(rows_between, today, eids)
         _cache = (today, model, clock.monotonic() + (86400 if settled else DECREE_TTL_S))
