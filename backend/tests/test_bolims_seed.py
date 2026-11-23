@@ -104,3 +104,45 @@ class BolimSeedDB(unittest.TestCase):
         db.expire_all()
         self.assertIsNone(db.query(Cell).filter_by(verifix_code="7416").one().bolim_id)
         db.close()
+
+
+@unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
+class CellPlaceTyped(unittest.TestCase):
+    """«Bo'limlar» typed like a spreadsheet: a typed name · block · floor finds
+    the room that already has them (any language, any case), else makes ONE
+    room; the same text typed again reuses it; a blank name clears."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pg = ScratchDB()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.pg.drop()
+
+    def test_find_or_make(self):
+        from app.models import Bolim, Cell
+        from app.routers import container_flow as r
+        db = self.pg.Session()
+        db.add_all([Cell(verifix_code="7416"), Cell(verifix_code="7421"),
+                    Bolim(name_uz="Pirog tayyorlash sexi", name_ru="Цех гот. пирогов", block="A", floor=2)])
+        db.commit()
+        c1 = db.query(Cell).filter_by(verifix_code="7416").one().id
+        c2 = db.query(Cell).filter_by(verifix_code="7421").one().id
+        room = db.query(Bolim).one().id
+        P = r.CellPlaceBody
+        out = r.put_cell_place(c1, P(name="  цех гот. пирогов ", block="a", floor=2), db=db, payload={})
+        self.assertEqual((out["bolim_id"], out["created"]), (room, False))
+        out = r.put_cell_place(c1, P(name="Pirog tayyorlash sexi", block="A", floor=3), db=db, payload={})
+        self.assertTrue(out["created"])                     # another floor: another room
+        made = out["bolim_id"]
+        out = r.put_cell_place(c2, P(name="pirog tayyorlash sexi", block="A", floor=3), db=db, payload={})
+        self.assertEqual((out["bolim_id"], out["created"]), (made, False))
+        out = r.put_cell_place(c2, P(name="Новый цех", block="B", floor=-1), db=db, payload={})
+        self.assertEqual(db.query(Bolim).filter_by(id=out["bolim_id"]).one().name_ru, "Новый цех")
+        out = r.put_cell_place(c2, P(name=""), db=db, payload={})
+        self.assertIsNone(out["bolim_id"])
+        out = r.put_cell_place(c2, P(bolim_id=room), db=db, payload={})
+        self.assertEqual(out["bolim_id"], room)
+        self.assertEqual(db.query(Bolim).count(), 3)
+        db.close()

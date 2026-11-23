@@ -141,13 +141,25 @@ containers row from production and move it into the new button».
     so make it possible and easy»; «just for me»): a menu row of its own after
     «Konteyner taqsimlash», page key `container-bolims`, ADMIN-ONLY until the
     operator grants it (`pages/ContainerBolims.jsx`). Every live cell of the
-    brigadirs the flow serves (`flow_units`), grouped by brigadir, each with a
-    searchable room picker that SAVES ON PICK (spinner → ✓, an error toast
-    puts the old room back); «Hammasi / Bo'limsiz · N» narrows to the teams
-    with no room; a room missing from the list is added from the picker
-    itself («+ Yangi bo'lim» — the new room lands on that team at once) or
-    from the toolbar; «Xonalar ro'yxati» renames or moves rooms (no delete
-    here). The operator's answers: PICK a room from one list (one spelling
+    brigadirs the flow serves (`flow_units`), grouped by brigadir.
+    «Hammasi / Bo'limsiz · N» narrows to the teams with no room;
+    «Xonalar ro'yxati» renames or moves rooms (no delete here). **Typed
+    like a spreadsheet** (the operator, the same day: «edit it by hand in
+    the easiest way possible» — chosen over ticking many teams at once):
+    each team has three fields, Room · Block · Floor. The room field lists
+    the rooms that match what is typed (the page's own list under the field,
+    ↑ ↓ Enter or a click — the browser's `datalist` was tried and dropped:
+    it looks different in every browser and in Telegram); a picked room
+    fills its block and floor and saves at once. A row saves when focus
+    leaves it or on Enter, and Enter moves to the next team; Escape puts the
+    row back. What was typed goes to `PUT …/bolims/cell/{cid}/place`: the
+    page sends the room's id when name · block · floor match one it lists,
+    else the typed three, which the server FINDS (any language, any case,
+    the same block and floor) or MAKES — one new room, named in `name_ru`
+    when typed in Cyrillic, else `name_uz`; the same name on another floor
+    is another room. A blank room takes the team out of every room. The
+    page always reads fresh on open (`refetchOnMount: "always"`) — the
+    kept query cache once opened it on a copy from before a save. The operator's answers: PICK a room from one list (one spelling
     per room — renaming a room fixes every team in it), never free text; the
     flow's teams only. The rooms are the same `bolims` /cells reads; its
     door is `/api/container-flow/bolims` (`BOL` = `require_page

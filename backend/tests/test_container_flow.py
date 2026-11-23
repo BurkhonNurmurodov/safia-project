@@ -1996,6 +1996,7 @@ class PageKeyTest(unittest.TestCase):
         self.assertEqual(guard[("GET", f"{p}/hour-need")], "any")
         # «Bo'limlar» (2026-11-23): its own page key, admin-only by default
         for k in [("GET", f"{p}/bolims"), ("PUT", f"{p}/bolims/cell/{{cid}}"),
+                  ("PUT", f"{p}/bolims/cell/{{cid}}/place"),
                   ("POST", f"{p}/bolims"), ("PUT", f"{p}/bolims/{{bid}}")]:
             self.assertEqual(guard[k], "bolims", k)
         # watching opens no write: every POST / PUT but the Excel export keeps a door the watch key is not on

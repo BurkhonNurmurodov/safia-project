@@ -917,3 +917,62 @@ def put_bolim(bid: int, body: dict, db: Session = Depends(get_db), payload: dict
     action_log.enrich(target_kind="bolim", target_id=bid, target_name=row.name_ru or row.name_uz,
                       changes=[("bolim", old, new)] if old != new else [])
     return {"ok": True, "id": bid}
+
+
+class CellPlaceBody(BaseModel):
+    """A room TYPED on the row (2026-11-23, the operator chose «type like a
+    spreadsheet»): `bolim_id` when the page matched an existing room, else the
+    typed name · block · floor — found again by name, block and floor, or made.
+    A blank name takes the team out of every room."""
+    bolim_id: Optional[int] = None
+    name: str = ""
+    block: str = ""
+    floor: Optional[int] = None
+
+
+def _same_room(b, fold: str, block, floor) -> bool:
+    names = {(x or "").strip().casefold() for x in (b.name_uz, b.name_uz_cyrl, b.name_ru, b.name_en)}
+    return fold in names and (b.block or None) == block and b.floor == floor
+
+
+@router.put("/bolims/cell/{cid}/place")
+def put_cell_place(cid: int, body: CellPlaceBody, db: Session = Depends(get_db),
+                   payload: dict = Depends(BOL)):
+    import re
+    from app.models import Bolim, Cell
+    from app.routers.profiles import _bolim_label
+    from app.services import bolims as _bolims
+    from app.services.latin_code import latin_code
+    c = db.query(Cell).filter_by(id=cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    created = False
+    name = " ".join((body.name or "").split())
+    if body.bolim_id:
+        room = db.query(Bolim).filter_by(id=body.bolim_id).first()
+        if not room:
+            raise HTTPException(status_code=400, detail="Bo'lim not found")
+    elif not name:
+        room = None
+    else:
+        block = latin_code(" ".join((body.block or "").split())).upper()[:8] or None
+        if body.floor is not None and not -5 <= body.floor <= 30:
+            raise HTTPException(status_code=400, detail="Floor out of range")
+        fold = name.casefold()
+        room = next((b for b in db.query(Bolim).order_by(Bolim.id)
+                     if _same_room(b, fold, block, body.floor)), None)
+        if room is None:
+            cyr = bool(re.search(r"[А-Яа-яЁёЎўҚқҒғҲҳ]", name))
+            room = Bolim(block=block, floor=body.floor, **({"name_ru": name} if cyr else {"name_uz": name}))
+            db.add(room)
+            db.flush()
+            created = True
+    old = _bolim_label(db, c.bolim_id)
+    c.bolim_id = room.id if room else None
+    db.commit()
+    new = _bolim_label(db, c.bolim_id)
+    action_log.enrich(target_kind="cell", target_id=cid, target_name=c.verifix_code, unit_id=c.manager_id,
+                      changes=[("bolim", old, new)] if old != new else [],
+                      details=[("new_room", True)] if created else [])
+    return {"ok": True, "id": cid, "bolim_id": c.bolim_id, "created": created,
+            "bolim": _bolims.bolim_out(room) if room else None}
