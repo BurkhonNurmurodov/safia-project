@@ -310,10 +310,10 @@ export const adminPath = (to) => (to === "/" ? "/overview" : to);
 //   blue · orange · teal · purple · pink), worn on the menu icon only — never a
 //   status colour; `light` is the 600 shade a white drawer needs for 3:1.
 // - `LEADER_PHONE_QUIET` lead the quieter rows; everything else the leader may
-//   open follows them in ALL_LINKS order, except `LEADER_PHONE_HIDDEN`:
-//   «Xavotirlar» (/concerns) shows the same concerns as «Havotirlar»
-//   (/cell-concerns), so a leader's phone keeps one (decision 2). The page
-//   still opens by link.
+//   open follows them in ALL_LINKS order. «Xavotirlar» (/concerns) leads them:
+//   it READS like «Havotirlar» but is the one form that files a leader's own
+//   concern TO THE BRIGADIR — hidden on 20 Nov (decision 2), leaders on phones
+//   could no longer write to their supervisor (back 23 Nov).
 export const LEADER_PHONE_JOBS = [
   { id: "bugun",      to: "/leaders",       tab: "checklist", page: "leaders",       icon: ClipboardCheck,    hue: "#3b82f6", light: "#2563eb" },
   { id: "havotirlar", to: "/cell-concerns",                   page: "cell-concerns", icon: MessageSquarePlus, hue: "#f97316", light: "#ea580c" },
@@ -321,5 +321,4 @@ export const LEADER_PHONE_JOBS = [
   { id: "kutish",     to: "/idle-cell",                       page: "idle-cell",     icon: Timer,             hue: "#a855f7", light: "#9333ea" },
   { id: "natijam",    to: "/leaders",       tab: "monitor",   page: "leaders",       icon: Trophy,            hue: "#ec4899", light: "#db2777" },
 ];
-export const LEADER_PHONE_QUIET = ["/tasks", "/education", "/exam"];
-export const LEADER_PHONE_HIDDEN = ["/concerns"];
+export const LEADER_PHONE_QUIET = ["/concerns", "/tasks", "/education", "/exam"];

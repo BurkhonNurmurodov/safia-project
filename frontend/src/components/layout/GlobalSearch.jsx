@@ -22,7 +22,7 @@ import { ALL_LINKS, NAV_GROUPS, adminPath } from "../../config/navLinks";
 import { usesLauncher } from "../../utils/launcherRoles";
 import { nameCase } from "../people/peopleUtil";
 import useLeaderPhone from "../../hooks/useLeaderPhone";
-import { LEADER_PHONE_HIDDEN, LEADER_PHONE_JOBS } from "../../config/navLinks";
+import { LEADER_PHONE_JOBS } from "../../config/navLinks";
 import { jobHref, primeLeaderTab } from "./leaderPhoneNav";
 import { shellText } from "./shellPhoneText";
 
@@ -119,16 +119,14 @@ export default function GlobalSearch({ drawer = false, onPick }) {
 
   // ── what can be found, folded once per language / data change ──
   // A leader's phone finds its screens by the menu's job names
-  // (leaderPhoneNav.js): «Bugun» and «Natijam» are both «Lider nazorati», and
-  // «Xavotirlar» is not on a leader's phone (decision 2). The old name stays a
-  // search term, so «Lider nazorati» still finds them.
+  // (leaderPhoneNav.js): «Bugun» and «Natijam» are both «Lider nazorati». The
+  // old name stays a search term, so «Lider nazorati» still finds them.
   const leaderPhone = useLeaderPhone();
   const pageItems = useMemo(() => {
     const groupLabel = Object.fromEntries(NAV_GROUPS.filter((g) => g.labelKey).map((g) => [g.id, t(g.labelKey)]));
     const job = shellText(lang).job;
     return ALL_LINKS
       .filter((l) => (l.adminOnly ? (isAdmin || !!l.roles?.includes(auth?.role) || (!!l.cap && capCan(l.cap))) : can(l.page)))
-      .filter((l) => !(leaderPhone && LEADER_PHONE_HIDDEN.includes(l.to)))
       .flatMap((l) => {
         const own = t(l.key);
         const jobs = leaderPhone ? LEADER_PHONE_JOBS.filter((j) => j.to === l.to) : [];

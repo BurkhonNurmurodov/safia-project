@@ -67,15 +67,20 @@ grouped register: it is five entries named for the job, then the rest quieter
   `components/layout/shellPhoneText.js` `job.*`** (four languages): «Bugun» →
   `/leaders?tab=checklist`, «Havotirlar» → `/cell-concerns`, «Ish grafigi» →
   `/kelish`, «Kutish» → `/idle-cell`, «Natijam» → `/leaders?tab=monitor` (the page's other tabs — objections, late proofs, «Vazifalar» — are opened from «Natijam» and keep the page's own title, lighting no entry). Under a
-  divider, in muted ink: «Rahbariyat vazifalari» (`/tasks`), Ta'lim, Imtihon
-  (`LEADER_PHONE_QUIET`), then everything else the leader may open in `ALL_LINKS`
+  divider, in muted ink: «Xavotirlar» (`/concerns`), «Rahbariyat vazifalari»
+  (`/tasks`), Ta'lim, Imtihon (`LEADER_PHONE_QUIET`), then everything else the leader may open in `ALL_LINKS`
   order. An entry shows only when its page is open to them.
 - **A leader has no launcher, so their menu was never the stored nav layout** —
   `resolveLayout` arranges the launcher roles' apps only; the leader's order is
   this code list. (The «Ilovalar» view of the org chart cannot reorder it.)
-- **«Xavotirlar» (`/concerns`) is off a leader's phone** (`LEADER_PHONE_HIDDEN`,
-  decision 2) — the menu and the drawer's search; it shows the same concerns as
-  «Havotirlar». The page still opens by link.
+- **«Xavotirlar» (`/concerns`) is BACK on a leader's phone (2026-11-23), first
+  of the quiet rows.** Decision 2 took it off on 20 Nov as «the same concerns
+  as «Havotirlar»» — true for reading, not for writing: «Havotirlar»' «Yozish»
+  files a WORKER's concern that the leader holds (`/api/cell-concerns`,
+  level «leader»); «+ Xavotir qo'shish» on `/concerns` is the one form that
+  files the leader's own concern TO THE BRIGADIR (`POST /api/concerns`).
+  Leaders reported they could no longer write to their supervisors. The
+  `LEADER_PHONE_HIDDEN` list (menu + drawer search) is gone.
 - **Two entries, one page: the TAB lights them.** `components/layout/leaderTab.js`
   (a leaf — App.jsx reads it in the boot chunk) answers which «Lider nazorati» tab
   is on screen: what the page publishes (`publishLeaderTab`), else its remembered
