@@ -657,7 +657,9 @@ last columns, after «Pareto» (the operator's call, same day), and
   profiles through `_grant_container_cols(…, revoke=True)`, registered after
   the three grants. The capability stays on the Permissions tab. The Almaty
   unit's grant (`startup.container_cols_almaty`, by its plant, not by name) is
-  not among the five and stays.
+  not among the five and stays. **23 Nov: Artikova Masuda** gets it —
+  `startup.container_cols_artikova` (flag
+  `oneshot:container_cols_artikova_nov23`), registered after the five's close.
 - **…and the Almaty unit holds it** (2026-11-22, the operator, the column
   picker's container columns on screen: «can you open for him container page
   for almata filial»). `startup.container_cols_almaty` (`later`, both

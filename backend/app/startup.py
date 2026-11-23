@@ -12656,6 +12656,17 @@ def container_cols_close_five() -> None:
                           revoke=True)
 
 
+# ── 23 Nov: Artikova Masuda gets them (the operator: «now open this page for
+# Artikova Masuda»). Her own flag; registered AFTER the five's close, which
+# does not name her, so nothing takes it back.
+CONTAINER_COLS_ARTIKOVA_FLAG = "oneshot:container_cols_artikova_nov23"
+
+
+def container_cols_artikova() -> None:
+    _grant_container_cols(CONTAINER_COLS_ARTIKOVA_FLAG, ("Artikova Masuda",),
+                          "Zagruzka fayli · konteyner ustunlari Artikova Masudaga ochildi")
+
+
 def _grant_container_cols(flag: str, names: tuple, title: str, revoke: bool = False) -> None:
     """Grant (or, with `revoke`, take back) `CAP_CONTAINER_COLS` on the unit
     profiles named, once under `flag`. A name must fold to exactly ONE
