@@ -55,7 +55,7 @@ export default function VfxEmployees() {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [status, setStatus] = usePersistentState("vfx_emp_status", "W");
-  const [q, refresh] = useVfx(["employees"], "/employees", { status });
+  const [q, refresh, st] = useVfx(["employees"], "/employees", { status });
   const [search, setSearch] = useState("");
   const [divSel, setDivSel] = usePersistentState("vfx_emp_div", []);
   const [unitSel, setUnitSel] = usePersistentState("vfx_emp_unit", []);
@@ -182,11 +182,11 @@ export default function VfxEmployees() {
       <div className="space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm flex-1 min-w-[240px] max-w-3xl" style={{ color: "var(--text-2)" }}>{t("vfx.emp.lead")}</p>
-          <FetchedAt at={d?.fetched_at} today={today} />
-          <RefreshButton busy={q.isFetching} onClick={refresh} />
+          <FetchedAt at={d?.fetched_at} today={today} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
 
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPICard label={t("vfx.emp.k.shown")} icon={Users} value={d ? num(rows.length) : sk}

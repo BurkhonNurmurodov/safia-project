@@ -36,8 +36,9 @@ and the photo taken at a person's last mark of a day (`photo_sha`, on their
 card). `photo` streams them through this server, resized, from
 Verifix's file door; it serves only a hash this process has itself handed out
 as a PHOTO (`_ALLOWED`), so it cannot be turned into a fetcher for any other
-file Verifix keeps. Nothing is stored — a small in-memory cache of the resized
-copies only.
+file Verifix keeps. Nothing of a photo is stored — a small in-memory cache of
+the resized copies only. Directory and report ANSWERS are kept across restarts
+(2026-11-23, `keep`), always scrubbed first.
 
 Every Verifix read is cached here (`_CACHE`; the page's «Yangilash» reloads),
 so moving between pages does not re-read 18 pages of employees each time. A
@@ -61,7 +62,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models import VerifixProbe
-from app.services import cell_lookup, verifix, verifix_catalog as catalog, verifix_live, verifix_parity
+from app.services import cell_lookup, kept_store, verifix, verifix_catalog as catalog, verifix_live, verifix_parity
 
 log = logging.getLogger(__name__)
 
@@ -117,8 +118,14 @@ class _Cache:
     it ONCE: the second waits for the first, because the employee list alone
     is eighteen Verifix pages."""
 
-    def __init__(self, max_items: int = 60):
+    def __init__(self, max_items: int = 60, store=None):
         self._max = max_items
+        # Answers kept ACROSS restarts and evictions (2026-11-23, the operator:
+        # «show old» — a page opened after a deploy or after its key dropped
+        # out of memory waited on Verifix behind a skeleton). Written through
+        # on a thread, read back when memory has nothing, served at once and
+        # read again behind the reader ONCE: it predates this process's code.
+        self._store = store
         self._lock = threading.Lock()
         self._data: "OrderedDict[tuple, tuple[float, datetime, Any]]" = OrderedDict()
         self._loading: dict[tuple, threading.Lock] = {}
@@ -133,16 +140,38 @@ class _Cache:
         """Whether this request served a value that is being reloaded right now."""
         return getattr(self._local, "renewing", False)
 
+    def _hold(self, key: tuple, mono: float, stamp: datetime, val: Any) -> None:
+        """Into memory; called under `self._lock`."""
+        self._data[key] = (mono, stamp, val)
+        self._data.move_to_end(key)
+        while len(self._data) > self._max:
+            old, _ = self._data.popitem(last=False)
+            self._loading.pop(old, None)
+
     def _put(self, key: tuple, val: Any) -> datetime:
         stamp = verifix_live.now_local()
         with self._lock:
-            self._data[key] = (time.monotonic(), stamp, val)
-            self._data.move_to_end(key)
+            self._hold(key, time.monotonic(), stamp, val)
             self._failed.pop(key, None)
-            while len(self._data) > self._max:
-                old, _ = self._data.popitem(last=False)
-                self._loading.pop(old, None)
+        if self._store is not None:
+            keep(self._store, key, stamp.replace(tzinfo=verifix.TZ), val)
         return stamp
+
+    def _kept(self, key: tuple, fn: Callable[[], Any]) -> Optional[tuple[Any, datetime]]:
+        """The stored answer for a key memory lacks: held, served, renewed."""
+        got = self._store.load(key) if self._store is not None else None
+        if got is None:
+            return None
+        built_at, val = got
+        stamp = built_at.astimezone(verifix.TZ).replace(tzinfo=None)
+        age = max(0.0, (verifix_live.now_local() - stamp).total_seconds())
+        with self._lock:
+            hit = self._data.get(key)
+            if hit:                               # loaded while the store was read
+                return hit[2], hit[1]
+            self._hold(key, time.monotonic() - age, stamp, val)
+            self._renew(key, fn)
+        return val, stamp
 
     def _renew(self, key: tuple, fn: Callable[[], Any]) -> None:
         """Reload a stale key on its own thread; called under `self._lock`."""
@@ -182,6 +211,11 @@ class _Cache:
                 if started - hit[0] >= ttl:
                     self._renew(key, fn)
                 return hit[2], hit[1]
+        if ttl > 0:
+            kept = self._kept(key, fn)
+            if kept is not None:
+                return kept
+        with self._lock:
             gate = self._loading.setdefault(key, threading.Lock())
         with gate:
             with self._lock:
@@ -194,7 +228,7 @@ class _Cache:
             return val, self._put(key, val)
 
 
-_CACHE = _Cache()
+_CACHE = _Cache(store=kept_store.DbStore("verifix-test", max_age_days=7))
 
 
 def _deadline() -> float:
@@ -352,7 +386,41 @@ def scrub(v: Any) -> Any:
         return out
     if isinstance(v, list):
         return [scrub(x) for x in v]
+    if isinstance(v, tuple):
+        return tuple(scrub(x) for x in v)
     return v
+
+
+# ── answers kept across restarts (2026-11-23) ─────────────────────────────────
+
+KEEP_GAP_S = 600            # a key's stored copy is rewritten at most this often
+PRUNE_EVERY_S = 6 * 3600    # a store's rows past their age are deleted this often
+_kept_at: dict = {}         # (store, key) → monotonic of its last write
+_pruned_at: dict = {}       # store → monotonic of its last prune
+
+
+def keep(store, key: Any, built_at: datetime, val: Any, gap: float = KEEP_GAP_S) -> None:
+    """A copy of an answer into `store` (`kept_store.DbStore`) on a thread of
+    its own, so no page waits on it. Always SCRUBBED: passport, PINFL, tax and
+    family records and wages are never written anywhere (`scrub`); no code
+    reads them, so a restored copy answers like the original. At most once
+    per `gap` per key — today's report renews every 90 s — and the store's
+    rows too old to be read are pruned now and then."""
+    now = time.monotonic()
+    sk = (store.name, key)
+    if now - _kept_at.get(sk, -1e9) < gap:
+        return
+    _kept_at[sk] = now
+    prune = now - _pruned_at.get(store.name, -1e9) >= PRUNE_EVERY_S
+    if prune:
+        _pruned_at[store.name] = now
+
+    def run():
+        store.save(key, built_at, scrub(val))
+        if prune:
+            store.prune()
+
+    threading.Thread(target=run, daemon=True, name="vfx-keep").start()
 
 
 def _fields(rows: list[dict]) -> list[str]:

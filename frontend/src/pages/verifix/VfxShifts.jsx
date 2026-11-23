@@ -42,7 +42,7 @@ export default function VfxShifts() {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [from, to, setFrom, setTo] = useRange("vfx_sh", 3, 3);
-  const [q, refresh] = useRegister(["shifts"], "/shifts", { begin: from, end: to });
+  const [q, refresh, st] = useRegister(["shifts"], "/shifts", { begin: from, end: to });
   const d = q.data;
   const [tab, setTab] = usePersistentState("vfx_sh_tab", "shift");
   const [search, setSearch] = useState("");
@@ -130,11 +130,11 @@ export default function VfxShifts() {
         <div className="flex items-center gap-2 flex-wrap">
           <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
           <p className="text-sm flex-1 min-w-[200px] max-w-2xl" style={{ color: "var(--text-2)" }}>{t("vfx.sh.lead")}</p>
-          <FetchedAt at={sec?.at} today={d?.today} />
-          <RefreshButton busy={q.isFetching || !!d?.loading} onClick={refresh} />
+          <FetchedAt at={sec?.at} today={d?.today} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
 
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPICard label={t("vfx.sh.k.shifts")} icon={CalendarClock} value={d ? num(shiftsAll.length) : sk} />

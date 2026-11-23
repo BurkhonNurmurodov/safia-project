@@ -35,7 +35,7 @@ export default function VfxTimesheet() {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [day, setDay] = useState(() => shiftISO(localISO(new Date()), -1));
-  const [q, refresh] = useVfx(["timesheet"], "/timesheet", { day });
+  const [q, refresh, st] = useVfx(["timesheet"], "/timesheet", { day });
   const [search, setSearch] = useState("");
   const [stSel, setStSel] = usePersistentState("vfx_ts_st", []);
   const [divSel, setDivSel] = usePersistentState("vfx_ts_div", []);
@@ -176,11 +176,11 @@ export default function VfxTimesheet() {
           <p className="text-sm flex-1 min-w-[220px]" style={{ color: "var(--text-2)" }}>
             {day === d?.today ? t("vfx.ts.leadToday") : t("vfx.ts.lead")}
           </p>
-          <FetchedAt at={d?.fetched_at} today={d?.today} />
-          <RefreshButton busy={q.isFetching} onClick={refresh} />
+          <FetchedAt at={d?.fetched_at} today={d?.today} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
 
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
               <KPICard label={t("vfx.ts.k.planned")} icon={CalendarCheck} value={d ? num(k.planned) : sk}

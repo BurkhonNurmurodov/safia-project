@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "../../utils/api";
 
@@ -12,12 +12,23 @@ export const VFX = "/api/verifix-test";
 export const vget = (path, params) =>
   api.get(`${VFX}${path}`, { params }).then((r) => r.data);
 
-/** One page's Verifix read, with the page's «Yangilash»: `refresh()` asks
- * the server to bypass its few-minutes cache for this one fetch. A changed
- * parameter (another day, another location) is a new key, so the previous
- * answer is never shown under the new one. */
+/** One page's Verifix read, kept LIVE: the page opens on the answer it has
+ * and swaps the newer one in place, never as a refresh. An older answer the
+ * server is renewing (`refreshing`) is asked for again every 4 s; otherwise
+ * every minute while the page is on screen — the server's cache decides when
+ * Verifix itself is read. `refresh()` is the page's «Yangilash»: it bypasses
+ * that cache for one fetch. `st.busy` is a first load or a PRESS still
+ * running (the button turns only for these); `st.updating` is a newer answer
+ * being read behind the one on screen (the stamp's quiet spinner). A failed
+ * background read keeps the answer on screen — pages show `VfxError` only
+ * while there is no data (`q.error && !q.data`). A changed
+ * parameter (another day) is a new key, so an answer is never shown under
+ * another's. */
+export const LIVE_MS = 60_000;
+
 export function useVfx(key, path, params, options = {}) {
   const force = useRef(false);
+  const [pressedAt, setPressedAt] = useState(0);
   const q = useQuery({
     queryKey: ["vfx", ...key, params || null],
     queryFn: () => {
@@ -27,12 +38,17 @@ export function useVfx(key, path, params, options = {}) {
     },
     staleTime: 5 * 60_000,
     retry: false,
-    // An older answer served while the server reads a new one: ask again soon.
-    refetchInterval: (query) => (query.state.data?.refreshing ? 4000 : false),
+    refetchInterval: (query) => (query.state.data?.refreshing ? 4000 : LIVE_MS),
     ...options,
   });
-  const refresh = () => { force.current = true; return q.refetch(); };
-  return [q, refresh];
+  const d = q.data;
+  const updating = !!(d?.refreshing || d?.loading);
+  // A failed press settles too, or an old `refreshing` answer would keep it turning.
+  const settled = (q.dataUpdatedAt > pressedAt && !updating) || q.errorUpdatedAt > pressedAt;
+  // A press ends with its first settled answer (adjusted during render, not in an effect).
+  if (pressedAt && settled) setPressedAt(0);
+  const refresh = () => { force.current = true; setPressedAt(Date.now()); return q.refetch(); };
+  return [q, refresh, { busy: q.isLoading || (!!pressedAt && !settled), updating }];
 }
 
 export const fill = (s, p = {}) =>

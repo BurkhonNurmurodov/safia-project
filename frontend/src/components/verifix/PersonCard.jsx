@@ -65,7 +65,7 @@ export default function PersonCard({ id, onClose, zIndex }) {
     <Modal onClose={onClose} title={name} icon={UserRound} maxWidth="max-w-3xl" zIndex={zIndex}
       subtitle={r ? [tx(n.job), tx(n.unit)].filter(Boolean).join(" · ") : null}
       footer={<Button variant="secondary" onClick={onClose}>{t("vfx.close")}</Button>}>
-      {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : !d ? (
+      {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : !d ? (
         <div className="flex gap-4">
           <SkeletonBlock className="w-24 h-24 rounded-xl" />
           <div className="flex-1 space-y-2"><SkeletonTable rows={5} cols={2} /></div>

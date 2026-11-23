@@ -29,7 +29,9 @@ keeps the previous rows on screen until the new read is done.
 
 Everything the phase-1 module promises holds here: only catalog READ methods are
 called, rows are projected field by field (nothing private is copied) or passed
-through `verifix_explore.scrub` when shown whole, and nothing is stored.
+through `verifix_explore.scrub` when shown whole. A finished list is kept
+across restarts (`_store`, 2026-11-23) — scrubbed first (`vx.keep`), so no
+passport, PINFL or wage field is ever written.
 """
 from __future__ import annotations
 
@@ -43,7 +45,7 @@ from typing import Any, Callable, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.services import verifix, verifix_catalog as catalog, verifix_explore as vx, verifix_live
+from app.services import kept_store, verifix, verifix_catalog as catalog, verifix_explore as vx, verifix_live
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +55,9 @@ FEED_BUDGET_S = 540.0     # one background read stops after nine minutes …
 FEED_PAGES = 400          # … or 400 pages, and says it is partial
 FEEDS_MAX = 40
 READERS = 3               # background reads talking to Verifix at once
+# Every finished list, kept across restarts: a list this process has not read
+# yet is shown from here while it is read again (`_start`, «show old»).
+_store = kept_store.DbStore("verifix-feeds", max_age_days=7)
 # A list whose rows carry every line of a document (a timebook holds a row per
 # person): read a few documents per page, so one page is never tens of
 # megabytes, and kept as one summary row per document — a document's lines are
@@ -87,7 +92,7 @@ def _body(path: str, given: Optional[dict] = None, **lists) -> dict:
 
 
 def _read(st: dict, c: dict, path: str, body: dict, limit: Optional[int],
-          project: Optional[Callable[[list], list]] = None) -> None:
+          project: Optional[Callable[[list], list]] = None, fk: Optional[tuple] = None) -> None:
     """Every page of one method, into `st` as it arrives — through `project`
     when given, so a list of heavy documents is kept as its summaries."""
     deadline = time.monotonic() + FEED_BUDGET_S
@@ -122,6 +127,9 @@ def _read(st: dict, c: dict, path: str, body: dict, limit: Optional[int],
         st["prev"] = None
         st["running"] = False
         st["event"].set()
+    if fk is not None and not st["error"]:
+        vx.keep(_store, fk, kept_store._utcnow(),
+                {k: st[k] for k in ("rows", "pages", "partial", "at")}, gap=0)
 
 
 def _start(c: dict, path: str, body: dict, force: bool = False, ttl: float = FEED_TTL,
@@ -131,6 +139,9 @@ def _start(c: dict, path: str, body: dict, force: bool = False, ttl: float = FEE
     fk = vx._key(c, "feed", path, getattr(project, "__name__", ""),
                  json.dumps(body, sort_keys=True, ensure_ascii=False, default=str))
     launch = False
+    # A list this process has not read since it started: its last read from
+    # the store is shown while it is read again («show old», 2026-11-23).
+    kept = None if (force or fk in _feeds) else _store.load(fk)
     now = time.monotonic()
     with _feeds_lock:
         st = _feeds.get(fk)
@@ -138,6 +149,8 @@ def _start(c: dict, path: str, body: dict, force: bool = False, ttl: float = FEE
             prev = None
             if st is not None and not st["error"]:
                 prev = {k: st[k] for k in ("rows", "pages", "partial", "at")}
+            elif st is None and kept is not None:
+                prev = kept[1]
             st = {"path": path, "rows": [], "pages": 0, "running": True, "error": None, "partial": False,
                   "t_done": None, "at": None, "prev": prev, "event": threading.Event()}
             _feeds[fk] = st
@@ -149,7 +162,7 @@ def _start(c: dict, path: str, body: dict, force: bool = False, ttl: float = FEE
                 _feeds.pop(k, None)
     if launch:
         limit = PAGE_SIZE.get(path, catalog.BY_KEY[path].limit)
-        threading.Thread(target=_read, args=(st, c, path, body, limit, project),
+        threading.Thread(target=_read, args=(st, c, path, body, limit, project, fk),
                          daemon=True, name="vfx-feed").start()
     return st
 

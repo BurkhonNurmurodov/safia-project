@@ -360,7 +360,10 @@ empty-state twins too); one button sits on the page bar, left of «Excel».
   run on open, and two presses on October in one day did nothing.
 - **The old figures stay until it has finished** (`LeadersKpi.jsx`): the
   button turns into «Hisoblanmoqda…» with a spinning icon and is disabled
-  once pressed;
+  ONLY under a press (2026-11-23, the operator: pages that «automatically
+  refresh when you open them» are «very bad UX» — «show old, make it live»).
+  The run on open and a nightly read stay SILENT: no spinning button, the
+  figures are swapped in place when they end;
   the page polls only `GET /recalc` every 4 s and asks for the board ONCE when
   nothing runs (invalidating `leaders-kpi`, `cc-people`, `quality`). Each tab's
   muted line still names its source's read time and a failed read in amber.

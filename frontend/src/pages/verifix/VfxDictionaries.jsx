@@ -30,7 +30,7 @@ const FORMS = {
 
 export default function VfxDictionaries() {
   const { t } = useLang();
-  const [q, refresh] = useRegister(["dictionaries"], "/dictionaries");
+  const [q, refresh, st] = useRegister(["dictionaries"], "/dictionaries");
   const d = q.data;
   const [pick, setPick] = usePersistentState("vfx_dic_pick", "dismissal_reason");
   const [search, setSearch] = useState("");
@@ -57,10 +57,10 @@ export default function VfxDictionaries() {
       <div className="space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm flex-1 min-w-[240px] max-w-3xl" style={{ color: "var(--text-2)" }}>{t("vfx.dic.lead")}</p>
-          <FetchedAt at={s?.at} />
-          <RefreshButton busy={q.isFetching || !!d?.loading} onClick={refresh} />
+          <FetchedAt at={s?.at} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-4 items-start">
             <div className="lg:hidden">
               <StyledSelect value={pick} onChange={setPick} className="w-full" triggerClassName="px-3 py-2 text-sm min-h-[38px]"

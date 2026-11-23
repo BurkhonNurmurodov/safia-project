@@ -633,6 +633,28 @@ the role opens. **Admin-only**, three ways (`adminOnly` nav entries,
   list is reused 10 min; a forced reload keeps the previous rows on screen
   (`refreshing`) until the new read is done. A read that fails mid-list keeps
   the pages it got and says it is PARTIAL.
+- **The pages are LIVE, never «refreshing»** (2026-11-23, the operator: pages
+  that «automatically refresh when you open them» are «very bad UX» — «show
+  old, make it live»). `useVfx` opens on the answer it has and swaps the newer
+  one in place: every 4 s while the server renews (`refreshing`), else every
+  minute while the page is on screen (`LIVE_MS`; the server's cache decides
+  when Verifix is read). «Yangilash» turns ONLY for a first load or a press
+  (`st.busy`); a background read is a small spinner in the stamp's always-kept
+  slot (`FetchedAt updating`), and `SectionNote` no longer prints a
+  «qayta o'qilmoqda» line above the rows. «Hisobotlar»' stamp keeps its time
+  the same way, and «Liderlar KPI»'s run on open no longer spins its button.
+- **…and the server always has something old to show** (same day: «Still» —
+  «Lavozimlar» opened on a skeleton after a deploy). `_Cache` and the register
+  feeds lived in the worker's memory only (60 keys / 40 lists), so after every
+  backend deploy, or once a key fell out, the page waited on Verifix. Every
+  answer is now also written to `kept_answers` (`kept_store.DbStore`,
+  «verifix-test» and «verifix-feeds», 7 days, on a thread — `vx.keep`: always
+  SCRUBBED first, so no passport, PINFL, tax, family or wage field is ever
+  written; a key at most once per 10 min; old rows pruned every 6 h;
+  `tests/test_vfx_kept.py`) and a key memory
+  lacks is served from there AT ONCE — with its own time on the stamp — and
+  read again behind it ONCE (`refreshing`), as «Hisobotlar» does. Only a key
+  never read anywhere still waits.
 - **Nothing heavy is held whole.** A list whose rows carry every line of a
   document (timebooks) is read a few documents per page (`PAGE_SIZE`) and kept
   as one SUMMARY row per document (`project`); a document's lines are read when

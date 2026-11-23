@@ -342,8 +342,12 @@ export default function Reports() {
                 once with its last build and makes a newer one behind it. */}
             <span className="flex-shrink-0 inline-flex items-center gap-1.5 text-[11px] mt-1 whitespace-nowrap"
               role="status" aria-live="polite" style={{ color: "var(--text-3)" }}>
-              {updating && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
-              {updating ? T.updating : builtAt ? fill(T.builtAt, { at: builtAt }) : ""}
+              {/* The time stays; a newer build swaps in place under a quiet
+                  spinner whose slot is always kept (no text swap, no shift). */}
+              <Loader2 size={12} className={updating ? "animate-spin" : ""} aria-hidden="true"
+                style={{ visibility: updating ? "visible" : "hidden" }} />
+              {updating && <span className="sr-only">{T.updating}</span>}
+              {builtAt ? fill(T.builtAt, { at: builtAt }) : updating ? T.updating : ""}
             </span>
           </div>
           {LOCK_SECS.has(current?.key) && <CatLockNotice cats={catLocked} />}
