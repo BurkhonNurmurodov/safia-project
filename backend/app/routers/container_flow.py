@@ -146,6 +146,7 @@ class SettingsBody(BaseModel):
     notify_extra: Optional[bool] = None
     accept_step: Optional[bool] = None          # «Qabul qilish» open to logistics (2026-11-23)
     notify_unaccepted: Optional[bool] = None    # its 30-minute reminder
+    notify_accepted: Optional[bool] = None      # the word to the colleagues on an accept
 
 
 @router.put("/settings")
@@ -154,14 +155,16 @@ def put_settings(body: SettingsBody, db: Session = Depends(get_db),
     was = flow.settings(db)
     out = flow.save_settings(db, body.notify, body.notify_brigadirs, body.notify_axo,
                              body.notify_managers, body.notify_extra,
-                             accept_step=body.accept_step, notify_unaccepted=body.notify_unaccepted)
+                             accept_step=body.accept_step, notify_unaccepted=body.notify_unaccepted,
+                             notify_accepted=body.notify_accepted)
     action_log.enrich(changes=[("notify", was["notify"], out["notify"]),
                                ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"]),
                                ("notify_axo", was["notify_axo"], out["notify_axo"]),
                                ("notify_managers", was["notify_managers"], out["notify_managers"]),
                                ("notify_extra", was["notify_extra"], out["notify_extra"]),
                                ("accept_step", was["accept_step"], out["accept_step"]),
-                               ("notify_unaccepted", was["notify_unaccepted"], out["notify_unaccepted"])])
+                               ("notify_unaccepted", was["notify_unaccepted"], out["notify_unaccepted"]),
+                               ("notify_accepted", was["notify_accepted"], out["notify_accepted"])])
     return out
 
 
@@ -536,15 +539,18 @@ def post_requests_bulk(body: BulkBody, db: Session = Depends(get_db), payload: d
 def post_accept(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
     """«Qabul qilish» (2026-11-23): a logistics person takes a waiting request
     — theirs from now on, shown to every logistics person and AXO; the split
-    comes after it. Nobody is messaged: the page shows it, and the reminders
+    comes after it. The other logistics people are told in Telegram, once
+    (`notify_accepted` — only while the step is open to them); the reminders
     stop."""
     try:
-        r = flow.accept_request(db, request_id, _actor(payload), _me(db, payload),
-                                page_admin(db, payload, ADMIN_PAGE))
+        r, fresh = flow.accept_request(db, request_id, _actor(payload), _me(db, payload),
+                                       page_admin(db, payload, ADMIN_PAGE))
         db.commit()
     except flow.FlowError as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=e.code)
+    if fresh:
+        flow.notify_accepted_later(r.id)
     return _req_out(db, r, r.day)
 
 

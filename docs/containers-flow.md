@@ -581,8 +581,10 @@ After a review of the app the operator answered «make it» to two points:
     any logistics person on a request to everybody, the FIRST wins (the row
     is locked) — or an admin; a second accept by the same person changes
     nothing, a colleague's is refused `accepted`, a split one's `state`.
-    Accepting also opens it (`seen_at`). Nobody is messaged about an accept:
-    the page shows it, and the reminders stop.
+    Accepting also opens it (`seen_at`). The reminders stop, and the other
+    logistics people are told (below); AXO reads it on the page. It returns
+    (request, whether THIS call accepted it), so a repeated accept tells
+    nobody twice.
   - **The split and the delivery sit behind it** (`_accept_gate` in
     `assign_request` and `deliver_request`): an unaccepted request answers
     `accept_first` to whoever the step applies to; an accepted one is its
@@ -636,6 +638,22 @@ After a review of the app the operator answered «make it» to two points:
     (`notify_unaccepted`, ON as shipped). Claimed (`accept_reminded_at`,
     committed) before sending. Switching the step on reminds, at the next
     tick, about every request already waiting half an hour.
+  - **The colleagues are told** (`notify_accepted`; the operator, asked the
+    same day whether the other logistics people should also get a Telegram
+    message when one accepts: «Yes, add Telegram»): every OTHER logistics
+    person gets «✅ Konteyner so'rovi qabul qilindi» — the hour, the counts,
+    «Qabul qildi: {name} · {at}», «Endi uni shu logist taqsimlaydi», the
+    page's button; bell row `container_request_accepted`. Never the acceptor,
+    nor another profile of the same account (`skip_accounts` starts with the
+    acceptor's holders). Once per accept — the page's route and the bot's tap
+    both send it only for a NEW accept (the bot answers a repeated tap of the
+    acceptor `mine`: the same words on the card, no journal row, no message).
+    Three switches, like the reminder: the step (`accept_step` — an admin's
+    test tells nobody), the logistics messages (`notify`) and its own,
+    «Qabul qilinganda hamkasblarga» (`notify_accepted`, ON as shipped). A
+    colleague's own older card keeps its «Qabul qilish» button until they
+    tap it — then it says who took the request (the bot cannot edit a
+    message it kept no id of).
   - «Jurnal»: `containers.request_accepted` (the page's route, and the bot's
     tap with `via: bot`).
   - A tab from before this release shows no «Qabul qilish»; once the step is

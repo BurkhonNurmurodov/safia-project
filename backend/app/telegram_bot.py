@@ -6543,8 +6543,10 @@ def _cac_callback(call: types.CallbackQuery):
         logger.exception("container accept: the button failed for %s", tid)
         bot.answer_callback_query(call.id, flow.accept_text(lang, "failed"), show_alert=True)
         return
-    # what the card's button becomes; None = the card stays as it is
     if code == "done":
+        flow.notify_accepted_later(rid)         # the other logistics people, once
+    # what the card's button becomes ("mine": it was theirs already — the same words, nothing new)
+    if code in ("done", "mine"):
         label = flow.accept_text(lang, "done", at=at)
         bot.answer_callback_query(call.id, label)
     elif code == "accepted":

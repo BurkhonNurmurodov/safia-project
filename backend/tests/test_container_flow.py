@@ -1237,7 +1237,7 @@ class FlowTest(unittest.TestCase):
         yk = self._second_logist()
         part = [{"manager_id": 1, "counts": {"yellow": 30}}]
         cfg = flow.settings(self.db)
-        self.assertEqual((cfg["accept_step"], cfg["notify_unaccepted"]), (False, True))
+        self.assertEqual((cfg["accept_step"], cfg["notify_unaccepted"], cfg["notify_accepted"]), (False, True, True))
         # ── closed: a logistics person splits as before; an admin accepts first
         self.assertFalse(flow.accept_applies(self.db, False))
         self.assertTrue(flow.accept_applies(self.db, True))
@@ -1276,8 +1276,9 @@ class FlowTest(unittest.TestCase):
                 flow.accept_request(self.db, r3.id, "Stranger", "idle-owner:99999", False)
             self.assertEqual(cm.exception.code, "not_yours")
             self.db.rollback()
-            flow.accept_request(self.db, r3.id, "Second Logist", yk, False)
+            _r, fresh = flow.accept_request(self.db, r3.id, "Second Logist", yk, False)
             self.db.commit()
+            self.assertTrue(fresh)
         self.db.refresh(r3)
         self.assertEqual((r3.status, r3.logistics_key, r3.logistics_name, r3.accepted_by),
                          ("requested", yk, "Second Logist", "Second Logist"))
@@ -1288,7 +1289,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual((row["accepted_by"], row["status"]), ("Second Logist", "requested"))
         self.assertTrue(row["accepted_at"])
         # one's own again changes nothing; the colleague is refused — the accept and the split
-        flow.accept_request(self.db, r3.id, "Second Logist", yk, False)
+        self.assertFalse(flow.accept_request(self.db, r3.id, "Second Logist", yk, False)[1])   # nothing new
         self.db.commit()
         for fn in (lambda: flow.accept_request(self.db, r3.id, "Nuriddin aka", nk, False),
                    lambda: flow.assign_request(self.db, r3.id, part, None, None, "Nuriddin aka", nk, False)):
@@ -1372,7 +1373,18 @@ class FlowTest(unittest.TestCase):
             self.assertEqual((code, key, got.accepted_by, got.logistics_key), ("done", nk, "Nuriddin aka", nk))
             code, got, _k = flow.accept_from_bot(self.db, r.id, 6002)                # the colleague, a moment late
             self.assertEqual((code, got.accepted_by), ("accepted", "Nuriddin aka"))
-            self.assertEqual(flow.accept_from_bot(self.db, r.id, 6001)[0], "done")   # his own tap again
+            self.assertEqual(flow.accept_from_bot(self.db, r.id, 6001)[0], "mine")   # his own tap again: nothing new
+            # the colleague is told, once — never the acceptor; switched off or the step closed, nobody
+            sent.clear()
+            self.assertEqual(flow.notify_accepted(r.id), 1)
+            self.assertEqual([(s[0], s[1], s[3]) for s in sent], [(yk, "container_request_accepted", [None])])
+            self.assertIn("Qabul qildi: <b>Nuriddin aka</b> · 09:41", sent[0][2])
+            self.assertIn("12:00–13:00", sent[0][2])
+            flow.save_settings(self.db, notify_accepted=False)
+            self.assertEqual(flow.notify_accepted(r.id), 0)
+            flow.save_settings(self.db, notify_accepted=True, accept_step=False)
+            self.assertEqual(flow.notify_accepted(r.id), 0)          # an admin's test of the step tells nobody
+            flow.save_settings(self.db, accept_step=True)
             self.assertEqual(flow.accept_from_bot(self.db, 999999, 6001)[0], "gone")
             # accepted: no more reminders, and a changed request's card has nothing to accept
             self.assertEqual(flow.remind_unaccepted(self.db, self.at(10, 30)), 0)

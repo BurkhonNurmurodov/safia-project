@@ -6,7 +6,8 @@
 // «Jo'natish jadvali» (2026-11-19) heads the tab: AXO keeps it too, and sees
 // it alone — the switches and the readiness check stay the admins'.
 // «Qabul qilish» (2026-11-23) has a card of its own: the step is the admins'
-// alone until its switch is on, and its 30-minute reminder has its own.
+// alone until its switch is on; its 30-minute reminder and the word to the
+// colleagues on an accept each have their own.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BellRing, CheckCheck, ListChecks } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
@@ -40,6 +41,7 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved, is
     { which: "accept_step", label: t("cflow.set.acceptStep"), hint: t("cflow.set.acceptStepHint"),
       said: ["cflow.set.acceptOn", "cflow.set.acceptOff"] },
     { which: "notify_unaccepted", label: t("cflow.set.notifyUnaccepted"), hint: t("cflow.set.notifyUnacceptedHint") },
+    { which: "notify_accepted", label: t("cflow.set.notifyAccepted"), hint: t("cflow.set.notifyAcceptedHint") },
   ];
   const switchRow = (s) => (
     <div key={s.which} className="grid grid-cols-1 sm:grid-cols-[200px_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
