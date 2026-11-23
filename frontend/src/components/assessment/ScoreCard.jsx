@@ -89,8 +89,8 @@ export default function ScoreCard({ aid, data, onChanged, onSubmitted, toast }) 
   const verdictsRef = useRef({});
   useEffect(() => { verdictsRef.current = verdicts; }, [verdicts]);
 
-  // Seed from the server once per scorecard (a seat move keeps the same id),
-  // and open the first question still waiting for a verdict.
+  // Seed from the server once per scorecard (each seat a person holds is a
+  // scorecard of its own), and open the first question still waiting for a verdict.
   useEffect(() => {
     const v = {}, n = {};
     Object.entries(mine.grades || {}).forEach(([k, g]) => {

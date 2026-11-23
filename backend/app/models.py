@@ -5770,8 +5770,10 @@ class AssessmentItem(Base):
 
 class JudgeEvaluation(Base):
     """One judge's scorecard: one department seat of one assessment. The seat
-    belongs to a PROFILE (`judge_key`), so one person never holds two seats of
-    one sitting. Submitted = final; drafts are visible to their judge only."""
+    belongs to a PROFILE (`judge_key`). One person may hold several seats of a
+    sitting (2026-11-23): the first under their own key, each further one under
+    «<key>#<department>», so `uq_assessment_eval_judge` holds either way.
+    Submitted = final; drafts are visible to their judge only."""
     __tablename__ = "assessment_evaluations"
     __table_args__ = (
         UniqueConstraint("assessment_id", "department", name="uq_assessment_eval_seat"),

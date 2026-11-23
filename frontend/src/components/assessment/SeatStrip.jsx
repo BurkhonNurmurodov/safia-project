@@ -44,10 +44,11 @@ export function SeatRing({ seat, current, size = 30 }) {
 /**
  * The panel: five department seats, live. Each says who sits there and how
  * far their scorecard is — never a verdict (the panel stays independent). A
- * free seat is claimable; the viewer's own unsubmitted seat can be left; an
- * admin can free anybody's unsubmitted seat.
+ * free seat is claimable — by somebody who already holds one too: one person
+ * may hold several seats and opens each from here; the viewer's own
+ * unsubmitted seat can be left; an admin can free anybody's unsubmitted seat.
  */
-export default function SeatStrip({ seats, rights, mine, current, onClaim, onLeave, onRelease, onSwitch, busyDept }) {
+export default function SeatStrip({ seats, rights, current, onClaim, onLeave, onRelease, onSwitch, busyDept }) {
   const T = useAT();
   const { tl } = useTranslit();
   return (
@@ -81,9 +82,9 @@ export default function SeatStrip({ seats, rights, mine, current, onClaim, onLea
             </div>
             <div className="flex-shrink-0 lg:mt-auto">
               {free && rights.claim && (
-                <Button size="sm" variant={mine && !rights.multi_seat ? "secondary" : "primary"} loading={busyDept === s.department}
+                <Button size="sm" variant="primary" loading={busyDept === s.department}
                   onClick={() => onClaim(s)} className="lg:w-full">
-                  {mine && !rights.multi_seat ? T.moveHere : T.takeSeat}
+                  {T.takeSeat}
                 </Button>
               )}
               {s.mine && !onScreen && (

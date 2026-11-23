@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Lock, LockOpen, Shuffle, Trash2, Info, FlaskConical, ChevronDown } from "lucide-react";
@@ -43,9 +43,9 @@ export default function AssessmentGrade() {
   const toast = useToast();
   const canPeople = useCanOpen("people");
   const key = ["assessment", id];
-  // The seat on screen. One person holds one seat — except in TEST MODE (a
-  // sitting drawn from the sample questions), where an admin holds several and
-  // switches between them; null = the server's pick (their open one first).
+  // The seat on screen. One person may hold several seats of a sitting — up
+  // to all five (the operator, 2026-11-23) — and switches between them;
+  // null = the server's pick (their open one first).
   const [seat, setSeat] = useState(null);
 
   const det = useQuery({
@@ -63,12 +63,15 @@ export default function AssessmentGrade() {
 
   const [tab, setTab] = useState(null);
   // A judge with an open scorecard lands on it — also the moment they take a
-  // seat; everybody else (and a submitted judge) on the results.
+  // seat; everybody else (and a submitted judge) on the results. A seat OPENED
+  // from the panel («Varaqni ko'rish») lands on its scorecard, submitted or not.
   const mineId = mine?.id ?? null;
   const loaded = !!d;
+  const openCard = useRef(false);
   useEffect(() => {
     if (!loaded) return;
-    setTab(mineId && !mine?.submitted_at ? "card" : "results");
+    setTab(mineId && (openCard.current || !mine?.submitted_at) ? "card" : "results");
+    openCard.current = false;
   }, [mineId, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = mine ? tab || "card" : "results";
 
@@ -96,10 +99,9 @@ export default function AssessmentGrade() {
     },
   });
 
+  // A free seat is taken as ONE MORE scorecard of this person's; the seats
+  // already held stay as they are.
   const claim = (s) => {
-    // Holding a seat already means MOVING it — except in test mode, where an
-    // admin takes the new seat as one more scorecard.
-    if (mine && !d?.rights?.multi_seat) { setAskErr(null); setAsk({ kind: "move", seat: s }); return; }
     act.mutate({ method: "post", url: `/api/assessment/assessments/${id}/seat`,
       body: { department: s.department }, seat: s.department });
   };
@@ -130,7 +132,7 @@ export default function AssessmentGrade() {
 
   const r = d.rights;
   const pendingJudges = d.seats.filter((s) => s.judge_name && !s.submitted).length;
-  // Verdicts or notes this judge has on their own questions (a move drops them).
+  // Verdicts or notes on the seat on screen (leaving the seat drops them).
   const myEntered = mine ? Object.values(mine.grades || {}).filter((g) => g.verdict || g.note).length : 0;
   // A test sitting may be deleted after grading; its confirm then says the grades go too.
   const anyGraded = d.seats.some((s) => s.graded > 0 || s.submitted);
@@ -139,15 +141,6 @@ export default function AssessmentGrade() {
   const panelShown = mustPick || panelOpen || (!mine && !phone);
 
   const dialogs = {
-    move: ask?.seat && mine && {
-      // A judge grades their own department's questions only, so whatever was
-      // given as the old department is deleted by the move — said before it.
-      title: T.moveSeatTitle, tone: myEntered ? "danger" : "warning", confirm: T.move,
-      message: fill(T.moveSeatMsg, { from: T.dept[mine.department], to: T.dept[ask.seat.department] })
-        + (myEntered ? ` ${fill(T.moveLoss, { n: myEntered, from: T.dept[mine.department] })}` : ""),
-      run: { method: "post", url: `/api/assessment/assessments/${id}/seat`,
-        body: { department: ask.seat.department, from: mine.department }, seat: ask.seat.department },
-    },
     leave: ask?.seat && {
       title: T.leaveTitle, tone: "danger", confirm: T.leave,
       message: myEntered ? fill(T.leaveMsg, { n: myEntered }) : T.leaveMsgEmpty,
@@ -291,8 +284,8 @@ export default function AssessmentGrade() {
                       <Info size={13} aria-hidden="true" />{T.notJudge}
                     </div>
                   )}
-                  <SeatStrip seats={d.seats} rights={r} mine={mine} current={mine?.department}
-                    onSwitch={(s) => setSeat(s.department)}
+                  <SeatStrip seats={d.seats} rights={r} current={mine?.department}
+                    onSwitch={(s) => { openCard.current = true; setSeat(s.department); }}
                     busyDept={act.isPending && act.variables?.body?.department && !ask ? act.variables.body.department : null}
                     onClaim={claim}
                     onLeave={(s) => openAsk("leave", s)}
@@ -307,7 +300,7 @@ export default function AssessmentGrade() {
           <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-xs leading-relaxed"
             style={{ background: "rgba(var(--brand-rgb),0.07)", border: "1px dashed rgba(var(--brand-rgb),0.4)", color: "var(--text-2)" }}>
             <FlaskConical size={14} className="mt-[1px] shrink-0" style={{ color: "var(--brand-text)" }} aria-hidden="true" />
-            <span>{r.multi_seat ? T.testBanner : T.testBannerJudge}</span>
+            <span>{T.testBanner}</span>
           </div>
         )}
 

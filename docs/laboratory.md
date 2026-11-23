@@ -231,11 +231,33 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   whose department drew nothing (impossible for the five departments today)
   would see a note and submit the overall feedback alone.
 - **A seat belongs to the PROFILE** (`identity.viewer_profile_key`, else
-  `tg:<account>`): one person never holds two seats of one sitting. Anybody who
-  may open the page claims a free seat; a judge may MOVE an unsubmitted
-  scorecard to another free seat — the grades given as the old department are
-  deleted by the move (`dropped`, said in the confirm first); the seat's judge
-  or an admin may free an unsubmitted seat (its grades go).
+  `tg:<account>`). Anybody who may open the page claims a free seat; the
+  seat's judge or an admin may free an unsubmitted seat (its grades go).
+- **One person may hold SEVERAL seats of a sitting — up to all five**
+  (2026-11-23, the operator, who had submitted Kaizen for a candidate and
+  found Production closed to him: «one person should be able to grade in terms
+  of all departments not just one»). Until that day one person held ONE seat
+  on a real sitting, and several were test mode's alone (an admin's). Now
+  `claim_seat` gives anybody who may open the page every free seat they ask
+  for, as ONE MORE scorecard: the first under their own key, each further one
+  under «<key>#<department>» (so `uq_assessment_eval_judge` still holds;
+  `_is_mine` knows both). A seat still grades only its own department's
+  questions, is graded, given its own overall feedback and submitted BY
+  ITSELF, and taking one touches none already held — a submitted scorecard
+  stays final. The seat on screen is the `seat` query parameter on the
+  detail, the grade and feedback autosaves and the submit (`_pick_mine`: that
+  seat, else the first open one). On the panel a free seat always says «Shu
+  o'rinni olish», the viewer's other seats «Shu o'rinda baholash» (open) /
+  «Varaqni ko'rish» (submitted — it opens on the scorecard, read-only), and
+  the pick-a-seat line says a person may take several. **The MOVE is gone
+  with it** (a judge used to move an unsubmitted scorecard to another free
+  seat, losing the old department's grades — `from`, `dropped`, the «Bo'limni
+  almashtirasizmi?» confirm): a wrong seat is left («Chiqish») and the right
+  one taken. `rights.multi_seat` is always true and stays in the payload only
+  for a tab opened before v4.642.0, which would otherwise offer the move; a
+  `from` such a tab sends is ignored. One person submitting all five closes
+  the sitting like any fifth submission. Pinned by
+  `tests/test_assessment_seats.py` (Postgres; a non-admin on a real sitting).
 - **Grading is saved per tap**: `PUT /api/assessment/draft/{id}/grades/{item}`
   (`verdict` and/or `note`, a key left out is left alone) and
   `PUT …/draft/{id}/feedback` (debounced, flushed on blur). `/api/assessment/draft/`
@@ -247,7 +269,10 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   the sitting by itself (`closed_by: auto`).
 - **The panel stays independent**: a viewer holding an UNSUBMITTED seat gets
   no results (`results_hidden: "own_pending"`) — on the page and in the list —
-  only every seat's progress (x/own count, submitted). Results fold SUBMITTED
+  only every seat's progress (x/own count, submitted). Somebody holding
+  several seats reads none until EVERY scorecard of theirs is in, whichever
+  seat is on screen (`_hidden` without `current`); a test sitting alone keeps
+  the seat-on-screen rule below. Results fold SUBMITTED
   scorecards only, each grade on its own department's questions alone: pass ÷
   graded overall, per judge, per type; every question with its one verdict and
   note («Topshirmagan» while its judge has not submitted); every judge's
@@ -377,17 +402,14 @@ Judge Grading Dashboard) + `components/assessment/` the page, words in
   back. The endpoints and `SAMPLE_SOURCE` stay; delete the seed module, its
   function and both calls once the flag reads «done».
 - **TEST MODE** (the operator, 2026-10-31: «add test mode»): a sitting drawn
-  from at least one sample question (`_is_test`) lets an ADMIN hold every seat
-  and grade them in turn — the first seat under their own key, each further one
-  under «<key>#<department>» (so `uq_assessment_eval_judge` still holds). The
-  seat on screen is a `seat` query parameter on the detail, the grade and
-  feedback autosaves and the submit (`_pick_mine`: that seat, else the first
-  open one); the results rule is that seat's (`_hidden(current=…)`), the list's
-  is «any of my seats open». The page shows a banner, dashes the admin's other
-  seats with «Shu o'rinda baholash» / «Varaqni ko'rish», and a free seat says
-  «Shu o'rinni olish» rather than offering a move. A non-admin, and everybody
-  on a REAL sitting, keeps one seat (a second claim moves it, `from`). The mode
-  ends with the samples: removing them deletes every test sitting. **A test
+  from at least one sample question (`_is_test`). It was built so an ADMIN
+  could hold every seat and grade them in turn; **holding several seats is
+  everybody's on every sitting since 2026-11-23** (above), so what the mode
+  still means is: the page's banner (one text for everybody now), the results
+  rule being the seat on screen's (`_hidden(current=…)` — what that seat's
+  judge would see; the list's is «any of my seats open»), and the delete
+  below. The mode ends with the samples: removing them deletes every test
+  sitting. **A test
   sitting may be deleted ONE at a time, graded or not** (the operator,
   2026-10-31, asked: «Test ones only»): its grades are test grades, so
   `rights.delete` is `admin and (test or not work)` and the confirm says the
