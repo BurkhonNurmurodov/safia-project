@@ -1279,6 +1279,19 @@ narrows the BRIGADIR side only**:
   `/units` (now with `factory_id`) spans more than one, and lists them plant by
   plant after those with room. A request is still split across both.
 
+### AXO's comment opens on ONE click (2026-11-23)
+
+The operator, pointing at
+the note icon on «Konteyner so'rovlari»: «make it visible after one click and
+I want to see what kind of comment AXO wrote». The icon was a hover `title`,
+which a phone never shows and a laptop shows only after a pause. It is now
+the `Tooltip` template (`icon={MessageSquareText}`): a click opens a small
+card — «Izoh · <who wrote it>» and the comment — and it stays open until the
+next click, a click elsewhere, Escape or a scroll. The template itself
+learned this: a click PINS it (it used to toggle, so a mouse already hovering
+closed it on the click), and it takes `icon` / `color` / `label`. The phone
+cards were already printing the comment in full under each request.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

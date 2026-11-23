@@ -25,6 +25,7 @@ import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import CountStepper from "../ui/CountStepper";
 import ActionMenu from "../ui/ActionMenu";
+import Tooltip from "../ui/Tooltip";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { SplitBar, SplitLegend } from "../ui/Meter";
@@ -495,10 +496,20 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAcc
         <span className="flex items-center gap-2.5 min-w-0">
           <FromTo r={r} t={t} tl={tl} />
           {r.accepted_at ? <AcceptMark r={r} t={t} tl={tl} me={me} /> : !addressee && <SeenMark r={r} t={t} now={now} />}
+          {/* AXO's comment opens on ONE click (2026-11-23, the operator: «make it
+              visible after one click and I want to see what kind of comment AXO
+              wrote») — it was a hover title, which a phone never shows */}
           {r.note && (
-            <span className="inline-flex shrink-0" title={r.note} aria-label={r.note}>
-              <MessageSquareText size={13} style={{ color: "var(--text-3)" }} />
-            </span>
+            <Tooltip icon={MessageSquareText} size={14} color="var(--text-2)" width="18rem"
+              label={`${t("cflow.comment")}: ${tx(r.note)}`}
+              text={(
+                <>
+                  <span className="block mb-1 font-semibold" style={{ color: "var(--text-1)" }}>
+                    {t("cflow.comment")} · {tl(r.created_by) || "—"}
+                  </span>
+                  <span className="block text-xs" style={{ color: "var(--text-1)" }}>{tx(r.note)}</span>
+                </>
+              )} />
           )}
         </span>
       </td>

@@ -12,9 +12,20 @@ import useLeaveRef from "../../hooks/useLeaveRef";
  * cropped by the navbar on the top-row KPI cards. It prefers to sit above the
  * icon, flips below when there isn't room (e.g. near the navbar), and is
  * clamped horizontally so it stays inside the viewport.
+ *
+ * A CLICK keeps it open (2026-11-23): hover shows it and leaving hides it,
+ * but a click pins it until the next click, a tap elsewhere, Escape or a
+ * scroll. It used to TOGGLE — and a mouse is already hovering when it clicks,
+ * so the click closed what the hover had just opened; on a phone the emulated
+ * mouseenter before the tap did the same. One click now always shows it.
+ *
+ * `icon` (a lucide component, default ⓘ) and `color` let a mark that carries
+ * CONTENT use it — the container requests' note icon shows AXO's comment
+ * (`text` may be a node; `label` is then its spoken form).
  */
-export default function Tooltip({ text, size = 11, width = "14rem" }) {
+export default function Tooltip({ text, size = 11, width = "14rem", icon: Icon = Info, color = "var(--text-4)", label }) {
   const [show, setShow] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const triggerRef = useRef(null);
   const tipRef = useRef(null);
   const setTip = useLeaveRef(tipRef); // fades out, so sweeping across icons does not flicker
@@ -45,8 +56,8 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
   // While open, drift would look broken on scroll/resize — just close it.
   useEffect(() => {
     if (!show) return;
-    const close = () => setShow(false);
-    const onDown = (e) => { if (!triggerRef.current?.contains(e.target)) setShow(false); };
+    const close = () => { setShow(false); setPinned(false); };
+    const onDown = (e) => { if (!triggerRef.current?.contains(e.target)) close(); };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     document.addEventListener("pointerdown", onDown);
@@ -65,22 +76,23 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
       // and the outer control is the keyboard's target there.
       role={nested ? undefined : "button"}
       tabIndex={nested ? undefined : 0}
-      aria-label={!nested && typeof text === "string" ? text : undefined}
+      aria-label={nested ? undefined : label ?? (typeof text === "string" ? text : undefined)}
+      aria-expanded={nested ? undefined : show}
       className="cursor-help ml-0.5 inline-flex items-center flex-shrink-0 relative rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
-      style={{ color: "var(--text-4)" }}
+      style={{ color }}
       onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-      onClick={(e) => { e.stopPropagation(); setShow((v) => !v); }}
+      onMouseLeave={() => { if (!pinned) setShow(false); }}
+      onClick={(e) => { e.stopPropagation(); setShow(!pinned); setPinned(!pinned); }}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setShow((v) => !v); }
-        else if (e.key === "Escape" && show) { e.preventDefault(); setShow(false); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setShow(!pinned); setPinned(!pinned); }
+        else if (e.key === "Escape" && show) { e.preventDefault(); setShow(false); setPinned(false); }
       }}
     >
       {/* A finger needs ~44px: the 11px icon alone is a target nobody can hit.
           The invisible pad grows the tap area on touch screens without moving
           anything around it (absolutely positioned, phones only). */}
       <span aria-hidden="true" className="absolute -inset-4 sm:hidden" />
-      <Info size={size} />
+      <Icon size={size} />
       {show &&
         createPortal(
           <span
