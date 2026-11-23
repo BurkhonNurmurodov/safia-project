@@ -28,7 +28,7 @@ const hrs = (h) => (h == null ? "—" : `${Math.round(h * 10) / 10}`);
 export default function VfxTimebooks() {
   const { t } = useLang();
   const { tx } = useTranslit();
-  const [q, refresh] = useRegister(["timebooks"], "/timebooks");
+  const [q, refresh, st] = useRegister(["timebooks"], "/timebooks");
   const d = q.data;
   const [search, setSearch] = useState("");
   const [monthSel, setMonthSel] = usePersistentState("vfx_tb_month", []);
@@ -82,11 +82,11 @@ export default function VfxTimebooks() {
       <div className="space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm flex-1 min-w-[240px] max-w-3xl" style={{ color: "var(--text-2)" }}>{t("vfx.tb.lead")}</p>
-          <FetchedAt at={d?.section?.at} today={d?.today} />
-          <RefreshButton busy={q.isFetching || !!d?.loading} onClick={refresh} />
+          <FetchedAt at={d?.section?.at} today={d?.today} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
 
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPICard label={t("vfx.tb.k.count")} icon={BookOpenCheck} value={d ? num(all.length) : sk} />
@@ -153,7 +153,7 @@ function TimebookModal({ id, onClose }) {
       title={h ? fill(t("vfx.tb.modalTitle"), { n: String(h.num || "").replace(/^0+/, "") || h.id }) : t("vfx.loading")}
       subtitle={h ? `${monthLabel(t, h.month)} · ${span(h.begin, h.end)}${h.div_name ? ` · ${tx(h.div_name)}` : ""}` : null}
       footer={<Button variant="secondary" onClick={onClose}>{t("vfx.close")}</Button>}>
-      {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} />
+      {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} />
         : d?.error && !h ? <SectionNote s={{ error: d.error }} form="Табель" />
         : !d || (d.loading && !h) ? <SkeletonTable rows={6} cols={5} />
         : staff ? (

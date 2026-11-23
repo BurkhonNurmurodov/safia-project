@@ -171,7 +171,10 @@ export default function LeadersKpi() {
     refetchInterval: 4000,
     staleTime: 0,
   });
-  const recalcing = !!watch || boardReading || recalcM.isPending;
+  // The button turns only for a PRESS. The page's own run on open (and a
+  // nightly read) stays silent: the figures on screen are swapped in place
+  // when it ends — the page never looks like it is refreshing itself.
+  const pressed = !!watch?.manual || (recalcM.isPending && recalcM.variables?.auto === false);
   useEffect(() => {
     const r = recalcQ.data;
     if (!r || r.running || (!watch && !boardReading)) return;
@@ -348,13 +351,13 @@ export default function LeadersKpi() {
       <FilterPanel sections={sections} />
       <SearchInput value={q} onChange={setQ} placeholder={T.search} className="flex-1 min-w-[160px] max-w-xs" />
       <Button size="lg" variant="secondary" className="ml-auto" title={T.recalcHint} aria-label={T.recalc}
-        icon={<RefreshCw size={15} className={recalcing ? "animate-spin" : ""} />}
+        icon={<RefreshCw size={15} className={pressed ? "animate-spin" : ""} />}
         // Disabled only under a PRESS: one made during the page's own run on
         // open is queued by the server and runs the moment that one ends
         // (2026-11-16 — presses under a disabled button were lost twice).
-        disabled={!!watch?.manual || (recalcM.isPending && recalcM.variables?.auto === false)}
+        disabled={pressed}
         onClick={() => recalcM.mutate({ auto: false })}>
-        <span className="max-sm:hidden">{recalcing ? T.recalcRunning : T.recalc}</span>
+        <span className="max-sm:hidden">{pressed ? T.recalcRunning : T.recalc}</span>
       </Button>
       <Button size="lg" variant="secondary" icon={<FileSpreadsheet size={15} />}
         loading={exporting} disabled={!showMonth} onClick={runExport}>

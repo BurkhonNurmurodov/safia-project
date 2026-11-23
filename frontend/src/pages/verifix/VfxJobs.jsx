@@ -26,7 +26,7 @@ const weekday = (iso) => new Date(`${iso}T12:00:00`).getDay() || 7;     // 1 = M
 export default function VfxJobs() {
   const { t } = useLang();
   const { tx } = useTranslit();
-  const [q, refresh] = useVfx(["jobs"], "/jobs");
+  const [q, refresh, st] = useVfx(["jobs"], "/jobs");
   const [tab, setTab] = usePersistentState("vfx_jobs_tab", "jobs");
   const [search, setSearch] = useState("");
   const [sched, setSched] = useState(null);
@@ -82,8 +82,8 @@ export default function VfxJobs() {
         <SegmentedToggle asTabs value={tab} onChange={setTab} options={TABS.map((v) => ({ value: v, label: t(`vfx.jobs.tab.${v}`) }))} />
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-sm flex-1 min-w-[240px] max-w-3xl" style={{ color: "var(--text-2)" }}>{t(`vfx.jobs.lead.${tab}`)}</p>
-          {tab !== "more" && <FetchedAt at={d?.fetched_at} />}
-          {tab !== "more" && <RefreshButton busy={q.isFetching} onClick={refresh} />}
+          {tab !== "more" && <FetchedAt at={d?.fetched_at} updating={st.updating} />}
+          {tab !== "more" && <RefreshButton busy={st.busy} onClick={refresh} />}
         </div>
 
         {tab === "more" ? (
@@ -94,7 +94,7 @@ export default function VfxJobs() {
             <RawPanel methodKey="pro/robot$list" title={t("vfx.jobs.more.robot")} form="Positions" />
             <RawPanel methodKey="core/dismissal_reason$list" title={t("vfx.jobs.more.dismissal")} form="Причины увольнения" />
           </div>
-        ) : q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : tab === "jobs" ? (
+        ) : q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : tab === "jobs" ? (
           <VfxTable icon={Briefcase} title={t("vfx.jobs.tab.jobs")} right={count(jobs.length)} toolbar={toolbar}
             rows={jobs} columns={jobCols} rowKey={(j) => j.id} loading={!d}
             defaultSort={{ key: "people", dir: "desc" }} sortStoreKey="vfx_jobs_sort" />
@@ -162,7 +162,7 @@ function ScheduleModal({ s, onClose }) {
     <Modal onClose={onClose} title={tx(s.name)} icon={CalendarClock} maxWidth="max-w-2xl"
       subtitle={[s.kind ? t(`vfx.skind.${s.kind}`) : null, fill(t("vfx.jobs.peopleN"), { n: num(s.people) })].filter(Boolean).join(" · ")}
       footer={<Button variant="secondary" onClick={onClose}>{t("vfx.close")}</Button>}>
-      {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : !d ? <SkeletonTable rows={6} cols={4} /> : (
+      {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : !d ? <SkeletonTable rows={6} cols={4} /> : (
         <>
           <div className="flex flex-wrap gap-2 text-xs">
             <span style={{ color: "var(--text-3)" }}>{fill(t("vfx.jobs.yearCounts"), { y: d.year })}</span>

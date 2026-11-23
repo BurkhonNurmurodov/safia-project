@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Loader2, TriangleAlert, Check, X, RefreshCw } from "lucide-react";
+import { Loader2, TriangleAlert, Check, X } from "lucide-react";
 import DateRangePicker from "../ui/DateRangePicker";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -34,7 +34,7 @@ function Line({ icon: Icon, spin, color, children }) {
 }
 
 /** A register's own state, said where its rows are: closed to the role (with
- * the Verifix form to attach), still arriving, refreshing, or cut short. */
+ * the Verifix form to attach), still arriving, or cut short. */
 export function SectionNote({ s, form }) {
   const { t } = useLang();
   if (!s) return null;
@@ -42,7 +42,7 @@ export function SectionNote({ s, form }) {
   if (s.loading) {
     return <Line icon={Loader2} spin>{fill(t("vfx.r.loadingPages"), { n: num(s.pages || 0) })}</Line>;
   }
-  if (s.refreshing) return <Line icon={RefreshCw} spin>{t("vfx.r.refreshing")}</Line>;
+  // A list being read again keeps its rows; the page's stamp turns (FetchedAt).
   if (s.partial) {
     return (
       <Line icon={TriangleAlert} color={C_WARN}>

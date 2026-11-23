@@ -37,7 +37,7 @@ export default function VfxHrMoves() {
   const { t } = useLang();
   const { tl, tx } = useTranslit();
   const [from, to, setFrom, setTo] = useRange("vfx_hr", 30);
-  const [q, refresh] = useRegister(["hr"], "/hr", { begin: from, end: to });
+  const [q, refresh, st] = useRegister(["hr"], "/hr", { begin: from, end: to });
   const d = q.data;
   const [tab, setTab] = usePersistentState("vfx_hr_tab", "hire");
   const [search, setSearch] = useState("");
@@ -117,11 +117,11 @@ export default function VfxHrMoves() {
         <div className="flex items-center gap-2 flex-wrap">
           <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} max={localISO(new Date())} />
           <p className="text-sm flex-1 min-w-[200px] max-w-2xl" style={{ color: "var(--text-2)" }}>{t("vfx.hr.lead")}</p>
-          <FetchedAt at={sec?.at} today={d?.today} />
-          <RefreshButton busy={q.isFetching || !!d?.loading} onClick={refresh} />
+          <FetchedAt at={sec?.at} today={d?.today} updating={st.updating} />
+          <RefreshButton busy={st.busy} onClick={refresh} />
         </div>
 
-        {q.error ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
+        {q.error && !q.data ? <VfxError error={vfxError(q.error)} onRetry={() => q.refetch()} /> : (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPICard label={t("vfx.hr.k.hired")} icon={UserPlus} value={d ? num(hired) : sk}

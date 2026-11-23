@@ -3,7 +3,7 @@ import { localISO } from "../ui/DateRangePicker";
 import { OptsFilter, PickFilter } from "../ui/ColumnFilter";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { usePersistentState } from "../../hooks/usePersistentState";
-import { useVfx, dmy, hm, shiftISO } from "./vfx";
+import { useVfx, LIVE_MS, dmy, hm, shiftISO } from "./vfx";
 
 /* Phase 2 of «Verifix (test)» — the hooks, formatters and filter builders
  * the nine register pages share. The components they share live in
@@ -13,10 +13,11 @@ import { useVfx, dmy, hm, shiftISO } from "./vfx";
 
 /** A register read. A big Verifix list is read in the BACKGROUND on the
  * server: an answer may carry `loading: true` with the pages that have
- * arrived, and this asks again every 2.5 s until the list is whole. */
+ * arrived, and this asks again every 2.5 s until the list is whole — then
+ * once a minute, live, like every Verifix page (`useVfx`). */
 export function useRegister(key, path, params) {
   return useVfx(key, path, params, {
-    refetchInterval: (query) => (query.state.data?.loading ? 2500 : false),
+    refetchInterval: (query) => (query.state.data?.loading ? 2500 : LIVE_MS),
   });
 }
 

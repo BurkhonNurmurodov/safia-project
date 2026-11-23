@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import {
-  PlugZap, ShieldOff, KeyRound, CloudOff, Hourglass, TriangleAlert, Lock, RefreshCw, CircleSlash,
+  PlugZap, ShieldOff, KeyRound, CloudOff, Hourglass, TriangleAlert, Lock, RefreshCw, CircleSlash, Loader2,
 } from "lucide-react";
 import EmptyState from "../ui/EmptyState";
 import Button from "../ui/Button";
@@ -98,13 +98,19 @@ export function CellChip({ cell, compact = false }) {
   );
 }
 
-/** «Verifix · 14:32 holatiga» — when the shown data was read. */
-export function FetchedAt({ at, today }) {
+/** «Verifix · 14:32 holatiga» — when the shown data was read. `updating`:
+ * a newer read is on its way and will replace it in place — a small spinner
+ * in a slot that is always kept, so nothing beside it moves. */
+export function FetchedAt({ at, today, updating = false }) {
   const { t } = useLang();
   if (!at) return null;
   const sameDay = !today || at.slice(0, 10) === today;
   return (
-    <span className="text-[11px] whitespace-nowrap tabular-nums" style={{ color: "var(--text-3)" }}>
+    <span className="inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap tabular-nums"
+      role="status" aria-live="polite" style={{ color: "var(--text-3)" }}>
+      <Loader2 size={11} className={updating ? "animate-spin" : ""} aria-hidden="true"
+        style={{ visibility: updating ? "visible" : "hidden" }} />
+      {updating && <span className="sr-only">{t("leaderboard.updating")}</span>}
       {fill(t("vfx.asOf"), { at: sameDay ? hm(at) : `${dmy(at)} ${hm(at)}` })}
     </span>
   );
