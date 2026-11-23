@@ -133,11 +133,14 @@ after, through the report door.
 - **Two years from 2026-11-23** (`DAYS` 365 → 730; the operator: «if you
   need more data, take as much as it needed»). The first year, read whole
   on 2026-11-23 (20,587 rows, 11 Nov 2025 – 21 Nov 2026, five door asks by
-  date range), holds ONE of each holiday — New Year, Navruz, both Eids — and
-  one Ramadan, the days the forecast misses most, so a «same holiday last
-  year» rule could not be checked against anything. The job reads the
-  second year back the same way, newest first, after the deploy that ships
-  it; a week Verifix has nothing for is stored as empty days.
+  date range), holds ONE of each holiday that empties the plant — New Year
+  and the two Eids, the days the forecast misses most — so a «same holiday
+  last year» rule could not be checked against anything. (Navruz, 8 March,
+  9 May, 1 September and 1 October do not: each stays at ≥ 0.90 of a normal
+  day of its weekday; nor does Ramadan outside its Eid.) The job read the
+  second year back the same way, newest first, within an hour of the deploy
+  that shipped it: all 730 days, 22 Nov 2024 – 21 Nov 2026, real counts in
+  both years.
 - **What it is for — NOT built yet**: the analysis (turnout per shift window
   by weekday / month / season, how early people clock in and how late they
   leave) and, from it, the forecast of the shifts that have not started. Ask
