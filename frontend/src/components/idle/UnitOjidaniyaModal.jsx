@@ -53,12 +53,12 @@ import api from "../../utils/api";
  */
 
 // The five measured columns (category · start · end · minutes · status) come
-// to 528px and the note takes whatever is left — but never less than this.
+// to 618px and the note takes whatever is left — but never less than this.
 // Under the sum of the two the table scrolls inside its own container instead
 // of crushing the reason column: a phone reads the note by scrolling to it,
 // not by guessing at three words.
 const NOTE_MIN_W = 260;
-const TABLE_MIN_W = 528 + NOTE_MIN_W;
+const TABLE_MIN_W = 618 + NOTE_MIN_W;
 
 // N is FRACTIONAL — a worker split across two cells is a fraction of a person
 // in each, and a work centre several cells name has its typed number split
@@ -417,7 +417,9 @@ function CellBlock({ cell, t, tl, fmt, S }) {
                 [t("idleCell.startTime"), "left", 84],
                 [t("idleCell.endTime"), "left", 84],
                 [t("idleCell.colMinutes"), "right", 90],
-                [t("idleCell.colStatus"), "left", 120],
+                // Wide enough for both badges side by side («To'xtamaganda» +
+                // «12 tozalovchi») — one line, never stacked.
+                [t("idleCell.colStatus"), "left", 210],
                 // The note has no fixed width — it takes whatever the five
                 // measured columns leave — but it does have a FLOOR, because a
                 // reason squeezed into 90px is a reason nobody reads.
@@ -448,6 +450,7 @@ function CellBlock({ cell, t, tl, fmt, S }) {
                   {fmt(iv.minutes)}
                 </td>
                 <td className="px-3 py-2">
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap align-middle">
                   {/* Did the cell STOP for this one — the fact that decides
                       whether the minutes are downtime at all. */}
                   <span
@@ -463,13 +466,14 @@ function CellBlock({ cell, t, tl, fmt, S }) {
                       whole cell, in the figure the bar was built from. */}
                   {Number.isInteger(iv.cleaners) && (
                     <span
-                      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1 tabular-nums"
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums"
                       style={{ background: "rgba(148,163,184,0.14)", color: "var(--text-2)", border: "1px solid rgba(148,163,184,0.35)" }}
                       title={t("idleCell.cleaners")}
                     >
                       <Users size={9} />{t("idleCell.cleanersN").replace("{n}", String(iv.cleaners))}
                     </span>
                   )}
+                  </span>
                 </td>
                 <td
                   className="px-3 py-2 align-top"
