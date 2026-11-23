@@ -32,6 +32,8 @@ import { nameHue } from "../ui/ProfileAvatar";
 import { useTranslit } from "../../utils/transliterate";
 import { surnameInitial } from "../../utils/personName";
 import api from "../../utils/api";
+import { useLang } from "../../context/LangContext";
+import { useFactory, factoryName } from "../../context/FactoryContext";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
   useNow, minsTo, hourStartMs, durText, DueText, countsText, CountPills, UNSEEN_WARN_MIN, STAGE_COLORS, SOON_MIN,
@@ -1225,7 +1227,9 @@ const blankRow = () => ({ id: rowSeq++, unit: null, counts: {}, need: null });
 // request, no limit, nobody confirms it. It starts as every dispatch container
 // and lid asked; a crate may go there too when the day needs it.
 function AssignModal({ t, r, onClose, onDone, onFail }) {
-  const { tl } = useTranslit();
+  const { tl, tx } = useTranslit();
+  const { lang } = useLang();
+  const { factories } = useFactory();
   const types = KEYS.filter((k) => r.lines[k] != null);         // the brigadirs' rows: crates
   const allTypes = ALL_KEYS.filter((k) => r.lines[k] != null);  // everything the request carries
   // a request with no crates — dispatch only (a night hour, 2026-11-20): no
@@ -1285,17 +1289,26 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
   // the brigadir's cells by the hour's need (`cellSplit`, the server's twin stores
   // the same numbers at the split)
   const cellEntry = (unit) => hint.data?.cells?.[String(unit)];
+  // each brigadir's plant once the list spans more than one (Uchtepa · Almaty,
+  // 2026-11-23); a request is still split across both
+  const plantOf = (u) => {
+    if (new Set((units.data ?? []).map((x) => x.factory_id ?? null)).size < 2 || u.factory_id == null) return "";
+    const f = factories.find((x) => x.id === u.factory_id);
+    return f ? ` · ${tx(factoryName(f, lang))}` : "";
+  };
   const opts = (mine) => (units.data ?? []).filter((u) => u.id === mine || !taken.has(u.id))
     .map((u) => {
       const room = roomOf(u.id);
+      const plant = plantOf(u);
       return {
-        value: u.id, room,
-        label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}`,
+        value: u.id, room, plant,
+        label: `${tl(u.name)}${u.shift ? ` · S${u.shift}` : ""}${plant}`,
         disabled: !hint.isLoading && room === 0 && u.id !== mine,
         title: room === 0 ? t("cflow.lim.noneLeft") : undefined,
       };
     })
-    .sort((a, b) => (b.room > 0) - (a.room > 0) || a.label.localeCompare(b.label));   // by the name as shown
+    // room first, then plant by plant, then by the name as shown
+    .sort((a, b) => (b.room > 0) - (a.room > 0) || a.plant.localeCompare(b.plant) || a.label.localeCompare(b.label));
   const set = (id, patch) => { setTouched(true); setRows((rs) => rs.map((x) => (x.id === id ? { ...x, ...patch } : x))); };
   const m = useMutation({
     mutationFn: () => api.post(`/api/container-flow/requests/${r.id}/assign`, {

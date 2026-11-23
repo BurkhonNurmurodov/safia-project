@@ -37,7 +37,7 @@ function ReceiptChip({ x, t }) {
 // watching); `extra` is the brigadir's EXTRA request (2026-11-18): `ask` may
 // ask (their own unit; an admin names one), `read` sees the asks.
 export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onOpened, canReceive = true,
-  extra = { ask: false, read: false, unit: null } }) {
+  extra = { ask: false, read: false, unit: null }, factory = null }) {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const q = useQuery({
@@ -47,7 +47,10 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
     enabled: canReceive,
     ...LIVE_LIST,
   });
-  const ex = useExtras(day, extra.read);
+  // the page's plant narrows the rows here (the server tags each with its plant)
+  const inPlant = (r) => factory == null || r.factory_id === factory;
+  const exAll = useExtras(day, extra.read);
+  const ex = exAll.data ? { ...exAll, data: { ...exAll.data, extras: (exAll.data.extras ?? []).filter(inPlant) } } : exAll;
   const [asking, setAsking] = useState(false);
   const withdraw = useMutation({
     mutationFn: (e) => api.post(`/api/container-flow/extras/${e.id}/cancel`),
@@ -62,7 +65,7 @@ export default function FlowReceive({ t, day, toast, isAdmin, openId = null, onO
     refreshFlow(qc);
   };
   const [edit, setEdit] = useState(null);
-  const list = q.data?.receipts ?? [];
+  const list = (q.data?.receipts ?? []).filter(inPlant);
   const waiting = list.filter((x) => !x.received).length;
   const all = useMutation({
     mutationFn: (x) => api.post(`/api/container-flow/requests/${x.request_id}/receive`, { manager_id: x.manager_id }),

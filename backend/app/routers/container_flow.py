@@ -133,7 +133,7 @@ def get_settings(db: Session = Depends(get_db), payload: dict = Depends(WHO)):
     """Read by every holder (the viewer's roles, the switches); written by
     admins only."""
     return {**flow.settings(db), "reasons": list(flow.REASONS), "extra_reasons": list(flow.EXTRA_REASONS),
-            "lead_min": flow.LEAD_MIN, **_roles(db, payload)}
+            "lead_min": flow.LEAD_MIN, "factories": flow.flow_factory_ids(db), **_roles(db, payload)}
 
 
 class SettingsBody(BaseModel):
@@ -174,6 +174,27 @@ def get_readiness(day: date = Query(...), db: Session = Depends(get_db),
     return {"day": day.isoformat(), "units": flow.readiness(db, day)}
 
 
+# The plant filter (2026-11-23, the operator: «put the factories too»): the
+# flow serves Uchtepa and Almaty with ONE AXO and the same logistics people, so
+# a request stays shared; a picked plant narrows the BRIGADIR side — what was
+# split to its units, what they confirmed, their need, their asks. A locked
+# viewer's own plant wins (`factory_scope.resolve_factory`).
+def _plant_units(db: Session, payload: dict, factory: Optional[int]) -> Optional[set]:
+    from app.services import factory_scope
+    ids = factory_scope.factory_manager_ids(db, factory_scope.resolve_factory(db, payload, factory))
+    return None if ids is None else set(ids)
+
+
+def _tag_plant(db: Session, rows: list) -> list:
+    """Each row's `factory_id`, by its `manager_id` — the page filters these
+    day lists itself (the Quality pattern: tag, never drop)."""
+    from app.services import factory_scope
+    fac = factory_scope.factory_of_managers(db)
+    for r in rows:
+        r["factory_id"] = fac.get(r.get("manager_id"))
+    return rows
+
+
 def _span(d_from: date, d_to: date) -> None:
     if d_to < d_from or (d_to - d_from).days > 366:
         raise HTTPException(status_code=422, detail="bad period")
@@ -181,19 +202,21 @@ def _span(d_from: date, d_to: date) -> None:
 
 @router.get("/report")
 def get_report(date_from: date = Query(...), date_to: date = Query(...),
+               factory: Optional[int] = Query(None),
                db: Session = Depends(get_db), payload: dict = Depends(ANY)):
     _span(date_from, date_to)
-    return {"requests": flow.requests_report(db, date_from, date_to),
+    return {"requests": flow.requests_report(db, date_from, date_to, _plant_units(db, payload, factory)),
             "sending": flow.sending_report(db, date_from, date_to)}
 
 
 @router.get("/analytics")
 def get_analytics(date_from: date = Query(...), date_to: date = Query(...),
+                  factory: Optional[int] = Query(None),
                   db: Session = Depends(get_db), payload: dict = Depends(ANY)):
     """«Tahlil»: the period's requests per day, hour, container type and
-    brigadir — what the charts draw."""
+    brigadir — what the charts draw. `factory` narrows the brigadir side."""
     _span(date_from, date_to)
-    return flow.analytics(db, date_from, date_to)
+    return flow.analytics(db, date_from, date_to, _plant_units(db, payload, factory))
 
 
 @router.get("/stock")
@@ -235,6 +258,7 @@ class ReportXlsxBody(BaseModel):
     # the page's own headers and container names, in the reader's language
     headers: Dict[str, str] = Field(default_factory=dict)
     types: Dict[str, str] = Field(default_factory=dict)
+    factory: Optional[int] = None       # the page's plant (2026-11-23)
 
 
 @router.post("/report.xlsx")
@@ -244,7 +268,7 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
     from openpyxl.styles import Font
     _span(body.date_from, body.date_to)
     # one row per day, as the page's table
-    rq = flow.requests_report(db, body.date_from, body.date_to)
+    rq = flow.requests_report(db, body.date_from, body.date_to, _plant_units(db, payload, body.factory))
     # `given` is both sides together, then the brigadirs' and the dispatch areas' (2026-11-19)
     rcols = ["day", "requests", "asked", "given", "in_given", "send_given", "received", "missing", "late",
              "overdue", "short"]
@@ -424,7 +448,7 @@ def get_logistics(db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
 def get_all_units(db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
     """Every brigadir a request can be split to — not archived, and not in
     another plant (`flow.flow_units`)."""
-    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift}
+    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift, "factory_id": m.factory_id}
                       for m in flow.flow_units(db).all()]}
 
 
@@ -679,7 +703,7 @@ def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload:
     """The day's split requests per brigadir: a brigadir sees their own unit,
     everybody else (admins, the managers watching) every unit."""
     mine = None if page_admin(db, payload, ADMIN_PAGE) else _my_unit(payload)
-    return {"day": day.isoformat(), "unit": mine, "receipts": flow.receipts_of(db, day, mine)}
+    return {"day": day.isoformat(), "unit": mine, "receipts": _tag_plant(db, flow.receipts_of(db, day, mine))}
 
 
 # ── a brigadir's EXTRA request (2026-11-18) ─────────────────────────────────
@@ -698,7 +722,7 @@ def get_extras(day: date = Query(...), db: Session = Depends(get_db), payload: d
     managers watching and admins every unit's."""
     mine = (_my_unit(payload) if payload.get("role") == "supervisor"
             and not page_admin(db, payload, ADMIN_PAGE) else None)
-    return {"day": day.isoformat(), "unit": mine, "extras": flow.extras_of(db, day, mine)}
+    return {"day": day.isoformat(), "unit": mine, "extras": _tag_plant(db, flow.extras_of(db, day, mine))}
 
 
 class ExtraBody(BaseModel):

@@ -7,6 +7,8 @@ import DayStepper from "../components/ui/DayStepper";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
+import { FilterPanel } from "../components/ui/ColumnFilter";
+import { useFactorySection, useFactoryIn } from "../components/ui/FactorySelect";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { tashkentNow } from "../components/production/HourlyContainers";
@@ -92,6 +94,13 @@ export default function ContainerFlow({ side = "flow" }) {
   // (`_roles`), since a grant is not in the token.
   const isAdmin = roleAdmin || !!settings.data?.admin;
   const has = (k) => isAdmin || !!settings.data?.[k];
+  // The plant (2026-11-23, the operator: «put the factories too»): the flow
+  // serves Uchtepa and Almaty (`settings.factories`) with one AXO and the same
+  // logistics people, so a request stays shared and the plant narrows the
+  // BRIGADIR side — «Qabul»'s list, «Tahlil» and «Hisobot». docs/containers-flow.md.
+  const flowPlants = settings.data?.factories ?? [];
+  const plantSection = useFactorySection({ only: flowPlants });
+  const plant = useFactoryIn(flowPlants);
   // each row is ONE side of the flow: the split lives on the logistics row
   // only, and that row carries nothing of AXO's or a brigadir's
   const roles = logiSide
@@ -102,6 +111,8 @@ export default function ContainerFlow({ side = "flow" }) {
     && !(roles.axo || roles.receive || roles.watch || roles.extra);
   // a brigadir holding only «Qabul» reads nothing of the AXO / logistics side
   const flowSide = roles.axo || roles.logistics || roles.watch;
+  // who reads every brigadir's «Qabul» (a brigadir reads their own unit only)
+  const seesAll = isAdmin || roles.watch || roles.axo;
   const tabs = tabsFor(roles, logiSide);
   // The «So'rovlar» tab counts the requests its viewer has not opened yet
   // (the same query the tab reads — fetched once).
@@ -158,6 +169,8 @@ export default function ContainerFlow({ side = "flow" }) {
             ) : t(`cflow.tab.${k}`),
           }))} />}
         {!["report", "analytics"].includes(tab) && <DayStepper value={day} onChange={(d) => setPicked(d === live ? null : d)} />}
+        {/* «Qabul» of every brigadir (not a brigadir's own) is read per plant */}
+        {tab === "receive" && plantSection && seesAll && <FilterPanel sections={[plantSection]} />}
         {roles.axo && tab === "requests" && (
           <span className="ml-auto flex flex-wrap items-center gap-2">
             {/* always drawn, with its count, so the bar never shifts */}
@@ -178,6 +191,7 @@ export default function ContainerFlow({ side = "flow" }) {
         : tab === "requests" ? <RequestsTab t={t} day={day} roles={roles} toast={toast} onNew={openNew} logiSide={logiSide} />
         : tab === "receive" ? (
           <FlowReceive t={t} day={day} toast={toast} isAdmin={isAdmin} openId={rcv} onOpened={rcvDone}
+            factory={seesAll ? plant : null}
             canReceive={roles.receive || roles.watch}
             extra={{
               // a brigadir asks for their own unit, an admin names one; the managers watching read
@@ -186,8 +200,8 @@ export default function ContainerFlow({ side = "flow" }) {
               unit: isAdmin ? null : settings.data?.unit ?? null,
             }} />
         )
-        : tab === "analytics" ? <FlowAnalytics t={t} canStock={roles.axo} toast={toast} />
-        : tab === "report" ? <FlowReport t={t} toast={toast} />
+        : tab === "analytics" ? <FlowAnalytics t={t} canStock={roles.axo} toast={toast} factory={plant} plantSection={plantSection} />
+        : tab === "report" ? <FlowReport t={t} toast={toast} factory={plant} plantSection={plantSection} />
         : <FlowSettings t={t} toast={toast} day={day} data={settings.data} loading={settings.isLoading} isAdmin={roles.admin}
             onSaved={() => qc.invalidateQueries({ queryKey: ["cflow-settings"] })} />}
 

@@ -1246,6 +1246,39 @@ which has its own AXO; these containers move inside Uchtepa.
   Keles — and any plant not named here — stays out. The AXO and the logistics
   people are the same ones; nothing about who asks or splits changed.
 
+### The plant on the flow's pages — «Zavod» (2026-11-23)
+
+The operator, once Almaty's unit was on the flow: «put the factories too»;
+asked how, «Plant filter + label». The flow serves two plants
+(`settings.factories` = `flow_factory_ids`) with ONE AXO and the same logistics
+people, so **a request stays the plants' shared one**, and **a picked plant
+narrows the BRIGADIR side only**:
+
+- **Where**: the plant switcher (`useFactorySection({ only })`, THE template,
+  offering only the flow's plants — a plant picked elsewhere that the flow
+  does not serve, Keles, reads as «Hammasi» here) sits after the period on
+  «Tahlil» and «Hisobot», and after the day on «Qabul» for those who read
+  every brigadir's (admins, the managers watching, AXO) — never for a
+  brigadir, whose «Qabul» is their own unit. Not on «So'rovlar»: a request is
+  shared. The pick is the platform's ONE plant choice (`FactoryContext`).
+- **What it narrows** (`factory` on `/analytics`, `/report`, `/report.xlsx`,
+  through `_plant_units` → `requests_report` / `analytics` / `need_vs_got` /
+  `day_need` / `extras_report` `units`): the parts split to that plant's units
+  (`_plant_parts`) — given to brigadirs, confirmed, received, missing, the
+  brigadirs' table, «Kerak va olingan» and its brigadir list, the asks for
+  extra. **What stays whole**: the requests (how many, waiting, overdue), what
+  AXO asked, logistics' speed and on-time, the dispatch amount and «Jo'natish»,
+  AXO's stock. Under a picked plant the bar says so
+  (`cflow.an.scopePlant`). A locked viewer's own plant wins
+  (`factory_scope.resolve_factory`); a unit with no plant is in no plant's cut
+  (`factory_manager_ids`).
+- **«Qabul»** filters on the page: `/receipts` and `/extras` tag each row with
+  its unit's `factory_id` (`_tag_plant`), so the «So'rovlar» badge (the same
+  extras read) still counts every plant.
+- **The split dialog names each brigadir's plant** («… · S1 · Olmaota») once
+  `/units` (now with `factory_id`) spans more than one, and lists them plant by
+  plant after those with room. A request is still split across both.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

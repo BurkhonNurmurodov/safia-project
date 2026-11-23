@@ -179,6 +179,16 @@ class FlowTest(unittest.TestCase):
         self.assertIn(8803, ids)                               # unplaced: stays
         self.assertIn(8804, ids)                               # Almaty: served like Uchtepa (22 Nov)
         self.assertNotIn(8802, ids)                            # Keles: out
+        # the pages' plant filter (2026-11-23): the flow's plants, a plant's units,
+        # a locked brigadir's own plant winning, and each «Qabul» row tagged
+        from app.routers import container_flow as cfr
+        self.assertEqual(flow.flow_factory_ids(self.db), [uch.id, alm.id])
+        admin = {"role": "admin"}
+        self.assertIsNone(cfr._plant_units(self.db, admin, None))
+        self.assertEqual(cfr._plant_units(self.db, admin, alm.id), {8804})
+        self.assertEqual(cfr._plant_units(self.db, {"role": "supervisor", "role_id": 8804}, uch.id), {8804})
+        self.assertEqual(cfr._tag_plant(self.db, [{"manager_id": 8801}, {"manager_id": 8803}]),
+                         [{"manager_id": 8801, "factory_id": uch.id}, {"manager_id": 8803, "factory_id": None}])
         lp = RoleProfile(role="idle-owner", name="Logistics")
         self.db.add(lp)
         self.db.flush()
@@ -1082,6 +1092,17 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(an["receipt_reasons"]["damaged"], 1)
         self.assertEqual((an["days"][0]["assigned"], an["days"][0]["on_time_pct"]), (1, 100))
         self.assertEqual((an["summary"]["confirm_pct"], an["summary"]["received_pct"]), (100, 96))
+        # a plant's cut (2026-11-23): the brigadir side narrows to its units, the
+        # requests — how many, what AXO asked, the hours — stay the shared whole
+        cut = flow.requests_report(self.db, DAY, DAY, {2})["summary"]
+        self.assertEqual((cut["requests"], cut["cancelled"], cut["assigned"], cut["asked"]), (2, 1, 1, 52))
+        self.assertEqual((cut["given"], cut["in_given"], cut["received"], cut["missing"]), (20, 20, 20, 0))
+        self.assertEqual((cut["units"], cut["confirmed"]), (1, 1))
+        an2 = flow.analytics(self.db, DAY, DAY, {2})
+        self.assertEqual([u["manager_id"] for u in an2["units"]], [2])
+        self.assertEqual([(h["hour"], h["requests"], h["asked"], h["given"]) for h in an2["hours"]], [(10, 1, 52, 20)])
+        self.assertEqual(sum(x["received"] for x in an2["types"]), 20)
+        self.assertEqual(flow.requests_report(self.db, DAY, DAY, set())["summary"]["in_given"], 0)
         self.db.query(ProfilePermission).filter_by(profile_key=nk).update({"mode": "deny"})
         self.db.commit()
         self.assertEqual(flow.logistics_people(self.db), [])                 # a deny takes them off the list

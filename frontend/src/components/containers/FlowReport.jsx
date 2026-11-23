@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, FileSpreadsheet, Gauge, PackageCheck, Timer } from "lucide-react";
 import Button from "../ui/Button";
 import DateRangePicker from "../ui/DateRangePicker";
+import { FilterPanel } from "../ui/ColumnFilter";
 import KPICard from "../ui/KPICard";
 import TableCard, { Th } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -24,14 +25,16 @@ const RQ_COLS = ["requests", "asked", "given", "in_given", "send_given", "receiv
 const RQ_BAD = new Set(["missing", "late", "overdue", "short"]);
 const rqVal = (d, c) => (c === "missing" ? d.sent_confirmed - d.received : d[c]);
 
-export default function FlowReport({ t, toast }) {
+export default function FlowReport({ t, toast, factory = null, plantSection = null }) {
   const today = prodToday();                // the production day, never the calendar date
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [busy, setBusy] = useState(false);
   const q = useQuery({
-    queryKey: ["cflow-report", from, to],
-    queryFn: () => api.get("/api/container-flow/report", { params: { date_from: from, date_to: to } }).then((r) => r.data),
+    queryKey: ["cflow-report", from, to, factory],
+    queryFn: () => api.get("/api/container-flow/report", {
+      params: { date_from: from, date_to: to, ...(factory != null ? { factory } : {}) },
+    }).then((r) => r.data),
   });
   const rq = q.data?.requests;
   const rs = rq?.summary;
@@ -41,7 +44,7 @@ export default function FlowReport({ t, toast }) {
     try {
       const via = await exportXlsx("/api/container-flow/report.xlsx", {
         body: {
-          date_from: from, date_to: to,
+          date_from: from, date_to: to, factory,
           headers: { total: t("production.cont.total"),
             rq_day: t("cflow.rep.day"), ...Object.fromEntries(RQ_COLS.map((c) => [`rq_${c}`, t(`cflow.rq.col.${c}`)])),
             // the «Jo'natish» sheet
@@ -64,6 +67,8 @@ export default function FlowReport({ t, toast }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker dateFrom={from} dateTo={to} setDateFrom={setFrom} setDateTo={setTo} max={today} compactLabel />
+        {plantSection && <FilterPanel sections={[plantSection]} />}
+        {factory != null && <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.an.scopePlant")}</span>}
         <Button size="lg" variant="secondary" icon={<FileSpreadsheet size={15} />} className="ml-auto" loading={busy}
           disabled={!rs?.requests} onClick={excel}>
           Excel

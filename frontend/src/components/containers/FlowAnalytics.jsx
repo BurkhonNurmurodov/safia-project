@@ -60,14 +60,16 @@ function buckets(days) {
   return [...by.values()].map((b) => ({ ...b, on_time_pct: b.judged ? Math.round((100 * b.on_time) / b.judged) : null }));
 }
 
-export default function FlowAnalytics({ t, canStock = false, toast }) {
+export default function FlowAnalytics({ t, canStock = false, toast, factory = null, plantSection = null }) {
   const { tl } = useTranslit();
   const today = prodToday();                // the production day, never the calendar date
   const [from, setFrom] = useState(() => shiftISO(today, -6));
   const [to, setTo] = useState(today);
   const q = useQuery({
-    queryKey: ["cflow-analytics", from, to],
-    queryFn: () => api.get("/api/container-flow/analytics", { params: { date_from: from, date_to: to } }).then((r) => r.data),
+    queryKey: ["cflow-analytics", from, to, factory],
+    queryFn: () => api.get("/api/container-flow/analytics", {
+      params: { date_from: from, date_to: to, ...(factory != null ? { factory } : {}) },
+    }).then((r) => r.data),
     staleTime: 60_000,
   });
   const a = q.data;
@@ -83,7 +85,9 @@ export default function FlowAnalytics({ t, canStock = false, toast }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <DateRangePicker dateFrom={from} dateTo={to} setDateFrom={setFrom} setDateTo={setTo} max={today} compactLabel />
-        <span className="text-xs" style={{ color: "var(--text-3)" }}>{t("cflow.an.scope")}</span>
+        {plantSection && <FilterPanel sections={[plantSection]} />}
+        {/* with a plant picked: a request is the two plants' shared one, only the brigadirs narrow */}
+        <span className="text-xs" style={{ color: "var(--text-3)" }}>{t(factory != null ? "cflow.an.scopePlant" : "cflow.an.scope")}</span>
       </div>
 
       {/* THE answer the tab opens with: the plan against what arrived, all brigadirs */}

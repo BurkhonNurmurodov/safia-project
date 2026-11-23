@@ -814,17 +814,28 @@ def receipts_of(db: Session, day: date, manager_id: Optional[int] = None) -> lis
     return out
 
 
-def requests_report(db: Session, d_from: date, d_to: date) -> dict:
+def _plant_parts(parts, units: Optional[set]):
+    """The split parts that went to `units` (a plant's), or every part when
+    nothing is narrowed (`units` None)."""
+    return parts if units is None else [p for p in parts if p.manager_id in units]
+
+
+def requests_report(db: Session, d_from: date, d_to: date, units: Optional[set] = None) -> dict:
     """The requests side of «Hisobot»: how many, how fast the logistics
     person opened and split them, on time against the deadline, short splits
-    by reason, and what the brigadirs confirmed against what was sent."""
+    by reason, and what the brigadirs confirmed against what was sent.
+
+    `units` (a plant's units, 2026-11-23) narrows the BRIGADIR side only — the
+    parts split to them, what they confirmed and received. A request, what AXO
+    asked, the logistics person's speed and the dispatch amount are the two
+    plants' shared flow and stay whole (`_plant_parts`)."""
     at = now()
     rows = db.query(ContainerRequest).filter(ContainerRequest.day >= d_from,
                                              ContainerRequest.day <= d_to).all()
     parts: dict = {}
     if rows:
-        for p in db.query(ContainerRequestPart).filter(
-                ContainerRequestPart.request_id.in_([r.id for r in rows])).all():
+        for p in _plant_parts(db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id.in_([r.id for r in rows])).all(), units):
             parts.setdefault(p.request_id, []).append(p)
     # `asked` / `given` are BOTH sides together (2026-11-19, the operator: «we have
     # to add them together»); `in_*` the brigadirs', `send_*` the dispatch areas'
@@ -920,7 +931,7 @@ def requests_report(db: Session, d_from: date, d_to: date) -> dict:
             "people": sorted(out_people, key=lambda p: p["name"] or "")}
 
 
-def day_need(db: Session, d_from: date, d_to: date) -> dict:
+def day_need(db: Session, d_from: date, d_to: date, units: Optional[set] = None) -> dict:
     """{(day, manager_id): {ctype: n}} — what each brigadir's unit NEEDS for a
     day, per container type: the «Konteynerlar» page's own per-brigadir figure
     (`/api/shift-report/containers` `by_unit` — `pp_containers.count` over every
@@ -929,7 +940,7 @@ def day_need(db: Session, d_from: date, d_to: date) -> dict:
     the part the hours can place."""
     from app.services import pp_containers, zagruzka_source
     keys = pp_containers.keys()
-    ids = flow_unit_ids(db)
+    ids = [i for i in flow_unit_ids(db) if units is None or i in units]
     out: dict = {}
     if not ids:
         return out
@@ -948,7 +959,8 @@ def day_need(db: Session, d_from: date, d_to: date) -> dict:
     return out
 
 
-def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = None) -> list:
+def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = None,
+                units: Optional[set] = None) -> list:
     """«Kerak va olingan» (2026-11-17, the operator: «a table — for a day, how
     many they have to get and how many they actually got»): one row per
     brigadir per day — what the day's plan needs (`day_need`), what logistics
@@ -956,7 +968,7 @@ def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = No
     on «Qabul»; `unconfirmed` is what was split and not yet confirmed, so a row
     still waiting is never read as a shortfall. Every unit that needed or got
     anything that day; per type under `types`."""
-    need = day_need(db, d_from, d_to) if need is None else need
+    need = day_need(db, d_from, d_to, units) if need is None else need
     rows: dict = {}
 
     def row(day, mid):
@@ -977,6 +989,8 @@ def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = No
         ContainerRequest.day >= d_from, ContainerRequest.day <= d_to,
         ContainerRequest.status == "assigned")
     for day, p in q.all():
+        if units is not None and p.manager_id not in units:
+            continue
         r = row(day, p.manager_id)
         r["given"] += p.count
         typ(r, p.ctype)["given"] += p.count
@@ -999,21 +1013,23 @@ def need_vs_got(db: Session, d_from: date, d_to: date, need: Optional[dict] = No
     return out
 
 
-def analytics(db: Session, d_from: date, d_to: date) -> dict:
+def analytics(db: Session, d_from: date, d_to: date, units: Optional[set] = None) -> dict:
     """«Tahlil» (2026-11-15, the operator: «add more analytics with graphs»):
     the requests of a period cut the ways a chart needs — per day (the trend),
     per production hour (the peak), per container type, per brigadir (given →
     received, how fast they confirm, reminders), and the reasons. Everything
     `requests_report` answers rides along (`summary`, `reasons`, `people`), so
     the cards above the charts and the report's own agree by construction.
-    Cancelled requests count nowhere but in `summary.cancelled`."""
-    base = requests_report(db, d_from, d_to)
+    Cancelled requests count nowhere but in `summary.cancelled`. `units` (a
+    plant's) narrows the brigadir side as in `requests_report`: their parts,
+    need and asks; the requests themselves stay whole."""
+    base = requests_report(db, d_from, d_to, units)
     rows = db.query(ContainerRequest).filter(ContainerRequest.day >= d_from, ContainerRequest.day <= d_to,
                                              ContainerRequest.status != "cancelled").all()
     parts: dict = {}
     if rows:
-        for p in db.query(ContainerRequestPart).filter(
-                ContainerRequestPart.request_id.in_([r.id for r in rows])).all():
+        for p in _plant_parts(db.query(ContainerRequestPart).filter(
+                ContainerRequestPart.request_id.in_([r.id for r in rows])).all(), units):
             parts.setdefault(p.request_id, []).append(p)
     mids = {p.manager_id for ps in parts.values() for p in ps}
     names = {m.id: m for m in db.query(Manager).filter(Manager.id.in_(mids)).all()} if mids else {}
@@ -1095,13 +1111,13 @@ def analytics(db: Session, d_from: date, d_to: date) -> dict:
     s["confirm_pct"] = round(100 * s["confirmed"] / s["units"]) if s["units"] else None
     s["received_pct"] = round(100 * s["received"] / s["sent_confirmed"]) if s["sent_confirmed"] else None
     try:
-        nvg = need_vs_got(db, d_from, d_to)
+        nvg = need_vs_got(db, d_from, d_to, units=units)
     except Exception:
         logger.warning("container-flow: need vs got failed", exc_info=True)
         db.rollback()
         nvg = None      # the table says it could not be read; the rest of «Tahlil» stands
     try:
-        extras = extras_report(db, d_from, d_to)
+        extras = extras_report(db, d_from, d_to, units)
     except Exception:
         logger.warning("container-flow: extras report failed", exc_info=True)
         db.rollback()
@@ -3107,12 +3123,14 @@ def extra_later(kind: str, extra_id: int) -> None:
     threading.Thread(target=fn, args=(extra_id,), daemon=True).start()
 
 
-def extras_report(db: Session, d_from: date, d_to: date) -> dict:
+def extras_report(db: Session, d_from: date, d_to: date, units: Optional[set] = None) -> dict:
     """«Tahlil»: the period's asks — how many, how many containers asked and
     approved, AXO's answers, per brigadir and per reason. A brigadir who keeps
     asking is the sign that the plan's figures for their lines are wrong.
     Asks the brigadir withdrew count only in `cancelled`."""
-    rows = db.query(ContainerExtra).filter(ContainerExtra.day >= d_from, ContainerExtra.day <= d_to).all()
+    rows = [e for e in db.query(ContainerExtra).filter(ContainerExtra.day >= d_from,
+                                                       ContainerExtra.day <= d_to).all()
+            if units is None or e.manager_id in units]
     live = [e for e in rows if e.status != "cancelled"]
     tot = lambda o: sum(int(v or 0) for v in (o or {}).values())        # noqa: E731
     s = {"asks": len(live), "approved": sum(e.status == "approved" for e in live),

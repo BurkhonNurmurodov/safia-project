@@ -11,11 +11,20 @@ import { useFactory, factoryName } from "../../context/FactoryContext";
  * all), and a `static` chip section for locked viewers (supervisor / leader):
  * their plant stays readable in the bar, but there is no control to imply a
  * choice the server would overrule. «All factories» is the FIRST option.
+ *
+ * `only` (2026-11-23, the container flow) — the plant ids a page SERVES. Its
+ * options are those plants alone, fewer than two of them render no section,
+ * and a plant picked on another page that this one does not serve reads as
+ * «All» here — the pick itself stays for the pages that serve it. Read the
+ * page's plant through `useFactoryIn(only)`, never `useFactory().factory`.
  */
-export function useFactorySection() {
+export function useFactorySection({ only } = {}) {
   const { t, lang } = useLang();
-  const { factories, factory, setFactory, locked, allTab, enabled, current } = useFactory();
-  if (!enabled) return null;
+  const { factories, setFactory, locked, allTab, enabled } = useFactory();
+  const factory = useFactoryIn(only);
+  const served = only ? factories.filter((f) => only.includes(f.id)) : factories;
+  if (!enabled || served.length < 2) return null;
+  const current = served.find((f) => f.id === factory) || null;
   const nameOf = (f) => factoryName(f, lang) || f.code;
   if (locked) {
     return {
@@ -25,7 +34,7 @@ export function useFactorySection() {
   }
   const opts = [
     ...(allTab ? [{ value: "__all__", label: t("factory.all"), title: t("factory.all") }] : []),
-    ...factories.map((f) => ({ value: f.id, label: nameOf(f) })),
+    ...served.map((f) => ({ value: f.id, label: nameOf(f) })),
   ];
   return {
     key: "factory", icon: Factory, label: t("factory.label"),
@@ -41,6 +50,18 @@ export function useFactorySection() {
       />
     ),
   };
+}
+
+/**
+ * useFactoryIn — the plant a page narrows to: the stored pick, or null («All»)
+ * when the page serves fewer than two plants or not the one picked (`only`,
+ * as in `useFactorySection`). Without `only` it is `useFactory().factory`.
+ */
+export function useFactoryIn(only) {
+  const { factories, factory, enabled } = useFactory();
+  if (!only || factory == null) return factory;
+  if (!enabled || factories.filter((f) => only.includes(f.id)).length < 2) return null;
+  return only.includes(factory) ? factory : null;
 }
 
 /**
