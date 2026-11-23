@@ -565,6 +565,38 @@ applied in the browser; «Tahlil» splits by status itself and never takes it.
 - The search reaches «Tahlil» too (`q`, 300 ms after the last keystroke) and
   matches № · name · cell · text on both (`_search_text` is the twin).
 
+## A cell concern's NAME is picked from Verifix (`/cell-concerns`, 2026-11-23)
+
+The operator, 2026-11-23: workers typed their name and «Kim yozgan» split one
+person over many spellings («Мастура», «PARDAYEVA MASTURA»…) — «use a selector,
+we have the Verifix connection; match the old ones with the workers on the
+same day». This reverses the 2026-09-04 typing ruling.
+
+- **The form picks, never types.** Step «Ismingiz» is a searchable
+  `StyledSelect` over `GET /api/cell-concerns/workers?cell=&q=`: the cell's
+  people now (`kelish_placements`, open stints); 2+ letters list those it fits
+  first, then the plant's current workers it fits (`people.search_current`) — a
+  worker lent in from another cell must still find themself. The cell must be
+  one this PC may file for (`_leader_cells`).
+- **The filing carries the employee id** (`leader_concerns.worker_id`); the
+  server takes the NAME from Verifix (`concern_workers.person`), never from the
+  client, and writes it to `worker_name` / `concern_owner`, so the marker
+  (`worker_name IS NOT NULL`), the KPI, the notifications and the search are
+  unchanged. A tab on an older bundle sends only a typed name: it is matched to
+  the cell's (then the unit's) people now, else kept as typed.
+- **The matcher** (`concern_workers._pick`): every typed word is one of a single
+  person's own (a one-word entry only against the surname or first name),
+  else the surname + first-name scorer (`name_map._pair_score`, either word
+  order) with a winner 0.1 clear of the runner-up. Two who fit, or none →
+  the row stays as typed. Never a guess.
+- **«Kim yozgan» groups by `worker_id`**, a typed name nobody fits by its exact
+  string; the «approximate list» caveat and the «write your full name» hint are
+  gone. Names print through `tl()` on every tab. «Xodim kartasi» counts a
+  filing by its id where it has one (`people.concerns`).
+- **The filings typed before** were matched once — see `docs/data-fixes.md`.
+- The exam sandbox has the twin door (`/api/exam-sandbox/cell-concerns/workers`
+  over `sb.WORKERS`).
+
 ## On a phone (2026-11-20)
 
 See `docs/leader-phone.md` — /cell-concerns, /concerns and /tasks on a phone, and **a leader deletes no concern at all** (`concerns.may_delete`, every width). md+ is unchanged.

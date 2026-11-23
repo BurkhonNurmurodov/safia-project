@@ -339,6 +339,48 @@ def add_task_assignee_kind_column() -> None:
         db.close()
 
 
+def add_concern_worker_columns() -> None:
+    """leader_concerns.worker_id / worker_typed (2026-11-23, idempotent): the
+    Verifix person behind a cell concern, and the name as typed when a match
+    replaced it (`services/concern_workers.py`)."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS worker_id VARCHAR(32)"))
+        db.execute(text("ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS worker_typed VARCHAR(120)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_leader_concerns_worker_id "
+                        "ON leader_concerns (worker_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_concerns worker columns skipped: {exc}")
+    finally:
+        db.close()
+
+
+CONCERN_WORKERS_FLAG = "oneshot:concern_workers_matched_nov23"
+
+
+def match_concern_workers_nov23() -> None:
+    """2026-11-23 (the operator): the cell concerns typed before the name
+    picker are matched to the people who worked in their cell that day — one
+    person per typed name or the row stays as typed (`concern_workers.
+    match_history`). Flag-guarded; the typed text is kept in worker_typed."""
+    from app.services import concern_workers
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONCERN_WORKERS_FLAG).first():
+            return
+        out = concern_workers.match_history(db)
+        db.add(AppSetting(key=CONCERN_WORKERS_FLAG, value=str(out)))
+        db.commit()
+        print(f"[startup] cell concerns matched to Verifix people: {out}")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell concern worker match failed: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_comment_kind_column() -> None:
     """Add kind to leader_concern_comments (idempotent). NULL is an ordinary
     message; "resolution" is the mandatory note written when the concern was

@@ -204,6 +204,7 @@ async def lifespan(app: FastAPI):
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_concern_comment_kind_column,
+        add_concern_worker_columns, match_concern_workers_nov23,
         add_task_assignee_kind_column,
         migrate_concern_solutions_to_thread,
         add_notification_recipient_profile,
@@ -501,6 +502,7 @@ async def lifespan(app: FastAPI):
     run(add_concern_owner_columns)
     run(add_task_comment_author_ref)
     run(add_concern_comment_kind_column)
+    run(add_concern_worker_columns)
     run(add_task_assignee_kind_column)
     run(migrate_concern_solutions_to_thread)
     run(add_leader_submission_columns)
@@ -977,6 +979,7 @@ async def lifespan(app: FastAPI):
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     later(patch_task11_description_nov09)
     later(patch_task10_scrollbar_nov16)  # ⚠ one-shot, flag-guarded; delete once landed
+    later(match_concern_workers_nov23)  # ⚠ one-shot, flag-guarded; delete once landed
     # A role switch left a profile's photo / login / grants under its old key
     # (2026-11-10). Idempotent; remove once it has run on prod.
     later(heal_switched_profile_keys)

@@ -453,10 +453,23 @@ def concerns_comment_delete(cid: int, ccid: int, g=Depends(_gate), db: Session =
 
 class WorkerConcernIn(BaseModel):
     cell_code: str
-    worker_name: str
+    worker_id: Optional[str] = None
+    worker_name: Optional[str] = None
     category: str
     concern_text: str
     deadline_days: Optional[int] = None
+
+
+def _sb_workers() -> list[dict]:
+    return [{"employee_id": f"sb{i}", "name": n, "job": "", "code": sb.CELLS[0]["code"]}
+            for i, n in enumerate(sb.WORKERS, 1)]
+
+
+@router.get("/cell-concerns/workers")
+def cc_workers(cell: str = "", q: str = "", g=Depends(_gate)):
+    words = q.lower().split()
+    return {"rows": [w for w in _sb_workers() if all(x in w["name"].lower() for x in words)],
+            "more": False}
 
 
 @router.get("/cell-concerns/meta")
@@ -548,6 +561,8 @@ def cc_stats(g=Depends(_gate), db: Session = Depends(get_db),
 def cc_create(body: WorkerConcernIn, g=Depends(_gate), db: Session = Depends(get_db)):
     at, ctx = g
     worker = " ".join((body.worker_name or "").split())[:120]
+    if body.worker_id:
+        worker = next((w["name"] for w in _sb_workers() if w["employee_id"] == body.worker_id), "")
     text = (body.concern_text or "").strip()
     if not worker:
         raise HTTPException(status_code=400, detail="Ismingizni yozing")

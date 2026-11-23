@@ -41,7 +41,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Iterable, Optional
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -386,8 +386,8 @@ _cn_lock = threading.Lock()
 
 
 def concerns(db: Session, dirx: dict, eid: str, place_fn=None) -> tuple[list[dict], int]:
-    """The concerns THIS worker filed on /cell-concerns (`worker_name`, folded
-    to the same key). Status is /leaders-kpi's bucket: escalated past the
+    """The concerns THIS worker filed on /cell-concerns — by `worker_id` where
+    the row has one, else `worker_name` folded to the same key. Status is /leaders-kpi's bucket: escalated past the
     leader step «uplifted», else the row's own status."""
     p = dirx["by_id"][eid]
     now = time.monotonic()
@@ -402,14 +402,16 @@ def concerns(db: Session, dirx: dict, eid: str, place_fn=None) -> tuple[list[dic
         with _cn_lock:
             _CN.update(at=now, by_key=dict(by_key))
     names = sorted(by_key.get(p["key"], ()))
-    if not names:
-        return [], 0
-    rows = (db.query(LeaderConcern).filter(LeaderConcern.worker_name.in_(names))
+    rows = (db.query(LeaderConcern).filter(or_(LeaderConcern.worker_name.in_(names),
+                                               LeaderConcern.worker_id == str(eid)))
             .order_by(LeaderConcern.entry_date.desc(), LeaderConcern.id.desc()).all())
     twin = bool(namesakes(dirx, eid))
     out, withheld = [], 0
     for c in rows:
-        if twin:
+        if c.worker_id:
+            if c.worker_id != str(eid):
+                continue                     # a namesake's own filing
+        elif twin:
             ck = tv.code_key(c.cell_code) if c.cell_code else None
             if not ck or not place_fn or place_fn(c.entry_date) != ck:
                 withheld += 1

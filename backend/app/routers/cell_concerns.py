@@ -50,10 +50,13 @@ brigadir's business until somebody decides it is, and that decision is the
 uplift — which notifies them through the ordinary escalate. The ordinary
 create_concern notifies three people; this one notifies one.
 
-THE NAME IS FREE TEXT and must never be used as a key. The operator chose typing
-over picking off the day's cell roster, so one person legitimately appears as
-«Karimova Nilufar» and «Karimova N.»; ``/stats`` groups by the exact string and
-says so on the page rather than pretending the grouping is a person.
+THE NAME IS PICKED, NOT TYPED (2026-11-23 — the operator reversed the
+2026-09-04 typing ruling: one person sat under many spellings). The form lists
+the cell's people from Verifix (``GET /workers``) and the filing carries the
+employee id; the server takes the name from Verifix, never from the client. A
+typed name — an older bundle, every filing before — is matched to one person of
+the cell (``services/concern_workers.py``) or kept as typed. ``/stats`` groups
+by the employee id where there is one, else by the exact string.
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -67,7 +70,7 @@ from app.database import get_db
 from app.identity import viewer_leader_profile_id
 from app.models import Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile
 from app.permissions import require_page
-from app.services import action_log, cell_archive
+from app.services import action_log, cell_archive, concern_workers
 from app.services.factory_scope import factory_manager_ids, resolve_factory
 from app.routers.concerns import (
     CATEGORIES, _cell_leader_recipient, _cell_leaders, _cell_manager_id,
@@ -205,9 +208,29 @@ def cell_concerns_meta(
     }
 
 
+@router.get("/workers")
+def cell_workers(
+    cell: str = Query(...),
+    q: str = Query(default=""),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """The «Ismingiz» list: the cell's people in Verifix; with 2+ letters typed,
+    those it fits and then the plant's current workers it fits. Only for a cell
+    this PC may file for."""
+    code = (cell or "").strip()
+    if code not in {c[0] for c in _leader_cells(db, payload)}:
+        raise HTTPException(status_code=400, detail="Yacheyka tanlanmagan yoki sizga tegishli emas")
+    rows, more = concern_workers.search(db, code, q)
+    return {"rows": rows, "more": more}
+
+
 class WorkerConcernIn(BaseModel):
     cell_code: str
-    worker_name: str
+    # The Verifix employee id picked off the cell's list. A tab on an older
+    # bundle sends only `worker_name` (typed), which is matched or kept.
+    worker_id: Optional[str] = None
+    worker_name: Optional[str] = None
     category: str
     concern_text: str
     # No deadline: the leader sets one when they take the concern into work. A
@@ -236,6 +259,11 @@ def file_cell_concern(
     category = (body.category or "").strip()
     text = (body.concern_text or "").strip()
 
+    worker_id = (body.worker_id or "").strip() or None
+    if worker_id:
+        worker = concern_workers.person(db, worker_id)
+        if not worker:
+            raise HTTPException(status_code=400, detail="Ismingizni ro'yxatdan tanlang")
     if not worker:
         raise HTTPException(status_code=400, detail="Ismingizni yozing")
     if not text:
@@ -262,6 +290,12 @@ def file_cell_concern(
         manager_id = _cell_manager_id(db, cell_code)
     mgr = db.query(Manager).filter_by(id=manager_id).first() if manager_id else None
 
+    typed = None
+    if not worker_id:
+        hit = concern_workers.match_now(db, worker, cell_code, manager_id)
+        if hit:
+            typed, (worker_id, worker) = worker, hit
+
     next_seq = (db.query(func.max(LeaderConcern.seq)).scalar() or 0) + 1
     today = date.today()
     c = LeaderConcern(
@@ -273,6 +307,8 @@ def file_cell_concern(
         cell_code=cell_code,
         category=category,
         worker_name=worker,
+        worker_id=worker_id,
+        worker_typed=typed,
         # The Owner column and every notification print this. Same string as
         # worker_name, same job the sheets' «Хавотир эгаси» column did.
         concern_owner=worker,
@@ -384,7 +420,7 @@ AGE_BUCKETS = ((0, 1), (2, 3), (4, 7), (8, 14), (15, None))
 TREND_MIN_DAYS = 7
 TREND_DAILY_MAX = 62
 
-# How many of the busiest typed names the «who filed» card may draw. The card
+# How many of the busiest filers the «who filed» card may draw. The card
 # shows as many as fit beside its neighbour, and says how many it holds.
 TOP_WORKERS = 15
 
@@ -488,11 +524,11 @@ def cell_concern_stats(
         b = by_cell.setdefault(r.cell_code or "—", _acc())
         c[st] += 1
         b[st] += 1
-        # Grouped on the EXACT typed string: free text is not an identity, so
-        # folding spellings together here would invent a person. The page says
-        # so beside the list.
+        # By the Verifix person; a typed name nobody fits by its exact string —
+        # folding spellings here would invent a person.
         w = (r.worker_name or "").strip() or "—"
-        by_worker[w] = by_worker.get(w, 0) + 1
+        e = by_worker.setdefault(r.worker_id or w, {"name": w, "n": 0, "employee_id": r.worker_id})
+        e["n"] += 1
         # _due, the register's own answer: a receiver's deadline counts from
         # the day they took the concern into work, not from filing.
         due = _due(r)
@@ -542,7 +578,7 @@ def cell_concern_stats(
             key=lambda x: (-x["open"], -x["n"], x["code"]),
         ),
         "by_worker": sorted(
-            [{"name": k, "n": v} for k, v in by_worker.items()],
+            list(by_worker.values()),
             key=lambda x: (-x["n"], x["name"]),
         )[:TOP_WORKERS],
         # `trend` keeps the shape a tab on an older bundle reads; `trend_unit`

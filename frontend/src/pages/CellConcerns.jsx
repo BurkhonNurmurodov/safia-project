@@ -465,21 +465,57 @@ export default function CellConcerns() {
 
 function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onError }) {
   const only = cells.length === 1 ? cells[0].code : "";
+  const { tl } = useTranslit();
   const [cell, setCell] = useState(only);
-  const [name, setName] = useState("");
+  const [pick, setPick] = useState(null);       // the person picked off the cell's list
+  const [query, setQuery] = useState("");
+  const [dq, setDq] = useState("");             // the query, once typing pauses
   const [cat, setCat] = useState("");
   const [text, setText] = useState("");
   const [errs, setErrs] = useState({});
   const [done, setDone] = useState(null);
   const [left, setLeft] = useState(0);
-  const nameRef = useRef(null);
 
   useEffect(() => { if (cells.length === 1) setCell(cells[0].code); }, [cells]);
+  const worker = pick?.cell === cell ? pick : null;   // a pick belongs to its cell
+  useEffect(() => {
+    const iv = setTimeout(() => setDq(query.trim()), 250);
+    return () => clearTimeout(iv);
+  }, [query]);
+
+  // The cell's people from Verifix; 2+ letters reach the rest of the plant.
+  const people = useQuery({
+    queryKey: ["cell-concern-workers", cell, dq],
+    queryFn: () => api.get("/api/cell-concerns/workers", { params: { cell, q: dq } }).then((r) => r.data),
+    enabled: !!cell,
+    placeholderData: keepPreviousData,
+  });
+  const rows = useMemo(() => people.data?.rows || [], [people.data]);
+  const workerOptions = useMemo(() => {
+    const list = worker && !rows.some((w) => w.employee_id === worker.employee_id) ? [worker, ...rows] : rows;
+    return list.map((w) => ({
+      value: w.employee_id,
+      short: tl(w.name),
+      title: [tl(w.name), w.job].filter(Boolean).join(" · "),
+      label: (
+        <>
+          <span className="block truncate">{tl(w.name)}</span>
+          {(w.job || w.code) && (
+            <span className="block truncate text-[11px] max-md:text-xs" style={{ color: "var(--text-3)" }}>
+              {[w.code !== cell && w.code, w.job].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </>
+      ),
+    }));
+  }, [rows, worker, cell, tl]);
+  const workerEmpty = people.isFetching || dq !== query.trim() ? t("cellConcerns.nameSearching")
+    : query.trim().length < 2 ? t("cellConcerns.nameTypeMore")
+    : t("cellConcerns.nameNone");
 
   const reset = () => {
     setCell(cells.length === 1 ? cells[0].code : "");
-    setName(""); setCat(""); setText(""); setErrs({}); setDone(null);
-    nameRef.current?.focus();
+    setPick(null); setQuery(""); setCat(""); setText(""); setErrs({}); setDone(null);
   };
 
   // The form clears itself so the NEXT worker never finds the last one's
@@ -500,7 +536,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
   const submit = (e) => {
     e.preventDefault();
     const next = {
-      cell: !cell, name: !name.trim(), cat: !cat, text: !text.trim(),
+      cell: !cell, name: !worker, cat: !cat, text: !text.trim(),
     };
     setErrs(next);
     if (Object.values(next).some(Boolean)) {
@@ -508,7 +544,7 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
       return;
     }
     file.mutate({
-      cell_code: cell, worker_name: name.trim(), category: cat,
+      cell_code: cell, worker_id: worker.employee_id, worker_name: worker.name, category: cat,
       concern_text: text.trim(),
     });
   };
@@ -630,20 +666,21 @@ function WriteTab({ cells, t, loading, failed, retrying, onRetry, onFiled, onErr
 
       <Card>
         <Step n={cells.length > 1 ? 2 : 1} label={t("cellConcerns.step.name")} required />
-        <input
-          ref={nameRef} value={name}
-          onChange={(e) => { setName(e.target.value); setErrs((x) => ({ ...x, name: false })); }}
-          placeholder={t("cellConcerns.namePh")} autoComplete="off"
-          aria-invalid={!!errs.name}
-          className="w-full h-13 px-3.5 rounded-xl text-base outline-none"
-          style={{
-            height: 52, background: "var(--bg-inner)", color: "var(--text-1)",
-            border: `1px solid ${errs.name ? "#ef4444" : "var(--border-md)"}`,
+        <StyledSelect
+          value={worker?.employee_id ?? null}
+          ariaLabel={t("cellConcerns.step.name")}
+          onChange={(v) => {
+            const w = rows.find((r) => r.employee_id === v);
+            if (w) { setPick({ ...w, cell }); setErrs((x) => ({ ...x, name: false })); }
           }}
+          options={workerOptions}
+          placeholder={t("cellConcerns.namePh")}
+          disabled={!cell}
+          searchable onQuery={setQuery}
+          searchPlaceholder={t("cellConcerns.nameSearchPh")}
+          searchEmpty={workerEmpty}
+          triggerClassName="px-3.5 text-base h-[52px]"
         />
-        <div className="text-[11px] mt-1.5 max-md:hidden" style={{ color: "var(--text-3)" }}>
-          {t("cellConcerns.nameHint")}
-        </div>
         {errs.name && <Err text={t("cellConcerns.err.name")} />}
       </Card>
 
@@ -768,6 +805,7 @@ function CatChip({ k, t }) {
 // the dialog; the thread's count rides along as a fact (the dialog's
 // «Izohlar» button opens it — a button inside this one would be nested).
 function ConcernCard({ r, t, lang, P, onOpen }) {
+  const { tl } = useTranslit();
   const Icon = CATEGORY_ICON[r.category];
   const col = CATEGORY_COLOR[r.category] || "#94a3b8";
   const due = r.status !== "done" && r.due_date;
@@ -780,7 +818,7 @@ function ConcernCard({ r, t, lang, P, onOpen }) {
         {r.concern_text}
       </span>
       <span className="flex items-center gap-2 min-w-0 text-[13px]" style={{ color: "var(--text-2)" }}>
-        <span className="truncate min-w-0">{r.worker_name || "—"}</span>
+        <span className="truncate min-w-0">{r.worker_name ? tl(r.worker_name) : "—"}</span>
         <span className="ml-auto shrink-0"><StatusChip row={r} t={t} /></span>
       </span>
       <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
@@ -836,6 +874,7 @@ function PhoneList({ t, lang, P, found, empty, doneOpen, setDoneOpen, onOpen }) 
 }
 
 function RegisterTab({ t, lang, P, phone, found, rows, loading, toolbar, onOpen, onComments, anyFilter, noneOpen, onClearFilters }) {
+  const { tl } = useTranslit();
   // The phone's resolved concerns stay folded until asked for: the leader
   // opens this list for what still waits on them.
   const [doneOpen, setDoneOpen] = useState(false);
@@ -903,7 +942,7 @@ function RegisterTab({ t, lang, P, phone, found, rows, loading, toolbar, onOpen,
                       style={{ background: "var(--bg-accent)", color: "var(--text-2)" }}>
                   {initials(r.worker_name)}
                 </span>
-                {r.worker_name}
+                {tl(r.worker_name || "")}
               </span>
             </td>
             <td className="px-3 py-2">
@@ -929,6 +968,7 @@ function RegisterTab({ t, lang, P, phone, found, rows, loading, toolbar, onOpen,
 /* ── the detail modal — status, text, uplift, delete ───────────────────── */
 
 function DetailModal({ t, row, onClose, onComments, onDone, onError, phone, lang, P, canDelete }) {
+  const { tl } = useTranslit();
   const [status, setStatus] = useState(row.status);
   const [text, setText] = useState(row.concern_text);
   const [solution, setSolution] = useState("");
@@ -1033,7 +1073,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError, phone, lang
              style={{ background: "var(--bg-inner)", borderLeft: "3px solid var(--brand)", color: "var(--text-1)" }}>
           {row.concern_text}
           <div className="mt-3 text-xs flex items-center gap-2" style={{ color: "var(--text-3)" }}>
-            <UserRound size={13} /> {tp(t, "cellConcerns.filedBy", { name: row.worker_name || "—" })}
+            <UserRound size={13} /> {tp(t, "cellConcerns.filedBy", { name: row.worker_name ? tl(row.worker_name) : "—" })}
           </div>
           {phone && (
             <button
@@ -1169,7 +1209,7 @@ function DetailModal({ t, row, onClose, onComments, onDone, onError, phone, lang
         <ConfirmDialog
           tone="danger"
           title={t("cellConcerns.deleteTitle")}
-          message={tp(t, "cellConcerns.deleteBody", { name: row.worker_name || "—" })}
+          message={tp(t, "cellConcerns.deleteBody", { name: row.worker_name ? tl(row.worker_name) : "—" })}
           confirmLabel={t("common.delete")}
           loading={doDelete.isPending}
           error={err}
@@ -1191,6 +1231,7 @@ const Meta = ({ k, v }) => (
 /* ── Tab 3 · analysis ──────────────────────────────────────────────────── */
 
 function AnalysisTab({ t, stats, toolbar, phone, lang }) {
+  const { tl } = useTranslit();
   if (!stats) return <SkeletonBlock className="h-80" />;
   const s = stats;
   const maxCat = Math.max(1, ...s.by_category.map((c) => c.n));
@@ -1258,14 +1299,9 @@ function AnalysisTab({ t, stats, toolbar, phone, lang }) {
 
         <Panel icon={Users} title={t("cellConcerns.chart.byWorker")}>
           {s.by_worker.length === 0 ? <NoData t={t} /> : <Cols n={s.by_worker.length}>{s.by_worker.map((w) => (
-            <Bar key={w.name} label={w.name} n={w.n} pct={(w.n / maxWorker) * 100}
+            <Bar key={w.employee_id || w.name} label={tl(w.name)} n={w.n} pct={(w.n / maxWorker) * 100}
                  color="var(--brand)" />
           ))}</Cols>}
-          <div className="flex gap-2.5 px-3.5 py-3 mt-4 rounded-xl text-xs leading-relaxed max-md:hidden"
-               style={{ background: rgba("#eab308", 0.09), border: `1px solid ${rgba("#eab308", 0.25)}`, color: "var(--text-2)" }}>
-            <AlertTriangle size={15} style={{ color: "#eab308", flex: "none", marginTop: 1 }} />
-            <span>{t("cellConcerns.workerCaveat")}</span>
-          </div>
         </Panel>
       </div>
     </div>

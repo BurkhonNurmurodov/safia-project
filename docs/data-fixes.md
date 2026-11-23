@@ -957,3 +957,22 @@ cell stopped, can you change it to cell not stopped». The record is cell 4412's
   stop stays on the record, but «Kutish yechimlari» lists only the stopped
   half, so the stop leaves its «Muammolar» list. Delete the step, its
   constants, `tests/test_idle_4412_fix.py` and both calls once the flag is set.
+
+
+## The typed cell-concern names matched to Verifix people (`startup.match_concern_workers_nov23`, 2026-11-23)
+
+Every worker-filed concern typed before the name picker
+(`docs/tasks-and-concerns.md`, «A cell concern's NAME is picked from Verifix»)
+is matched ONCE (AppSetting `oneshot:concern_workers_matched_nov23`, its value
+the counts) by `concern_workers.match_history`: the people `attendance` holds
+in the concern's cell on its `entry_date`, then the day either side (a night
+shift; `entry_date` is the server's UTC day), then its unit that day. A match
+sets `worker_id` (the directory's one employee id for that folded name — none
+for a namesake), writes the Verifix name over `worker_name` and
+`concern_owner`, and keeps the typing in `worker_typed`. Uplifted rows
+included. On the 9 Nov copy: 5,983 rows → 5,371 matched (2,171 spellings → 1,039
+people), 612 left as typed (two who fit — «Madina» in a cell of two Madinas —
+or nobody, e.g. «Sarsenova Yulduz» for SARSENOVA JULDIZAY). Undo per row:
+`worker_name = concern_owner = worker_typed, worker_id = NULL, worker_typed =
+NULL`.
+

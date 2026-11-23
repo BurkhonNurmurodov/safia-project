@@ -187,6 +187,7 @@ try:
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         backfill_concern_units, add_dm_reachability_columns,
         add_task_comment_author_ref, add_concern_comment_kind_column,
+        add_concern_worker_columns, match_concern_workers_nov23,
         add_task_assignee_kind_column,
         migrate_concern_solutions_to_thread,
         add_notification_recipient_profile,
@@ -459,6 +460,7 @@ try:
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_concern_comment_kind_column()
+    add_concern_worker_columns()
     add_task_assignee_kind_column()
     migrate_concern_solutions_to_thread()
     add_leader_submission_columns()
@@ -785,6 +787,7 @@ try:
     # One-shot (2026-11-09): task #11's description no longer asks for a screenshot.
     patch_task11_description_nov09()
     patch_task10_scrollbar_nov16()
+    match_concern_workers_nov23()
     heal_switched_profile_keys()
     rekey_sheet_eras_boot()
     # Leaders the sync dismissed before `ended_on` existed (2026-11-13). Idempotent.

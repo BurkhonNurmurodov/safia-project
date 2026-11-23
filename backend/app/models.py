@@ -3251,14 +3251,20 @@ class LeaderConcern(Base):
     # source column can disagree with it and every pre-existing row reads
     # correctly as not-worker-filed with nothing migrated.
     #
-    # It is free text by the operator's ruling (2026-09-04) — the shop floor
-    # types a name rather than picking off the day's cell roster — so one person
-    # may appear under several spellings and nothing here may be used as an
-    # identity key. `concern_owner` carries the same string, which is what the
-    # Owner column and the notifications print; owner_role/owner_profile_id stay
-    # NULL on these rows precisely so _serialize falls back to it instead of
-    # naming the leader whose session the PC happened to be logged in as.
+    # From 2026-11-23 it is the VERIFIX name the worker picked off their cell's
+    # list (`services/concern_workers.py`); before, it was typed by hand (the
+    # 2026-09-04 ruling) and the typed rows were matched to the people in the
+    # cell that day — a match replaced the name and kept the typing in
+    # `worker_typed`; a row nobody fits still holds what was typed.
+    # `concern_owner` carries the same string, which is what the Owner column
+    # and the notifications print; owner_role/owner_profile_id stay NULL on
+    # these rows precisely so _serialize falls back to it instead of naming the
+    # leader whose session the PC happened to be logged in as.
     worker_name         = Column(String, nullable=True, index=True)
+    # The worker's Verifix employee id — the identity «Kim yozgan» groups by.
+    # NULL on a typed name nobody fits, and on a match two namesakes share.
+    worker_id           = Column(String(32), nullable=True, index=True)
+    worker_typed        = Column(String(120), nullable=True)   # the name as typed, when a match replaced it
     concern_text        = Column(Text, nullable=False)            # Хавотир
     status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
     deadline_days       = Column(Integer, nullable=True)          # Срок (days)
