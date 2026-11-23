@@ -2050,9 +2050,13 @@ class CellBreakdownTest(unittest.TestCase):
                 mock.patch.object(r.flow, "requests_of", return_value=rows) as req, \
                 mock.patch.object(r.flow, "logistics_people", return_value=[{"key": "idle_owner:1"}]), \
                 mock.patch.object(r.flow, "accept_applies", return_value=True) as acc, \
-                mock.patch.object(r.flow, "cell_workshops", return_value={"7416": {"ru": "Мойка"}}) as shops:
+                mock.patch.object(r.flow, "cell_workshops", return_value={"7416": {"ru": "Мойка"}}) as shops, \
+                mock.patch.object(r, "_places", return_value={"7416": {"block": "A", "floor": 2}}) as places:
             out = r.get_requests(day=DAY, db=None, payload={})
             self.assertEqual(out["workshops"], {"7416": {"ru": "Мойка"}})
+            # each split cell's bo'lim (2026-11-23), from the same codes
+            self.assertEqual(out["places"], {"7416": {"block": "A", "floor": 2}})
+            self.assertEqual(places.call_args[0][1], {"7416", "A2894 · A"})
             # «Qabul qilish» (2026-11-23): the answer says whether THIS viewer accepts first
             self.assertTrue(out["accept"])
             self.assertEqual(acc.call_args[0][1], False)       # asked for a non-admin
@@ -2062,6 +2066,7 @@ class CellBreakdownTest(unittest.TestCase):
             shops.reset_mock()
             req.return_value = [{"id": 2, "parts": []}]
             self.assertEqual(r.get_requests(day=DAY, db=None, payload={})["workshops"], {})
+            self.assertEqual(r.get_requests(day=DAY, db=None, payload={})["places"], {})
             shops.assert_not_called()
 
     def test_axo_requests_always_go_to_every_logistics_person(self):

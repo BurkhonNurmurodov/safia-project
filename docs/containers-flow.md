@@ -120,6 +120,15 @@ containers row from production and move it into the new button».
     request and every day, never one handed out by position in a split. It is
     an identity, not a status: the receipt chip beside it stays the one
     verdict.
+  - **Every split cell names its BO'LIM** (2026-11-23, the operator: «we have
+    to give logistics that kind of information — about the team, they have to
+    know where it is located»): under the workshop name, a pinned line «Pirog
+    tayyorlash sexi · 2.07 · A blok · 2-qavat» — on the board's `PartBlock`
+    and in the split dialog («Taqsimlash»), from `places` on the requests
+    answer and on the split hint (`services/bolims.cell_places`). A cell with
+    no bo'lim prints no line. The brigadir's Telegram card is unchanged (a
+    brigadir knows where their team is). The record of bo'lims is in
+    `docs/cells-and-org.md`, «Bo'lims».
   - **The split dialog reads in the order it is filled** (`AssignModal`, the
     same release; nothing in what it sends changed). **How much is handed out
     is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi

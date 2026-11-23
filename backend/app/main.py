@@ -277,6 +277,9 @@ async def lifespan(app: FastAPI):
     # cells.kpi is on the ORM model: add it before any step reads Cell.
     from app.startup import add_cell_kpi_column
     run(add_cell_kpi_column)
+    # cells.bolim_id is on the ORM model too (2026-11-23, the bo'lims).
+    from app.startup import add_cell_bolim_column
+    run(add_cell_bolim_column)
     # equipment.responsible is on the ORM model: add it before /equipment reads it.
     from app.startup import add_equipment_responsible_column
     run(add_equipment_responsible_column)
@@ -310,6 +313,10 @@ async def lifespan(app: FastAPI):
     later(dilafruz_container_flow)
     from app.startup import seed_equipment
     later(seed_equipment)
+    # The bo'lims of the «Ichki logistika» floor plans and their cells (once,
+    # 2026-11-23, mirrored in passenger_wsgi.py).
+    from app.startup import seed_bolims
+    later(seed_bolims)
     from app.startup import nuriddin_container_logistics
     later(nuriddin_container_logistics)
     from app.startup import nuriddin_cat_e

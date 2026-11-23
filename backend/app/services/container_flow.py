@@ -2361,8 +2361,13 @@ def cell_weights(db: Session, day: date, hour: int, exclude_request_id: Optional
         # «write the name of the workshop … remove the names, put just workshop
         # names» — it replaced the leader's name the same day)
         shops = cell_workshops(db, {c for e in out.values() for c in e["names"]})
+        # … and its BO'LIM — room, block, floor (2026-11-23), where the
+        # containers go
+        from app.services import bolims
+        places = bolims.cell_places(db, {c for e in out.values() for c in e["names"]})
         for e in out.values():
             e["workshops"] = {c: shops[c] for c in e["names"] if c in shops}
+            e["places"] = {c: places[c] for c in e["names"] if c in places}
         return out
     except Exception:
         logger.warning("container-flow: cell weights failed", exc_info=True)

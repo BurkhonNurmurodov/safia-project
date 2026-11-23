@@ -262,6 +262,8 @@ try:
     # cells.kpi is on the ORM model: add it before any step reads Cell.
     from app.startup import add_cell_kpi_column
     add_cell_kpi_column()
+    from app.startup import add_cell_bolim_column
+    add_cell_bolim_column()
     from app.startup import add_equipment_responsible_column
     add_equipment_responsible_column()
     migrate_cells_leaders_columns()
@@ -333,6 +335,8 @@ try:
     container_extra_brigadirs_off()     # after it: closed again the same day
     from app.startup import containers_who_sees_what
     containers_who_sees_what()
+    from app.startup import seed_bolims
+    seed_bolims()
     from app.startup import container_watch_shift_managers_off
     container_watch_shift_managers_off()
     from app.startup import container_cols_three_brigadirs

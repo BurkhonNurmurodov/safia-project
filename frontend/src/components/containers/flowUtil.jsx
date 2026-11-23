@@ -2,13 +2,14 @@
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, LayoutGrid, Truck, Users } from "lucide-react";
+import { Clock, LayoutGrid, MapPin, Truck, Users } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
 import { cellLabel, cellName } from "../../utils/cellName";
+import { bolimLine } from "../../utils/bolim";
 import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
@@ -183,7 +184,10 @@ export function cellBreakdown(entry, counts, keys) {
 // The name has a ROW OF ITS OWN and wraps (the operator, the same day: «add
 // another row … make the given name visible for all devices»): on one line with
 // the counts it was cut to «0811 · T…» on a phone, whenever the counts were long.
-export function CellList({ t, cells, workshops, className = "" }) {
+// `places` ({code: {names, code, block, floor}}) adds the cell's BO'LIM — its
+// room, block and floor (2026-11-23, the operator: logistics must know where
+// each team is) — on a line of its own under the workshop, with a pin.
+export function CellList({ t, cells, workshops, places, className = "" }) {
   const { tx, lang } = useTranslit();
   const rows = Object.entries(cells ?? {});
   if (!rows.length) return null;
@@ -192,6 +196,7 @@ export function CellList({ t, cells, workshops, className = "" }) {
       {rows.map(([c, n], i) => {
         const text = countsText(t, n);
         const who = workshops?.[c] ? tx(cellName(workshops[c], lang, "")) : "";
+        const where = places?.[c] ? bolimLine(t, tx, lang, places[c]) : "";
         return (
           <div key={c || "_"} className="px-2.5 py-1.5 text-xs" title={cellLabel(c, who) || undefined}
             style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
@@ -202,6 +207,12 @@ export function CellList({ t, cells, workshops, className = "" }) {
             </div>
             {who && (
               <div className="mt-0.5 pl-[21px] leading-snug break-words" style={{ color: "var(--text-2)" }}>{who}</div>
+            )}
+            {where && (
+              <div className="mt-0.5 flex items-start gap-1 pl-[21px] leading-snug break-words font-medium" style={{ color: "var(--text-1)" }}>
+                <MapPin size={12} className="shrink-0 mt-[2px]" aria-hidden style={{ color: "var(--brand-text)" }} />
+                <span className="min-w-0">{where}</span>
+              </div>
             )}
           </div>
         );

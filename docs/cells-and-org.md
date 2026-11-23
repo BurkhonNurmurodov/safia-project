@@ -778,3 +778,39 @@ columns, edited on the admin «Smena vaqtlari» destination
   exactly what an operator needs to drop.
 - Read surfaces: this tab and `/cells/:id` (the Ownership card's «Ish vaqti»
   row, fed by `hours` on `GET /api/profiles/cells/{id}/details`).
+
+## Bo'lims — the room a team works in (2026-11-23)
+
+The operator: «we have to add bo'lim instead of teams — one supervisor has 5
+teams, and all of them are located in different bo'lims, like in different
+buildings and floors», and the point of it: «we have to give logistics that
+kind of information — about the team, they have to know where it is located».
+
+- **A bo'lim is a room**: a name in four languages, the room's number on the
+  plan when it has one («2.07»), its BLOCK («A», «B») and FLOOR (−1 = the
+  basement) — the `bolims` table. **A cell has at most one** (`cells.bolim_id`,
+  ON DELETE SET NULL); the brigadir link is untouched, so one brigadir's teams
+  sit in as many bo'lims as they work in. Nothing is computed from it.
+- **Seeded once from the «Ichki logistika» simulator** (its floor plans list,
+  per room, the teams' codes — some by SAP code, resolved to the cells carrying
+  them), `services/bolims.py` `SEED`: 26 rooms over blocks A (floors 2, 1, −1)
+  and B (−1, 1, 2, 3), 83 cells. `TWINS` adds 28 cells the plans do not list
+  but that share a SAP code or a workshop name with exactly one placed cell —
+  nearly all the 2nd shift's teams, which work in the 1st shift's room. Left
+  unplaced on purpose: Keles (Axmedova Munisa's unit), Almaty (6866 · 8898 ·
+  9888), 8613 (its only match was a SAP code three cells share) and the cells
+  no rule placed — 2521, 3911, 3921, 4114, 4124, 4326, 4415, 4421, 4423, 4424,
+  4911, 6411, 6711, 7212, 7321, 7331, 7611, 8211, 8218, 8221, 8223, 8821, 8911,
+  8920, 9429 among the counted ones. Two rooms the plans leave unnamed are
+  named after their teams: «Somsa va yupqa xonasi» (8225, 8321) and «Issiq
+  oshxona» (8611 — the plans also list it in «Go'sht bo'limi» by its SAP code;
+  its own Verifix code won). `startup.seed_bolims` is flag-guarded
+  (`oneshot:bolims_seed_nov23`) and never moves a cell already placed.
+- **Kept on /cells**: a «Bo'lim» column (the name · room number · «A blok ·
+  2-qavat», `utils/bolim.js` `bolimLine` is THE print), a «Bo'lim» filter
+  («Bo'limsiz» = not placed), the line on the phone card, the picker on the
+  ONE cell form (`CellFormModal`, `bolim_id` — 0 clears, absent = untouched),
+  and «Bo'limlar» on the toolbar (`BolimsModal`): add, rename, move, delete —
+  deleting un-places its cells and deletes nothing else. Read with the page,
+  written with the cells-manage power (`/api/profiles/admin/bolims`).
+- **Read by the container split** — see `docs/containers-flow.md`.

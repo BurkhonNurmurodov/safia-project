@@ -64,7 +64,7 @@ from app.services import (
 from app.services.cell_lookup import norm_code
 from app.services.latin_code import latin_code
 from app.models import (
-    Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
+    Admin, Bolim, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
     LeaderConcern, LeaderTask, Manager, PPDaily, ProfilePhoto, RoleProfile,
     TelegramUser, TelegramUserRole, Translation, WebCredential,
 )
@@ -874,6 +874,9 @@ class CellPayload(BaseModel):
     # «KPI hisoblanadi» (cells.kpi, 2026-11-16): False takes the cell out of
     # every leaders' KPI. None = untouched; only an ADMIN may change it.
     kpi:                   Optional[bool] = None
+    # The BO'LIM the cell works in (cells.bolim_id, 2026-11-23): 0 = clear,
+    # None = untouched — so a tab from before the field leaves it as it stands.
+    bolim_id:              Optional[int] = None
     # Cells of the same unit and work centre that change brigadir WITH this one
     # («Birga ko'chirish», 2026-10-26): a team leaving together takes the
     # positions it shares along (`services/catalog_refusal.py`). Read only with
@@ -1080,6 +1083,10 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload,
         row.one_process = bool(payload.one_process)
     if payload.kpi is not None:
         row.kpi = bool(payload.kpi)
+    if payload.bolim_id is not None:
+        if payload.bolim_id and not db.query(Bolim.id).filter_by(id=payload.bolim_id).first():
+            raise HTTPException(status_code=400, detail="Bo'lim not found")
+        row.bolim_id = payload.bolim_id or None
     return pend
 
 
@@ -1277,6 +1284,7 @@ def admin_list_cells(db: Session = Depends(get_db),
             "in_load": bool(c.in_load),
             "one_process": bool(c.one_process),
             "kpi": c.kpi is not False,
+            "bolim_id": c.bolim_id,
             "archived_at": c.archived_at.isoformat() if c.archived_at else None,
             "archived_by": c.archived_by,
             # The Verifix live sync (2026-10-12): tied to a Verifix subdivision,
@@ -1298,7 +1306,108 @@ def admin_list_cells(db: Session = Depends(get_db),
         } for c in cell_rows],
         # Whether this viewer may pick a «Boshqaruvchi» anywhere on the page.
         "can_pick_manager": pick_all or own_unit is not None,
+        # The bo'lims (2026-11-23) — the register's column, filter and form.
+        "bolims": _bolims_list(db),
     }
+
+
+# ── Bo'lims: the rooms the teams work in (2026-11-23, services/bolims.py) ─────
+#
+# Read with the page, written with the cells-manage power — the same split as
+# the cells themselves. Deleting a bo'lim un-places its cells (ON DELETE SET
+# NULL) and deletes nothing else.
+
+def _bolims_list(db: Session) -> list:
+    from sqlalchemy import func as _f
+    from app.services import bolims as _bolims
+    counts = dict(db.query(Cell.bolim_id, _f.count(Cell.id))
+                  .filter(Cell.bolim_id.isnot(None), Cell.archived_at.is_(None))
+                  .group_by(Cell.bolim_id).all())
+    rows = db.query(Bolim).order_by(Bolim.block, Bolim.floor.desc(), Bolim.name_ru, Bolim.id).all()
+    return [_bolims.bolim_out(b, counts.get(b.id, 0)) for b in rows]
+
+
+def _bolim_label(db: Session, bid: Optional[int]) -> Optional[str]:
+    if not bid:
+        return None
+    b = db.query(Bolim).filter_by(id=bid).first()
+    if not b:
+        return None
+    where = " · ".join(x for x in (b.block and f"{b.block}", b.floor is not None and f"{b.floor}") if x)
+    return f"{b.name_ru or b.name_uz or b.name_en or b.id}{f' ({where})' if where else ''}"
+
+
+class BolimPayload(BaseModel):
+    name_uz:      Optional[str] = None
+    name_uz_cyrl: Optional[str] = None
+    name_ru:      Optional[str] = None
+    name_en:      Optional[str] = None
+    code:         Optional[str] = None
+    block:        Optional[str] = None
+    floor:        Optional[int] = None
+
+
+def _apply_bolim(row: Bolim, p: BolimPayload) -> None:
+    for f in ("name_uz", "name_uz_cyrl", "name_ru", "name_en", "code"):
+        v = getattr(p, f)
+        if v is not None:
+            setattr(row, f, " ".join(v.split()) or None)
+    if p.block is not None:
+        row.block = latin_code(" ".join(p.block.split())).upper() or None
+    row.floor = p.floor
+    if not any((row.name_uz, row.name_uz_cyrl, row.name_ru, row.name_en)):
+        raise HTTPException(status_code=400, detail="A bo'lim needs a name")
+    if row.floor is not None and not -5 <= row.floor <= 30:
+        raise HTTPException(status_code=400, detail="Floor out of range")
+
+
+@router.get("/admin/bolims")
+def admin_list_bolims(db: Session = Depends(get_db),
+                      caller: dict = Depends(require_page("cells"))):
+    return {"bolims": _bolims_list(db)}
+
+
+@router.post("/admin/bolims")
+def admin_create_bolim(payload: BolimPayload, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
+    row = Bolim()
+    _apply_bolim(row, payload)
+    db.add(row)
+    db.commit()
+    action_log.enrich(target_kind="bolim", target_id=row.id, target_name=row.name_ru or row.name_uz,
+                      details=[("block", row.block), ("floor", row.floor)])
+    return {"ok": True, "id": row.id}
+
+
+@router.put("/admin/bolims/{bid}")
+def admin_update_bolim(bid: int, payload: BolimPayload, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
+    row = db.query(Bolim).filter_by(id=bid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Bo'lim not found")
+    old = _bolim_label(db, bid)
+    _apply_bolim(row, payload)
+    db.commit()
+    new = _bolim_label(db, bid)
+    action_log.enrich(target_kind="bolim", target_id=bid, target_name=row.name_ru or row.name_uz,
+                      changes=[("bolim", old, new)] if old != new else [])
+    return {"ok": True, "id": bid}
+
+
+@router.delete("/admin/bolims/{bid}")
+def admin_delete_bolim(bid: int, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE, page_admin_cap("cells")))):
+    row = db.query(Bolim).filter_by(id=bid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Bo'lim not found")
+    label = _bolim_label(db, bid)
+    freed = db.query(Cell).filter(Cell.bolim_id == bid).update({Cell.bolim_id: None},
+                                                                 synchronize_session=False)
+    db.delete(row)
+    db.commit()
+    action_log.enrich(target_kind="bolim", target_id=bid, target_name=label,
+                      details=[("cells", freed)])
+    return {"ok": True, "freed": freed}
 
 
 # ── /cells register → formatted Excel report ──────────────────────────────────
@@ -1664,7 +1773,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
            "one_process": bool(row.one_process), "kpi": row.kpi is not False,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
-           "owner_id": row.owner_id,
+           "owner_id": row.owner_id, "bolim": _bolim_label(db, row.bolim_id),
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     before = _placement(row)
     if payload.verifix_code is not None:
@@ -1684,12 +1793,12 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
            "wc_group": row.wc_group, "in_load": bool(row.in_load),
            "one_process": bool(row.one_process), "kpi": row.kpi is not False,
            "manager_id": row.manager_id, "leader_id": row.leader_id,
-           "owner_id": row.owner_id,
+           "owner_id": row.owner_id, "bolim": _bolim_label(db, row.bolim_id),
            **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     db.commit()
     diff = [(k, old[k], new[k])
             for k in ("verifix_code", "sap_code", "wc_group", "in_load", "one_process", "kpi",
-                      *_CELL_NAME_DIFF)
+                      "bolim", *_CELL_NAME_DIFF)
             if old[k] != new[k]]
     if "manager_id" in pend:
         to = (waiting.get("manager_id") or {}).get("value")

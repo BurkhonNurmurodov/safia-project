@@ -13,6 +13,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
+import { bolimName, bolimWhere } from "../utils/bolim";
 import { cellMoveRefusal, cellMoveRefusalText } from "../utils/cellMoveRefusal";
 import { GROUP_LETTERS } from "../utils/wcGroup";
 import GroupBadge from "./ui/GroupBadge";
@@ -80,7 +81,7 @@ const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none"
 const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
 
 export default function CellFormModal({ mode, item, units, leaders, onClose, onSaved }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl, tx } = useTranslit();
   const { auth } = useAuth();
   const isAdmin = auth?.role === "admin";
@@ -110,13 +111,20 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           in_load: !!item.in_load,
           one_process: !!item.one_process,
           kpi: item.kpi !== false,
+          bolim_id: item.bolim_id ? String(item.bolim_id) : "",
         }
       : {
           verifix_code: "", sap_code: "", wc_group: "", manager_id: "",
           name_workshop_uz: "", name_workshop_uz_cyrl: "",
           name_workshop_ru: "", name_workshop_en: "", in_load: false, one_process: false,
-          kpi: true,
+          kpi: true, bolim_id: "",
         });
+  // The bo'lims (room · block · floor, 2026-11-23) the cell can be placed in.
+  const bolimsQ = useQuery({
+    queryKey: ["admin-bolims"],
+    queryFn: () => api.get("/api/profiles/admin/bolims").then((r) => r.data.bolims),
+    staleTime: 60_000,
+  });
   // The «Boshqaruvchi» pick: undefined = untouched, "" = back to the Verifix
   // seat, else a Verifix employee id from the pool (CellManagerPicker).
   const [mgrPick, setMgrPick] = useState(undefined);
@@ -260,6 +268,8 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
       name_workshop_en: form.name_workshop_en || "",
       in_load: inLoad,
       one_process: !!form.one_process,
+      // Always sent: 0 clears.
+      bolim_id: form.bolim_id ? Number(form.bolim_id) : 0,
     };
     if (kpiAdmin) body.kpi = !!form.kpi;
     if (!ruLocked) body.name_workshop_ru = form.name_workshop_ru || "";
@@ -354,6 +364,21 @@ export default function CellFormModal({ mode, item, units, leaders, onClose, onS
           }}
           onChange={(l, v) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: v }))}
           readOnlyLangs={ruLocked ? ["ru"] : []}
+        />
+      </FormField>
+      <FormField label={t("bolim.label")} hint={t("bolim.formHint")}>
+        <StyledSelect
+          searchable
+          value={form.bolim_id}
+          onChange={(v) => setForm((f) => ({ ...f, bolim_id: v }))}
+          options={[
+            { value: "", label: "—" },
+            ...(bolimsQ.data || []).map((b) => {
+              const name = tx(bolimName(b, lang));
+              const where = [b.code, bolimWhere(t, b)].filter(Boolean).join(" · ");
+              return { value: String(b.id), label: where ? `${name} · ${where}` : name, short: name };
+            }),
+          ]}
         />
       </FormField>
       <FormField label={t("admin.profiles.colSupervisor")}

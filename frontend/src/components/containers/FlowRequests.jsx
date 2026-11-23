@@ -314,7 +314,7 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
     </span>
   );
   const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu,
-    shops: logiSide ? q.data?.workshops : null };
+    shops: logiSide ? q.data?.workshops : null, places: logiSide ? q.data?.places : null };
 
   return (
     <div className="flex flex-col gap-4">
@@ -641,7 +641,7 @@ const unitInk = (name) => `hsl(${nameHue(name || "")}, 58%, 55%)`;
 // own hue (2026-11-22, the operator: logistics must tell the brigadirs of a
 // split apart at a glance) — a soft tint, a coloured left edge, the name in
 // the hue through `.chat-ink`, so it reads on both themes.
-function PartBlock({ p, t, tl, shops }) {
+function PartBlock({ p, t, tl, shops, places }) {
   const got = p.received;
   const short = got && KEYS.some((k) => (got[k] ?? 0) < (p.counts[k] ?? 0));
   const ink = unitInk(p.unit);
@@ -668,7 +668,7 @@ function PartBlock({ p, t, tl, shops }) {
             : <Chip tone="ok" icon={Check}>{t("cflow.rcv.st.all")}</Chip>}
         </span>
       </div>
-      <CellList t={t} cells={p.cells} workshops={shops} />
+      <CellList t={t} cells={p.cells} workshops={shops} places={places} />
     </li>
   );
 }
@@ -677,7 +677,7 @@ function PartBlock({ p, t, tl, shops }) {
 // toggles it: one button laid under the head (a button cannot hold «Taqsimlash»
 // and ⋮ inside it), the head's own content drawn over it and letting the press
 // through, the two controls taking theirs.
-function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu, shops }) {
+function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu, shops, places }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
@@ -761,7 +761,7 @@ function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, ma
           )}
           {r.status === "assigned" && r.parts.length > 0 && (
             <ul className="grid gap-3 pt-2.5 md:grid-cols-2 2xl:grid-cols-3" style={{ borderTop: "1px solid var(--border)" }}>
-              {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} />)}
+              {r.parts.map((p) => <PartBlock key={p.manager_id} p={p} t={t} tl={tl} shops={shops} places={places} />)}
             </ul>
           )}
           {!area && r.status === "assigned" && r.given && sum(r.given) > 0 && (
@@ -1414,7 +1414,7 @@ function AssignModal({ t, r, onClose, onDone, onFail }) {
               </div>
               {picked && (
                 <CellList t={t} cells={cellBreakdown(cellEntry(row.unit), row.counts, types)}
-                  workshops={cellEntry(row.unit)?.workshops} />
+                  workshops={cellEntry(row.unit)?.workshops} places={cellEntry(row.unit)?.places} />
               )}
             </div>
           );

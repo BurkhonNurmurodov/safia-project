@@ -12782,3 +12782,41 @@ def idle_4412_not_stopped() -> None:
         _dm_report("fail", f"Yacheyka {code} · {start}–{end} kutish o'zgartirilmadi", error=exc)
     finally:
         db.close()
+
+
+def add_cell_bolim_column() -> None:
+    """2026-11-23: ``cells.bolim_id`` — the bo'lim (room · block · floor) a cell
+    works in. The ``bolims`` table itself comes from ``create_all``, which runs
+    first. NULL for every existing cell until `seed_bolims`. Pure DDL,
+    idempotent; on the ORM model, so it runs before any step reads Cell."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS bolim_id INTEGER "
+                        "REFERENCES bolims(id) ON DELETE SET NULL"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_cells_bolim_id ON cells (bolim_id)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell bolim column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def seed_bolims() -> None:
+    """2026-11-23, once: the bo'lims of the «Ichki logistika» floor plans and
+    the cells they place (`services/bolims.py`). Flag-guarded — after it the
+    register is edited on /cells and never overwritten."""
+    from app.services import bolims
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=bolims.SEED_FLAG).first():
+            return
+        made, placed = bolims.seed(db)
+        db.add(AppSetting(key=bolims.SEED_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] bolims seeded: {made} bo'lims, {placed} cells placed")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] bolims seed skipped: {exc}")
+    finally:
+        db.close()

@@ -319,7 +319,15 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
             # before splitting it — everybody once the step is open, an admin
             # before that. A bundle from before ignores the key.
             "accept": flow.accept_applies(db, r["admin"]),
-            "workshops": flow.cell_workshops(db, codes) if codes else {}}
+            "workshops": flow.cell_workshops(db, codes) if codes else {},
+            # each split cell's BO'LIM — room, block, floor (2026-11-23): where
+            # logistics carries the containers; a bundle from before ignores it
+            "places": _places(db, codes) if codes else {}}
+
+
+def _places(db: Session, codes) -> dict:
+    from app.services import bolims
+    return bolims.cell_places(db, codes)
 
 
 @router.post("/seen/{request_id}")

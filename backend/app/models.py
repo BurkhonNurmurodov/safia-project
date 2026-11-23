@@ -553,6 +553,32 @@ class ProfilePhoto(Base):
                          onupdate=func.now())
 
 
+class Bolim(Base):
+    """2026-11-23: a BO'LIM — a room of the plant where teams work, named with
+    its block and floor («Pirog tayyorlash sexi · A blok · 2-qavat»). The
+    operator: logistics must know where each team is located, and one brigadir's
+    teams sit in different rooms, buildings and floors. A cell belongs to at
+    most one bo'lim (`cells.bolim_id`); the brigadir link is untouched. Seeded
+    once from the «Ichki logistika» floor plans (`services/bolims.py`), edited on
+    /cells afterwards. Read by the container split («Konteyner taqsimlash»),
+    which prints each cell's bo'lim under its workshop name."""
+    __tablename__ = "bolims"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+    # The room's own number on the plan («2.07»), when it has one.
+    code      = Column(String(16), nullable=True)
+    block     = Column(String(8), nullable=True)      # «A», «B»
+    floor     = Column(Integer, nullable=True)        # −1 = basement
+    # The «Ichki logistika» room this row was seeded from («r9»), so a later
+    # read of the plan can find it again. NULL for a bo'lim added by hand.
+    sim_room  = Column(String(32), nullable=True, unique=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Cell(Base):
     """A production cell, first-class entity: Verifix code (unique), optional
     SAP code and per-language workshop names, owned by a supervisor unit and,
@@ -639,6 +665,11 @@ class Cell(Base):
     # «Brigadirlar KPI»). HR's list of service / logistics cells; admin-only.
     # Read LIVE by every month, the frozen ones too (`turnover.with_kpi`).
     kpi          = Column(Boolean, nullable=False, server_default="true", default=True)
+    # 2026-11-23: the BO'LIM (room · block · floor) the cell works in — `Bolim`.
+    # NULL = not placed yet. Nothing is computed from it; the container split
+    # prints it so logistics knows where to carry the containers.
+    bolim_id     = Column(Integer, ForeignKey("bolims.id", ondelete="SET NULL"),
+                          nullable=True, index=True)
 
 
 class CellOjidaniya(Base):
