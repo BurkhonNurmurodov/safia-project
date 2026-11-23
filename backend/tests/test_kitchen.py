@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timedelta
 
-from app.services import kitchen
+from app.services import kitchen, kitchen_forecast
 
 TODAY = date(2026, 11, 12)
 YDAY = TODAY - timedelta(days=1)
@@ -52,6 +52,60 @@ class TallyTest(unittest.TestCase):
         stored = {TODAY: {"1": {"ts": report["1"][TODAY], "m": [["2026-11-12T10:10:00", "O"]]}}}
         out = kitchen.tally(NOW, [TODAY], report, stored, {})
         self.assertEqual((out["inside"], out["left"]), (0, 1))
+
+
+class ForecastTest(unittest.TestCase):
+    """The hours ahead learned from `kitchen_history` (`services/kitchen_forecast`)."""
+
+    def test_learned_turnout_timing_and_the_day(self):
+        rows = []
+        for i in range(2, 2 + kitchen_forecast.LOOKBACK):
+            d = TODAY - timedelta(days=i)
+            # Evenings: half the 100 come at 17:00 and leave an hour past 02:00. Mornings: all come.
+            rows += [(d, "17:00", "02:00", 100, 50, 0, {"1020": 50}, {"1620": 50}),
+                     (d, "06:00", "15:00", 100, 100, 0, {"360": 100}, {"900": 100}),
+                     (d, "", "", 0, 0, 0, {}, {})]
+        model = kitchen_forecast.learn(rows, TODAY)
+        evening = {(TODAY, "17:00", "02:00"): [100, 0, 0]}
+        ahead = kitchen_forecast.expect(NOW, evening, model)
+        self.assertEqual((round(ahead[16]), round(ahead[17]), round(ahead[18]), round(ahead[23])), (0, 0, 50, 50))
+        # Only 50 of the morning's usual 100 came today: the evening is expected lower too.
+        ahead = kitchen_forecast.expect(NOW, {**evening, (TODAY, "06:00", "15:00"): [100, 50, 50]}, model)
+        self.assertAlmostEqual(ahead[18], 40, delta=1)
+        self.assertEqual((round(ahead[15]), round(ahead[16])), (50, 0))   # the morning's 50 leave at 15:00–15:10
+
+    def test_eids_calculated_as_decreed(self):
+        """Every decree of 2024–2026 (president.uz), Qurbon hayit 2025 on the 6th."""
+        self.assertEqual(kitchen_forecast.calculated(range(2024, 2027)), {
+            "ramazon": [date(2024, 4, 10), date(2025, 3, 30), date(2026, 3, 20)],
+            "qurbon": [date(2024, 6, 16), date(2025, 6, 6), date(2026, 5, 27)]})
+
+    def test_the_decree_names_the_day(self):
+        read = kitchen_forecast.parse_decree
+        y2025 = "<p>1. 2025-yilda muborak Qurbon hayitining birinchi kuni 6-iyun – juma kuniga to‘g‘ri</p>"
+        y2026 = "<p>1. Joriy yilda Ramazon hayitining birinchi kuni 20-mart - juma kuniga to‘g‘ri</p>"
+        self.assertEqual(read(y2025, "qurbon", date(2025, 6, 7)), date(2025, 6, 6))
+        self.assertEqual(read(y2026, "ramazon", date(2026, 3, 20)), date(2026, 3, 20))
+        self.assertIsNone(read(y2026, "ramazon", date(2026, 4, 10)))    # too far from the calculation
+        self.assertIsNone(read(y2026, "qurbon", date(2026, 3, 20)))     # the other Eid's decree
+
+    def test_a_holiday_comes_in_as_it_did_last_year(self):
+        eid_then = date(2025, 11, 2)                 # 20 of the usual 80 came
+        rows, d = [], eid_then - timedelta(days=120)
+        while d <= TODAY - timedelta(days=2):
+            n = 20 if d == eid_then else 80
+            rows.append((d, "08:00", "17:00", 100, n, 0, {"470": n}, {"1020": n}))
+            d += timedelta(days=1)
+        model = kitchen_forecast.learn(rows, TODAY)
+        # The calendar lists last year's Eid a day late; the plant says when it was.
+        eids = {"qurbon": [eid_then + timedelta(days=1), TODAY]}
+        model["hol"] = kitchen_forecast.holidays(lambda a, b: [r for r in rows if a <= r[0] <= b], TODAY, eids)
+        self.assertAlmostEqual(model["hol"][TODAY][0], 0.25, places=2)
+        morning = {(TODAY, "08:00", "17:00"): [100, 0, 0]}
+        six = datetime(2026, 11, 12, 6, 0)
+        self.assertAlmostEqual(kitchen_forecast.expect(six, morning, model)[12], 20, delta=1)
+        model["hol"] = kitchen_forecast.holidays(lambda a, b: [r for r in rows if a <= r[0] <= b], TODAY, {})
+        self.assertAlmostEqual(kitchen_forecast.expect(six, morning, model)[12], 80, delta=1)
 
 
 if __name__ == "__main__":

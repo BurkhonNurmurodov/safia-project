@@ -17,9 +17,10 @@ Who is where is `verifix_live._person`'s answer, not a second rule: «inside»
 and «break» (out of the door before the shift's end) are AT WORK NOW; «left»
 and «no_out» are gone.
 
-The hours AHEAD are a forecast from the same rows' schedules: whoever is here
-stays until their shift's planned end, whoever is «not_yet» comes at its
-planned start. Nobody who did not come is expected, and nobody leaves early.
+The hours AHEAD are `kitchen_forecast`'s: today's schedules, with how many of
+each shift usually come and when they come and go, learned from the stored
+history (`kitchen_history`, two years) with its holidays, and corrected by how
+today's started shifts turned out.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.services import verifix, verifix_live
+from app.services import kitchen_forecast, verifix, verifix_live
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +69,16 @@ def _read_report(cfg: dict, days: list[date]) -> dict[str, dict[date, dict]]:
     return out
 
 
-def tally(now: datetime, days: list[date], report: dict, stored: dict, directory: dict) -> dict:
+def _group(day: date, p: dict) -> tuple[date, str, str]:
+    """The person's shift window as `kitchen_history` files it: a scheduled day
+    with both clocks, else ("", "") — no window, or a day off they came on."""
+    if p["begin"] and p["end"] and (p["raw"]["report"].get("day_kind") or "W") == "W":
+        return day, f"{p['begin']:%H:%M}", f"{p['end']:%H:%M}"
+    return day, "", ""
+
+
+def tally(now: datetime, days: list[date], report: dict, stored: dict, directory: dict,
+          model: dict = kitchen_forecast.DEFAULT) -> dict:
     """The counts. `days` ends with today; `stored[day]` is the minute job's
     `emps` of that day (wins over the report's row — it carries the marks)."""
     emps, divs = directory.get("emps") or {}, directory.get("divs") or {}
@@ -76,9 +86,7 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
     tot: Counter = Counter()
     by_div: dict[str, Counter] = defaultdict(Counter)
     spans: list[tuple[datetime, datetime]] = []      # who was in the building, from – to
-    plan: list[tuple[datetime, datetime]] = []       # …and who the schedules put there, after now
-    # shortcut: no schedule end = here for the rest of today; a handful of
-    # people, upgrade when a real unscheduled crowd shows up in the forecast.
+    groups: dict = defaultdict(lambda: [0, 0, 0])    # (day, window) → [planned, arrived, in now]
     midnight = datetime.combine(today + timedelta(days=1), datetime.min.time())
     for eid in set(report) | {e for d in days for e in stored.get(d) or {}}:
         on_site = False
@@ -92,10 +100,11 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
                 rec, marks = (report.get(eid) or {}).get(d), []
             p = verifix_live._person(d, now, rec, marks, None)
             here = p["status"] in ON_SITE
-            if here and not on_site:
-                plan.append((now, p["end"] or midnight))
-            elif p["status"] == "not_yet":
-                plan.append((p["begin"], p["end"] or midnight))
+            if p["status"] != "off":
+                g = groups[_group(d, p)]
+                g[0] += 1
+                g[1] += bool(p["in"])
+                g[2] += here and not on_site
             on_site = on_site or here
             if p["in"]:
                 # A missing check-out counts up to the shift's end, never past it.
@@ -119,12 +128,12 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
             by_div[name][k] += 1
 
     keys = ("inside", "night", "came", "left", "not_yet", "absent")
+    ahead = kitchen_forecast.expect(now, groups, model)
     hours = []
     t = datetime.combine(today, datetime.min.time())
     while t < midnight:
-        ahead = t > now
-        hours.append({"t": t.strftime("%H:%M"), "plan": ahead,
-                      "n": sum(1 for a, b in (plan if ahead else spans) if a <= t < b)})
+        hours.append({"t": t.strftime("%H:%M"), "plan": t.hour in ahead,
+                      "n": round(ahead[t.hour]) if t.hour in ahead else sum(1 for a, b in spans if a <= t < b)})
         t += timedelta(hours=1)
     return {
         **{k: tot[k] for k in keys},
@@ -147,10 +156,11 @@ def _build(db: Session, cfg: dict) -> dict:
     for d in days:
         row = verifix_live._row(db, verifix_live._day_key(d))
         stored[d] = ((row.data or {}).get("emps") or {}) if row else {}
+    model = kitchen_forecast.load(db, today)
     db.rollback()                                    # no transaction held across the Verifix read
     t0 = time.monotonic()
     report = _read_report(cfg, days)
-    out = tally(now, days, report, stored, directory)
+    out = tally(now, days, report, stored, directory, model)
     log.info("kitchen: read %d people in %.1f s — %d inside", len(report),
              time.monotonic() - t0, out["inside"])
     return {"configured": True, "read_at": verifix_live._iso(now), **out}

@@ -41,11 +41,12 @@ names change.
   (approximately) leaving based on the time schedule, so you can show planned
   forecast»). `hours` is 24 slots: up to now, the people in the building at
   the start of the hour, from the clocks (a missing check-out counts up to
-  the shift's end, never past it); after now (`plan: true`), what the SAME
-  rows' schedules say — whoever is at work stays until their shift's planned
-  end, whoever is «Hali kelmagan» comes at its planned start and stays to its
-  end. Nobody who did not come is expected and nobody leaves early; a person
-  with no schedule end is kept for the rest of the day. The page draws the
+  the shift's end, never past it); after now (`plan: true`), the forecast —
+  until 2026-11-23 what the same rows' schedules said (whoever is at work
+  stays until their shift's planned end, whoever is «Hali kelmagan» comes at
+  its planned start; nobody who did not come expected, nobody leaving early),
+  since then `kitchen_forecast` — see «The forecast learned from two years»
+  below. The page draws the
   forecast as a dashed outline under a lighter figure (shape, never colour
   alone — a «~» before each number crowded the row) and highlights
   the current hour. Plain CSS bars: the page loads no chart library. (It
@@ -141,9 +142,74 @@ after, through the report door.
   second year back the same way, newest first, within an hour of the deploy
   that shipped it: all 730 days, 22 Nov 2024 – 21 Nov 2026, real counts in
   both years.
-- **What it is for — NOT built yet**: the analysis (turnout per shift window
-  by weekday / month / season, how early people clock in and how late they
-  leave) and, from it, the forecast of the shifts that have not started. Ask
-  production for the table through the report door (`scripts/ask-prod.py
-  sql`, aggregated in the SELECT — a year is more than its 5,000 rows).
-  Until then «Soatlar bo'yicha» keeps assuming everybody scheduled comes.
+- **What it is for**: the forecast of «Soatlar bo'yicha» — see the next
+  section. To analyse it again, ask production for the table through the
+  report door (`scripts/ask-prod.py sql`) by date range: a year is about
+  21,000 rows, five asks of ≤ 5,000.
+
+## The forecast learned from two years (`kitchen_forecast`, 2026-11-23)
+
+The operator: «analyze these data, analyze the patterns, then, based on that
+build a forecast algorithm which [is] perfect», then «discuss it first», «if
+you need more data, take as much as it needed», and for the Eids: «calculate
+by your own; when by your calculation [the holiday] starts in 3 days check
+that trustable source if it's true». Shipped on «I liked your model. Ship it»
+after a day-by-day check on 50 random normal and 50 holiday days.
+
+- **What decides an hour ahead** (`services/kitchen_forecast.py`; `kitchen.
+  tally` groups today's and yesterday's people by shift window — planned,
+  arrived, inside now — and asks `expect`):
+  - HOW MANY of a window's scheduled people come — per window and weekday,
+    over the last 84 days, holiday days left out, shrunk toward the window's
+    overall rate and the plant's (79 % come; 71 % on a Sunday);
+  - WHEN they come and go — each window's own clock-in offsets from its start
+    and clock-out offsets from its end, paired first-in-first-out, the plant's
+    pooled offsets blended in where a window has little history; overtime
+    runs in spells, so a big window's leave times take its newest 5 stored
+    days at 80 %;
+  - THE HOLIDAY — below;
+  - THE DAY ITSELF — the windows already under way (yesterday's at half
+    weight) against their expected turnout scale the windows still to come.
+  People with no window come and go by the clock, as many as usual for the
+  weekday. With no history (a box without the table) the forecast is the old
+  schedules-only rule.
+- **Holidays: only three empty the plant**, each the same way every year (of
+  a normal day of its weekday): New Year's Eve 0.18 / 0.20, Ramazon hayit
+  0.44 / 0.47, Qurbon hayit 0.59 / 0.69 — from two days before to five after.
+  Navruz, 8 March, 9 May, 1 September, 1 October and Ramadan itself stay at
+  0.90 and more, and are ordinary days to the model. A day on such a ramp
+  takes, WINDOW BY WINDOW, how the same day of the same holiday came in up to
+  five earlier years against what the model expected of it (31 Dec: «08:00–
+  17:00» came 0.12 both years, «17:00–02:00» nobody), shrunk toward the
+  day's own factor. The factors are learned only on a ramp day (≈ 0.1 s); a
+  normal day reads nothing extra.
+- **The Eid dates are CALCULATED, then confirmed by decree.** `calculated`:
+  Meeus' new moon; the month starts the next day when the new moon falls
+  before sunset at Mecca, else the day after (Ramazon hayit = 1 Shawwal,
+  Qurbon hayit = 10 Dhu al-Hijjah). It gives every decree of 2024–2026 and
+  Google's 2021–2023. Google and timeanddate are NOT used: both put Qurbon
+  hayit 2025 on 7 June, the decree and the plant on the 6th. From three days
+  before each calculated Eid to five after (`CHECK`), `eid_dates` reads the
+  President's decisions list (`DECREES_URL`, president.uz) for its «…
+  hayitini nishonlash to'g'risida» and takes the day its sentence names
+  («… hayitining birinchi kuni 6-iyun …», or «Joriy yilda …») — only within
+  two days of the calculation, else the calculation stands. The decrees come
+  out 2–7 days ahead (Ramazon hayit 2026: on 18 March for the 20th), so the
+  check repeats hourly until one is found; a model learned while an Eid near
+  today is unconfirmed is relearned after an hour. A past Eid is settled on
+  the day the plant emptied (± 1). **Not tested: that the production server
+  reaches president.uz** — if it does not, the calculation alone is used and
+  the log says «the decree list did not answer».
+- **How good** (replayed from 06:00 … 20:00 of each day, the hours still
+  ahead): 1 Jun – 21 Nov 2026, 25.6 people an hour off (2.6 %) against 186
+  for the schedules-only rule; 16 Feb – 10 Nov 2025, which no constant was
+  tuned on, 30.9 (3.4 %). 50 random normal days: 27.5, 49 of them under 5 %.
+  The 24 holiday days of the second year, learned from the first: 89 → 57
+  (at 06:00 149 → 68; 31 Dec 247 → 56, Ramazon hayit 151 → 59, Qurbon hayit
+  124 → 73). The rule was better on 15 of those 24 and worse on 8 — most on
+  the day after Qurbon hayit 2026 (44 → 97, too high): the 2026 decree gave
+  everybody 28–29 May off, the 2025 one only the Saturday to six-day weeks.
+  **Not built**: reading a decree's extra days off («qo'shimcha dam olish
+  kuni»); a ± range on the page.
+- The page's text changed in one place: the «Soatlar bo'yicha» subtitle
+  (`hoursSub`, 4 languages) now says what the dashed figures are learned from.
