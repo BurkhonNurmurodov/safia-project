@@ -4915,7 +4915,10 @@ def admin_bulk_update_catalog(body: CatalogBulkBody,
 # stays admin-only behind `_verify_admin`.
 # CLOSED again on 2026-11-17 (the operator: «close unit of measurement for all
 # except for admins»): supervisors and shift-managers read it, admins alone set it.
-UOM_ROLES = ("admin",)
+# REOPENED to supervisors on 2026-11-23 (the operator: «open this page for all
+# supervisors and send them a notification … to fill them all»); shift-managers
+# stay out.
+UOM_ROLES = ("admin", "supervisor")
 # Container capacities (`set_catalog_container`): brigadirs typed them until
 # 2026-11-15, when the operator closed that — the columns are now drawn for
 # these roles only (`CONTAINER_ROLES` in Production.jsx), and so is the write.

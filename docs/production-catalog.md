@@ -625,6 +625,13 @@ four and nothing else.
     `ColumnsPicker` and — the Excel mirroring the visible columns — not in
     their workbook either. The dashboard still carries `uom` per row; nothing
     else on their screen changed.
+  - **REOPENED to SUPERVISORS on 2026-11-23** (the operator: «in workload
+    file we had unit column, can you open this page for all supervisors and
+    send them a notification … to fill them all»). `UOM_ROLES` is
+    `("admin", "supervisor")` and `canEditUomRole` is admin OR supervisor, so a
+    brigadir sees «Birlik» again, edits it in place and has the bulk bar; the
+    column is drawn for exactly those who may set it (`absentCols`). Shift- and
+    top-managers stay as 17 Nov left them — no column, no write.
   - Logged as `production.catalog_uom_set`, so «a brigadir set the measure»
     and «an admin edited a catalog line» are two acts in the Jurnal.
   - **On screen the column is EDITABLE IN PLACE** for whoever may set it: the

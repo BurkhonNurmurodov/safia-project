@@ -2077,7 +2077,9 @@ export default function Production() {
   // CLOSED to everybody but admins on 2026-11-17 (the operator: «close unit of
   // measurement for all except for admins») — supervisors and shift-managers
   // read the column, the backend's `UOM_ROLES` refuses their write.
-  const canEditUomRole = prodAdmin;
+  // REOPENED to supervisors on 2026-11-23 (the operator: «open this page for
+  // all supervisors … to fill them all») — shift- and top-managers stay out.
+  const canEditUomRole = prodAdmin || auth?.role === "supervisor";
   const canEditUom = canEditUomRole && catalogEditable && !isPlaceholderData
     && uomOpts.length > 0;
   // The checkbox column, the row-pick model and the sticky bar below the table
@@ -2183,8 +2185,8 @@ export default function Production() {
   const absentCols = useMemo(
     () => [...(hasGroups ? [] : [GROUP_COL]), ...(typedOnly ? [AUTOFILL_COL] : []),
            ...(sapRole ? [] : SAP_COLS), ...(containerRole ? [] : CONTAINER_COLS),
-           ...(isAdmin ? [] : ["uom"])],
-    [hasGroups, typedOnly, sapRole, containerRole, isAdmin],
+           ...(canEditUomRole ? [] : ["uom"])],
+    [hasGroups, typedOnly, sapRole, containerRole, canEditUomRole],
   );
   const onColsChange = (value) => {
     // The picker is never shown an absent column, and its hide-all / show-all /
