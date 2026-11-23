@@ -186,6 +186,7 @@ class FlowTest(unittest.TestCase):
         self.db.add(ProfilePermission(profile_key=nk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
         self.db.commit()
         r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 5}, "", "axo", "guest:1")
+        flow.accept_request(self.db, r.id, "a", "admin:1", True)     # an admin accepts first (2026-11-23)
         self.db.commit()
         with self.assertRaises(flow.FlowError) as e:
             flow.assign_request(self.db, r.id, [{"manager_id": 8802, "counts": {"yellow": 5}}],
@@ -1218,6 +1219,178 @@ class FlowTest(unittest.TestCase):
         self.db.commit()
         self.assertEqual(x.logistics_key, flow.ALL_KEY)
 
+    def _second_logist(self):
+        from app.models import ProfilePermission, RoleProfile
+        y = RoleProfile(role="idle-owner", name="Second Logist")
+        self.db.add(y)
+        self.db.flush()
+        yk = f"idle-owner:{y.id}"
+        self.db.add(ProfilePermission(profile_key=yk, capability=flow.LOGISTICS_CAP, mode="grant", scope="all"))
+        self.db.commit()
+        return yk
+
+    def test_accept_comes_before_the_split(self):
+        """«Qabul qilish» (2026-11-23): the step is the admins' alone until its
+        switch is on; then every logistics person accepts first — the first
+        takes the request, everybody sees who, and only they split it."""
+        nk = self._logistics()
+        yk = self._second_logist()
+        part = [{"manager_id": 1, "counts": {"yellow": 30}}]
+        cfg = flow.settings(self.db)
+        self.assertEqual((cfg["accept_step"], cfg["notify_unaccepted"]), (False, True))
+        # ── closed: a logistics person splits as before; an admin accepts first
+        self.assertFalse(flow.accept_applies(self.db, False))
+        self.assertTrue(flow.accept_applies(self.db, True))
+        r = flow.create_request(self.db, DAY, 10, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.assign_request(self.db, r.id, part, None, None, "Admin", "admin:1", True)
+        self.assertEqual(cm.exception.code, "accept_first")
+        self.db.rollback()
+        flow.assign_request(self.db, r.id, part, None, None, "Nuriddin aka", nk, False)
+        self.db.commit()
+        self.db.refresh(r)
+        self.assertEqual((r.status, r.accepted_at, r.logistics_key), ("assigned", None, nk))
+        # an admin's accept takes a request: a logistics person finds it accepted
+        r2 = flow.create_request(self.db, DAY, 11, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+        self.db.commit()
+        flow.accept_request(self.db, r2.id, "Admin", "admin:1", True)
+        self.db.commit()
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.assign_request(self.db, r2.id, part, None, None, "Nuriddin aka", nk, False)
+        self.assertEqual(cm.exception.code, "accepted")
+        self.db.rollback()
+        flow.assign_request(self.db, r2.id, part, None, None, "Admin", "admin:1", True)
+        self.db.commit()
+        # ── open: everybody accepts first
+        flow.save_settings(self.db, accept_step=True)
+        self.assertTrue(flow.accept_applies(self.db, False))
+        with mock.patch.object(flow, "now", return_value=self.at(9, 5)):
+            r3 = flow.create_request(self.db, DAY, 12, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+            self.db.commit()
+            with self.assertRaises(flow.FlowError) as cm:
+                flow.assign_request(self.db, r3.id, part, None, None, "Nuriddin aka", nk, False)
+            self.assertEqual(cm.exception.code, "accept_first")
+            self.db.rollback()
+            with self.assertRaises(flow.FlowError) as cm:       # a stranger cannot take it
+                flow.accept_request(self.db, r3.id, "Stranger", "idle-owner:99999", False)
+            self.assertEqual(cm.exception.code, "not_yours")
+            self.db.rollback()
+            flow.accept_request(self.db, r3.id, "Second Logist", yk, False)
+            self.db.commit()
+        self.db.refresh(r3)
+        self.assertEqual((r3.status, r3.logistics_key, r3.logistics_name, r3.accepted_by),
+                         ("requested", yk, "Second Logist", "Second Logist"))
+        self.assertEqual(r3.accepted_at, self.at(9, 5))
+        self.assertEqual(r3.seen_at, self.at(9, 5))                    # accepted is opened
+        # everybody sees who took it
+        row = next(q for q in flow.requests_of(self.db, DAY) if q["id"] == r3.id)
+        self.assertEqual((row["accepted_by"], row["status"]), ("Second Logist", "requested"))
+        self.assertTrue(row["accepted_at"])
+        # one's own again changes nothing; the colleague is refused — the accept and the split
+        flow.accept_request(self.db, r3.id, "Second Logist", yk, False)
+        self.db.commit()
+        for fn in (lambda: flow.accept_request(self.db, r3.id, "Nuriddin aka", nk, False),
+                   lambda: flow.assign_request(self.db, r3.id, part, None, None, "Nuriddin aka", nk, False)):
+            with self.assertRaises(flow.FlowError) as cm:
+                fn()
+            self.assertEqual(cm.exception.code, "accepted")
+            self.db.rollback()
+        # AXO's edit keeps the acceptor, whatever addressee the body names
+        _r, changes, old_key = flow.edit_request(self.db, r3.id, 12, flow.ALL_KEY, {"yellow": 20}, "")
+        self.db.commit()
+        self.db.refresh(r3)
+        self.assertEqual((old_key, r3.logistics_key, r3.logistics_name), (yk, yk, "Second Logist"))
+        self.assertEqual([c[0] for c in changes], ["counts"])
+        self.assertIsNotNone(r3.accepted_at)
+        # the acceptor splits it; after that there is nothing to accept
+        flow.assign_request(self.db, r3.id, [{"manager_id": 1, "counts": {"yellow": 20}}],
+                            None, None, "Second Logist", yk, False)
+        self.db.commit()
+        self.db.refresh(r3)
+        self.assertEqual((r3.status, r3.assigned_by), ("assigned", "Second Logist"))
+        with self.assertRaises(flow.FlowError) as cm:
+            flow.accept_request(self.db, r3.id, "Nuriddin aka", nk, False)
+        self.assertEqual(cm.exception.code, "state")
+        self.db.rollback()
+
+    def test_unaccepted_request_is_reminded_every_half_hour(self):
+        """Open to logistics, a request nobody accepted goes to each of them
+        again every 30 minutes — «Qabul qilish» on the card — until one
+        accepts; closed, the card is the old one and nobody is reminded."""
+        from app.models import TelegramUserRole
+        from app.routers import staff
+        self.db.execute(flow.text("DELETE FROM telegram_user_roles"))
+        nk = self._logistics()
+        yk = self._second_logist()
+        self.db.add(TelegramUserRole(telegram_id=6001, role="idle-owner", role_id=int(nk.split(":")[1]),
+                                     full_name="Nuriddin aka", status="approved", profile_key=nk))
+        self.db.add(TelegramUserRole(telegram_id=6002, role="idle-owner", role_id=int(yk.split(":")[1]),
+                                     full_name="Second Logist", status="approved", profile_key=yk))
+        self.db.commit()
+        sent = []
+
+        def capture(db, key, nkey, params, **kw):
+            kb = kw["markup_fn"]("uz").to_dict()["inline_keyboard"]
+            sent.append((key, nkey, kw["html_fn"]("uz"), [b.get("callback_data") for row in kb for b in row]))
+            return {len(sent)}
+        with mock.patch("app.database.SessionLocal", self.pg.Session), \
+             mock.patch.object(staff, "notify_profile", side_effect=capture):
+            flow.save_settings(self.db, True)                      # the logistics switch
+            with mock.patch.object(flow, "now", return_value=self.at(8)):
+                r = flow.create_request(self.db, DAY, 12, flow.ALL_KEY, {"yellow": 30}, "", "Dilafruz", "guest:1")
+            self.db.commit()
+            # closed: the card has the page button alone, and nobody is reminded
+            self.assertTrue(flow.notify_request(r.id, "new"))
+            self.assertEqual([s[3] for s in sent], [[None], [None]])
+            self.assertIn("birinchi taqsimlagan oladi", sent[0][2])
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(8, 40)), 0)
+            # open: «Qabul qilish» leads the card
+            flow.save_settings(self.db, accept_step=True)
+            sent.clear()
+            self.assertTrue(flow.notify_request(r.id, "new"))
+            self.assertEqual([s[3] for s in sent], [[f"cac:{r.id}", None]] * 2)
+            self.assertIn("birinchi qabul qilgan oladi", sent[0][2])
+            self.assertNotIn("birinchi taqsimlagan oladi", sent[0][2])
+            sent.clear()
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(8, 20)), 0)     # not half an hour yet
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(8, 31)), 1)
+            self.assertEqual(sorted(s[0] for s in sent), sorted([nk, yk]))
+            self.assertEqual({s[1] for s in sent}, {"container_request_remind"})
+            self.assertIn("hali qabul qilinmagan", sent[0][2])
+            self.assertEqual(sent[0][3], [f"cac:{r.id}", None])
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(8, 45)), 0)     # 30 minutes from the last
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(9, 2)), 1)      # and again
+            flow.save_settings(self.db, notify_unaccepted=False)                    # its own switch stops it
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(9, 40)), 0)
+            flow.save_settings(self.db, notify_unaccepted=True)
+            # the bot's button: a stranger's tap does nothing, the first holder's takes it
+            self.assertEqual(flow.accept_from_bot(self.db, r.id, 9999)[0], "not_yours")
+            with mock.patch.object(flow, "now", return_value=self.at(9, 41)):
+                code, got, key = flow.accept_from_bot(self.db, r.id, 6001)
+            self.db.commit()
+            self.assertEqual((code, key, got.accepted_by, got.logistics_key), ("done", nk, "Nuriddin aka", nk))
+            code, got, _k = flow.accept_from_bot(self.db, r.id, 6002)                # the colleague, a moment late
+            self.assertEqual((code, got.accepted_by), ("accepted", "Nuriddin aka"))
+            self.assertEqual(flow.accept_from_bot(self.db, r.id, 6001)[0], "done")   # his own tap again
+            self.assertEqual(flow.accept_from_bot(self.db, 999999, 6001)[0], "gone")
+            # accepted: no more reminders, and a changed request's card has nothing to accept
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(10, 30)), 0)
+            sent.clear()
+            self.assertTrue(flow.notify_request(r.id, "edited"))
+            self.assertEqual([(s[0], s[3]) for s in sent], [(nk, [None])])
+            # split: its old card answers so
+            flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 30}}],
+                                None, None, "Nuriddin aka", nk, False)
+            self.db.commit()
+            self.assertEqual(flow.accept_from_bot(self.db, r.id, 6002)[0], "state")
+            # a request long past its deadline nags nobody
+            with mock.patch.object(flow, "now", return_value=self.at(8)):
+                flow.create_request(self.db, DAY, 10, flow.ALL_KEY, {"yellow": 5}, "", "Dilafruz", "guest:1")
+            self.db.commit()                                                        # due 09:00
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(11, 1)), 0)
+        self.assertIn("Qabul qildi: Nuriddin aka · 09:41", flow.accept_text("uz", "other", name="Nuriddin aka", at="09:41"))
+
     def test_request_to_everybody_needs_somebody_to_go_to(self):
         self._logistics()
         self.db.execute(flow.text("DELETE FROM profile_permissions"))
@@ -1777,6 +1950,7 @@ class PageKeyTest(unittest.TestCase):
                   ("POST", f"{p}/extras/{{extra_id}}/approve"), ("POST", f"{p}/extras/{{extra_id}}/reject")]:
             self.assertEqual(guard[k], "axo", k)
         for k in [("POST", f"{p}/requests/{{request_id}}/assign"), ("POST", f"{p}/seen/{{request_id}}"),
+                  ("POST", f"{p}/requests/{{request_id}}/accept"),
                   ("GET", f"{p}/units"), ("GET", f"{p}/requests/{{request_id}}/split-hint")]:
             self.assertEqual(guard[k], "logistics", k)
         self.assertEqual(guard[("POST", f"{p}/requests/{{request_id}}/receive")], "receive")
@@ -1863,9 +2037,13 @@ class CellBreakdownTest(unittest.TestCase):
                 mock.patch.object(r, "_me", return_value="idle_owner:1"), \
                 mock.patch.object(r.flow, "requests_of", return_value=rows) as req, \
                 mock.patch.object(r.flow, "logistics_people", return_value=[{"key": "idle_owner:1"}]), \
+                mock.patch.object(r.flow, "accept_applies", return_value=True) as acc, \
                 mock.patch.object(r.flow, "cell_workshops", return_value={"7416": {"ru": "Мойка"}}) as shops:
             out = r.get_requests(day=DAY, db=None, payload={})
             self.assertEqual(out["workshops"], {"7416": {"ru": "Мойка"}})
+            # «Qabul qilish» (2026-11-23): the answer says whether THIS viewer accepts first
+            self.assertTrue(out["accept"])
+            self.assertEqual(acc.call_args[0][1], False)       # asked for a non-admin
             self.assertEqual(shops.call_args[0][1], {"7416", "A2894 · A"})
             self.assertIsNone(req.call_args[0][2])     # a logistics person sees EVERY request (2026-11-23)
             self.assertTrue(out["logistics"])
@@ -1916,6 +2094,7 @@ class CellBreakdownTest(unittest.TestCase):
         with mock.patch.object(r, "_roles", return_value=roles), \
                 mock.patch.object(r, "_me", return_value="supervisor:3"), \
                 mock.patch.object(r.flow, "requests_of", return_value=[]) as req, \
+                mock.patch.object(r.flow, "accept_applies", return_value=False), \
                 mock.patch.object(r.flow, "logistics_people", return_value=[{"key": "idle_owner:1"}]):
             out = r.get_requests(day=DAY, db=None, payload={})
             self.assertEqual(req.call_args[0][2], "supervisor:3")

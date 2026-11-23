@@ -70,6 +70,7 @@ try:
         add_cell_one_process,
         add_leader_ended_on,
         add_container_request_seen,
+        add_container_request_accept,
         add_container_receipt_columns,
         add_container_send_columns,
         add_container_part_cells,
@@ -244,6 +245,7 @@ try:
     add_cell_one_process()
     add_leader_ended_on()
     add_container_request_seen()
+    add_container_request_accept()
     add_container_receipt_columns()
     add_container_send_columns()
     add_container_part_cells()

@@ -144,6 +144,8 @@ class SettingsBody(BaseModel):
     notify_axo: Optional[bool] = None
     notify_managers: Optional[bool] = None
     notify_extra: Optional[bool] = None
+    accept_step: Optional[bool] = None          # «Qabul qilish» open to logistics (2026-11-23)
+    notify_unaccepted: Optional[bool] = None    # its 30-minute reminder
 
 
 @router.put("/settings")
@@ -151,12 +153,15 @@ def put_settings(body: SettingsBody, db: Session = Depends(get_db),
                  payload: dict = Depends(ADMIN)):
     was = flow.settings(db)
     out = flow.save_settings(db, body.notify, body.notify_brigadirs, body.notify_axo,
-                             body.notify_managers, body.notify_extra)
+                             body.notify_managers, body.notify_extra,
+                             accept_step=body.accept_step, notify_unaccepted=body.notify_unaccepted)
     action_log.enrich(changes=[("notify", was["notify"], out["notify"]),
                                ("notify_brigadirs", was["notify_brigadirs"], out["notify_brigadirs"]),
                                ("notify_axo", was["notify_axo"], out["notify_axo"]),
                                ("notify_managers", was["notify_managers"], out["notify_managers"]),
-                               ("notify_extra", was["notify_extra"], out["notify_extra"])])
+                               ("notify_extra", was["notify_extra"], out["notify_extra"]),
+                               ("accept_step", was["accept_step"], out["accept_step"]),
+                               ("notify_unaccepted", was["notify_unaccepted"], out["notify_unaccepted"])])
     return out
 
 
@@ -307,6 +312,10 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     codes = {c for x in rows for p in x["parts"] for c in (p.get("cells") or {})}
     return {"day": day.isoformat(), "requests": rows, "me": me,
             "logistics": logi,
+            # «Qabul qilish» (2026-11-23): must THIS viewer accept a request
+            # before splitting it — everybody once the step is open, an admin
+            # before that. A bundle from before ignores the key.
+            "accept": flow.accept_applies(db, r["admin"]),
             "workshops": flow.cell_workshops(db, codes) if codes else {}}
 
 
@@ -521,6 +530,22 @@ def post_requests_bulk(body: BulkBody, db: Session = Depends(get_db), payload: d
                       details=[("requests", len(ids)),
                                ("hours", ", ".join(f"{i.hour % 24:02d}:00" for i in body.items))])
     return {"ok": True, "ids": ids}
+
+
+@router.post("/requests/{request_id}/accept")
+def post_accept(request_id: int, db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
+    """«Qabul qilish» (2026-11-23): a logistics person takes a waiting request
+    — theirs from now on, shown to every logistics person and AXO; the split
+    comes after it. Nobody is messaged: the page shows it, and the reminders
+    stop."""
+    try:
+        r = flow.accept_request(db, request_id, _actor(payload), _me(db, payload),
+                                page_admin(db, payload, ADMIN_PAGE))
+        db.commit()
+    except flow.FlowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.code)
+    return _req_out(db, r, r.day)
 
 
 class PartBody(BaseModel):

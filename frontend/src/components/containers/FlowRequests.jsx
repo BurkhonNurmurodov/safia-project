@@ -30,6 +30,7 @@ import { SkeletonBlock } from "../ui/Skeleton";
 import { SplitBar, SplitLegend } from "../ui/Meter";
 import { nameHue } from "../ui/ProfileAvatar";
 import { useTranslit } from "../../utils/transliterate";
+import { surnameInitial } from "../../utils/personName";
 import api from "../../utils/api";
 import {
   KEYS, span, hhmm, sum, fmt, errText, Chip, ReasonFields, reasonOk, fieldCls, fieldStyle,
@@ -89,6 +90,51 @@ function SeenMark({ r, t, now }) {
       <EyeOff size={12} className="shrink-0" />
       {slow ? t("cflow.seen.notFor").replace("{d}", durText(t, waited)) : t("cflow.seen.not")}
     </span>
+  );
+}
+
+// «Qabul qilish» (2026-11-23): who TOOK a request before splitting it, and
+// when — shown to everybody (every logistics person, AXO, the watchers), in
+// place of the «seen» mark it supersedes. Nothing while nobody accepted.
+// `always` keeps it after the split (a row's opened detail).
+// `short` is the board's shut row, where the line is short: «Abdullayev N. ·
+// 14:05» under the same double tick — the whole sentence on hover and in the
+// opened row.
+function AcceptMark({ r, t, tl, me, always = false, short = false }) {
+  if (!r.accepted_at || (!always && r.status !== "requested")) return null;
+  const at = hhmm(r.accepted_at);
+  const mine = !!me && r.logistics_key === me;
+  const text = mine ? t("cflow.acc.mine").replace("{at}", at)
+    : t("cflow.acc.by").replace("{name}", tl(r.accepted_by) || "—").replace("{at}", at);
+  return (
+    <span className="inline-flex items-center gap-1 min-w-0 max-w-full text-[11px] tabular-nums whitespace-nowrap font-medium"
+      style={{ color: "var(--status-ok)" }} title={`${text} — ${t("cflow.acc.hint")}`}>
+      <CheckCheck size={12} className="shrink-0" />
+      <span className="truncate">{short && !mine ? `${surnameInitial(tl(r.accepted_by)) || "—"} · ${at}` : text}</span>
+    </span>
+  );
+}
+
+// The ONE button a waiting request offers a logistics person: «Qabul qilish»
+// first (green — it decides, like the bot's), then the split / the delivery in
+// the very same spot, so accepting moves nothing on the list.
+function RowAction({ r, t, fresh = false, size = "lg", idleTint = false, className, mayAccept, accept, accepting, mayAssign, openAssign }) {
+  const px = size === "sm" ? 13 : 15;
+  if (mayAccept(r)) {
+    return (
+      <Button size={size} variant="success" className={className} icon={<Check size={px} />}
+        loading={accepting(r)} onClick={() => accept(r)}>
+        {t("cflow.acc.btn")}
+      </Button>
+    );
+  }
+  if (!mayAssign(r)) return null;
+  const area = r.area_id != null;
+  return (
+    <Button size={size} className={className} tint={idleTint && !fresh}
+      icon={area ? <Truck size={px} /> : <Split size={px} />} onClick={() => openAssign(r)}>
+      {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
+    </Button>
   );
 }
 
@@ -219,8 +265,25 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
   // a write here changes «Qabul», «Tahlil» and «Hisobot» too — re-read them all
   const done = (msg) => { toast.success(msg); refreshFlow(qc); };
   const fail = (e) => toast.error(errText(t, e));
-  const mayAssign = (r) => r.status === "requested" && roles.logistics
-    && (roles.admin || r.logistics_key === me || r.logistics_key === ALL_KEY);
+  // a waiting request the viewer may act on: theirs, everybody's while nobody
+  // accepted it — any, for an admin
+  const actable = (r) => r.status === "requested" && roles.logistics
+    && (roles.admin || r.logistics_key === me || (r.logistics_key === ALL_KEY && !r.accepted_at));
+  // «Qabul qilish» first (2026-11-23): where the step applies to the viewer
+  // (`accept` of the answer — everybody once it is open, an admin before), an
+  // unaccepted request offers «Qabul qilish» and the split comes after it. An
+  // accepted one is its acceptor's: `logistics_key` is theirs from that moment.
+  const acceptOn = !!q.data?.accept;
+  const mayAccept = (r) => acceptOn && actable(r) && !r.accepted_at;
+  const mayAssign = (r) => actable(r) && !mayAccept(r);
+  const acceptM = useMutation({
+    mutationFn: (r) => api.post(`/api/container-flow/requests/${r.id}/accept`),
+    onSuccess: () => done(t("cflow.acc.done")),
+    // a colleague was first, or it was split / cancelled meanwhile — show it as it is now
+    onError: (e) => { fail(e); refreshFlow(qc); },
+  });
+  const accept = (r) => { if (!acceptM.isPending) acceptM.mutate(r); };
+  const accepting = (r) => acceptM.isPending && acceptM.variables?.id === r.id;
   // AXO withdraws a request while it waits — or after its split (2026-11-15),
   // until a brigadir confirms containers arriving (the server's rule too)
   const mayCancel = (r) => roles.axo && (r.status === "requested" || r.status === "assigned");
@@ -250,7 +313,8 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
       {roles.axo && <Button icon={<Plus size={14} />} onClick={() => onNew()}>{t("cflow.req.new")}</Button>}
     </span>
   );
-  const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops: logiSide ? q.data?.workshops : null };
+  const ctx = { t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu,
+    shops: logiSide ? q.data?.workshops : null };
 
   return (
     <div className="flex flex-col gap-4">
@@ -323,7 +387,7 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
           onFail={(e) => {
             // sent to everybody and somebody else split it first: the dialog has nothing left to do
             fail(e);
-            if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setAssign(null);
+            if (["taken", "state", "gone", "accepted", "accept_first"].includes(e?.response?.data?.detail)) setAssign(null);
             refreshFlow(qc);
           }} />
       )}
@@ -332,7 +396,7 @@ export function RequestsTab({ t, day, roles, toast, onNew, logiSide = false }) {
           onDone={() => { setDeliver(null); done(t("cflow.snd.delivered")); }}
           onFail={(e) => {
             fail(e);
-            if (["taken", "state", "gone"].includes(e?.response?.data?.detail)) setDeliver(null);
+            if (["taken", "state", "gone", "accepted", "accept_first"].includes(e?.response?.data?.detail)) setDeliver(null);
             refreshFlow(qc);
           }} />
       )}
@@ -411,7 +475,7 @@ function DayStatus({ t, list, loading }) {
   );
 }
 
-function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
+function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu }) {
   const fresh = isFresh(r, me, logi);
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const area = r.area_id != null;
@@ -428,7 +492,7 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
       <td className="px-3 py-2 whitespace-nowrap font-normal">
         <span className="flex items-center gap-2.5 min-w-0">
           <FromTo r={r} t={t} tl={tl} />
-          {!addressee && <SeenMark r={r} t={t} now={now} />}
+          {r.accepted_at ? <AcceptMark r={r} t={t} tl={tl} me={me} /> : !addressee && <SeenMark r={r} t={t} now={now} />}
           {r.note && (
             <span className="inline-flex shrink-0" title={r.note} aria-label={r.note}>
               <MessageSquareText size={13} style={{ color: "var(--text-3)" }} />
@@ -474,11 +538,8 @@ function RequestRow({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }
       {/* every row one height: the cell holds a 32px control or a 32px blank */}
       <td className="px-3 py-[2px]">
         <span className="flex items-center justify-end gap-1 min-w-[140px] min-h-[32px]">
-          {mayAssign(r) && (
-            <Button size="sm" tint={!fresh} icon={area ? <Truck size={13} /> : <Split size={13} />} onClick={() => openAssign(r)}>
-              {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
-            </Button>
-          )}
+          <RowAction r={r} t={t} fresh={fresh} size="sm" idleTint mayAccept={mayAccept} accept={accept}
+            accepting={accepting} mayAssign={mayAssign} openAssign={openAssign} />
           <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={menu(r)} />
         </span>
       </td>
@@ -616,11 +677,12 @@ function PartBlock({ p, t, tl, shops }) {
 // toggles it: one button laid under the head (a button cannot hold «Taqsimlash»
 // and ⋮ inside it), the head's own content drawn over it and letting the press
 // through, the two controls taking theirs.
-function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, mayAssign, openAssign, menu, shops }) {
+function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu, shops }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
   const items = menu(r).filter(Boolean);
+  const act = mayAccept(r) || mayAssign(r);
   const todo = kind === "todo";
   const left = minsTo(r.due_at, now);
   const late = todo && left != null && left < 0;
@@ -659,17 +721,16 @@ function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, ma
               </span>
             ) : <StateChip r={r} t={t} />}
             {r.late && <Chip tone="bad">{t("cflow.req.lateShort")}</Chip>}
+            {/* who took it — on the shut row, so every logistics person sees it at a glance */}
+            {todo && <AcceptMark r={r} t={t} tl={tl} me={me} short />}
             <span className="md:hidden text-xs tabular-nums" style={{ color: "var(--text-3)" }}>
               {t("cflow.board.total").replace("{n}", fmt(sum(r.lines)))}
             </span>
           </span>
-          {(mayAssign(r) || items.length > 0) && (
+          {(act || items.length > 0) && (
             <span className="pointer-events-auto shrink-0 flex items-center gap-1">
-              {mayAssign(r) && (
-                <Button size="lg" icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
-                  {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
-                </Button>
-              )}
+              <RowAction r={r} t={t} mayAccept={mayAccept} accept={accept} accepting={accepting}
+                mayAssign={mayAssign} openAssign={openAssign} />
               {items.length > 0 && <ActionMenu label={`${t("cflow.actions")}: ${span(r.hour)}`} items={items} />}
             </span>
           )}
@@ -686,7 +747,7 @@ function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, ma
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
             <FromTo r={r} t={t} tl={tl} className="max-w-full" />
-            {!addressee && <SeenMark r={r} t={t} now={now} />}
+            {r.accepted_at ? <AcceptMark r={r} t={t} tl={tl} me={me} always /> : !addressee && <SeenMark r={r} t={t} now={now} />}
             {r.status === "requested" && <span className="tabular-nums">{t("cflow.dueAt").replace("{at}", hhmm(r.due_at))}</span>}
             {r.status === "assigned" && r.assigned_by && (
               <span className="tabular-nums">{`${t("cflow.req.assigned")}: ${tl(r.assigned_by)}${r.assigned_at ? ` · ${hhmm(r.assigned_at)}` : ""}`}</span>
@@ -715,7 +776,7 @@ function BoardRow({ r, kind, first, open, onToggle, t, tl, tx, now, me, logi, ma
   );
 }
 
-function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu }) {
+function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, mayAccept, accept, accepting, menu }) {
   const fresh = isFresh(r, me, logi);
   const area = r.area_id != null;
   const addressee = r.logistics_key === me || (r.logistics_key === ALL_KEY && logi);
@@ -753,7 +814,7 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
           <FromTo r={r} t={t} tl={tl} className="max-w-full" />
-          {!addressee && <SeenMark r={r} t={t} now={now} />}
+          {r.accepted_at ? <AcceptMark r={r} t={t} tl={tl} me={me} /> : !addressee && <SeenMark r={r} t={t} now={now} />}
         </div>
         {r.note && (
           <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.note}</p>
@@ -783,11 +844,10 @@ function RequestCard({ r, t, tl, tx, now, me, logi, mayAssign, openAssign, menu 
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{r.cancel_note}</p>
         )}
       </div>
-      {mayAssign(r) && (
+      {(mayAccept(r) || mayAssign(r)) && (
         <div className="px-3.5 pb-3.5">
-          <Button size="lg" className="w-full" tint={!fresh} icon={area ? <Truck size={15} /> : <Split size={15} />} onClick={() => openAssign(r)}>
-            {t(area ? "cflow.snd.deliver" : "cflow.req.assign")}
-          </Button>
+          <RowAction r={r} t={t} fresh={fresh} idleTint className="w-full" mayAccept={mayAccept} accept={accept}
+            accepting={accepting} mayAssign={mayAssign} openAssign={openAssign} />
         </div>
       )}
     </article>

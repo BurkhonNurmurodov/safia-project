@@ -539,6 +539,7 @@ _R: list[tuple[Optional[tuple[str, ...]], str, str, str]] = [
     (("PUT",),    "/api/idle-owner/admin/owners",              "config", "config.idle_owner_saved"),
     (("POST",),   "/api/container-flow/requests/bulk",         "shopfloor", "containers.requests_made"),
     (("POST",),   "/api/container-flow/requests",              "shopfloor", "containers.request_made"),
+    (("POST",),   "/api/container-flow/requests/{}/accept",    "shopfloor", "containers.request_accepted"),
     (("POST",),   "/api/container-flow/requests/{}/assign",    "shopfloor", "containers.request_assigned"),
     (("POST",),   "/api/container-flow/requests/{}/deliver",   "shopfloor", "containers.request_delivered"),
     (("POST",),   "/api/container-flow/send-areas",            "config", "config.container_send_area_added"),

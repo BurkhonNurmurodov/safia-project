@@ -5,8 +5,10 @@
 // batches, removed on 2026-11-18 (docs/containers-flow.md).
 // «Jo'natish jadvali» (2026-11-19) heads the tab: AXO keeps it too, and sees
 // it alone — the switches and the readiness check stay the admins'.
+// «Qabul qilish» (2026-11-23) has a card of its own: the step is the admins'
+// alone until its switch is on, and its 30-minute reminder has its own.
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { BellRing, ListChecks } from "lucide-react";
+import { BellRing, CheckCheck, ListChecks } from "lucide-react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../ui/DataTable";
 import { SkeletonBlock } from "../ui/Skeleton";
@@ -20,7 +22,10 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved, is
   // every switch is saved on the tap; `which` is its field
   const notify = useMutation({
     mutationFn: ({ which, on }) => api.put("/api/container-flow/settings", { [which]: on }),
-    onSuccess: (_, { on }) => { toast.success(t(on ? "cflow.set.notifyOn" : "cflow.set.notifyOff")); onSaved(); },
+    onSuccess: (_, { on, said }) => {
+      toast.success(t(said?.[on ? 0 : 1] ?? (on ? "cflow.set.notifyOn" : "cflow.set.notifyOff")));
+      onSaved();
+    },
     onError: (e) => toast.error(errText(t, e)),
   });
   const SWITCHES = [
@@ -30,6 +35,23 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved, is
     { which: "notify_managers", label: t("cflow.set.notifyManagers"), hint: t("cflow.set.notifyManagersHint") },
     { which: "notify_extra", label: t("cflow.set.notifyExtra"), hint: t("cflow.set.notifyExtraHint") },
   ];
+  // «Qabul qilish»: the step itself (OFF = the admins test it alone), and its reminder
+  const ACCEPT = [
+    { which: "accept_step", label: t("cflow.set.acceptStep"), hint: t("cflow.set.acceptStepHint"),
+      said: ["cflow.set.acceptOn", "cflow.set.acceptOff"] },
+    { which: "notify_unaccepted", label: t("cflow.set.notifyUnaccepted"), hint: t("cflow.set.notifyUnacceptedHint") },
+  ];
+  const switchRow = (s) => (
+    <div key={s.which} className="grid grid-cols-1 sm:grid-cols-[200px_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
+      <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{s.label}</span>
+      {loading ? <SkeletonBlock className="h-[38px] w-40" /> : (
+        <SegmentedToggle value={data?.[s.which] ? "on" : "off"}
+          onChange={(v) => !notify.isPending && notify.mutate({ which: s.which, on: v === "on", said: s.said })}
+          options={[["off", t("cflow.set.off")], ["on", t("cflow.set.on")]]} />
+      )}
+      <span className="text-xs" style={{ color: "var(--text-3)" }}>{s.hint}</span>
+    </div>
+  );
   const ready = useQuery({
     queryKey: ["cflow-readiness", day],
     queryFn: () => api.get("/api/container-flow/readiness", { params: { day } }).then((r) => r.data.units),
@@ -44,17 +66,14 @@ export default function FlowSettings({ t, toast, day, data, loading, onSaved, is
       <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={BellRing} title={t("cflow.set.notifyTitle")} subtitle={t("cflow.set.notifySub")} size="lg" />
         <div className="px-5 pb-5 flex flex-col gap-3">
-          {SWITCHES.map((s) => (
-            <div key={s.which} className="grid grid-cols-1 sm:grid-cols-[200px_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
-              <span className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{s.label}</span>
-              {loading ? <SkeletonBlock className="h-[38px] w-40" /> : (
-                <SegmentedToggle value={data?.[s.which] ? "on" : "off"}
-                  onChange={(v) => !notify.isPending && notify.mutate({ which: s.which, on: v === "on" })}
-                  options={[["off", t("cflow.set.off")], ["on", t("cflow.set.on")]]} />
-              )}
-              <span className="text-xs" style={{ color: "var(--text-3)" }}>{s.hint}</span>
-            </div>
-          ))}
+          {SWITCHES.map(switchRow)}
+        </div>
+      </div>
+
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead icon={CheckCheck} title={t("cflow.set.acceptTitle")} subtitle={t("cflow.set.acceptSub")} size="lg" />
+        <div className="px-5 pb-5 flex flex-col gap-3">
+          {ACCEPT.map(switchRow)}
         </div>
       </div>
 

@@ -6232,6 +6232,14 @@ class ContainerRequest(Base):
     # When «still not split at its deadline» was told to AXO / the shift
     # managers (2026-11-17, `container_flow.alert_overdue`). NULL = not told.
     overdue_alerted_at = Column(DateTime(timezone=True), nullable=True)
+    # «Qabul qilish» (2026-11-23, the operator: a logistics person ACCEPTS a
+    # request, then splits it): when and by whom it was accepted — from that
+    # moment it is theirs (`logistics_key` becomes the acceptor's). NULL = not
+    # accepted. `accept_reminded_at` is the last «still not accepted» reminder
+    # (`container_flow.remind_unaccepted`, every 30 minutes).
+    accepted_at        = Column(DateTime(timezone=True), nullable=True)
+    accepted_by        = Column(String, nullable=True)
+    accept_reminded_at = Column(DateTime(timezone=True), nullable=True)
     # A request FOR a dispatch area («Jo'natish», 2026-11-19, the operator:
     # «sending containers are not like the inside containers, but we have to
     # add them together»): the area of `ContainerSendArea` it is for (its name

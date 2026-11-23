@@ -582,6 +582,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Заявка на контейнеры изменена: {hour}", "{counts} | Срок: {due}"),
         "en": ("Container request changed: {hour}", "{counts} | Due: {due}"),
     },
+    "container_request_remind": {
+        "uz": ("Konteyner so'rovi hali qabul qilinmagan: {hour}", "{counts} | Muddat: {due}"),
+        "uz_cyrl": ("Контейнер сўрови ҳали қабул қилинмаган: {hour}", "{counts} | Муддат: {due}"),
+        "ru": ("Заявка на контейнеры ещё не принята: {hour}", "{counts} | Срок: {due}"),
+        "en": ("Container request still not accepted: {hour}", "{counts} | Due: {due}"),
+    },
     "container_request_moved": {
         "uz": ("Konteyner so'rovi boshqa logistga o'tkazildi: {hour}", "{counts}"),
         "uz_cyrl": ("Контейнер сўрови бошқа логистга ўтказилди: {hour}", "{counts}"),

@@ -62,6 +62,17 @@ _NOTIFY_SM_KEY = "container_flow.notify_managers"
 # never sent (the router decides), and the page key `container-extra` is
 # admin-only until the operator opens it.
 _NOTIFY_EXTRA_KEY = "container_flow.notify_extra"
+# «Qabul qilish» (2026-11-23, the operator: «can we [add] the accept button
+# for logistics, then split for supervisors»): a logistics person ACCEPTS a
+# request before splitting it. The step is the ADMINS' alone until this switch
+# is on (the operator: «show it only to admins first, after testing to
+# others») — off, a logistics person splits as before and gets no reminder.
+_ACCEPT_KEY = "container_flow.accept_step"
+# …and the reminder while a request waits unaccepted (the operator: «send this
+# notification every 30 minutes as a reminder until they accept») — its own
+# switch, ON unless switched off; it can fire only once the step is open.
+_NOTIFY_UNACCEPTED_KEY = "container_flow.notify_unaccepted"
+ACCEPT_REMIND_MIN = 30
 
 
 class FlowError(ValueError):
@@ -98,17 +109,20 @@ def settings(db: Session) -> dict:
     """The «Sozlamalar» switches — each message the page sends has its own."""
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
         AppSetting.key.in_([_NOTIFY_KEY, _NOTIFY_BRIG_KEY, _NOTIFY_AXO_KEY, _NOTIFY_SM_KEY,
-                            _NOTIFY_EXTRA_KEY])).all()}
+                            _NOTIFY_EXTRA_KEY, _ACCEPT_KEY, _NOTIFY_UNACCEPTED_KEY])).all()}
     return {"notify": rows.get(_NOTIFY_KEY) == "1",
             "notify_brigadirs": rows.get(_NOTIFY_BRIG_KEY) == "1",
             "notify_axo": rows.get(_NOTIFY_AXO_KEY, "1") == "1",
             "notify_managers": rows.get(_NOTIFY_SM_KEY) == "1",
-            "notify_extra": rows.get(_NOTIFY_EXTRA_KEY, "1") == "1"}
+            "notify_extra": rows.get(_NOTIFY_EXTRA_KEY, "1") == "1",
+            "accept_step": rows.get(_ACCEPT_KEY) == "1",
+            "notify_unaccepted": rows.get(_NOTIFY_UNACCEPTED_KEY, "1") == "1"}
 
 
 def save_settings(db: Session, notify: Optional[bool] = None,
                   notify_brigadirs: Optional[bool] = None, notify_axo: Optional[bool] = None,
-                  notify_managers: Optional[bool] = None, notify_extra: Optional[bool] = None) -> dict:
+                  notify_managers: Optional[bool] = None, notify_extra: Optional[bool] = None,
+                  accept_step: Optional[bool] = None, notify_unaccepted: Optional[bool] = None) -> dict:
     """A switch given as None stays as it is (a tab on an older bundle saves
     without it)."""
     vals = {}
@@ -122,6 +136,10 @@ def save_settings(db: Session, notify: Optional[bool] = None,
         vals[_NOTIFY_SM_KEY] = "1" if notify_managers else "0"
     if notify_extra is not None:
         vals[_NOTIFY_EXTRA_KEY] = "1" if notify_extra else "0"
+    if accept_step is not None:
+        vals[_ACCEPT_KEY] = "1" if accept_step else "0"
+    if notify_unaccepted is not None:
+        vals[_NOTIFY_UNACCEPTED_KEY] = "1" if notify_unaccepted else "0"
     for k, v in vals.items():
         row = db.get(AppSetting, k)
         if row is None:
@@ -144,13 +162,14 @@ def _due(hs: datetime, at: datetime) -> datetime:
 
 def tick() -> None:
     """The clock's pass (every TICK_MIN minutes): the brigadirs' reminder, the
-    overdue alert and the escalation — each on its own, so one failing never
-    stops the rest. Never raises."""
+    overdue alert, the escalation and the «still not accepted» reminder — each
+    on its own, so one failing never stops the rest. Never raises."""
     from app.database import SessionLocal
     db = SessionLocal()
     try:
         for name, fn in (("reminder", remind_unconfirmed),
-                         ("overdue alert", alert_overdue), ("escalation", escalate_unconfirmed)):
+                         ("overdue alert", alert_overdue), ("escalation", escalate_unconfirmed),
+                         ("accept reminder", remind_unaccepted)):
             try:
                 n = fn(db)
                 if n:
@@ -385,6 +404,51 @@ def _request(db: Session, request_id: int) -> ContainerRequest:
     return r
 
 
+def accept_applies(db: Session, is_admin: bool) -> bool:
+    """Must THIS actor accept a request before splitting it? Everybody once
+    the «Sozlamalar» switch is on; an admin always (the step is theirs to test
+    until then)."""
+    return bool(is_admin) or settings(db)["accept_step"]
+
+
+def _accept_gate(db: Session, r: ContainerRequest, actor_key, is_admin: bool) -> None:
+    """The step before a split or a delivery: an ACCEPTED request is its
+    acceptor's (an admin may still act on any); an unaccepted one must be
+    accepted first by whoever the step applies to."""
+    if r.accepted_at is not None:
+        if not is_admin and r.logistics_key != actor_key:
+            raise FlowError("accepted")         # a colleague accepted it
+    elif accept_applies(db, is_admin):
+        raise FlowError("accept_first")
+
+
+def accept_request(db: Session, request_id: int, actor, actor_key, is_admin: bool) -> ContainerRequest:
+    """«Qabul qilish» (2026-11-23): a logistics person takes a waiting request
+    — it is theirs from this moment (`logistics_key` / `logistics_name`, as a
+    split used to make it), every logistics person and AXO see who and when,
+    and the reminders stop. Only somebody it is addressed to (anybody of them
+    on a request to everybody — the FIRST wins, the row is locked) or an
+    admin. Accepting one's own again changes nothing."""
+    r = _request(db, request_id)
+    if r.status != "requested":
+        raise FlowError("state")
+    people = {p["key"]: p["name"] for p in logistics_people(db)}
+    if r.accepted_at is not None:
+        if r.logistics_key == actor_key:
+            return r
+        raise FlowError("accepted")
+    to_all = r.logistics_key == ALL_KEY
+    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)):
+        raise FlowError("not_yours")
+    at = now()
+    name = people.get(actor_key) or actor
+    r.accepted_at, r.accepted_by = at, name
+    r.logistics_key, r.logistics_name = actor_key or r.logistics_key, name
+    if r.seen_at is None:
+        r.seen_at = at                  # accepted is opened
+    return r
+
+
 def assign_request(db: Session, request_id: int, parts: list, reason, comment, actor,
                    actor_key, is_admin: bool, dispatch: Optional[dict] = None) -> ContainerRequest:
     """The logistics person splits the request across brigadirs: `parts` is
@@ -403,8 +467,10 @@ def assign_request(db: Session, request_id: int, parts: list, reason, comment, a
         raise FlowError("area_split")   # a dispatch area's request is delivered (`deliver_request`)
     people = {p["key"]: p["name"] for p in logistics_people(db)}
     to_all = r.logistics_key == ALL_KEY
-    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)):
+    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)
+                             or r.accepted_at is not None):
         raise FlowError("not_yours")
+    _accept_gate(db, r, actor_key, is_admin)    # «Qabul qilish» first (2026-11-23)
     given: dict = {}
     clean = []
     served = None
@@ -485,8 +551,10 @@ def deliver_request(db: Session, request_id: int, counts: dict, reason, comment,
         raise FlowError("state")
     people = {p["key"]: p["name"] for p in logistics_people(db)}
     to_all = r.logistics_key == ALL_KEY
-    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)):
+    if not is_admin and not (actor_key == r.logistics_key or (to_all and actor_key in people)
+                             or r.accepted_at is not None):
         raise FlowError("not_yours")
+    _accept_gate(db, r, actor_key, is_admin)    # «Qabul qilish» first (2026-11-23)
     c = _clean_counts(counts, SEND_KEYS)
     if not c:
         raise FlowError("count")
@@ -540,6 +608,11 @@ def edit_request(db: Session, request_id: int, hour: int, logistics_key: str, co
     if not (0 <= hour <= 47):
         raise FlowError("hour")
     people = {p["key"]: p["name"] for p in logistics_people(db)}
+    if r.accepted_at is not None:
+        # accepted (2026-11-23): it stays its acceptor's whatever the body
+        # names — they are told it changed, nobody accepts it a second time
+        logistics_key = r.logistics_key
+        people.setdefault(logistics_key, r.logistics_name)
     if logistics_key not in people and not (logistics_key == ALL_KEY and people):
         raise FlowError("logistics")
     # a dispatch area's request stays one (its area may change); a brigadirs' one stays theirs
@@ -663,6 +736,8 @@ def requests_of(db: Session, day: date, logistics_key: Optional[str] = None) -> 
             "short_reason": r.short_reason, "short_comment": r.short_comment,
             "cancelled_at": _iso(r.cancelled_at), "cancelled_by": r.cancelled_by, "cancel_note": r.cancel_note,
             "seen_at": _iso(r.seen_at), "parts": list(by_unit.values()),
+            # «Qabul qilish» (2026-11-23): who took it, and when — shown to everybody
+            "accepted_at": _iso(r.accepted_at), "accepted_by": r.accepted_by,
             "receipt": _receipt(list(by_unit.values())) if r.status == "assigned" and r.area_id is None else None,
             "extra": None if r.id not in extras else {
                 "id": extras[r.id].id, "manager_id": extras[r.id].manager_id,
@@ -1053,7 +1128,14 @@ _TG = {
            "hint": "Brigadirlarga taqsimlang.", "btn": "📦 So'rovni ochish",
            "hint_all": "Barcha logistlarga yuborildi — birinchi taqsimlagan oladi.", "all": "Barcha logistlarga",
            "area": "Jo'natish", "hint_area": "Jo'natish joyiga yetkazing.",
-           "hint_send": "Brigadirlarga taqsimlang, jo'natish konteyner va krishkalarini jo'natishga bering."},
+           "hint_send": "Brigadirlarga taqsimlang, jo'natish konteyner va krishkalarini jo'natishga bering.",
+           "remind": "⏰ Konteyner so'rovi hali qabul qilinmagan",
+           "hint_accept": "Avval «Qabul qilish»ni bosing — birinchi qabul qilgan oladi.",
+           "accept_btn": "✅ Qabul qilish",
+           "acc_done": "✅ Qabul qilindi · {at}", "acc_other": "Qabul qildi: {name} · {at}",
+           "acc_state": "Bu so'rov allaqachon taqsimlangan", "acc_cancelled": "Bu so'rov bekor qilingan",
+           "acc_gone": "So'rov topilmadi", "acc_not_yours": "Bu so'rov sizga yuborilmagan",
+           "acc_failed": "Saqlanmadi — sahifada qabul qiling"},
     "uz_cyrl": {"new": "Янги контейнер сўрови", "cancelled": "Контейнер сўрови бекор қилинди",
                 "edited": "Контейнер сўрови ўзгартирилди", "moved": "Контейнер сўрови бошқа логистга ўтказилди",
                 "moved_hint": "Бу сўровни энди сиз тақсимламайсиз.",
@@ -1061,7 +1143,14 @@ _TG = {
                 "hint": "Бригадирларга тақсимланг.", "btn": "📦 Сўровни очиш",
                 "hint_all": "Барча логистларга юборилди — биринчи тақсимлаган олади.", "all": "Барча логистларга",
                 "area": "Жўнатиш", "hint_area": "Жўнатиш жойига етказинг.",
-                "hint_send": "Бригадирларга тақсимланг, жўнатиш контейнер ва крышкаларини жўнатишга беринг."},
+                "hint_send": "Бригадирларга тақсимланг, жўнатиш контейнер ва крышкаларини жўнатишга беринг.",
+                "remind": "⏰ Контейнер сўрови ҳали қабул қилинмаган",
+                "hint_accept": "Аввал «Қабул қилиш»ни босинг — биринчи қабул қилган олади.",
+                "accept_btn": "✅ Қабул қилиш",
+                "acc_done": "✅ Қабул қилинди · {at}", "acc_other": "Қабул қилди: {name} · {at}",
+                "acc_state": "Бу сўров аллақачон тақсимланган", "acc_cancelled": "Бу сўров бекор қилинган",
+                "acc_gone": "Сўров топилмади", "acc_not_yours": "Бу сўров сизга юборилмаган",
+                "acc_failed": "Сақланмади — саҳифада қабул қилинг"},
     "ru": {"new": "Новая заявка на контейнеры", "cancelled": "Заявка на контейнеры отменена",
            "edited": "Заявка на контейнеры изменена", "moved": "Заявка на контейнеры передана другому логисту",
            "moved_hint": "Эту заявку теперь распределяете не вы.",
@@ -1069,7 +1158,14 @@ _TG = {
            "hint": "Распределите по бригадирам.", "btn": "📦 Открыть заявку",
            "hint_all": "Отправлено всем логистам — берёт тот, кто распределит первым.", "all": "Всем логистам",
            "area": "Отправка", "hint_area": "Доставьте на участок отправки.",
-           "hint_send": "Распределите по бригадирам, а контейнеры и крышки для отправки отдайте на отправку."},
+           "hint_send": "Распределите по бригадирам, а контейнеры и крышки для отправки отдайте на отправку.",
+           "remind": "⏰ Заявка на контейнеры ещё не принята",
+           "hint_accept": "Сначала нажмите «Принять» — заявку берёт тот, кто примет первым.",
+           "accept_btn": "✅ Принять",
+           "acc_done": "✅ Принято · {at}", "acc_other": "Принял(а): {name} · {at}",
+           "acc_state": "Эта заявка уже распределена", "acc_cancelled": "Эта заявка отменена",
+           "acc_gone": "Заявка не найдена", "acc_not_yours": "Эта заявка отправлена не вам",
+           "acc_failed": "Не сохранено — примите на странице"},
     "en": {"new": "New container request", "cancelled": "Container request cancelled",
            "edited": "Container request changed", "moved": "Container request moved to another logistics person",
            "moved_hint": "You no longer split this request.",
@@ -1077,7 +1173,14 @@ _TG = {
            "hint": "Split it across the brigadirs.", "btn": "📦 Open the request",
            "hint_all": "Sent to every logistics person — whoever splits it first takes it.", "all": "Every logistics person",
            "area": "Dispatch", "hint_area": "Take it to the dispatch area.",
-           "hint_send": "Split the crates across the brigadirs and give the dispatch containers and lids to dispatch."},
+           "hint_send": "Split the crates across the brigadirs and give the dispatch containers and lids to dispatch.",
+           "remind": "⏰ Container request still not accepted",
+           "hint_accept": "Press «Accept» first — whoever accepts first takes it.",
+           "accept_btn": "✅ Accept",
+           "acc_done": "✅ Accepted · {at}", "acc_other": "Accepted by {name} · {at}",
+           "acc_state": "This request is already split", "acc_cancelled": "This request was cancelled",
+           "acc_gone": "Request not found", "acc_not_yours": "This request was not sent to you",
+           "acc_failed": "Not saved — accept it on the page"},
 }
 NOTIFY_PAGE = "/containers/flow"
 # The logistics side is a page of its own since 2026-11-21 («Konteyner
@@ -1105,7 +1208,8 @@ def area_text(r, lang: str) -> str:
     return f"🚚 {t['area']}: {transliterate_text(r.area_name or '—', lang) or r.area_name or '—'}"
 
 
-def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
+def _tg_body(r: ContainerRequest, kind: str, lang: str, accept: bool = False) -> str:
+    # `accept`: this reader must press «Qabul qilish» before splitting it
     from html import escape as _esc
 
     def escape(x):
@@ -1120,33 +1224,106 @@ def _tg_body(r: ContainerRequest, kind: str, lang: str) -> str:
     rows.append(escape(counts_text(r.lines or {}, lang)))
     if kind == "moved":
         rows += ["", f"<i>{escape(t['moved_hint'])}</i>"]
-    elif kind in ("new", "edited"):
+    elif kind in ("new", "edited", "remind"):
         rows += [f"{t['due']}: <b>{r.due_at.astimezone(TZ):%H:%M}</b>", f"{t['by']}: {escape(name)}"]
         if r.note:
             rows.append(f"{t['note']}: {escape(transliterate_text(r.note, lang) or r.note)}")
         hint = (t["hint_area"] if r.area_id is not None
                 else t["hint_send"] if any(k in SEND_KEYS for k in (r.lines or {})) else t["hint"])
         rows += ["", f"<i>{escape(hint)}</i>"]
-        if r.logistics_key == ALL_KEY:
+        if accept:
+            rows.append(f"<i>{escape(t['hint_accept'])}</i>")
+        elif r.logistics_key == ALL_KEY:
             rows.append(f"<i>{escape(t['hint_all'])}</i>")
     elif r.cancel_note:
         rows.append(f"{t['why']}: {escape(r.cancel_note)}")
     return "\n".join(rows)
 
 
-def _tg_markup(lang: str, page: str = NOTIFY_PAGE):
+def _page_button(lang: str, page: str = NOTIFY_PAGE):
     from telebot import types
     from app.config import settings as cfg
     t = _TG.get(lang) or _TG["uz"]
+    return types.InlineKeyboardButton(
+        t["btn"], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{page}"))
+
+
+def _tg_markup(lang: str, page: str = NOTIFY_PAGE):
+    from telebot import types
     kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton(
-        t["btn"], web_app=types.WebAppInfo(url=f"{cfg.webapp_url.rstrip('/')}{page}")))
+    kb.add(_page_button(lang, page))
     return kb
 
 
 def _logi_markup(lang: str):
     """The button on a card sent to a LOGISTICS person — their own page."""
     return _tg_markup(lang, LOGISTICS_PAGE)
+
+
+# «✅ Qabul qilish» under a logistics card (2026-11-23): cac:<request id> — the
+# tapper takes the request (`accept_from_bot`, telegram_bot._cac_callback).
+ACCEPT_CALLBACK = "cac"
+
+
+def _accept_markup(request_id: int):
+    """A card whose reader must ACCEPT first: the green button, then the page."""
+    def _markup(lang: str):
+        from telebot import types
+        from app import tg_buttons
+        t = _TG.get(lang) or _TG["uz"]
+        kb = types.InlineKeyboardMarkup()
+        # green: it DECIDES — the request is theirs by the tap
+        kb.add(tg_buttons.approve(t["accept_btn"], f"{ACCEPT_CALLBACK}:{int(request_id)}"))
+        kb.add(_page_button(lang, LOGISTICS_PAGE))
+        return kb
+    return _markup
+
+
+def accept_text(lang: str, key: str, **kw) -> str:
+    """The bot's words about an accept: done, other, state, cancelled, gone,
+    not_yours, failed."""
+    return ((_TG.get(lang) or _TG["uz"]).get(f"acc_{key}") or _TG["uz"][f"acc_{key}"]).format(**kw)
+
+
+def decided_markup(lang: str, label: str):
+    """The card after its «Qabul qilish» was answered: the outcome as a dead
+    button, and the page."""
+    from telebot import types
+    from app import tg_buttons
+    kb = types.InlineKeyboardMarkup()
+    kb.add(tg_buttons.disabled(label))
+    kb.add(_page_button(lang, LOGISTICS_PAGE))
+    return kb
+
+
+def _accept_for(cfg: dict, key) -> bool:
+    """Does the card to `key` carry «Qabul qilish»? Everybody's once the step
+    is open; an admin's own profile before that (the step is theirs to test)."""
+    return bool(cfg["accept_step"]) or str(key or "").startswith("admin:")
+
+
+def accept_from_bot(db: Session, request_id: int, telegram_id: int) -> tuple:
+    """«Qabul qilish» tapped in the bot: the tapper must hold a logistics
+    person's profile (callback data is typeable and a card can be forwarded).
+    Returns (code, request, the tapper's profile key): "done", "accepted" (a
+    colleague has it), "state" (already split), "cancelled", "gone",
+    "not_yours"."""
+    from app.identity import profile_holders
+    req = db.get(ContainerRequest, int(request_id))
+    if req is None:
+        return "gone", None, None
+    if req.status == "cancelled":
+        return "cancelled", req, None
+    key = next((p["key"] for p in logistics_people(db)
+                if int(telegram_id) in profile_holders(db, p["key"])), None)
+    if key is None:
+        return "not_yours", None, None
+    try:
+        r = accept_request(db, int(request_id), profile_name(db, key) or key, key, False)
+    except FlowError as e:
+        db.rollback()
+        return e.code, db.get(ContainerRequest, int(request_id)), key
+    return "done", r, key
 
 
 def addressees(db: Session, key: str) -> list:
@@ -1165,28 +1342,35 @@ def to_text(r: ContainerRequest, lang: str) -> str:
 
 def notify_request(request_id: int, kind: str, keys: Optional[list] = None) -> bool:
     """Tell the addressee a request came (`new`), changed (`edited`), went to
-    somebody else (`moved` — to `keys`, the people it left) or went
-    (`cancelled`): one bell row + a DM with a button to the page. Only while
-    the «Sozlamalar» switch is on. Own session; never raises. Returns whether
-    it was sent."""
+    somebody else (`moved` — to `keys`, the people it left), went
+    (`cancelled`) or still waits unaccepted (`remind`): one bell row + a DM
+    with a button to the page — and, where the reader must accept it first,
+    «Qabul qilish» above it. Only while the «Sozlamalar» switch is on. Own
+    session; never raises. Returns whether it was sent."""
     from app.database import SessionLocal
     db = SessionLocal()
     try:
-        if not settings(db)["notify"]:
+        cfg = settings(db)
+        if not cfg["notify"]:
             return False
         r = db.get(ContainerRequest, request_id)
-        if r is None or (kind in ("new", "edited", "moved") and r.status != "requested"):
+        if r is None or (kind in ("new", "edited", "moved", "remind") and r.status != "requested"):
+            return False
+        if kind == "remind" and r.accepted_at is not None:
             return False
         from app.routers.staff import notify_profile
+        waits = kind in ("new", "edited", "remind") and r.accepted_at is None
         done: set = set()
         for key in (keys if keys is not None else addressees(db, r.logistics_key)):
+            acc = waits and _accept_for(cfg, key)
             done |= notify_profile(
                 db, key, f"container_request_{kind}",
                 {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
                  "due": f"{r.due_at.astimezone(TZ):%H:%M}", "by": r.created_by or "—",
                  "note": r.note or r.cancel_note or ""},
-                type="warning" if kind == "cancelled" else "info",
-                html_fn=lambda lang: _tg_body(r, kind, lang), markup_fn=_logi_markup,
+                type="warning" if kind in ("cancelled", "remind") else "info",
+                html_fn=lambda lang, a=acc: _tg_body(r, kind, lang, a),
+                markup_fn=_accept_markup(r.id) if acc else _logi_markup,
                 subject=("page", NOTIFY_PAGE), skip_accounts=done) or set()
         db.commit()
         return True
@@ -1699,6 +1883,44 @@ def alert_overdue(db: Session, at: Optional[datetime] = None) -> int:
                             {"hour": hour_span(r.hour), "counts": counts_text(r.lines or {}),
                              "by": to_text(r, "uz") or "—"}, body)
         db.commit()
+    return sent
+
+
+def remind_unaccepted(db: Session, at: Optional[datetime] = None) -> int:
+    """A waiting request nobody accepted (2026-11-23, the operator: «send this
+    notification every 30 minutes as a reminder until they accept»): the card
+    again, to each of its logistics people, every ACCEPT_REMIND_MIN from when
+    it was made — until one of them accepts it, it is split or cancelled, or
+    it is ALERT_WINDOW_MIN past its deadline (a request for an hour long gone
+    nags nobody). Only once the step is open to logistics (`accept_step` — an
+    admin's test of it reminds nobody), behind the logistics switch and its
+    own. The reminder is claimed (`accept_reminded_at`, committed) before it
+    is sent, so two workers never send it twice. Returns how many requests
+    were reminded about."""
+    from sqlalchemy import update as _update
+    at = at or now()
+    cfg = settings(db)
+    if not (cfg["accept_step"] and cfg["notify"] and cfg["notify_unaccepted"]):
+        return 0
+    step = timedelta(minutes=ACCEPT_REMIND_MIN)
+    rows = db.query(ContainerRequest).filter(
+        ContainerRequest.status == "requested", ContainerRequest.accepted_at.is_(None),
+        ContainerRequest.due_at >= at - timedelta(minutes=ALERT_WINDOW_MIN)).all()
+    sent = 0
+    for r in rows:
+        last = r.accept_reminded_at or r.created_at
+        if last is None or at < last + step:
+            continue
+        same = (ContainerRequest.accept_reminded_at.is_(None) if r.accept_reminded_at is None
+                else ContainerRequest.accept_reminded_at == r.accept_reminded_at)
+        rid = r.id
+        claimed = db.execute(_update(ContainerRequest).where(
+            ContainerRequest.id == rid, ContainerRequest.status == "requested",
+            ContainerRequest.accepted_at.is_(None), same,
+        ).values(accept_reminded_at=at)).rowcount
+        db.commit()
+        if claimed and notify_request(rid, "remind"):
+            sent += 1
     return sent
 
 

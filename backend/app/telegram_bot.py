@@ -6508,6 +6508,61 @@ def _crv_callback(call: types.CallbackQuery):
         logger.warning("container receipt: could not edit the card", exc_info=True)
 
 
+# «Konteyner berish» (2026-11-23): «✅ Qabul qilish» under a logistics person's
+# card — they TAKE the request before splitting it. The tapper must hold a
+# logistics profile (services/container_flow.accept_from_bot).
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("cac:"))
+def _cac_callback(call: types.CallbackQuery):
+    from app import tg_buttons
+    from app.services import container_flow as flow
+    from app.translit import transliterate
+
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    try:
+        rid = int(call.data.split(":")[1])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id)
+        return
+    who = at = ""
+    try:
+        with SessionLocal() as db:
+            code, r, key = flow.accept_from_bot(db, rid, tid)
+            if r is not None and r.accepted_at is not None:
+                who = transliterate(r.accepted_by or "", lang) or r.accepted_by or "—"
+                at = r.accepted_at.astimezone(flow.TZ).strftime("%H:%M")
+            if code == "done":
+                db.commit()
+                action_log.record_bot(
+                    db, tid, "shopfloor", "containers.request_accepted",
+                    actor_name=r.accepted_by, actor_role=(key or "").partition(":")[0] or None,
+                    actor_profile_key=key,
+                    target_kind="container_request", target_id=rid,
+                    details=[("hour", f"{r.hour % 24:02d}:00"), ("via", "bot")])
+    except Exception:
+        logger.exception("container accept: the button failed for %s", tid)
+        bot.answer_callback_query(call.id, flow.accept_text(lang, "failed"), show_alert=True)
+        return
+    # what the card's button becomes; None = the card stays as it is
+    if code == "done":
+        label = flow.accept_text(lang, "done", at=at)
+        bot.answer_callback_query(call.id, label)
+    elif code == "accepted":
+        label = flow.accept_text(lang, "other", name=who, at=at)
+        bot.answer_callback_query(call.id, label, show_alert=True)
+    elif code in ("state", "cancelled", "gone"):
+        label = flow.accept_text(lang, code)
+        bot.answer_callback_query(call.id, label, show_alert=True)
+    else:
+        bot.answer_callback_query(call.id, flow.accept_text(lang, "not_yours"), show_alert=True)
+        return
+    try:
+        tg_buttons.send(bot.edit_message_reply_markup, call.message.chat.id,
+                        call.message.message_id, reply_markup=flow.decided_markup(lang, label))
+    except Exception:
+        logger.warning("container accept: could not edit the card", exc_info=True)
+
+
 # ⚠ TEMPORARY (2026-09-22) — the one button under the «one cell is enough»
 # restore list (services/auto_check_restore.py). Delete with that module.
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("acr:"))

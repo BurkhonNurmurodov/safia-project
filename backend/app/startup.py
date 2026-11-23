@@ -2134,6 +2134,17 @@ def add_container_request_seen() -> None:
                     "container request seen_at column")
 
 
+def add_container_request_accept() -> None:
+    """2026-11-23: «Qabul qilish» — `container_requests.accepted_at` /
+    `accepted_by` (who took a request before splitting it; NULL = not
+    accepted) and `accept_reminded_at` (the last 30-minute reminder). Pure
+    DDL, idempotent, no flag; every ORM read of a request selects them."""
+    _ensure_columns((("container_requests", (("accepted_at", "TIMESTAMPTZ"),
+                                             ("accepted_by", "VARCHAR"),
+                                             ("accept_reminded_at", "TIMESTAMPTZ")), None),),
+                    "container request accept columns")
+
+
 def add_container_receipt_columns() -> None:
     """2026-11-14: a brigadir confirms what reached the line —
     `container_request_parts.received*`; NULL = not confirmed. Pure DDL,

@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
         add_cell_one_process,
         add_leader_ended_on,
         add_container_request_seen,
+        add_container_request_accept,
         add_container_receipt_columns,
         add_container_send_columns,
         add_container_part_cells,
@@ -259,6 +260,7 @@ async def lifespan(app: FastAPI):
     run(add_cell_one_process)
     run(add_leader_ended_on)
     run(add_container_request_seen)
+    run(add_container_request_accept)
     run(add_container_receipt_columns)
     run(add_container_send_columns)
     run(add_container_part_cells)

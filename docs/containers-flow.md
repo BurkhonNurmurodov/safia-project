@@ -561,6 +561,88 @@ After a review of the app the operator answered «make it» to two points:
   «always»); the kept copy shows only for the moment the new one takes. A
   card confirmed on a request deleted meanwhile says so («So'rov o'chirilgan»)
   and leaves the list.
+- **«Qabul qilish» — a logistics person ACCEPTS a request, then splits it**
+  (2026-11-23, the operator: «after the request which send by AXO, can we
+  [add] the accept button for logistics, then split for supervisors». Asked
+  what the button means: «he just accept the request but the action should be
+  shown to all logistics, then after that split, and split also should be
+  shown to all logistics». Asked whether it must come before the split:
+  yes. Asked who sees it first: «show it only to admins first, after testing
+  to others». Asked what else: «send this notification every 30 minutes as a
+  reminder until they accept».)
+  - **What an accept is.** `accept_request` (`POST /requests/{id}/accept`,
+    `LOGI`): a waiting request becomes its acceptor's —
+    `container_requests.accepted_at` / `accepted_by`
+    (`startup.add_container_request_accept`, a boot `run` step, with
+    `accept_reminded_at`), and `logistics_key` / `logistics_name` become
+    theirs, exactly what the first split used to do. So from the accept on it
+    is that person's request everywhere (the alerts, «Hisobot», the
+    brigadir's card). Anybody a request is addressed to may accept it —
+    any logistics person on a request to everybody, the FIRST wins (the row
+    is locked) — or an admin; a second accept by the same person changes
+    nothing, a colleague's is refused `accepted`, a split one's `state`.
+    Accepting also opens it (`seen_at`). Nobody is messaged about an accept:
+    the page shows it, and the reminders stop.
+  - **The split and the delivery sit behind it** (`_accept_gate` in
+    `assign_request` and `deliver_request`): an unaccepted request answers
+    `accept_first` to whoever the step applies to; an accepted one is its
+    acceptor's alone — a colleague gets `accepted`, an admin may still act on
+    any accepted request.
+  - **The step is the ADMINS' alone until its switch is on.**
+    `accept_applies(db, is_admin)` is the one question: an admin always
+    accepts first; everybody else only once `container_flow.accept_step` is on
+    — «Sozlamalar» → «Qabul qilish bosqichi» → «Logistlar uchun», OFF as
+    shipped. While it is off a logistics person splits a request as before
+    (no button, no reminder, the old card); a request an ADMIN accepted is
+    that admin's, so test on a request made for the test. **Switch it on only
+    on the operator's word** — it obliges Nuriddin aka and Yusuf aka.
+  - **An edit keeps the acceptor.** `PUT /requests/{id}` sends every edited
+    request to everybody; `edit_request` ignores that for an accepted one —
+    it stays with whoever accepted it, they are told «o'zgartirildi» and it
+    reads «Yangi» for them again, and nobody accepts it a second time.
+  - **Everybody sees it.** `requests_of` gives `accepted_at` / `accepted_by`
+    on every row, and `GET /requests` adds `accept` — must THIS viewer accept
+    first. On the page (`FlowRequests.jsx`): `AcceptMark` — «Siz qabul
+    qildingiz · 14:05» / «Qabul qildi: Nuriddin aka · 14:05», green, in place
+    of the «Ko'rildi» mark it supersedes — on AXO's table and phone cards, on
+    the logistics board's shut row and in its opened detail (there it stays
+    after the split too). `RowAction` is the ONE button of a waiting request:
+    «Qabul qilish» (green — it decides, like the bot's), then «Taqsimlash» /
+    «Yetkazish» in the very same spot, so an accept moves nothing on the
+    list. With the 10-second read below, a colleague sees an accept within
+    seconds.
+  - **In Telegram.** Where the reader must accept first, the request's card
+    leads with «✅ Qabul qilish» (`_accept_markup`, callback `cac:<request
+    id>`) above «So'rovni ochish», and its hint says «birinchi qabul qilgan
+    oladi» instead of «birinchi taqsimlagan oladi». `_cac_callback`
+    (`telegram_bot.py`) → `accept_from_bot`: the tapper must hold a logistics
+    profile (callback data is typeable, a card can be forwarded); the answer
+    replaces the button with what happened — «✅ Qabul qilindi · 14:05»,
+    «Qabul qildi: {name} · {at}» for a colleague a moment late, or that it is
+    already split / cancelled / gone. While the step is closed only a card to
+    an `admin:` profile carries the button (`_accept_for`). The card for
+    several requests at once («Tayyor so'rovlar», `notify_requests`) has no
+    button — each is accepted on the page, or from its reminder.
+  - **The reminder** (`remind_unaccepted`, on the flow's tick): a waiting
+    request nobody accepted goes out again — the same card, headed «⏰
+    Konteyner so'rovi hali qabul qilinmagan», bell row
+    `container_request_remind` — to each of its logistics people every
+    `ACCEPT_REMIND_MIN` (30) from when it was made, until one accepts, it is
+    split or cancelled, or it is `ALERT_WINDOW_MIN` past its deadline (the
+    operator said «until they accept»; a request for an hour long gone nags
+    nobody — the bound is mine). Three switches must be on: the step
+    (`accept_step` — an admin's test of it reminds nobody), the logistics
+    messages (`notify`) and its own, «Qabul qilinmagan so'rov eslatmasi»
+    (`notify_unaccepted`, ON as shipped). Claimed (`accept_reminded_at`,
+    committed) before sending. Switching the step on reminds, at the next
+    tick, about every request already waiting half an hour.
+  - «Jurnal»: `containers.request_accepted` (the page's route, and the bot's
+    tap with `via: bot`).
+  - A tab from before this release shows no «Qabul qilish»; once the step is
+    open its split is refused `accept_first` until it reloads.
+  - Offered and NOT chosen, so not built: a Telegram message to AXO on an
+    accept, a «give back» for a request somebody accepted and cannot do, and
+    the accept time in «Hisobot».
 - **The logistics row re-reads the requests every 10 seconds** (2026-11-23,
   the operator asked why a request AXO had sent took a while to show on the
   logistics page). The server stored it at once and the bot's card went
