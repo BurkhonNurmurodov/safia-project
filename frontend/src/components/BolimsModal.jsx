@@ -22,8 +22,11 @@ import api from "../utils/api";
 const BLOCKS = ["A", "B", "C", "D"];
 const FLOORS = [-2, -1, 0, 1, 2, 3, 4, 5, 6];
 const errText = (e, t) => e?.response?.data?.detail || t("admin.profiles.error");
+// The /cells door; the container app's «Bo'limlar» page passes its own
+// (`/api/container-flow/bolims`, its page key) — the same register.
+const CELLS_DOOR = "/api/profiles/admin/bolims";
 
-function BolimForm({ item, onClose, onSaved }) {
+export function BolimForm({ item, onClose, onSaved, endpoint = CELLS_DOOR, zIndex = 60 }) {
   const { t } = useLang();
   const [form, setForm] = useState(() => ({
     uz: item?.name_uz || "", uz_cyrl: item?.name_uz_cyrl || "",
@@ -34,9 +37,9 @@ function BolimForm({ item, onClose, onSaved }) {
   const [error, setError] = useState("");
   const save = useMutation({
     mutationFn: (body) => (item
-      ? api.put(`/api/profiles/admin/bolims/${item.id}`, body)
-      : api.post("/api/profiles/admin/bolims", body)),
-    onSuccess: () => onSaved(),
+      ? api.put(`${endpoint}/${item.id}`, body)
+      : api.post(endpoint, body)),
+    onSuccess: (res) => onSaved(res?.data),
     onError: (e) => setError(errText(e, t)),
   });
   const submit = () => {
@@ -55,7 +58,7 @@ function BolimForm({ item, onClose, onSaved }) {
   return (
     <Modal
       onClose={onClose}
-      zIndex={60}
+      zIndex={zIndex}
       icon={item ? <Pencil size={18} /> : <Plus size={18} />}
       title={t(item ? "bolim.edit" : "bolim.add")}
       footer={
@@ -101,7 +104,7 @@ function BolimForm({ item, onClose, onSaved }) {
   );
 }
 
-export default function BolimsModal({ bolims, onClose, onChanged }) {
+export default function BolimsModal({ bolims, onClose, onChanged, endpoint = CELLS_DOOR, canDelete = true }) {
   const { t, lang } = useLang();
   const { tx } = useTranslit();
   const qc = useQueryClient();
@@ -113,7 +116,7 @@ export default function BolimsModal({ bolims, onClose, onChanged }) {
     onChanged?.();
   };
   const del = useMutation({
-    mutationFn: (id) => api.delete(`/api/profiles/admin/bolims/${id}`),
+    mutationFn: (id) => api.delete(`${endpoint}/${id}`),
     onSuccess: () => { setConfirm(null); refresh(); toast.success(t("bolim.deleted")); },
   });
   // Block, then the floor from the top down, then the name.
@@ -157,7 +160,7 @@ export default function BolimsModal({ bolims, onClose, onChanged }) {
                     label={`${t("admin.profiles.colActions")}: ${tx(bolimName(b, lang))}`}
                     items={[
                       { key: "edit", label: t("admin.profiles.edit"), icon: Pencil, onSelect: () => setForm({ item: b }) },
-                      { key: "delete", label: t("bolim.delete"), icon: Trash2, tone: "danger", onSelect: () => { del.reset(); setConfirm(b); } },
+                      canDelete && { key: "delete", label: t("bolim.delete"), icon: Trash2, tone: "danger", onSelect: () => { del.reset(); setConfirm(b); } },
                     ]}
                   />
                 </li>
@@ -168,6 +171,7 @@ export default function BolimsModal({ bolims, onClose, onChanged }) {
       </Modal>
       {form && (
         <BolimForm
+          endpoint={endpoint}
           item={form.item}
           onClose={() => setForm(null)}
           onSaved={() => { setForm(null); refresh(); toast.success(t("bolim.saved")); }}

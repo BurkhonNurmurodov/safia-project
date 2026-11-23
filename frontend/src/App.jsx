@@ -67,6 +67,7 @@ const Kitchen = lazyWithReload(() => import("./pages/Kitchen"));
 const Containers = lazyWithReload(() => import("./pages/Containers"));
 // «Konteynerlar oqimi» — AXO → Logistics → Leader (admins only while tried out).
 const ContainerFlow = lazyWithReload(() => import("./pages/ContainerFlow"));
+const ContainerBolims = lazyWithReload(() => import("./pages/ContainerBolims"));
 const ApiAccess = lazyWithReload(() => import("./pages/ApiAccess"));
 const Assessment = lazyWithReload(() => import("./pages/Assessment"));
 const AssessmentGrade = lazyWithReload(() => import("./pages/AssessmentGrade"));
@@ -803,6 +804,7 @@ function AppWithLang() {
             {/* «Konteyner taqsimlash» — the logistics side as its own page (2026-11-21); a
                 logistics-only viewer opening /containers/flow is sent here by the page. */}
             <Route path="/containers/split" element={<AuthGate><RequirePage page="container-logistics"><ContainerFlow side="logistics" /></RequirePage></AuthGate>} />
+            <Route path="/containers/bolims" element={<AuthGate><RequirePage page="container-bolims"><ContainerBolims /></RequirePage></AuthGate>} />
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><LeadersRoute /></RequirePage></AuthGate>} />

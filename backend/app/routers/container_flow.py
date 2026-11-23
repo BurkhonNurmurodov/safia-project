@@ -829,3 +829,91 @@ def post_receive(request_id: int, body: ReceiveBody, db: Session = Depends(get_d
     action_log.enrich(unit_id=body.manager_id)
     flow.alert_later("short_receipt", r.id, body.manager_id)   # tells AXO only when fewer arrived
     return out
+
+
+# ── «Bo'limlar» — each team's room, set by hand (2026-11-23) ─────────────────
+#
+# The operator, on the split: «most of teams location written is incorrect, i
+# want to change it by hand … open another row after container split». A menu
+# row of its own (`container-bolims`, admin-only), listing the cells of every
+# brigadir the flow serves with a room picker each; a room missing from the
+# list is added there too. The rooms are the `bolims` of /cells
+# (`services/bolims.py`) — one register, two doors.
+
+BOL = require_page("container-bolims")
+
+
+@router.get("/bolims")
+def get_bolims(db: Session = Depends(get_db), payload: dict = Depends(BOL)):
+    """The flow's brigadirs, each with its live cells and their room, and the
+    rooms with how many live cells each holds."""
+    from app.models import Cell
+    from app.routers.profiles import _bolims_list
+    units = flow.flow_units(db).all()
+    ids = [m.id for m in units]
+    cells = (db.query(Cell).filter(Cell.manager_id.in_(ids), Cell.archived_at.is_(None))
+             .order_by(Cell.verifix_code).all()) if ids else []
+    by_unit: dict = {}
+    for c in cells:
+        by_unit.setdefault(c.manager_id, []).append({
+            "id": c.id, "code": c.verifix_code, "in_load": bool(c.in_load),
+            "bolim_id": c.bolim_id,
+            "workshop": {k: v for k, v in (("uz", c.name_workshop_uz), ("uz_cyrl", c.name_workshop_uz_cyrl),
+                                            ("ru", c.name_workshop_ru), ("en", c.name_workshop_en)) if v},
+        })
+    return {"units": [{"id": m.id, "name": m.name, "shift": m.shift, "cells": by_unit.get(m.id, [])}
+                      for m in units if by_unit.get(m.id)],
+            "bolims": _bolims_list(db)}
+
+
+class CellBolimBody(BaseModel):
+    bolim_id: Optional[int] = None     # None / 0 = no room
+
+
+@router.put("/bolims/cell/{cid}")
+def put_cell_bolim(cid: int, body: CellBolimBody, db: Session = Depends(get_db),
+                   payload: dict = Depends(BOL)):
+    from app.models import Bolim, Cell
+    from app.routers.profiles import _bolim_label
+    c = db.query(Cell).filter_by(id=cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    bid = body.bolim_id or None
+    if bid and not db.query(Bolim.id).filter_by(id=bid).first():
+        raise HTTPException(status_code=400, detail="Bo'lim not found")
+    old = _bolim_label(db, c.bolim_id)
+    c.bolim_id = bid
+    db.commit()
+    new = _bolim_label(db, bid)
+    action_log.enrich(target_kind="cell", target_id=cid, target_name=c.verifix_code,
+                      unit_id=c.manager_id, changes=[("bolim", old, new)] if old != new else [])
+    return {"ok": True, "id": cid, "bolim_id": bid}
+
+
+@router.post("/bolims")
+def post_bolim(body: dict, db: Session = Depends(get_db), payload: dict = Depends(BOL)):
+    from app.models import Bolim
+    from app.routers.profiles import BolimPayload, _apply_bolim
+    row = Bolim()
+    _apply_bolim(row, BolimPayload(**body))
+    db.add(row)
+    db.commit()
+    action_log.enrich(target_kind="bolim", target_id=row.id, target_name=row.name_ru or row.name_uz,
+                      details=[("block", row.block), ("floor", row.floor)])
+    return {"ok": True, "id": row.id}
+
+
+@router.put("/bolims/{bid}")
+def put_bolim(bid: int, body: dict, db: Session = Depends(get_db), payload: dict = Depends(BOL)):
+    from app.models import Bolim
+    from app.routers.profiles import BolimPayload, _apply_bolim, _bolim_label
+    row = db.query(Bolim).filter_by(id=bid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Bo'lim not found")
+    old = _bolim_label(db, bid)
+    _apply_bolim(row, BolimPayload(**body))
+    db.commit()
+    new = _bolim_label(db, bid)
+    action_log.enrich(target_kind="bolim", target_id=bid, target_name=row.name_ru or row.name_uz,
+                      changes=[("bolim", old, new)] if old != new else [])
+    return {"ok": True, "id": bid}

@@ -135,6 +135,23 @@ containers row from production and move it into the new button».
     line per bo'lim their cells work in, the cells in brackets: «Pirog
     tayyorlash sexi · 2.07 · A blok · 2-qavat (7411, 7416)» (`BolimSummary`
     in `flowUtil.jsx`). The per-cell line stays.
+  - **«Bo'limlar» `/containers/bolims` — each team's room, set by HAND**
+    (the same day, the operator: «open another row after container split …
+    most of teams location written is incorrect, i want to change it by hand,
+    so make it possible and easy»; «just for me»): a menu row of its own after
+    «Konteyner taqsimlash», page key `container-bolims`, ADMIN-ONLY until the
+    operator grants it (`pages/ContainerBolims.jsx`). Every live cell of the
+    brigadirs the flow serves (`flow_units`), grouped by brigadir, each with a
+    searchable room picker that SAVES ON PICK (spinner → ✓, an error toast
+    puts the old room back); «Hammasi / Bo'limsiz · N» narrows to the teams
+    with no room; a room missing from the list is added from the picker
+    itself («+ Yangi bo'lim» — the new room lands on that team at once) or
+    from the toolbar; «Xonalar ro'yxati» renames or moves rooms (no delete
+    here). The operator's answers: PICK a room from one list (one spelling
+    per room — renaming a room fixes every team in it), never free text; the
+    flow's teams only. The rooms are the same `bolims` /cells reads; its
+    door is `/api/container-flow/bolims` (`BOL` = `require_page
+    ("container-bolims")`), each change in «Jurnal».
   - **The split dialog reads in the order it is filled** (`AssignModal`, the
     same release; nothing in what it sends changed). **How much is handed out
     is PINNED to the top** — one chip per type, «To'rtburchak 187 / 232 · qoldi

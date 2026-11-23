@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra", "workers-composition", "doc-audit", "trello", "audit", "audits", "tg-user", "gamification", "targets", "verifix-test"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra", "container-bolims", "workers-composition", "doc-audit", "trello", "audit", "audits", "tg-user", "gamification", "targets", "verifix-test"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -214,6 +214,9 @@ DEFAULT_PAGE_ACCESS = {
     # now, we will add this thing later», `startup.container_extra_brigadirs_off`):
     # admin-only until the operator reopens it (docs/containers-flow.md).
     "container-extra": [],
+    # «Bo'limlar» (2026-11-23): each team's room, set by hand — the operator's
+    # own page («open another just for me»), admin-only (docs/containers-flow.md).
+    "container-bolims": [],
     # «API» (/api-access, routers/api_tokens.py) — a person's own tokens for the
     # external read API (/api/ext/v1) and its manual. ADMIN-ONLY until the
     # operator opens it: a token reads every cell's plan and people.

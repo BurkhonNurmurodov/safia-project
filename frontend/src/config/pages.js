@@ -55,6 +55,7 @@ export const PAGES = [
   { tier: "test", key: "container-receive", route: "/containers/flow", labelKey: "nav.containerReceive" },
   { tier: "test", key: "container-watch", route: "/containers/flow", labelKey: "nav.containerWatch" },
   { tier: "test", key: "container-extra", route: "/containers/flow", labelKey: "nav.containerExtra" },
+  { tier: "test", key: "container-bolims", route: "/containers/bolims", labelKey: "nav.containerBolims" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
@@ -130,6 +131,8 @@ export const DEFAULT_PAGE_ACCESS = {
   "container-watch": ["top-manager"],   // shift managers see only «Konteynerlar» (2026-11-21)
   // A brigadir asking AXO for extra containers — closed to brigadirs for now (2026-11-18).
   "container-extra": [],
+  // «Bo'limlar» — each team's room, set by hand (2026-11-23). Admin-only.
+  "container-bolims": [],
   // «Konteynerlar», the TV board — shift- and top-managers from 2026-11-15.
   containers: ["top-manager", "shift-manager"],
   // «API» — personal tokens for the external read API. Admin-only until the

@@ -1974,7 +1974,8 @@ class PageKeyTest(unittest.TestCase):
                 else "logistics" if r.LOGI in deps else "any" if r.ANY in deps
                 else "receive" if r.RECV in deps else "receive+watch" if r.RECW in deps
                 else "extra" if r.EXT in deps else "extra+read" if r.EXTR in deps
-                else "who" if r.WHO in deps else "?")
+                else "who" if r.WHO in deps
+                else "bolims" if r.BOL in deps else "?")
         p = "/api/container-flow"
         for k in [("POST", f"{p}/requests"), ("PUT", f"{p}/requests/{{request_id}}"),
                   ("POST", f"{p}/requests/{{request_id}}/cancel"),
@@ -1993,6 +1994,10 @@ class PageKeyTest(unittest.TestCase):
         self.assertEqual(guard[("POST", f"{p}/extras/{{extra_id}}/cancel")], "extra")
         self.assertEqual(guard[("GET", f"{p}/extras")], "extra+read")
         self.assertEqual(guard[("GET", f"{p}/hour-need")], "any")
+        # «Bo'limlar» (2026-11-23): its own page key, admin-only by default
+        for k in [("GET", f"{p}/bolims"), ("PUT", f"{p}/bolims/cell/{{cid}}"),
+                  ("POST", f"{p}/bolims"), ("PUT", f"{p}/bolims/{{bid}}")]:
+            self.assertEqual(guard[k], "bolims", k)
         # watching opens no write: every POST / PUT but the Excel export keeps a door the watch key is not on
         for (method, path), g in guard.items():
             if method in ("POST", "PUT") and not path.endswith("/report.xlsx"):
