@@ -289,11 +289,15 @@ def post_report_xlsx(body: ReportXlsxBody, request: Request, db: Session = Depen
 @router.get("/requests")
 def get_requests(day: date = Query(...), db: Session = Depends(get_db),
                  payload: dict = Depends(ANY)):
-    """The day's requests. AXO and admins see every one; a logistics person
-    who is not AXO sees only those addressed to them."""
+    """The day's requests. AXO, admins, watchers — and, from 2026-11-23, every
+    logistics person — see every one: a request goes to all of logistics, so
+    each of them sees its state, the ones a colleague took included (the
+    operator: «send request to all logist person and show the status for
+    all»). Anybody else sees those addressed to them."""
     r = _roles(db, payload)
     me = _me(db, payload)
-    mine = None if (r["admin"] or r["axo"] or r["watch"]) else (me or "—")
+    logi = bool(me) and me in {p["key"] for p in flow.logistics_people(db)}
+    mine = None if (r["admin"] or r["axo"] or r["watch"] or logi) else (me or "—")
     # `logistics`: the viewer is one of the people a request «to everybody»
     # goes to — such a request is new and theirs to split, as their own is
     rows = flow.requests_of(db, day, mine)
@@ -302,7 +306,7 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     # request card; a bundle from before ignores the key
     codes = {c for x in rows for p in x["parts"] for c in (p.get("cells") or {})}
     return {"day": day.isoformat(), "requests": rows, "me": me,
-            "logistics": bool(me) and me in {p["key"] for p in flow.logistics_people(db)},
+            "logistics": logi,
             "workshops": flow.cell_workshops(db, codes) if codes else {}}
 
 
@@ -404,10 +408,19 @@ def get_all_units(db: Session = Depends(get_db), payload: dict = Depends(LOGI)):
                       for m in flow.flow_units(db).all()]}
 
 
+# AXO's requests go to EVERY logistics person (2026-11-23, the operator: «send
+# the request which send by axo to all logistics … just remove the rest of
+# them»). The form names nobody any more; a `logistics_key` an older tab still
+# sends is read and IGNORED — the routes pass `flow.ALL_KEY`, so no request is
+# addressed to one person again. The service keeps the named form for the
+# requests made before.
+TO_ALL = flow.ALL_KEY
+
+
 class RequestBody(BaseModel):
     day: date
     hour: int
-    logistics_key: str
+    logistics_key: Optional[str] = None     # ignored — always everybody (2026-11-23)
     counts: Dict[str, int]
     note: str = ""
     area_id: Optional[int] = None     # a dispatch area's request (2026-11-19)
@@ -425,7 +438,7 @@ def _req_out(db: Session, r, day: date) -> dict:
 @router.post("/requests")
 def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
     try:
-        r = flow.create_request(db, body.day, body.hour, body.logistics_key, body.counts, body.note,
+        r = flow.create_request(db, body.day, body.hour, TO_ALL, body.counts, body.note,
                                 _actor(payload), _me(db, payload), area_id=body.area_id)
         db.commit()
     except flow.FlowError as e:
@@ -437,7 +450,7 @@ def post_request(body: RequestBody, db: Session = Depends(get_db), payload: dict
 
 class EditBody(BaseModel):
     hour: int
-    logistics_key: str
+    logistics_key: Optional[str] = None     # ignored — an edit sends it to everybody
     counts: Dict[str, int]
     note: str = ""
     area_id: Optional[int] = None     # a dispatch area's request may move to another area
@@ -445,11 +458,11 @@ class EditBody(BaseModel):
 
 @router.put("/requests/{request_id}")
 def put_request(request_id: int, body: EditBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """AXO changes a request while it waits — the hour, the counts, whom it
-    goes to, the note. Whoever it reaches is told: the same people «changed»,
-    a new addressee «new», the one it left «moved»."""
+    """AXO changes a request while it waits — the hour, the counts, the note.
+    Whoever it reaches is told: the same people «changed»; a request named to
+    one person before 2026-11-23 goes to everybody, so the others get it «new»."""
     try:
-        r, changes, old_key = flow.edit_request(db, request_id, body.hour, body.logistics_key, body.counts,
+        r, changes, old_key = flow.edit_request(db, request_id, body.hour, TO_ALL, body.counts,
                                                 body.note, area_id=body.area_id)
         new_key, rid, day = r.logistics_key, r.id, r.day
         gone = [k for k in flow.addressees(db, old_key) if k not in flow.addressees(db, new_key)]
@@ -485,17 +498,17 @@ class BulkItem(BaseModel):
 
 class BulkBody(BaseModel):
     day: date
-    logistics_key: str
+    logistics_key: Optional[str] = None     # ignored — always everybody
     items: List[BulkItem]
     note: str = ""
 
 
 @router.post("/requests/bulk")
 def post_requests_bulk(body: BulkBody, db: Session = Depends(get_db), payload: dict = Depends(PAGE)):
-    """Several hours' requests to one logistics person — all or nothing; the
-    addressee gets ONE message for the lot."""
+    """Several hours' requests to every logistics person — all or nothing;
+    each of them gets ONE message for the lot."""
     try:
-        rs = flow.create_requests(db, body.day, body.logistics_key, [i.model_dump() for i in body.items],
+        rs = flow.create_requests(db, body.day, TO_ALL, [i.model_dump() for i in body.items],
                                   body.note, _actor(payload), _me(db, payload))
         ids = [r.id for r in rs]
         name = rs[0].logistics_name if rs else None
@@ -694,17 +707,17 @@ def post_extra_cancel(extra_id: int, db: Session = Depends(get_db), payload: dic
 
 class ApproveBody(BaseModel):
     counts: Dict[str, int]
-    logistics_key: str
+    logistics_key: Optional[str] = None     # ignored — always everybody
     note: str = ""
 
 
 @router.post("/extras/{extra_id}/approve")
 def post_extra_approve(extra_id: int, body: ApproveBody, db: Session = Depends(get_db),
                        payload: dict = Depends(PAGE)):
-    """AXO allows a brigadir's ask — all or fewer — and sends it to a logistics
-    person, who splits it to that unit only."""
+    """AXO allows a brigadir's ask — all or fewer — and sends it to every
+    logistics person; whoever takes it splits it to that unit only."""
     try:
-        e, r = flow.approve_extra(db, extra_id, body.counts, body.logistics_key, body.note,
+        e, r = flow.approve_extra(db, extra_id, body.counts, TO_ALL, body.note,
                                   _actor(payload), _me(db, payload))
         rid = r.id
         db.commit()

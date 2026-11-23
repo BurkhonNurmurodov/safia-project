@@ -937,8 +937,9 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
 // them says how many requests the hour has and what each type needed / got.
 export function NewRequestModal({ t, day, initialHour = null, edit = null, onClose, onDone, onFail }) {
   const { tx } = useTranslit();
-  // to every logistics person at once by default (2026-11-18) — or one of them
-  const pick = useLogisticsPick(edit?.logistics_key ?? null);
+  // to every logistics person at once — always, from 2026-11-23 (an edit of an
+  // older request named to one person sends it to everybody too)
+  const pick = useLogisticsPick();
   const { to } = pick;
   const extraCap = edit?.extra?.lines ?? null;
   const kind = edit?.area_id != null ? "send" : "in";
@@ -1027,7 +1028,7 @@ export function NewRequestModal({ t, day, initialHour = null, edit = null, onClo
       return edit ? api.put(`/api/container-flow/requests/${edit.id}`, body)
         : api.post("/api/container-flow/requests", { day, ...body });
     },
-    onSuccess: (...a) => { if (!edit) pick.remember(); onDone(...a); },
+    onSuccess: onDone,
     onError: onFail,
   });
   const needLine = need.isLoading || (!edit && !listReady) ? t("cflow.req.needLoading")
@@ -1422,8 +1423,8 @@ function CancelModal({ t, r, onClose, onDone, onFail }) {
 // a forgotten hour only turned red on the strip. The server lists the day's
 // hours still ahead with what each needs on «Konteynerlar» less what was
 // already asked (`flow.prepared`); she ticks the ones to send — all by
-// default — picks the logistics person once and sends them in one go. The
-// addressee gets ONE message for the lot. An hour whose counts need changing
+// default — and sends them to every logistics person in one go. Each of
+// them gets ONE message for the lot. An hour whose counts need changing
 // is unticked here and made with «Yangi so'rov».
 // A dispatch area's hour (2026-11-19) is its own item — one per area and hour,
 // named by its area beside a truck.
@@ -1446,7 +1447,7 @@ export function PreparedModal({ t, day, hours, onClose, onDone, onFail }) {
       day, logistics_key: to,
       items: picked.map((h) => ({ hour: h.hour, counts: h.counts, ...(h.area_id != null ? { area_id: h.area_id } : {}) })),
     }),
-    onSuccess: () => { pick.remember(); onDone(picked.length); },
+    onSuccess: () => onDone(picked.length),
     onError: onFail,
   });
   return (

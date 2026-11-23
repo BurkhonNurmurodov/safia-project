@@ -272,7 +272,7 @@ export function ExtrasPanel({ t, data, loading, canDecide, onApprove, onReject }
   );
 }
 
-// AXO allows the ask: all of it or fewer of each type, to a logistics person.
+// AXO allows the ask: all of it or fewer of each type, to every logistics person.
 export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
   const { tl } = useTranslit();
   const types = KEYS.filter((k) => e.lines[k] != null);
@@ -294,7 +294,7 @@ export function ApproveExtraModal({ t, e, onClose, onDone, onFail }) {
       logistics_key: to, note,
       counts: Object.fromEntries(types.filter((k) => counts[k] > 0).map((k) => [k, counts[k]])),
     }),
-    onSuccess: (...a) => { pick.remember(); onDone(...a); },
+    onSuccess: onDone,
     onError: onFail,
   });
   return (

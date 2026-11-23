@@ -471,9 +471,32 @@ After a review of the app the operator answered «make it» to two points:
   on it is an ordinary request of that person everywhere — the list, the
   brigadir's card, the alerts, «Hisobot». The other one, a moment late, gets
   `taken` («Bu so'rovni boshqa logist allaqachon taqsimladi»), the dialog
-  closes and the list refreshes; it is no longer on their list. A waiting
+  closes and the list refreshes; until 2026-11-23 it then left their list (now it stays, under its state — below). A waiting
   request to everybody that is past its deadline names «Barcha logistlarga»
   in AXO's / the managers' alert (`to_text`).
+- **…and ALWAYS to everybody — no person is picked any more** (2026-11-23,
+  the operator, pointing at the picker's list of five names: «send request to
+  all logist person and show the status for all, just remove the rest of
+  them»). Two halves:
+  - **Nobody picks.** `LogisticsField` is no longer a select: on «Yangi
+    so'rov», «Tayyor so'rovlar» and the approval of a brigadir's extra it
+    STATES «Barcha logistlarga · N» (N = the logistics people) with the
+    «birinchi taqsimlagan oladi» hint, or «no logistics person has access»
+    when there is none — then the send stays disabled. `useLogisticsPick()`
+    takes no argument and remembers nothing (`cflow_last_logistics_v2` is
+    no longer read). **The server holds the rule**: the four routes that make
+    or move a request (`POST /requests`, `PUT /requests/{id}`,
+    `POST /requests/bulk`, `POST /extras/{id}/approve`) pass `TO_ALL`
+    (`flow.ALL_KEY`) whatever `logistics_key` a body names — an older tab
+    still sends one, and the field is now optional. The service keeps the
+    named form for the requests made before; an EDIT of such a request sends
+    it to everybody (the others get it as «new»).
+  - **Everybody sees the state.** `GET /requests` gives a logistics person
+    EVERY request of the day, like AXO, admins and watchers — a colleague's
+    taken one stays on their list under its state and the colleague's name,
+    instead of vanishing the moment somebody split it. Only the person who
+    took it acts on it (`assign_request`'s `taken`, the page's `mayAssign` /
+    `addressee` are unchanged); «Yangi» stays for a waiting request.
 - **Three fixes after a review of the app** (2026-11-17; the operator asked
   what was wrong and what to add, and answered «Yes, build those 3»):
   - **The limit carries over** (`unit_limits`). It was counted hour by hour,

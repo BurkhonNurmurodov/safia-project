@@ -2,14 +2,13 @@
 // (pages/ContainerFlow.jsx, docs/containers-flow.md).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, LayoutGrid, Truck } from "lucide-react";
+import { Clock, LayoutGrid, Truck, Users } from "lucide-react";
 import FormField from "../ui/FormField";
 import StyledSelect from "../ui/StyledSelect";
 import { hourLabel, tashkentNow, prevISO } from "../production/HourlyContainers";
 import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
 import { cellLabel, cellName } from "../../utils/cellName";
-import { usePersistentState } from "../../hooks/usePersistentState";
 import { ontimeTone } from "../../utils/statusBands";
 
 export const KEYS = ["yellow", "round", "grey", "bucket", "box"];
@@ -315,31 +314,34 @@ export const COUNT_PAIR = "grid grid-cols-[repeat(auto-fit,minmax(min(172px,100%
 // one request and this request should go to both, and one of them should
 // approve it») ────────────────────────────────────────────────────────────────
 // Every logistics person at once — whoever splits it first takes it (the
-// server's `ALL_KEY`) — or one named person. The form starts on «everybody»
-// unless this device last picked a person who is still listed.
+// server's `ALL_KEY`). Until 2026-11-23 the form could also name ONE person;
+// the operator then: «send the request which send by axo to all logistics …
+// just remove the rest of them». So nobody picks: the field STATES the
+// addressee, and the server sends to everybody whatever an older tab names.
+// The list is still read — with nobody on the logistics page there is no one
+// to send to, and the form says so.
 export const ALL_KEY = "*";
-export function useLogisticsPick(initial = null) {
+export function useLogisticsPick() {
   const people = useQuery({
     queryKey: ["cflow-logistics"],
     queryFn: () => api.get("/api/container-flow/logistics").then((r) => r.data.people),
   });
   const list = people.data ?? [];
-  const [last, setLast] = usePersistentState("cflow_last_logistics_v2", ALL_KEY);
-  const [who, setWho] = useState(initial);
-  const remembered = last === ALL_KEY || list.some((p) => p.key === last) ? last : ALL_KEY;
-  const to = list.length ? (who ?? remembered) : null;
-  return { loading: people.isLoading, list, to, setWho, remember: () => setLast(to) };
+  return { loading: people.isLoading, list, to: list.length ? ALL_KEY : null };
 }
 
 export function LogisticsField({ t, pick }) {
-  const { tl } = useTranslit();
-  const { loading, list, to, setWho } = pick;
+  const { loading, list } = pick;
+  const none = !loading && !list.length;
   return (
-    <FormField label={t("cflow.req.to")} required
-      hint={!loading && !list.length ? t("cflow.req.noLogistics")
-        : to === ALL_KEY ? t("cflow.req.toAllHint") : undefined}>
-      <StyledSelect value={to} onChange={setWho} placeholder={t("cflow.pick")} disabled={!list.length}
-        options={[{ value: ALL_KEY, label: t("cflow.req.toAll") }, ...list.map((p) => ({ value: p.key, label: tl(p.name) }))]} />
+    <FormField label={t("cflow.req.to")}
+      hint={none ? t("cflow.req.noLogistics") : t("cflow.req.toAllHint")}>
+      <div className="flex items-center gap-2 min-h-[38px] text-sm"
+        style={{ color: none ? "var(--text-3)" : "var(--text-1)" }}>
+        <Users size={15} className="shrink-0" aria-hidden style={{ color: "var(--text-3)" }} />
+        <span>{t("cflow.req.toAll")}</span>
+        {list.length > 0 && <span className="tabular-nums" style={{ color: "var(--text-3)" }}>· {list.length}</span>}
+      </div>
     </FormField>
   );
 }

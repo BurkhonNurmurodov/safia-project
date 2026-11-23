@@ -1867,12 +1867,59 @@ class CellBreakdownTest(unittest.TestCase):
             out = r.get_requests(day=DAY, db=None, payload={})
             self.assertEqual(out["workshops"], {"7416": {"ru": "Мойка"}})
             self.assertEqual(shops.call_args[0][1], {"7416", "A2894 · A"})
-            self.assertEqual(req.call_args[0][2], "idle_owner:1")       # a logistics person: their own requests
+            self.assertIsNone(req.call_args[0][2])     # a logistics person sees EVERY request (2026-11-23)
             self.assertTrue(out["logistics"])
             shops.reset_mock()
             req.return_value = [{"id": 2, "parts": []}]
             self.assertEqual(r.get_requests(day=DAY, db=None, payload={})["workshops"], {})
             shops.assert_not_called()
+
+    def test_axo_requests_always_go_to_every_logistics_person(self):
+        """23 Nov (the operator: «send the request which send by axo to all
+        logistics … just remove the rest of them»): a request, a batch, an
+        edit and an approved extra all go to ALL_KEY, whatever person an
+        older tab still names — or none."""
+        from app.routers import container_flow as r
+        db = mock.MagicMock()
+        named = "idle_owner:7"
+        with mock.patch.object(r, "_actor", return_value="AXO"), \
+                mock.patch.object(r, "_me", return_value="axo:1"), \
+                mock.patch.object(r, "_req_out", return_value={}), \
+                mock.patch.object(r, "_extra_out", return_value={}), \
+                mock.patch.object(r.action_log, "enrich"), \
+                mock.patch.object(r.flow, "notify_later"), \
+                mock.patch.object(r.flow, "notify_requests_later"), \
+                mock.patch.object(r.flow, "extra_later"):
+            with mock.patch.object(r.flow, "create_request") as mk:
+                r.post_request(r.RequestBody(day=DAY, hour=9, logistics_key=named, counts={"yellow": 5}),
+                               db=db, payload={})
+                self.assertEqual(mk.call_args[0][3], flow.ALL_KEY)
+                r.post_request(r.RequestBody(day=DAY, hour=9, counts={"yellow": 5}), db=db, payload={})
+                self.assertEqual(mk.call_args[0][3], flow.ALL_KEY)     # a body naming nobody is fine
+            with mock.patch.object(r.flow, "create_requests", return_value=[]) as mk:
+                r.post_requests_bulk(r.BulkBody(day=DAY, logistics_key=named, items=[]), db=db, payload={})
+                self.assertEqual(mk.call_args[0][2], flow.ALL_KEY)
+            req = mock.MagicMock(logistics_key=flow.ALL_KEY, id=1, day=DAY)
+            with mock.patch.object(r.flow, "edit_request", return_value=(req, [], named)) as mk, \
+                    mock.patch.object(r.flow, "addressees", return_value=[]):
+                r.put_request(1, r.EditBody(hour=9, logistics_key=named, counts={"yellow": 5}), db=db, payload={})
+                self.assertEqual(mk.call_args[0][3], flow.ALL_KEY)
+            with mock.patch.object(r.flow, "approve_extra", return_value=(mock.MagicMock(), req)) as mk:
+                r.post_extra_approve(1, r.ApproveBody(counts={"yellow": 5}, logistics_key=named), db=db, payload={})
+                self.assertEqual(mk.call_args[0][3], flow.ALL_KEY)
+
+    def test_only_logistics_axo_and_watchers_see_the_whole_day(self):
+        """A logistics person sees every request — a colleague's taken one
+        included, with its state; anyone else only what names them."""
+        from app.routers import container_flow as r
+        roles = {"admin": False, "axo": False, "logistics": False, "watch": False}
+        with mock.patch.object(r, "_roles", return_value=roles), \
+                mock.patch.object(r, "_me", return_value="supervisor:3"), \
+                mock.patch.object(r.flow, "requests_of", return_value=[]) as req, \
+                mock.patch.object(r.flow, "logistics_people", return_value=[{"key": "idle_owner:1"}]):
+            out = r.get_requests(day=DAY, db=None, payload={})
+            self.assertEqual(req.call_args[0][2], "supervisor:3")
+            self.assertFalse(out["logistics"])
 
     def test_workshop_name_prefers_the_readers_language(self):
         self.assertEqual(flow.workshop_name({"uz": "Yuvish", "ru": "Мойка"}, "uz"), "Yuvish")
