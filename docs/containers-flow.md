@@ -1321,6 +1321,21 @@ learned this: a click PINS it (it used to toggle, so a mouse already hovering
 closed it on the click), and it takes `icon` / `color` / `label`. The phone
 cards were already printing the comment in full under each request.
 
+### A plan written the day before gives the 06:00 figures (2026-11-24)
+
+The operator: the brigadirs write their plan the day before, and AXO starts at
+06:00 to ask for the 08:00 containers — two hours ahead, which is already the
+on-time rule (`DRAFT_MIN` 120; delivery due an hour before, `LEAD_MIN`). But
+the hour's figure came from each team's typed «Bugungi fakt» headcount, typed
+when the people arrive, so at 06:00 «Kun rejasi», «Tayyor so'rovlar» and the
+counts in «Yangi so'rov» were empty for every untyped team (Talipova Mamura:
+1 team of 5 typed, «Soatlik» 2 against 1,113 on «Konteynerlar»). Now an untyped
+team is timed with the people its plan needs (`hourly_containers.team_people`,
+docs/production-quantities.md «Hourly containers»), so every hour the plan
+fills has its figure from the moment the plan is written; it firms up when the
+headcount is typed. Still open (asked, not answered): the page's day turns at
+08:00, so at 06:00 AXO presses › once to reach the new day.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.

@@ -15,7 +15,13 @@ so the hours add up to the line's daily count. Minutes count from the day's
 midnight and run past 1440 for a shift that crosses it.
 
 Read by «Smena kunligi» (`GET /api/shift-report/containers-hourly`), summed
-over every unit in scope off each unit's own dashboard."""
+over every unit in scope off each unit's own dashboard.
+
+A team nobody typed «Odam soni» for yet is timed with the people its plan
+NEEDS (2026-11-24, `needed_people`) — the brigadirs write the plan the day
+before, AXO asks at 06:00 for 08:00, and nobody has typed the day's
+headcount by then. A typed number (0 included) always wins; the загрузка
+itself still reads the typed number only."""
 from __future__ import annotations
 
 import math
@@ -103,6 +109,30 @@ def _norm(v) -> str:
     return str(v or "").strip().upper()
 
 
+def needed_people(rows: list, per_head) -> Optional[int]:
+    """«Nechta odam kerak» for one team — ROUND(Σ Общ.трудаёмкость of its
+    planned lines ÷ productive minutes per person), at least 1: the form's
+    own «kerak» row (`=ROUND(I1/productive_min,0)`), so the plan is spread
+    over about one shift. None when no planned line has a norm."""
+    q = sum(_num(r.get("total_labor")) for r in rows
+            if _num(r.get("plan_qty")) > 0 and _num(r.get("total_labor")) > 0)
+    pm = _num(per_head)
+    if q <= 0 or pm <= 0:
+        return None
+    return max(1, math.floor(q / pm + 0.5))
+
+
+def team_people(people, rows: list, per_head):
+    """(N, estimated) — the typed headcount, or, while nobody typed one,
+    `needed_people` (2026-11-24, the operator: the plan is written the day
+    before and AXO asks at 06:00 — «the system gives the containers when they
+    got a plan»). A typed 0 is an answer (a cell that ran empty) and stays."""
+    if people is not None and str(people).strip() != "":
+        return people, False
+    n = needed_people(rows, per_head)
+    return (n, True) if n else (people, False)
+
+
 def unit_hours(dash: dict):
     """One unit's dashboard → ({hour: {key: n}}, {key: n untimed}), its teams
     split exactly as the «Jamoalar» card splits them."""
@@ -114,6 +144,9 @@ def unit_hours(dash: dict):
     rows = dash.get("rows") or []
     hours: dict = {}
     untimed: dict = {}
+
+    def timeline(mine, people, start):
+        return team_timeline(mine, team_people(people, mine, pm)[0], start, eff)
 
     def add(h_map, u_map):
         for h, e in h_map.items():
@@ -133,18 +166,19 @@ def unit_hours(dash: dict):
         groups = [g for g in (w.get("groups") or []) if not g.get("orphan")]
         if groups:
             for g in groups:
-                add(*team_timeline([r for r in mine if r.get("wc_group") == g.get("group")],
-                                   g.get("people"), clock_of(g.get("cell"), w.get("cell")), eff))
-            add(*team_timeline([r for r in mine if not r.get("wc_group")],
-                               w.get("people"), clock_of(None, w.get("cell")), eff))
+                add(*timeline([r for r in mine if r.get("wc_group") == g.get("group")],
+                              g.get("people"), clock_of(g.get("cell"), w.get("cell"))))
+            add(*timeline([r for r in mine if not r.get("wc_group")],
+                          w.get("people"), clock_of(None, w.get("cell"))))
         else:
-            add(*team_timeline(mine, w.get("people"), clock_of(None, w.get("cell")), eff))
+            add(*timeline(mine, w.get("people"), clock_of(None, w.get("cell"))))
     return hours, untimed
 
 
 def unit_teams(dash: dict) -> list:
     """One unit's dashboard → its TEAMS, each with its own hours:
-    `[{work_center, group, rest, cell, people, hours: {h: {key: n}}, untimed}]`
+    `[{work_center, group, rest, cell, people, people_est, hours: {h: {key: n}}, untimed}]`
+    (`people_est`: nobody typed the headcount, `people` is `needed_people`)
     — the very split `unit_hours` sums (keep the two in step), kept apart for
     the container flow, whose need and shares are per team
     (services/container_flow.py, docs/containers-flow.md). A team with no
@@ -162,11 +196,12 @@ def unit_teams(dash: dict) -> list:
         return (c.get("shift_hours") or {}).get("start") or unit_clock
 
     def team(code, group, rest, cell, people, mine, start):
-        h_map, u_map = team_timeline(mine, people, start, eff)
+        n, est = team_people(people, mine, pm)
+        h_map, u_map = team_timeline(mine, n, start, eff)
         if h_map or u_map:
             out.append({"work_center": code, "group": group or "", "rest": bool(rest),
                         "cell": cell if isinstance(cell, dict) else None,
-                        "people": people, "hours": h_map, "untimed": u_map})
+                        "people": n, "people_est": est, "hours": h_map, "untimed": u_map})
 
     for w in dash.get("work_centers") or []:
         code = _norm(w.get("work_center"))

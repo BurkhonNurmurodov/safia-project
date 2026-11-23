@@ -83,6 +83,33 @@ class UnitTeamsTest(unittest.TestCase):
         self.assertEqual([(t["work_center"], t["group"], t["rest"]) for t in teams],
                          [("A1", "A", False), ("A1", "B", False), ("A1", "", True), ("B2", "", False)])
 
+    def test_an_untyped_team_is_timed_with_the_people_its_plan_needs(self):
+        """24 Nov (the operator: Talipova's plan was written, «Konteynerlar»
+        showed it, «Soatlik» did not — «Odam soni» was typed for 1 team of
+        5): a team with no typed headcount is timed with ROUND(Σ labour ÷
+        productive minutes), at least 1; a typed number — 0 too — wins."""
+        from app.services import hourly_containers as hc
+        rows = [{"work_center": "C3", "seq": 1, "plan_qty": 400, "total_labor": 2448, "cap_yellow": 10},
+                {"work_center": "C3", "seq": 2, "plan_qty": 30, "total_labor": 0, "cap_grey": 5}]
+        self.assertEqual(hc.needed_people(rows, 408), 6)                  # 2448 ÷ 408
+        self.assertEqual(hc.needed_people([{**rows[0], "total_labor": 40}], 408), 1)   # never 0
+        self.assertIsNone(hc.needed_people(rows[1:], 408))                # no norm → nothing to time
+        self.assertEqual(hc.team_people(None, rows, 408), (6, True))
+        self.assertEqual(hc.team_people("", rows, 408), (6, True))
+        self.assertEqual(hc.team_people(4, rows, 408), (4, False))
+        self.assertEqual(hc.team_people(0, rows, 408), (0, False))        # a cell that ran empty
+        dash = {"constants": {"shift_min": 480, "productive_min": 408, "shift_hours": {"start": "08:00"}},
+                "rows": rows, "work_centers": [{"work_center": "C3", "people": None, "cell": None}]}
+        hours, untimed = hc.unit_hours(dash)
+        # 6 people make 2448 min of work in 2448 ÷ 6 ÷ 0.85 = 480 clock minutes: 08:00–16:00
+        self.assertEqual(sorted(hours), list(range(8, 16)))
+        self.assertEqual(sum(e.get("yellow", 0) for e in hours.values()), 40)
+        self.assertEqual(untimed, {"grey": 6})                            # the line with no norm
+        team = hc.unit_teams(dash)[0]
+        self.assertEqual((team["people"], team["people_est"]), (6, True))
+        typed = {**dash, "work_centers": [{"work_center": "C3", "people": 0, "cell": None}]}
+        self.assertEqual(hc.unit_hours(typed)[0], {})                     # typed 0: no hours, as before
+
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
 class FlowTest(unittest.TestCase):

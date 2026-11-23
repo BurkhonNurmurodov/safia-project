@@ -712,8 +712,26 @@ it moves on by itself at the top of the hour.
 - «Now» is today's page, or yesterday's while a night shift runs past
   midnight; any other date opens on its first hour. A plan that does not fit
   the shift keeps going past its end, so those hours are still offered.
-- Lines with no Трудоемкость, or a team with no people, have no hour and are
-  left out of this view (they still count on «Konteynerlar»).
+- Lines with no Трудоемкость have no hour and are left out of this view (they
+  still count on «Konteynerlar»). A team with a TYPED 0 has none either.
+- **A team nobody typed «Bugungi fakt» for is timed with the people its plan
+  NEEDS** (2026-11-24). The operator, on Talipova Mamura's page: the plan was
+  written the day before and «Konteynerlar» showed 1,113 containers, but
+  «Soatlik» showed 2 — «Bugungi fakt» was typed for 1 team of 5, so the other
+  four had no hours, and AXO, who asks at 06:00 for 08:00, had nothing to ask
+  from. Since `ZAGRUZKA_FROM` the headcount is the typed number only, and
+  nobody types the day's headcount before the people arrive. So, for the
+  TIMING only, an untyped team takes `needed_people` =
+  ROUND(Σ Общ.трудаёмкость of its planned lines ÷ the unit's productive
+  minutes per person), at least 1 — the form's own «Nechta odam kerak» row —
+  which spreads its plan over about one shift in «Navbat» order. A typed
+  number always wins (the hours firm up the moment it is typed); the
+  загрузка, the load, ΣN and the Excel still read the typed number only.
+  Both twins hold it — `hourly_containers.needed_people` / `team_people`
+  (Smena kunligi, the container flow, its readiness check) and
+  `neededPeople` in `HourlyContainers.jsx`; `unit_teams` says `people_est`.
+  On «Soatlik» an estimated team's count reads «≈ 640» (its title names the
+  people used) and a line under the cards says how many teams were timed so.
 - Not built (ask first): a typed start hour per line, a Telegram message per
   hour, a lead time other than one hour.
 

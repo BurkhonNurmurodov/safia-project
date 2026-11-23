@@ -13,6 +13,12 @@
 // Rounding keeps the day's total: an hour's count is
 //   ROUNDUP(made by the hour's end ÷ capacity) − ROUNDUP(made by its start ÷ capacity)
 // so the hours add up to exactly the line's daily count (`containerCount`).
+//
+// A team nobody typed «Odam soni» for yet is timed with the people its plan
+// NEEDS (2026-11-24, `neededPeople` — the form's «Nechta odam kerak»): the
+// brigadirs write the plan the day before and AXO asks at 06:00 for 08:00,
+// long before anybody types the day's headcount. A typed number (0 too) always
+// wins. The twin is `hourly_containers.needed_people` / `team_people`.
 import { useEffect, useMemo, useState } from "react";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { Clock } from "lucide-react";
@@ -43,10 +49,23 @@ export const prevISO = (iso) => {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 };
 
+const typedPeople = (v) => v != null && String(v).trim() !== "" && Number.isFinite(Number(v));
+
+/** «Nechta odam kerak» for one team: ROUND(Σ Общ.трудаёмкость of its planned
+ *  lines ÷ productive minutes per person), at least 1 — null when no planned
+ *  line has a norm. */
+export function neededPeople(rows, perHead) {
+  const q = rows.reduce((s, r) => (Number(r.plan_qty) > 0 && Number(r.total_labor) > 0 ? s + Number(r.total_labor) : s), 0);
+  const pm = Number(perHead);
+  if (!(q > 0) || !(pm > 0)) return null;
+  return Math.max(1, Math.floor(q / pm + 0.5));
+}
+
 /** One team's timeline: {start, end, shiftEnd, hours: Map(h → {cid → n}),
- *  untimed: {cid → n}, people, src}. Minutes count from the day's midnight and
- *  run past 1440 for a shift that crosses it. */
-export function teamTimeline({ rows, people, startHHMM, endHHMM, eff, containers }) {
+ *  untimed: {cid → n}, people, estimated}. Minutes count from the day's
+ *  midnight and run past 1440 for a shift that crosses it. `perHead` (the
+ *  unit's productive minutes) times a team with no typed headcount. */
+export function teamTimeline({ rows, people, startHHMM, endHHMM, eff, containers, perHead }) {
   const start = toMin(startHHMM) ?? 8 * 60;
   let shiftEnd = toMin(endHHMM);
   if (shiftEnd != null && shiftEnd <= start) shiftEnd += DAY;
@@ -59,7 +78,8 @@ export function teamTimeline({ rows, people, startHHMM, endHHMM, eff, containers
     e[cid] = (e[cid] ?? 0) + n;
   };
   let cur = start;
-  const N = Number(people) || 0;
+  const est = typedPeople(people) ? null : neededPeople(rows, perHead);
+  const N = est ?? (Number(people) || 0);
   // «Navbat» first (the team's typed order for the day), then № for the lines
   // nobody ordered. Lines sharing one «Navbat» are made AT THE SAME TIME: the
   // team splits over them so they finish together, i.e. the step lasts their
@@ -97,14 +117,14 @@ export function teamTimeline({ rows, people, startHHMM, endHHMM, eff, containers
     }
     cur = t1;
   }
-  return { start, end: cur, shiftEnd, hours, untimed };
+  return { start, end: cur, shiftEnd, hours, untimed, people: N, estimated: est != null };
 }
 
 export default function HourlyContainers({ teams, rows, constants, date, containers, t, fmt, renderTeam }) {
+  const perHead = Number(constants?.productive_min) || 408;
   const eff = (() => {
     const s = Number(constants?.shift_min) || 480;
-    const p = Number(constants?.productive_min) || 408;
-    const e = p / s;
+    const e = perHead / s;
     return e > 0 && e <= 1.5 ? e : 0.85;
   })();
   const unitHours = constants?.shift_hours ?? null;
@@ -127,9 +147,11 @@ export default function HourlyContainers({ teams, rows, constants, date, contain
       const cell = (g ? g.cell : w.cell) ?? w.cell;
       const hrs = cell?.shift_hours ?? unitHours;
       const people = g ? g.people : w.people;
-      return { team, tl: teamTimeline({ rows: mine, people, startHHMM: hrs?.start, endHHMM: hrs?.end, eff, containers }) };
+      return { team, tl: teamTimeline({ rows: mine, people, startHHMM: hrs?.start, endHHMM: hrs?.end, eff, containers, perHead }) };
     }).filter(({ tl }) => tl.hours.size > 0);
-  }, [teams, rows, unitHours, eff, containers]);
+  }, [teams, rows, unitHours, eff, perHead, containers]);
+  // the teams timed by `neededPeople` — named under the cards, ≈ on their counts
+  const estimated = lines.filter(({ tl }) => tl.estimated);
 
   if (lines.length === 0) {
     return <p className="text-[12px] px-1 py-2" style={{ color: "var(--text-3)" }}>{t("production.hourly.none")}</p>;
@@ -150,7 +172,8 @@ export default function HourlyContainers({ teams, rows, constants, date, contain
   // One card per container, the teams needing it in this hour — the
   // «Konteynerlar» view's layout, read for one hour instead of the day.
   const cards = containers.map((c) => {
-    const list = lines.map(({ team, tl }) => ({ team, n: tl.hours.get(hour)?.[c.id] ?? 0 })).filter((x) => x.n > 0);
+    const list = lines.map(({ team, tl }) => ({ team, n: tl.hours.get(hour)?.[c.id] ?? 0, est: tl.estimated, people: tl.people }))
+      .filter((x) => x.n > 0);
     return { c, list, total: list.reduce((s, x) => s + x.n, 0) };
   }).filter((x) => x.list.length > 0);
   const isPrep = hour === prepHour;
@@ -180,17 +203,26 @@ export default function HourlyContainers({ teams, rows, constants, date, contain
                 </span>
               </div>
               <ul className="flex flex-col">
-                {list.map(({ team, n }) => (
+                {list.map(({ team, n, est, people }) => (
                   <li key={`${team.w.work_center}|${team.g?.group ?? ""}|${team.rest ? 1 : 0}`}
                     className="flex items-center justify-between gap-2 min-h-[30px]">
                     <span className="flex items-center gap-1.5 min-w-0">{renderTeam(team)}</span>
-                    <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-1)" }}>{fmt(n, 0)}</span>
+                    <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: "var(--text-1)" }}
+                      title={est ? t("production.hourly.estTeam").replace("{n}", people) : undefined}>
+                      {est && <span className="font-normal mr-0.5" style={{ color: "var(--text-3)" }}>≈</span>}
+                      {fmt(n, 0)}
+                    </span>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
+      )}
+      {estimated.length > 0 && (
+        <p className="text-[11px] px-1" style={{ color: "var(--text-2)" }}>
+          {t("production.hourly.estimated").replace("{n}", estimated.length)}
+        </p>
       )}
       <p className="text-[11px] px-1" style={{ color: "var(--text-3)" }}>
         {t("production.hourly.howto").replace("{pct}", Math.round(eff * 100))}
