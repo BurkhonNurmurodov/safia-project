@@ -1125,4 +1125,10 @@ outlines itself under a pointer instead (`.qty-cell` in `index.css`).
   saved — and undone — on its own through its own `onSave`, a cell the block
   reaches that is not editable (a closed day) is skipped. One pasted value is
   that cell's.
+- **«Faza» (`op`) is typed the same way** (2026-11-24, the operator: «i want to
+  change just faza»): the same `QtyCell` with `text` — saved as typed, trimmed,
+  a blank clears it — through the catalog's own whole-line edit
+  (`PUT /admin/production/catalog/{id}` `{op}`), so it is editable for whoever
+  may edit the catalog on that day; the SAP-codes grant's door carries the code
+  alone, so for its holders the cell stays read-only.
 - The phone cards (`QtyField`, below md) are untouched.

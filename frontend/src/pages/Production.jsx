@@ -467,7 +467,12 @@ const pasteGrid = (el, grid) => {
   }));
 };
 
-function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = false, decimals = 0 }) {
+// `text` makes it a WORDS cell (the «Faza» column): what is typed is saved as
+// typed, trimmed — no sums, no number parsing — and a blank clears it.
+function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = false, decimals = 0, text = false, className = "" }) {
+  const read = (raw, v) => (text ? String(raw ?? "").trim() : parseQty(raw, v));
+  const same = (num, v) => (text ? num === String(v ?? "").trim() : num === (v ?? null));
+  const show = (v) => (text ? (v == null || v === "" ? "—" : v) : fmt(v, decimals));
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
   const [sel, setSel] = useState(false);
@@ -485,8 +490,8 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     if (!el) return undefined;
     el._qsave = (raw) => {
       const { value: v, onSave: save } = live.current;
-      const num = parseQty(raw, v);
-      if (num !== undefined && num !== (v ?? null)) save(num);
+      const num = read(raw, v);
+      if (num !== undefined && !same(num, v)) save(num);
     };
     return () => { delete el._qsave; };
   }, [readOnly]);
@@ -511,9 +516,9 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     setEditing(false);
     if (!save) return;
     // «+20» adds 20 to what the cell holds; «50+20» sums as typed.
-    const num = parseQty(draft, value);
+    const num = read(draft, value);
     if (num === undefined) return;
-    if (num !== (value ?? null)) onSave(num);
+    if (!same(num, value)) onSave(num);
   };
 
   // Focus moves only once the editor has actually unmounted — doing it inside the
@@ -537,25 +542,25 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     if (editing) return;
     const k = e.key;
     if (k === "Enter" || k === "F2") { e.preventDefault(); start(); }
-    else if (k === "Delete" || k === "Backspace") { e.preventDefault(); if (value != null) onSave(null); }
+    else if (k === "Delete" || k === "Backspace") { e.preventDefault(); if (value != null && value !== "") onSave(text ? "" : null); }
     else if (k === "Tab") { e.preventDefault(); stepCell(e.currentTarget, e.shiftKey ? -1 : 1); }
     else if (k === "ArrowDown") { e.preventDefault(); moveCell(e.currentTarget, 0, 1); }
     else if (k === "ArrowUp") { e.preventDefault(); moveCell(e.currentTarget, 0, -1); }
     else if (k === "ArrowRight") { e.preventDefault(); moveCell(e.currentTarget, 1, 0); }
     else if (k === "ArrowLeft") { e.preventDefault(); moveCell(e.currentTarget, -1, 0); }
-    else if (k.length === 1 && /[\d.,+-]/.test(k) && !e.ctrlKey && !e.metaKey) { e.preventDefault(); start(k); }
+    else if (k.length === 1 && (text ? k !== " " : /[\d.,+-]/.test(k)) && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); start(k); }
   };
 
   // A selected cell takes a paste too: one value is that cell's, a block fills
   // the grid from it.
   const onCellPaste = (e) => {
     if (editing) return;
-    const text = e.clipboardData?.getData("text/plain");
-    if (!text) return;
+    const pasted = e.clipboardData?.getData("text/plain");
+    if (!pasted) return;
     e.preventDefault();
-    const grid = pastedGrid(text);
+    const grid = pastedGrid(pasted);
     if (grid) pasteGrid(e.currentTarget, grid);
-    else e.currentTarget._qsave?.(text.trim().replace(/\s/g, ""));
+    else e.currentTarget._qsave?.(text ? pasted.trim() : pasted.trim().replace(/\s/g, ""));
   };
 
   // A day the unit has signed off on is read-only, and it renders as an ORDINARY
@@ -564,8 +569,8 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
   // silently does nothing.
   if (readOnly) {
     return (
-      <td title={title || undefined} className="px-3 py-2 text-center tabular-nums" style={{ color: warn ? "#ef4444" : "var(--text-1)" }}>
-        {fmt(value, decimals)}
+      <td title={title || undefined} className={`px-3 py-2 text-center tabular-nums ${className}`} style={{ color: warn ? "#ef4444" : "var(--text-1)" }}>
+        {show(value)}
       </td>
     );
   }
@@ -596,7 +601,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
         e.stopPropagation();          // never toggles the row's action strip
         start();
       }}
-      className="qty-cell px-3 py-2 text-center relative select-none outline-none"
+      className={`qty-cell px-3 py-2 text-center relative select-none outline-none ${className}`}
       style={{
         cursor: "text",
         touchAction: "manipulation",  // a quick second tap never zooms the page
@@ -607,7 +612,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
           no dot. What the operator entered IS the figure for that day. */}
       <span className="tabular-nums"
         style={{ color: warn ? "#ef4444" : "var(--text-1)", fontWeight: warn ? 700 : undefined }}>
-        {fmt(value, decimals)}
+        {show(value)}
       </span>
       {/* the editor covers the cell's whole box — inset-0 resolves against the
           td's padding box, so the table's own grid lines stay visible around it */}
@@ -615,7 +620,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
         <input
           autoFocus
           value={draft}
-          inputMode="decimal"
+          inputMode={text ? "text" : "decimal"}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={(e) => { if (grab.current) e.target.select(); }}
           onBlur={() => finish(true)}
@@ -638,7 +643,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
             else if (k === "ArrowRight" && atEdge(e.currentTarget, 1)) { e.preventDefault(); finish(true, { d: [1, 0] }); }
             else if (k === "ArrowLeft" && atEdge(e.currentTarget, -1)) { e.preventDefault(); finish(true, { d: [-1, 0] }); }
           }}
-          className="absolute inset-0 w-full h-full text-center text-xs px-2 outline-none tabular-nums"
+          className={`absolute inset-0 w-full h-full text-center text-xs px-2 outline-none tabular-nums ${className}`}
           style={{ background: "var(--bg-card)", border: "2px solid var(--brand)", borderRadius: 4, color: "var(--text-1)" }}
         />
       )}
@@ -3149,8 +3154,15 @@ export default function Production() {
         // a line without a SAP code is a real position (dough mixes, unlisted
         // pastries) — mark the gap the same way the «Опер.» column does
         return <td key={key} className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code || "—"}</td>;
+      // «Faza» — a catalog field, typed straight into the cell like the
+      // quantities (the operator, 2026-11-24). An admin's whole-line edit;
+      // the SAP-codes grant's door carries the code alone, so it stays read.
       case "op":
-        return <td key={key} className="px-3 py-2 text-center font-mono" style={{ color: "var(--text-3)" }}>{r.op ?? "—"}</td>;
+        return (
+          <QtyCell key={key} col={key} row={i} text className="font-mono"
+            readOnly={!canEditCatalog || sapGrant || r.id == null}
+            value={r.op ?? ""} onSave={(v) => catalog.mutate({ id: r.id, body: { op: v } })} />
+        );
       case "name":
         return (
           <td key={key} className="px-3 py-2 text-left max-w-[220px]">
