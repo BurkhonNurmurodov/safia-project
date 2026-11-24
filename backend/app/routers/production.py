@@ -369,13 +369,23 @@ def _leader_group_scope(db: Session, payload: Optional[dict],
     return sap_groups_for_leader(db, pid, day, unit=_leader_cut(db, pid, day, mid))
 
 
+# Cells the «Yacheyka» pick never offers (the operator, 2026-11-24: «in
+# workload file for Aripova Manzura can you remove the teams 0812 0822 2511 …
+# it should not affect anything»). Service cells of her unit with no positions
+# on this page; they stay in the unit, and every other page — attendance, KPI,
+# the загрузка's figures — reads them exactly as before. Only this list loses
+# them (and a pick naming one is dropped like any pick not offered).
+PICK_HIDDEN_CODES = frozenset({"0812", "0822", "2511"})
+
+
 def _pick_cells(db: Session, payload: dict, day: Optional[date], mid: int) -> list[dict]:
     """The cells the page bar's «Yacheyka» pick offers: every cell standing in
     the unit that day with a SAP code (`cell_lookup.unit_cells` — a cell with
     none names no work centre, so it has nothing on this page). A LEADER pinned
     to their own cells is offered those alone — the pick narrows a page, it
     never widens one."""
-    cells = unit_cells(db, mid, day)
+    cells = [c for c in unit_cells(db, mid, day)
+             if (c.get("verifix_code") or "").strip() not in PICK_HIDDEN_CODES]
     if payload.get("role") == "leader" and not page_scope_is_all(db, payload, PAGE):
         pid = viewer_leader_profile_id(db, payload)
         own = {c.id for c in leader_cells_on(db, pid, day or cell_archive.today())} if pid else set()

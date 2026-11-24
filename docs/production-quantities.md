@@ -1079,6 +1079,13 @@ alone, and a leader gets it only when they run two or more cells.
   option prints the code and leader, then the work centre + letter the team
   card prints («9422 · Ivanov I. · A1431»). A pick the list no longer carries
   (another brigadir or day) is ignored by the server and dropped by the page.
+- **Three cells are never offered** (`PICK_HIDDEN_CODES` in
+  `routers/production.py`, 2026-11-24, the operator: «in workload file for
+  Aripova Manzura can you remove the teams 0812 0822 2511 … it should not
+  affect anything»): service cells of her unit with no positions on the page.
+  Only this list loses them — they stay in the unit, and attendance, KPI and
+  every загрузка figure read them as before. A new code there is one more
+  entry in that set.
 - **The «Odamlar soni» save takes the pick as well.** That save deletes a group
   pin its body does not list, and a narrowed page lists only the picked cell's
   groups — so without it an admin saving cell A's people would wipe the sibling
