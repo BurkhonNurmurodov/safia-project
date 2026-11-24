@@ -642,6 +642,13 @@ After a review of the app the operator answered «make it» to two points:
     (no button, no reminder, the old card); a request an ADMIN accepted is
     that admin's, so test on a request made for the test. **Switch it on only
     on the operator's word** — it obliges Nuriddin aka and Yusuf aka.
+  - **ON for every logistics person since 2026-11-24** — the operator's word,
+    on «Konteyner taqsimlash»: «can you make it visible for logistics, they
+    have to accept when AXO gives them the containers». Switched by the
+    one-shot `startup.container_accept_step_on` (flag
+    `oneshot:container_accept_step_on_nov24`), which reports to the admins the
+    logistics people and the three message switches; an admin's later «off»
+    on «Sozlamalar» sticks — the step never turns it back on.
   - **An edit keeps the acceptor.** `PUT /requests/{id}` sends every edited
     request to everybody; `edit_request` ignores that for an accepted one —
     it stays with whoever accepted it, they are told «o'zgartirildi» and it

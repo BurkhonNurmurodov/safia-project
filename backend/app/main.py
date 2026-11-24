@@ -373,6 +373,8 @@ async def lifespan(app: FastAPI):
     later(containers_who_sees_what)
     from app.startup import container_watch_shift_managers_off
     later(container_watch_shift_managers_off)   # the same evening: only the board for them
+    from app.startup import container_accept_step_on
+    later(container_accept_step_on)             # 24 Nov: «Qabul qilish» open to logistics (once)
     from app.startup import container_cols_three_brigadirs
     later(container_cols_three_brigadirs)       # 22 Nov: three brigadirs see the container columns
     from app.startup import container_cols_aripova

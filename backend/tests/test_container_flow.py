@@ -182,6 +182,25 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(access(), [])
             self.assertEqual(dm.call_count, 2)           # one note each, the first time only
 
+    def test_accept_step_oneshot_opens_it_once(self):
+        """24 Nov (the operator: logistics «have to accept when AXO gives them
+        the containers»): `accept_step` goes ON once; an admin's later «off»
+        on «Sozlamalar» sticks."""
+        from app import startup
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain") as dm:
+            self.assertFalse(flow.settings(self.db)["accept_step"])
+            self.assertFalse(flow.accept_applies(self.db, False))
+            startup.container_accept_step_on()
+            self.db.expire_all()
+            self.assertTrue(flow.settings(self.db)["accept_step"])
+            self.assertTrue(flow.accept_applies(self.db, False))     # a logistics person now accepts
+            flow.save_settings(self.db, accept_step=False)           # an admin switches it off again
+            startup.container_accept_step_on()
+            self.db.expire_all()
+            self.assertFalse(flow.settings(self.db)["accept_step"])
+            self.assertEqual(dm.call_count, 1)
+
     def test_another_plants_brigadir_is_not_served(self):
         """20 Nov: the flow is Uchtepa's (resolved by name) — and Almaty's from
         22 Nov. A unit placed in another plant (Keles) is not offered, not

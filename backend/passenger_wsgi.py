@@ -345,6 +345,8 @@ try:
     seed_bolims()
     from app.startup import container_watch_shift_managers_off
     container_watch_shift_managers_off()
+    from app.startup import container_accept_step_on
+    container_accept_step_on()          # 24 Nov: «Qabul qilish» open to logistics (once)
     from app.startup import container_cols_three_brigadirs
     container_cols_three_brigadirs()
     from app.startup import container_cols_aripova

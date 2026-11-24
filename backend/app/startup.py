@@ -12162,6 +12162,48 @@ def container_watch_shift_managers_off() -> None:
         db.close()
 
 
+# ── 24 Nov: «Qabul qilish» opened to logistics (docs/containers-flow.md) ────
+# The operator, 2026-11-24, on «Konteyner taqsimlash»: «so we had here accept
+# button … can you make it visible for logistics, they have to accept when AXO
+# gives them the containers». The step shipped on 23 Nov behind the
+# «Sozlamalar» switch `accept_step`, the admins' alone until the operator said
+# so — this is that word. ONCE: the switch goes ON and the admins are told; an
+# admin may switch it off again on «Sozlamalar» and this never turns it back.
+CONTAINER_ACCEPT_ON_FLAG = "oneshot:container_accept_step_on_nov24"
+
+
+def container_accept_step_on() -> None:
+    from app.services import container_flow as flow
+
+    title = "Konteynerlar · «Qabul qilish» logistlarga ochildi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CONTAINER_ACCEPT_ON_FLAG).first():
+            return
+        was = flow.settings(db)["accept_step"]
+        db.add(AppSetting(key=CONTAINER_ACCEPT_ON_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        cfg = flow.save_settings(db, accept_step=True)          # commits the flag with the switch
+        people = [p["name"] for p in flow.logistics_people(db)]
+        on = lambda v: "yoqiq" if v else "o'chiq"                # noqa: E731
+        print(f"[startup] container accept step: {'already on' if was else 'switched on'}; "
+              f"logistics {len(people)}, notify {cfg['notify']}, reminder {cfg['notify_unaccepted']}, "
+              f"colleagues {cfg['notify_accepted']}")
+        _dm_report("ok", title,
+                   status="Avval ham yoqiq edi" if was else "«Qabul qilish» qadami hammaga yoqildi",
+                   rows=[("🚚", "Logistlar", people or ["hech kim — «Konteyner taqsimlash» ruxsati yo'q"]),
+                         ("📨", "Logistlarga Telegram", on(cfg["notify"])),
+                         ("⏰", "Qabul qilinmaguncha har 30 daqiqada eslatma", on(cfg["notify_unaccepted"])),
+                         ("👥", "Biri qabul qilsa, qolganlariga xabar", on(cfg["notify_accepted"]))],
+                   notes=[("ℹ️", "Endi logist so'rovni avval «Qabul qilish» bilan oladi, keyin taqsimlaydi. "
+                                 "O'chirish: «Konteyner berish» → «Sozlamalar».")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] container accept step on failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
+
+
 # ── the 13 Nov window edits, dated (docs/data-fixes.md) ─────────────────────
 # Written 15:36–16:09 on 13 Nov 2026, before a window write could be dated
 # (docs/checklist.md «A change of a task's hours counts FROM A DAY»), so every
