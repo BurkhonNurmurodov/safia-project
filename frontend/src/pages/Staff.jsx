@@ -198,6 +198,9 @@ function isZagruzkaCalcRole(worker) {
   // it. Checked first: their «Должность» is whatever the HR export spells, and
   // a blank one would fall through to the hours rule below and be counted.
   if (worker.is_supervisor) return false;
+  // A live day's worker from a cell not counted in the загрузка, put to no
+  // counted work today (no role change, move or placement): listed only.
+  if (worker.off_load) return false;
   const title = String(worker.job_title ?? "").trim();
   if (title.startsWith(ZAGRUZKA_ROLE_PREFIX) || ZAGRUZKA_ROLE_EXACT.has(title)) return true;
   // A blank title only joins the load when the row carries hours — there is

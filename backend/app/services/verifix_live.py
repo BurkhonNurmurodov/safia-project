@@ -14,7 +14,9 @@ Where a person stands is answered the way the agreed live feed will answer it:
   («отдел») names by its code — the org unit, never the division: the cell
   codes sit on org units (first connection test, 2026-10-01: 0 of 2,942 rows
   by division, 1,606 by org unit). **Only cells counted in the загрузка**
-  (`cells.in_load`, from 2026-10-04): a person in any other cell is on no page;
+  (`cells.in_load`, from 2026-10-04) make a unit's day; from 2026-11-24 the
+  people of its cells NOT counted (`_off_cells`) are listed on /staff too, and
+  count nowhere until the brigadir puts them to counted work (`live_staff.load`);
 * **a day closes only BY HAND** (from 2026-10-04, the operator); once everybody
   who came has left, the unit's brigadir is told so once (`LiveAllLeftNotice`,
   `_notify_all_left`).
@@ -817,6 +819,21 @@ def _registry(db: Session, day: Optional[date] = None) -> tuple[dict, dict]:
     return _on_day(cells, day), units
 
 
+def _off_cells(db: Session, day: Optional[date] = None) -> dict:
+    """`_registry`'s other half: the live cells NOT counted in the загрузка
+    (`in_load` off). Their people are on their unit's /staff list and count
+    nowhere until the brigadir puts them to counted work that day — a role
+    change, a move or a placement (`live_staff.load`; the operator,
+    2026-11-24: «show all workers of the unit even they're not on the
+    workload»)."""
+    cells = {}
+    for cid, code, mid in (db.query(Cell.id, Cell.verifix_code, Cell.manager_id)
+                           .filter(Cell.in_load.is_(False), Cell.archived_at.is_(None)).all()):
+        if code:
+            cells[verifix._code_key(code)] = {"id": cid, "code": code, "manager_id": mid}
+    return _on_day(cells, day)
+
+
 def _on_day(cells: dict, day: Optional[date]) -> dict:
     """The registry's cells with each cell's unit on `day`. The SAME dict when
     no listed cell's unit changed after that day (the fast path: every figure
@@ -1036,7 +1053,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
                                            else DIR_FORCE_S if force else DIR_FALLBACK_S)
         except verifix.VerifixError as exc:
             return {"error": exc.code, "message": exc.message}
-    homes = _homes(directory, cells)
+    homes = _homes(directory, {**_off_cells(db, day), **cells})
     ids = sorted({eid for eid, (mid, _) in homes.items() if mid == manager_id} | _doc_ids(db, day))
 
     key = _day_key(day)
@@ -1431,7 +1448,9 @@ def _pass(db: Session) -> None:
     except verifix.VerifixError as exc:
         log.warning("staff-live: no directory (%s: %s)", exc.code, exc.message)
         return
-    homes = {eid: h for eid, h in _homes(directory, cells).items() if h[0] in with_cells}
+    # The off-load cells' people too: /staff lists them (`_off_cells`).
+    off = _off_cells(db)
+    homes = {eid: h for eid, h in _homes(directory, {**off, **cells}).items() if h[0] in with_cells}
     now_tz = datetime.now(TZ)
     shifts = {units[m]["shift"] or 1 for m in with_cells}
     by_shift = {s: shift_day(db, s, now_tz) for s in shifts}
@@ -1461,12 +1480,13 @@ def _pass(db: Session) -> None:
         # Who stands in which cell is the unit's ON this shift-day
         # (`cell_links`): a cell that moves at the next opening still belongs
         # to the day being read. The current registry when nothing moved.
-        cells_d = _on_day(cells, day)
-        if cells_d is cells:
+        cells_d, off_d = _on_day(cells, day), _on_day(off, day)
+        if cells_d is cells and off_d is off:
             with_d, homes_d = with_cells, homes
         else:
             with_d = {c["manager_id"] for c in cells_d.values() if c["manager_id"] in units}
-            homes_d = {eid: h for eid, h in _homes(directory, cells_d).items() if h[0] in with_d}
+            homes_d = {eid: h for eid, h in _homes(directory, {**off_d, **cells_d}).items()
+                       if h[0] in with_d}
             for m in with_d - unit_days.keys():
                 unit_days[m] = shift_day(db, units[m]["shift"] or 1, now_tz)
         read_units = {m for m in with_d if reads(m, day)}

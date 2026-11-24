@@ -187,7 +187,7 @@ def _build(db: Session, mid: int, d: Optional[date], force: bool = False):
     rd = verifix_live.day_read(db, mid, d, force=force)
     if rd.get("error"):
         raise _NoDay(rd)
-    ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+    ctx = live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"], with_off=True)
     return rd, ctx, live_staff.unit_day(ctx, mid)
 
 
@@ -589,7 +589,7 @@ def get_attendance(attend_date: Optional[str] = None, manager_id: Optional[int] 
         return {"manager_id": mid, "manager_name": _unit_name(db, mid), "error": rd["error"],
                 "message": rd.get("message"), "workers": [], "cells": [], "extra_hours": 0}
     day = rd["day"]
-    ctx = live_staff.load(db, day, rd["directory"], rd["store"], rd["now"])
+    ctx = live_staff.load(db, day, rd["directory"], rd["store"], rd["now"], with_off=True)
     ud = live_staff.unit_day(ctx, mid)
     close_rec = _closed(db, mid, day)
     notice = (db.query(LiveAllLeftNotice)
@@ -1016,7 +1016,7 @@ def _ctx_for(db: Session, doc: LiveDocument, reads: Optional[dict] = None):
         return None
     reads[key] = rd
     db.flush()
-    return live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"])
+    return live_staff.load(db, rd["day"], rd["directory"], rd["store"], rd["now"], with_off=True)
 
 
 def _doc_list(ids) -> str:
@@ -2426,7 +2426,7 @@ def cell_placement(attend_date: Optional[str] = None, manager_id: Optional[int] 
     closed = _closed(db, mid, d)
 
     def w_json(r: dict) -> dict:
-        counted = is_direct_role(r.get("job_title"), r.get("hours_worked"), False)
+        counted = not r.get("off_load") and is_direct_role(r.get("job_title"), r.get("hours_worked"), False)
         return {"id": r["id"], "worker_name": r["worker_name"], "job_title": r.get("job_title") or "",
                 "hours": r.get("hours_worked") or 0.0, "clock_in_out": r.get("clock_in_out") or "",
                 "counted": counted, "hc_weight": r.get("hc_weight"), "split_of": r.get("split_of"),
@@ -2435,7 +2435,7 @@ def cell_placement(attend_date: Optional[str] = None, manager_id: Optional[int] 
                 "from_unit": (r.get("moved") or {}).get("unit") if (r.get("moved") or {}).get("dir") == "in" else None}
 
     def hc(r: dict) -> float:
-        if not is_direct_role(r.get("job_title"), r.get("hours_worked"), False):
+        if r.get("off_load") or not is_direct_role(r.get("job_title"), r.get("hours_worked"), False):
             return 0.0
         return 1.0 if r.get("hc_weight") is None else float(r["hc_weight"])
 
@@ -2510,7 +2510,7 @@ def save_cell_placement(body: PlacementBody, db: Session = Depends(get_db),
     _assert_open(db, mid, d)            # the day BUILT — an empty date means today
     by_id = {r["id"]: r for r in ud["workers"]}
     valid = {c["code"] for c in ctx.cells.values() if c["manager_id"] == mid} | \
-            {r["verifix_code"] for r in ud["workers"] if r.get("verifix_code")}
+            {r["verifix_code"] for r in ud["workers"] if r.get("verifix_code") and not r.get("off_load")}
 
     def row(att_id: int) -> dict:
         r = by_id.get(att_id)

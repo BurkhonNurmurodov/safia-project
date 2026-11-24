@@ -693,3 +693,39 @@ one exception to «A day closes BY HAND only» above; the manual close and its
   per-shift setting for the two clocks; a worker still shown inside keeps the
   hours the stored read gave them.
 
+
+## A unit's cells NOT counted in the загрузка are on its /staff list too (`live_staff.load(with_off)`, 2026-11-24)
+
+The operator, after Verifix's Almaty plant listed 17 working people and /staff
+7: «show the all workers of the unit even they're not on the workload. Because
+the supervisor might use one of these workers to job which is counted on
+workload (creating role change document for a day)». The read behind it (8
+minutes old, so not a sync behind Verifix): 17 = 7 in 6866 · 8898 · 9888 + 4 in
+6668 (the cold room, «Zagruzka hisoblanadi» off) + 6 on «Алмата Фабрика»
+itself: the unit's brigadir Karimov Islombek and five people Verifix puts in
+no cell. Those five stay off every page until HR places them in a cell.
+
+- **Listed, counted nowhere.** `verifix_live._off_cells` is `_registry`'s other
+  half (live cells with `in_load` off); the minute job and a unit's own read
+  read their people too. The page's own reads — GET `/attendance`, `_build`
+  (filing, editing, placements, deletion requests) and `_ctx_for` (approval
+  checks) — load with `with_off=True`: those people are rows with
+  `off_load: true` and their own cell's code in «Yacheyka». The
+  «Загрузкада ҳисобланган» card skips them (`isZagruzkaCalcRole`), the
+  placement panel marks them «not counted», and the day's `counts`, `busy`,
+  `unplaced`, `unanswered_no_out` and `last_exit` leave them out — the close,
+  its missing-check-out questions and «everybody left» never wait on them.
+- **Put to counted work, counted like anybody.** An approved role change or
+  move naming them, or a placement on their own unit, makes them the unit's
+  in EVERY read (`load` puts them into `homes`): counted by title, copied into
+  `attendance` by the close, on «Davomat» and /workers. Their row then has no
+  cell, so the close names them until the brigadir places them into a counted
+  cell (a placement never names an off-load cell: `valid` skips the codes of
+  `off_load` rows).
+- **Every other reader is unchanged**: the close and its copy
+  (`live_projection`), «everybody left», «Davomat» on «Smena hisoboti»
+  (`unit_people`), /workers' live day, the external API and «Xodim kartasi»
+  load without `with_off` and read exactly the day they read before.
+- The minute job reads more people: on 2026-11-24 the plant's off-load cells
+  held ~550 working people beside the ~1,600 in counted ones.
+- Tests: `tests/test_live_off_load.py`.

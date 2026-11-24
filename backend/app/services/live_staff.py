@@ -166,6 +166,11 @@ class Ctx:
     placements: dict                   # (manager id, employee id) → LivePlacement
     windows: dict                      # shift → ("HH:MM", "HH:MM")
     fixes: dict = field(default_factory=dict)   # employee id → LiveClockFix (the close's answers)
+    # The unit's cells NOT counted in the загрузка (code key → cell), and —
+    # on the page's own read (`load(with_off=True)`) — their people nobody put
+    # to counted work today: listed, counted nowhere (`off_load` on the row).
+    off_cells: dict = field(default_factory=dict)
+    off: set = field(default_factory=set)
     # `where_at` only: an instant a worker out on a BREAK is read at as if they
     # had come back — every move before it applies (a planned move after the
     # exit included), instead of the timeline stopping at the exit.
@@ -174,25 +179,43 @@ class Ctx:
 
 
 def load(db: Session, day: date, directory: dict, store: dict,
-         now: Optional[datetime] = None) -> Ctx:
+         now: Optional[datetime] = None, with_off: bool = False) -> Ctx:
+    """The day's context. The people of a unit's cells NOT counted in the
+    загрузка (the operator, 2026-11-24) are the unit's like anybody once the
+    brigadir puts them to counted work that day — an approved role change or
+    move naming them, or a placement into one of the unit's cells — and so
+    count, copy into `attendance` and hold the close. Until then only the
+    page's own reads (`with_off`) list them, as `off_load` rows that count
+    nowhere: the close, its copy, «Davomat», /workers and the external API
+    read the day exactly as before."""
     # The cells' units ON this shift-day (`cell_links`): a cell moved to
     # another brigadir since still brings its people to its old unit's day.
     cells, units = verifix_live._registry(db, day)
     homes = verifix_live._homes(directory, cells)
+    off_cells = verifix_live._off_cells(db, day)
+    off_homes = verifix_live._homes(directory, off_cells)
     docs = (db.query(LiveDocument).filter(LiveDocument.day == day)
             .order_by(LiveDocument.approved_at.nullslast(), LiveDocument.id).all())
     dels = db.query(LiveDeletion).filter(LiveDeletion.day == day).all()
+    placements = {(p.manager_id, p.employee_id): p
+                  for p in db.query(LivePlacement).filter(LivePlacement.day == day).all()}
+    approved = [d for d in docs if d.status == "approved"]
+    put_to_work = ({e for d in approved for e in _doc_eids(d)}
+                   | {e for (mid, e), p in placements.items()
+                      if p.verifix_code and off_homes.get(e, (None,))[0] == mid})
+    off = {e: h for e, h in off_homes.items() if e not in put_to_work} if with_off else {}
+    homes = {**homes, **{e: h for e, h in off_homes.items() if e in put_to_work}, **off}
     return Ctx(
         day=day, now=now or verifix_live.now_local(), store=store, directory=directory,
         cells=cells, units=units, homes=homes, formula=verifix_live._formula(db),
-        docs=[d for d in docs if d.status == "approved"],
+        docs=approved,
         drafts=[d for d in docs if d.status == "draft"],
         deleted={(d.manager_id, d.employee_id) for d in dels if d.status == "approved"},
         pending_del={(d.manager_id, d.employee_id): d for d in dels if d.status == "pending"},
-        placements={(p.manager_id, p.employee_id): p
-                    for p in db.query(LivePlacement).filter(LivePlacement.day == day).all()},
+        placements=placements,
         windows=cell_hours.defaults(db),
         fixes={f.employee_id: f for f in db.query(LiveClockFix).filter(LiveClockFix.day == day).all()},
+        off_cells=off_cells, off=set(off),
     )
 
 
@@ -672,7 +695,7 @@ def _cell_of(ctx: Ctx, key: Optional[str]) -> Optional[str]:
     """A code key → the cell's stored code (as /cells spells it)."""
     if not key:
         return None
-    c = ctx.cells.get(key)
+    c = ctx.cells.get(key) or ctx.off_cells.get(key)
     return c["code"] if c else (key.zfill(4) if key.isdigit() else key)
 
 
@@ -763,9 +786,12 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
     pl = ctx.placements.get((unit, w.eid))
     if pl is not None:
         code = pl.verifix_code
-    elif unit == w.home_unit and is_first:
+    elif unit == w.home_unit and is_first and not (w.home_cell in ctx.off_cells
+                                                   and w.eid not in ctx.off):
         code = _cell_of(ctx, w.home_cell)
     else:
+        # …and somebody from a cell not counted in the загрузка whom the
+        # brigadir put to counted work: placed into a counted cell like an arrival.
         code = None                                   # an arrival — placed by its brigadir
 
     late = p["late"] if is_first else None
@@ -801,6 +827,9 @@ def _named_row(ctx: Ctx, w: Worker, unit: int) -> list:
         "hc_weight": None,
         "split_of": None,
         "is_supervisor": False,
+        # In a cell not counted in the загрузка, put to no counted work today:
+        # listed, counted nowhere, and nothing the close waits on.
+        "off_load": w.eid in ctx.off,
         "on_task": (cur.task if (cur is not None and cur.task and status == "moved_out")
                     else w.whole_task),
         "status": status,
@@ -907,11 +936,15 @@ def unit_day(ctx: Ctx, manager_id: int) -> dict:
             "out_at": (_iso(w.p["out"]) if here else _iso(mine[-1].end)) if mine else None,
         })
 
+    shown = rows
+    # The counts are what the close and «everybody left» read: never an
+    # `off_load` row (listed only — see `load`).
+    rows = [r for r in rows if not r.get("off_load")]
     counts = Counter(r["status"] for r in rows if r.get("split_of") is None)
     came = sum(1 for r in rows if r["clock_in"] and r.get("split_of") is None)
     inside = counts["inside"] + counts["break"]
     return {
-        "workers": sorted(rows, key=lambda r: (r["worker_name"] or "", r.get("split_of") or 0)),
+        "workers": sorted(shown, key=lambda r: (r["worker_name"] or "", r.get("split_of") or 0)),
         "extras": sorted(extras, key=lambda x: x["worker_name"] or ""),
         "extra_hours": round(sum(x["hours"] for x in extras), 2),
         # Inside elsewhere and coming here at a planned time — keeps the day open.
@@ -1000,7 +1033,7 @@ def unplaced(rows: list) -> list:
     (/staff `_unplaced_workers`: counted role, hours > 0, never the brigadir)."""
     from app.services.kpi_calculator import is_direct_role
     return [r for r in rows
-            if not r.get("verifix_code") and r.get("clock_in")
+            if not r.get("verifix_code") and r.get("clock_in") and not r.get("off_load")
             and is_direct_role(r.get("job_title"), r.get("hours_worked"), bool(r.get("is_supervisor")))]
 
 
@@ -1036,7 +1069,7 @@ def unanswered_no_out(day_rows: dict) -> int:
     and people carried here under another unit's name. What holds the
     «everybody left» notice (they may still be at work)."""
     n = sum(1 for r in day_rows["workers"]
-            if r.get("split_of") is None and r["status"] == "no_out")
+            if r.get("split_of") is None and r["status"] == "no_out" and not r.get("off_load"))
     n += sum(1 for x in day_rows.get("extras") or []
              if x.get("here") and x.get("status") == "no_out")
     return n
@@ -1047,7 +1080,7 @@ def last_exit(day_rows: dict, day: date) -> Optional[datetime]:
     move to another unit — what the «everybody left» notice is measured from."""
     best = None
     for r in day_rows["workers"]:
-        if r["status"] not in ("left", "moved_out") or not r.get("out_at"):
+        if r["status"] not in ("left", "moved_out") or not r.get("out_at") or r.get("off_load"):
             continue
         t = datetime.fromisoformat(r["out_at"])
         if best is None or t > best:
@@ -1068,14 +1101,14 @@ def busy(day_rows: dict) -> list:
     anybody whose shift is still running is due: a worker reads «absent» from
     the shift's first minute, and late check-ins (a terminal syncing late, a
     stalled read) must not leave a day closable three minutes into its shift."""
-    out = [r for r in day_rows["workers"]
-           if r.get("split_of") is None and r["status"] in ("inside", "break", "not_yet")]
+    rows = [r for r in day_rows["workers"] if r.get("split_of") is None and not r.get("off_load")]
+    out = [r for r in rows if r["status"] in ("inside", "break", "not_yet")]
     out += [x for x in day_rows.get("extras") or []
             if x.get("here") and x.get("status") in ("inside", "break")]
     out += list(day_rows.get("due_back") or [])
     c = day_rows["counts"]
     if not (c["came"] or c.get("extra_came")):
-        out += [r for r in day_rows["workers"] if r.get("split_of") is None and r.get("still_due")]
+        out += [r for r in rows if r.get("still_due")]
     return out
 
 
