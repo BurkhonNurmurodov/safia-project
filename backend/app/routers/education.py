@@ -70,6 +70,11 @@ MAX_SPANS_IN = 500
 # not loaded would otherwise become a denominator nobody could ever satisfy.
 MAX_DURATION_S = 12 * 3600
 
+# How long a lesson's label may be — the column's width. A label is a subject
+# name («SAP», «IMS»), a word or two; a longer one is cut, never refused, so a
+# pasted sentence cannot fail a publish that is otherwise complete.
+LABEL_MAX = 60
+
 # How long a description excerpt may run inside the card. Long enough to say
 # what the lesson is about, short enough that the DM stays a nudge rather than
 # becoming the lesson — the page is where it gets read.
@@ -144,6 +149,10 @@ class LessonIn(BaseModel):
     description_html: Optional[str] = None
     description_text: Optional[str] = None
     targets: list[str] = Field(default_factory=list)
+    # The lesson's label («SAP», «IMS», …). "" or null clears it. ABSENT means
+    # "leave it as it is" on an edit: a tab opened before labels existed sends
+    # no `label`, and its save must not wipe the label somebody else set.
+    label: Optional[str] = None
 
 
 class ResolveIn(BaseModel):
@@ -170,6 +179,26 @@ def _clean_description(raw: Optional[str]) -> str:
         return ""
     from app.routers.broadcast import sanitize_telegram_html
     return sanitize_telegram_html(s)[0]
+
+
+def _clean_label(db: Session, raw: Optional[str],
+                 lesson_id: Optional[int] = None) -> Optional[str]:
+    """A label as stored: whitespace collapsed, cut to `LABEL_MAX`, None for
+    nothing — and in the SPELLING an existing lesson already uses when it
+    matches one up to case. The set of labels is read off the lessons
+    (models.EducationLesson.label), so «sap» typed beside an existing «SAP»
+    must land on «SAP», or the filter would offer the same subject twice.
+    `lesson_id` is the lesson being edited, left out of the match so that
+    re-casing the ONLY lesson carrying a label («Sap» → «SAP») is possible."""
+    s = " ".join((raw or "").split())[:LABEL_MAX].strip()
+    if not s:
+        return None
+    q = db.query(EducationLesson.label).filter(
+        func.lower(EducationLesson.label) == s.lower())
+    if lesson_id:
+        q = q.filter(EducationLesson.id != lesson_id)
+    hit = q.first()
+    return hit[0] if hit and hit[0] else s
 
 
 def _is_admin(db: Session, payload: dict) -> bool:
@@ -222,6 +251,9 @@ def _lesson_json(db: Session, lesson: EducationLesson, *, viewer: Optional[str],
         "watch": media["watch"],
         "description_html": _clean_description(lesson.description_html),
         "description_text": lesson.description_text or "",
+        # The subject the lesson belongs to, or null. Served to every viewer:
+        # it says what the lesson is about, like its title.
+        "label": lesson.label or None,
         "author": lesson.created_by_name,
         "created_at": lesson.created_at.isoformat() if lesson.created_at else None,
         "updated_at": lesson.updated_at.isoformat() if lesson.updated_at else None,
@@ -541,6 +573,7 @@ def create_lesson(body: LessonIn, db: Session = Depends(get_db),
         video_id=media["video_id"],
         description_html=_clean_description(body.description_html) or None,
         description_text=(body.description_text or "").strip() or None,
+        label=_clean_label(db, body.label),
         created_by_profile=author_key,
         created_by_name=profile_display_name(db, author_key),
         thumb_url=probe["thumb"],
@@ -594,6 +627,8 @@ def update_lesson(lesson_id: int, body: LessonIn, db: Session = Depends(get_db),
     lesson.video_id = media["video_id"]
     lesson.description_html = _clean_description(body.description_html) or None
     lesson.description_text = (body.description_text or "").strip() or None
+    if "label" in body.model_fields_set:
+        lesson.label = _clean_label(db, body.label, lesson_id=lesson_id)
     lesson.updated_at = datetime.now(timezone.utc)
 
     for gone in before - after:
@@ -907,6 +942,7 @@ def _report(db: Session, lesson_id: Optional[int] = None) -> dict:
         out_lessons.append({
             "id": lesson.id,
             "title": lesson.title,
+            "label": lesson.label or None,
             "provider": lesson.provider,
             "duration_s": lesson.duration_s,
             "total_s": total,

@@ -12,6 +12,7 @@ import VideoEmbed, { LessonPoster, PROVIDER_META } from "../components/education
 import WatchProgress from "../components/education/WatchProgress";
 import useWatchTracker from "../hooks/useWatchTracker";
 import { lessonDate } from "../components/education/LessonCard";
+import LessonLabel from "../components/education/LessonLabel";
 
 /**
  * One lesson, playing.
@@ -184,6 +185,7 @@ export default function EducationLesson() {
             )}
 
             <div className="space-y-2">
+              <LessonLabel label={lesson.label} />
               <h1 className="text-xl font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
                 {lesson.title}
               </h1>

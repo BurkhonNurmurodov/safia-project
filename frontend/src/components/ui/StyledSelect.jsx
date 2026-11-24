@@ -65,7 +65,10 @@ import useLeaveRef from "../../hooks/useLeaveRef";
  *   onCreate     – (query: string) => void; invoked by the creatable row, then the
  *                  dropdown closes so the parent can open its create flow (optional)
  *   createLabel  – (query: string) => node; label for the creatable row, e.g.
- *                  q => `Create "${q}"`. Defaults to the raw query (optional)
+ *                  q => `Create "${q}"`. Defaults to the raw query. Returning
+ *                  `null` hides the row for that query — nothing typed yet, or
+ *                  the text already names an option (the lesson label picker)
+ *                  (optional)
  *   ariaLabel    – accessible name for the trigger when no visible label names
  *                  it, e.g. "Sort by: Created" (optional)
  */
@@ -244,6 +247,12 @@ export default function StyledSelect({
     </span>
   );
 
+  // The creatable row's label for the current query; `null` from the caller's
+  // `createLabel` means "nothing to create for this text" and hides the row.
+  const createText = creatable
+    ? (createLabel ? createLabel(query.trim()) : (query.trim() || "+"))
+    : null;
+
   // ── portal dropdown ─────────────────────────────────────────────────────────
   const dropdown = open
     ? createPortal(
@@ -281,7 +290,7 @@ export default function StyledSelect({
           {/* Creatable row: seeds the parent's create flow with the current search
               text, then closes so a create modal can take over. Pinned under the
               search box (same offset the select-all uses). */}
-          {creatable && (
+          {creatable && createText != null && (
             <button
               type="button"
               onClick={() => { onCreate?.(query.trim()); setOpen(false); }}
@@ -298,7 +307,7 @@ export default function StyledSelect({
             >
               <Plus size={14} style={{ flexShrink: 0 }} />
               <span className="min-w-0 flex-1 truncate">
-                {createLabel ? createLabel(query.trim()) : (query.trim() || "+")}
+                {createText}
               </span>
             </button>
           )}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, GraduationCap, Archive } from "lucide-react";
+import { Plus, GraduationCap, Archive, Tag } from "lucide-react";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -8,6 +8,7 @@ import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
@@ -15,6 +16,12 @@ import { useToast } from "../components/ui/Toast";
 import LessonCard from "../components/education/LessonCard";
 import LessonWizard from "../components/education/LessonWizard";
 import WatchReport from "../components/education/WatchReport";
+import { lessonLabels, normLabel } from "../utils/lessonLabels";
+
+// The «Yorliqsiz» choice of the label filter: lessons nobody labelled. A
+// leading space, because a stored label is trimmed (`normLabel`) and so can
+// never be this value.
+const NO_LABEL = " none";
 
 /**
  * «Ta'lim» — the lesson grid.
@@ -31,6 +38,7 @@ export default function Education() {
 
   const [q, setQ] = usePersistentState("education_q", "");
   const [view, setView] = usePersistentState("education_view", "active");
+  const [labelF, setLabelF] = usePersistentState("education_label", "");
   const [wizard, setWizard] = useState(null);   // null | {} | lesson
   const [confirm, setConfirm] = useState(null); // the lesson pending archive
 
@@ -40,24 +48,66 @@ export default function Education() {
   });
 
   const canManage = !!data?.can_manage;
-  const lessons = data?.lessons || [];
+  const lessons = useMemo(() => data?.lessons || [], [data]);
   // A view a non-admin may not open cannot stand, and `usePersistentState`
   // remembers across sessions — so a stored «report» outliving an admin grant
   // would leave the page on a tab whose endpoint 403s.
   const tab = (view === "report" && !canManage) ? "active" : view;
   const isReport = tab === "report";
 
+  // The lessons of the open tab, before the search and the label filter narrow
+  // them. The archive view exists only for admins — a non-admin is never served
+  // an archived lesson at all, so the toggle would filter an empty set.
+  const inTab = useMemo(() => lessons.filter((l) =>
+    !(canManage && (tab === "archived") !== !!l.archived)), [lessons, tab, canManage]);
+
+  // Every label in use — the form offers them all, archived lessons' included,
+  // so re-publishing an old subject reuses its spelling. The filter offers only
+  // the labels of the open tab: a choice that would empty the grid is no choice.
+  const allLabels = useMemo(() => lessonLabels(lessons), [lessons]);
+  const tabLabels = useMemo(() => lessonLabels(inTab), [inTab]);
+  const hasUnlabelled = inTab.some((l) => !normLabel(l.label));
+  // A remembered pick the open tab no longer offers (its last lesson relabelled
+  // or archived) is dropped rather than left emptying the grid with a chip
+  // naming a label nothing carries.
+  const labelSel = labelF === NO_LABEL
+    ? (hasUnlabelled && tabLabels.length ? NO_LABEL : "")
+    : (tabLabels.find((x) => x.toLowerCase() === String(labelF || "").toLowerCase()) || "");
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return lessons.filter((l) => {
-      // The archive view exists only for admins — a non-admin is never served
-      // an archived lesson at all, so the toggle would filter an empty set.
-      if (canManage && (tab === "archived") !== !!l.archived) return false;
+    return inTab.filter((l) => {
+      const lab = normLabel(l.label);
+      if (labelSel === NO_LABEL ? lab : (labelSel && lab.toLowerCase() !== labelSel.toLowerCase())) return false;
       if (!needle) return true;
-      return `${l.title} ${l.description_text || ""} ${l.author || ""}`
+      return `${l.title} ${lab} ${l.description_text || ""} ${l.author || ""}`
         .toLowerCase().includes(needle);
     });
-  }, [lessons, q, tab, canManage]);
+  }, [inTab, q, labelSel]);
+
+  // ONE FilterPanel section — the label. Present only once some lesson of the
+  // open tab carries a label; before that it would offer nothing to pick.
+  const sections = tabLabels.length ? [{
+    key: "label",
+    icon: Tag,
+    label: t("education.label"),
+    active: labelSel !== "",
+    display: labelSel === NO_LABEL ? t("education.labelNone") : labelSel,
+    onClear: () => setLabelF(""),
+    render: ({ close } = {}) => (
+      <PickFilter
+        opts={[
+          { value: "", label: t("education.labelAll") },
+          ...tabLabels.map((x) => ({ value: x, label: x })),
+          ...(hasUnlabelled ? [{ value: NO_LABEL, label: t("education.labelNone") }] : []),
+        ]}
+        value={labelSel}
+        onChange={setLabelF}
+        searchable={tabLabels.length > 8}
+        close={close}
+      />
+    ),
+  }] : [];
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["education-lessons"] });
 
@@ -128,6 +178,7 @@ export default function Education() {
                 inputClassName="text-sm pl-8 pr-7 py-2"
               />
             )}
+            {!isReport && sections.length > 0 && <FilterPanel sections={sections} />}
             {canManage && (
               <SegmentedToggle
                 asTabs
@@ -208,6 +259,7 @@ export default function Education() {
           <LessonWizard
             open={!!wizard}
             lesson={wizard?.id ? wizard : null}
+            labels={allLabels}
             onClose={() => { save.reset(); setWizard(null); }}
             onSubmit={(body) => save.mutate(body)}
             saving={save.isPending}

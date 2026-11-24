@@ -13,6 +13,8 @@ import CheckboxTree, { collectLeafKeys } from "../ui/CheckboxTree";
 import { buildRecipientGroups, profileTargetKey, profileKeyOf, isProfileTarget }
   from "../../utils/broadcastTree";
 import { LessonPoster, PROVIDER_META } from "./VideoEmbed";
+import { LessonLabelPicker } from "./LessonLabel";
+import { normLabel } from "../../utils/lessonLabels";
 
 const STEPS = ["details", "audience"];
 
@@ -26,7 +28,7 @@ const STEPS = ["details", "audience"];
  * included, because "change who can see this" is the same decision as "choose
  * who can see this" and must not be a second, differently-shaped screen.
  */
-export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, error }) {
+export default function LessonWizard({ open, lesson, labels = [], onClose, onSubmit, saving, error }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const editing = !!lesson;
@@ -35,6 +37,7 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState({ html: "", text: "" });
+  const [label, setLabel] = useState("");
   const [picked, setPicked] = useState([]);
   const [filter, setFilter] = useState("");
   const [touchedUrl, setTouchedUrl] = useState(false);
@@ -55,6 +58,7 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
     setUrl(lesson?.url || "");
     setTitle(lesson?.title || "");
     setDesc({ html: lesson?.description_html || "", text: lesson?.description_text || "" });
+    setLabel(lesson?.label || "");
     setPicked((lesson?.targets || []).map(profileTargetKey));
     setEditorKey((k) => k + 1);
   }, [open, lesson]);
@@ -128,6 +132,9 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
       url: url.trim(),
       description_html: desc.html || "",
       description_text: desc.text || "",
+      // Always sent — "" clears it. (A body WITHOUT `label` leaves the stored
+      // one alone; that is for tabs opened before labels existed.)
+      label: normLabel(label),
       targets: selected.filter(isProfileTarget).map(profileKeyOf),
     });
   };
@@ -295,6 +302,13 @@ export default function LessonWizard({ open, lesson, onClose, onSubmit, saving, 
                 color: "var(--text-1)",
               }}
             />
+          </FormField>
+
+          {/* The subject the lesson belongs to — what the grid's «Yorliq»
+              filter and the card's chip read. Optional: a lesson may stand
+              under no label. */}
+          <FormField label={t("education.label")} hint={t("education.labelHint")}>
+            <LessonLabelPicker value={label} onChange={setLabel} labels={labels} />
           </FormField>
 
           <FormField label={t("education.wizard.description")} hint={t("education.wizard.descriptionHint")}>

@@ -170,6 +170,7 @@ try:
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
+        add_education_label,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
         purge_production_history,
@@ -444,6 +445,7 @@ try:
     add_forecast_answer_columns()
     add_assistant_run_lease()
     add_education_duration()
+    add_education_label()
     migrate_pp_line_daily_key()
     correct_pp_double_counted_days()
     purge_production_history()

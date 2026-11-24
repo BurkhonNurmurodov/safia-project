@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Pencil, Archive, ArchiveRestore, Users, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { LessonPoster, PlayBadge, PROVIDER_META } from "./VideoEmbed";
+import LessonLabel from "./LessonLabel";
 
 // uz/uz_cyrl have patchy Intl coverage across the WebViews this runs in, so a
 // failed format falls back rather than throwing inside a render.
@@ -109,6 +110,8 @@ export default function LessonCard({ lesson, canManage, onEdit, onArchive, onRes
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 px-3 py-3">
+        {/* The subject first — it is what a reader scanning the grid sorts by. */}
+        <LessonLabel label={lesson.label} className="self-start" />
         <h3 className="edu-clamp-2 text-sm font-semibold leading-snug"
             style={{ color: "var(--text-1)" }}>
           {lesson.title}

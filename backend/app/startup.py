@@ -6349,6 +6349,27 @@ def add_education_duration() -> None:
         db.close()
 
 
+def add_education_label() -> None:
+    """2026-11-24: a «Ta'lim» lesson carries a LABEL — the subject it belongs to
+    («SAP», «IMS», …) — so the grid can be read and filtered by subject. See
+    models.EducationLesson.label.
+
+    Pure DDL, idempotent, no flag — NULL is the honest starting value (nobody
+    labelled the lessons published before this). Run, not later: the ORM
+    selects the column on every read of a lesson."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE education_lessons "
+            "ADD COLUMN IF NOT EXISTS label VARCHAR(60)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] education_lessons.label migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_pp_line_daily_key() -> None:
     """Move pp_line_daily from a positional `line_no` to the durable `line_key`.
 

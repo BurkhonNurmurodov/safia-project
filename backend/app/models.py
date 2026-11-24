@@ -4311,6 +4311,14 @@ class EducationLesson(Base):
     # preview. Optional — a clear title is often the whole lesson.
     description_html = Column(Text, nullable=True)
     description_text = Column(Text, nullable=True)
+    # The lesson's LABEL — the subject it belongs to («SAP», «IMS», …), picked
+    # or typed by the admin who publishes it (2026-11-24). One per lesson, free
+    # text, and NULL is an ordinary state (a lesson nobody labelled). The set of
+    # labels is READ off the lessons, never kept in a table of its own: a label
+    # exists while some lesson carries it. A typed label that matches an
+    # existing one up to case is stored in the existing spelling
+    # (routers/education._clean_label), so «sap» never becomes a second «SAP».
+    label = Column(String(60), nullable=True)
     # The poster, RESOLVED once at publish time (services/education_video
     # .fetch_thumb) and stored, because Loom's and Vimeo's real thumbnail URLs
     # carry an opaque hash no amount of reading the share link yields. NULL is

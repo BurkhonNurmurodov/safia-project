@@ -187,6 +187,7 @@ async def lifespan(app: FastAPI):
         add_assistant_run_lease,
         add_wc_groups, letter_shared_cells, report_wc_groups,
         add_education_duration,
+        add_education_label,
         migrate_pp_line_daily_key,
         correct_pp_double_counted_days,
         purge_production_history,
@@ -485,6 +486,7 @@ async def lifespan(app: FastAPI):
     run(add_forecast_answer_columns)
     run(add_assistant_run_lease)
     run(add_education_duration)
+    run(add_education_label)
     run(migrate_pp_line_daily_key)
     later(correct_pp_double_counted_days)
     later(purge_production_history)
