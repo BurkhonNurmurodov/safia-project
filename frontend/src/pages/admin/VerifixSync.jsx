@@ -110,7 +110,8 @@ function errText(e, t, opts = {}) {
   const code = raw?.code;
   if (code) {
     const v = t(`vsync.err.${code}`);
-    if (v !== `vsync.err.${code}`) return fill(v, raw?.params || {});
+    const p = raw?.params || {};
+    if (v !== `vsync.err.${code}`) return fill(v, p.who && opts.tl ? { ...p, who: opts.tl(p.who) } : p);
   }
   const d = e?.response?.data?.detail;
   return (typeof d === "string" && d) || t("vsync.err.failed");
@@ -764,7 +765,11 @@ function TieModal({ target, onClose, onDone, ctx }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const timer = useRef(null);
+  const errRef = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // The refusal prints under the results; a long list left it below the fold
+  // and «Bog'lash» looked dead — bring it into view instead of moving the list.
+  useEffect(() => { if (err) errRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [err]);
 
   const onQ = (v) => {
     setQ(v);
@@ -794,7 +799,7 @@ function TieModal({ target, onClose, onDone, ctx }) {
       })).data;
       onDone(res, target, picked);
     } catch (e) {
-      setErr(errText(e, t));
+      setErr(errText(e, t, { tl }));
     } finally {
       setBusy(false);
     }
@@ -878,7 +883,7 @@ function TieModal({ target, onClose, onDone, ctx }) {
           )}
         </ul>
       )}
-      {err && <Alert>{err}</Alert>}
+      {err && <div ref={errRef}><Alert>{err}</Alert></div>}
     </Modal>
   );
 }

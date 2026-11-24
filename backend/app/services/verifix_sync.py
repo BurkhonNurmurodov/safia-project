@@ -562,11 +562,15 @@ def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
                 raise Refused("vfx_not_found", "No such person in Verifix", 404)
             # One brigadir may head two units (the Suvonov Elshod pair, ruling of
             # 4 Oct) — a unit is refused only over a PROFILE holding the person.
-            if (db.query(RoleProfile.id).filter(RoleProfile.vfx_employee_id == vid,
-                                                RoleProfile.id != (our_id if kind != "unit" else -1)).first()
-                    or (kind != "unit" and db.query(Manager.id).filter(
-                        Manager.vfx_employee_id == vid).first())):
-                raise Refused("taken", "This person is tied to another row", 409)
+            holder = (db.query(RoleProfile.name).filter(
+                          RoleProfile.vfx_employee_id == vid,
+                          RoleProfile.id != (our_id if kind != "unit" else -1)).first()
+                      or (kind != "unit" and db.query(Manager.name).filter(
+                          Manager.vfx_employee_id == vid).first()))
+            if holder:
+                # Named, so the operator knows which row to untie first.
+                raise Refused("taken_by", "This person is tied to another row", 409,
+                              {"who": holder[0]})
             row.vfx_employee_id = vid
             job = verifix_org.job_name(org, e.get("job"))
             row.vfx_meta = {**cell_register.person_meta({**e, "job": job}), "seen_at": _iso(at),
