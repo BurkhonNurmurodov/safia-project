@@ -379,3 +379,12 @@ least 12 testers for 14 days in a row before it may apply for production.
   ONE versionCode sequence for both channels.
 - `build-release.sh` builds both: the release APK and the play AAB (the old
   release AAB is no longer made — nothing used it).
+- **The privacy policy Play requires** is `frontend/public/privacy.html`,
+  served whole and without login at
+  `https://production.safiacorporate.uz/privacy.html` (English, static — no
+  SPA, no auth). It names what the platform really does: the camera only for
+  proof photos, Verifix attendance (never passport / PINFL / wages), proof
+  photos and assistant questions to Gemini / Claude, Cloudflare, Telegram,
+  notifications polled from our own server. **A new data use — a permission,
+  a third party, an AI feature — changes this page and the Play Data safety
+  form together.**
