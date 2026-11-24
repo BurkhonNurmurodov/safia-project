@@ -13135,3 +13135,80 @@ def plan_copy_nov24() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 24 Nov: the first shift's 24 Nov «Odam soni» carried into 25 Nov (docs/data-fixes.md) ──
+# The operator, right after the plan copy above: «also copy the odam soni for
+# 1st shift too». The headcount half of `plan_carry.carry_day` alone
+# (`plan=False`): per work centre, only where the 25th has NO people pin for
+# that centre (whole or any group), and only on a centre the 25th PLANS (the
+# «Odam soni» form's rule) — then the 24th's pins as they were. The ШТАТКА pin
+# is never copied. Same units as the plan copy (active, `managers.shift` 1),
+# a closed 25th skipped, nothing after 25 Nov. Once — a new flag for a second.
+PEOPLE_COPY_FLAG = "oneshot:people_copy_nov24_to_nov25_shift1"
+
+
+def people_copy_nov24() -> None:
+    from zoneinfo import ZoneInfo
+
+    from app.models import Manager
+    from app.services import action_log, plan_carry
+    from app.services.day_state import day_state
+
+    title = "1-smena odam soni · 24 → 25 noyabr"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": PLAN_CARRY_LOCK})
+        if db.query(AppSetting).filter_by(key=PEOPLE_COPY_FLAG).first():
+            db.rollback()
+            return
+        today = datetime.now(ZoneInfo("Asia/Tashkent")).date()
+        if today > PLAN_COPY_TO:
+            db.add(AppSetting(key=PEOPLE_COPY_FLAG, value=f"skipped {today.isoformat()}"))
+            db.commit()
+            print(f"[startup] people copy 24→25 Nov: skipped, today is {today}")
+            _dm_report("warn", title, status=f"Ko'chirilmadi — bugun {today:%d.%m}, 25 noyabr o'tib ketgan")
+            return
+        units = (db.query(Manager).filter(Manager.shift == 1, Manager.archived.is_(False))
+                 .order_by(Manager.name).all())
+        rows, closed, n_units = [], [], 0
+        for m in units:
+            if day_state(db, m.id, PLAN_COPY_TO)[0] != "open":
+                closed.append(m.name)
+                continue
+            r = plan_carry.carry_day(db, m.id, PLAN_COPY_FROM, PLAN_COPY_TO, plan=False)
+            if not (r["people"] or r["people_kept"] or r["people_skipped"]):
+                continue
+            parts = []
+            if r["people"]:
+                n_units += 1
+                parts.append("ko'chirildi: " + ", ".join(
+                    f"{wc}{' · ' + g if g else ''}: {n}" for wc, g, n in r["people"]))
+                action_log.record_system(
+                    "shopfloor", "production.wc_override_set", target_kind="wc_override",
+                    target_id=f"{m.id}:{PLAN_COPY_TO}", target_name=m.name, unit_id=m.id,
+                    day=PLAN_COPY_TO,
+                    details=[("date", str(PLAN_COPY_TO)), ("from", str(PLAN_COPY_FROM)),
+                             ("people", len(r["people"]))],
+                    reason="1-smena: 24.11 odam soni 25.11 ga ko'chirildi (one-shot 2026-11-24)")
+            if r["people_kept"]:
+                parts.append("o'zi kiritgan: " + ", ".join(r["people_kept"]))
+            if r["people_skipped"]:
+                parts.append("25-noyabr rejasiz: " + ", ".join(r["people_skipped"]))
+            rows.append(("👷", m.name, parts))
+            print(f"[startup] people copy 24→25 Nov: unit {m.id} {m.name} → {r['people']} "
+                  f"kept {r['people_kept']} skipped {r['people_skipped']}")
+        if closed:
+            rows.append(("🔒", "25-noyabr yopilgan", closed))
+        db.add(AppSetting(key=PEOPLE_COPY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        _dm_report("ok", title, status=f"{n_units} ta bo'linmaga ko'chirildi", rows=rows,
+                   notes=[("ℹ️", "Faqat 1-smena; 25-noyabrda bo'sh va rejasi bor jamoalarga "
+                                "ko'chirildi, o'zi kiritgan odam soni o'zgarmadi. ШТАТКА ko'chirilmadi.")],
+                   open=_REPORT_PRODUCTION)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] people copy 24→25 Nov failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

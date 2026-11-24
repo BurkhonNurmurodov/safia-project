@@ -365,6 +365,8 @@ try:
     drop_unconnected_guests()
     from app.startup import plan_copy_nov24
     plan_copy_nov24()
+    from app.startup import people_copy_nov24
+    people_copy_nov24()
     from app.startup import restore_wiped_accounts
     restore_wiped_accounts()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).

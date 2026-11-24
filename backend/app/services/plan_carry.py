@@ -55,10 +55,11 @@ def has_plan(db: Session, mid: int, day: date) -> bool:
 
 def carry_day(db: Session, mid: int, src: date, dst: date,
               planned: Optional[Callable[[Session, int, date], frozenset]] = None,
-              people: bool = True) -> dict:
+              people: bool = True, plan: bool = True) -> dict:
     """Copy `src`'s typed plan and headcount into `dst` where `dst` is empty.
     `people=False` copies the ПЛАН (and its «Navbat») alone — the 24 → 25 Nov
-    first-shift copy (`startup.plan_copy_nov24`).
+    first-shift copy (`startup.plan_copy_nov24`); `plan=False` the headcount
+    alone (`startup.people_copy_nov24`).
     → {plan: "copied" | "kept" | "none", lines, groups, people: [(wc, group, n)],
        people_kept: [wc], people_skipped: [wc]}"""
     from app.services import pp_catalog
@@ -70,7 +71,9 @@ def carry_day(db: Session, mid: int, src: date, dst: date,
     pp_catalog.lock(db, [mid], ns=pp_catalog.NS_QTY, shared=True)
 
     # ── ПЛАН ─────────────────────────────────────────────────────────────────
-    if has_plan(db, mid, dst):
+    if not plan:
+        pass
+    elif has_plan(db, mid, dst):
         out["plan"] = "kept"
     else:
         src_lines = db.query(PPLineDaily).filter(

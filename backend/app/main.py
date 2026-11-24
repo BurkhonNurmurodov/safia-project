@@ -393,6 +393,8 @@ async def lifespan(app: FastAPI):
     later(drop_unconnected_guests)              # 24 Nov: the 29 unconnected guests, PwC kept
     from app.startup import plan_copy_nov24
     later(plan_copy_nov24)                      # 24 Nov: today's ПЛАН onto 25 Nov, every unit (once)
+    from app.startup import people_copy_nov24
+    later(people_copy_nov24)                    # 24 Nov: and the first shift's «Odam soni» (once)
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)

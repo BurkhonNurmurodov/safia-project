@@ -1064,3 +1064,16 @@ whose `managers.shift` is 1 — every plant — through
 supervisor retypes; a retyped value simply replaces the copy. Undo: clear the
 25th's ПЛАН on «Zagruzka fayli». Plans typed for the 24th AFTER the deploy are
 not followed. Not a standing rule: every other day and unit is untouched.
+
+**…and the headcount too** (`startup.people_copy_nov24`, flag
+`oneshot:people_copy_nov24_to_nov25_shift1`). The operator, right after: «also
+copy the odam soni for 1st shift too». The plan step had already run, so a
+second one-shot: `carry_day(..., plan=False)` — the headcount half alone (the
+`plan` parameter this step added). Per work centre, only where the 25th has NO
+people pin for it (whole or any group) and only on a centre the 25th PLANS (the
+«Odam soni» form's own rule); then the 24th's pins as they were. ШТАТКА is never
+copied. Same units (active, shift 1), a closed 25th skipped, nothing after
+25 Nov. One «Ish markazi qo'lda tuzatildi» row in «Jurnal» per unit copied; the
+admins' report «1-smena odam soni · 24 → 25 noyabr» names per unit the centres
+copied, those the supervisor had typed, and those with no plan on the 25th.
+Undo: clear the 25th's «Bugungi fakt» on «Zagruzka fayli».
