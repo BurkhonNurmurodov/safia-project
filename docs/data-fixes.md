@@ -1035,3 +1035,32 @@ holder, so it was never among them; neither was Jahongir Umurzokov's pending one
   messaged; the admins get one report (deleted · left).
 - **Nothing undoes it.** The 26 can file a new guest request; the bot mints a
   fresh profile.
+
+## The first shift's 24 Nov plan carried into 25 Nov (`startup.plan_copy_nov24`, 2026-11-24)
+
+The operator, the evening of 24 Nov: «copy the plan from today 24.11.2026 and
+put this plan to the 25.11.2026 too, these two days are similar and their plan
+too. make it happen for all supervisors workload file», then «do this only for
+1st shift».
+
+ONCE (flag `oneshot:plan_copy_nov24_to_nov25_shift1`), on every active unit
+whose `managers.shift` is 1 — every plant — through
+`services/plan_carry.carry_day(db, unit, 24 Nov, 25 Nov, people=False)`:
+
+- **ПЛАН only**, by the 23 → 24 Nov carry's rule (above): into a unit-day with
+  NO typed plan for the 25th — a unit that typed even one line for the 25th
+  keeps its plan exactly, a partial copy would add products nobody planned —
+  each line with its «Navbat» where the 25th's row has none.
+- **Not copied**: «Bugungi fakt» (`people=False`, the parameter this step
+  added — the 23 → 24 carry is unchanged), ФАКТ, «Kontiner krishka». Second-
+  shift units are not touched. A unit whose 25th is closed is skipped; booting
+  after 25 Nov (Tashkent) copies nothing and says so.
+- Each unit copied writes one «Reja qo'lda tuzatildi» row in «Jurnal» (system).
+  The admins get one report: copied (with the number of positions), kept
+  (already planned for the 25th), no plan on the 24th, closed.
+
+**What it does to the day**: the copied figures are the 25th's typed ПЛАН — the
+загрузка, «Bajarish %», the hourly containers and the KPIs read them until the
+supervisor retypes; a retyped value simply replaces the copy. Undo: clear the
+25th's ПЛАН on «Zagruzka fayli». Plans typed for the 24th AFTER the deploy are
+not followed. Not a standing rule: every other day and unit is untouched.

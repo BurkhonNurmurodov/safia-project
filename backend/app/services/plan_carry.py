@@ -54,8 +54,11 @@ def has_plan(db: Session, mid: int, day: date) -> bool:
 
 
 def carry_day(db: Session, mid: int, src: date, dst: date,
-              planned: Optional[Callable[[Session, int, date], frozenset]] = None) -> dict:
+              planned: Optional[Callable[[Session, int, date], frozenset]] = None,
+              people: bool = True) -> dict:
     """Copy `src`'s typed plan and headcount into `dst` where `dst` is empty.
+    `people=False` copies the ПЛАН (and its «Navbat») alone — the 24 → 25 Nov
+    first-shift copy (`startup.plan_copy_nov24`).
     → {plan: "copied" | "kept" | "none", lines, groups, people: [(wc, group, n)],
        people_kept: [wc], people_skipped: [wc]}"""
     from app.services import pp_catalog
@@ -102,6 +105,8 @@ def carry_day(db: Session, mid: int, src: date, dst: date,
         db.flush()
 
     # ── «Bugungi fakt» people ────────────────────────────────────────────────
+    if not people:
+        return out
     norm = lambda wc: wc_group.wc_key(mid, wc)[1]                      # noqa: E731
     src_pins = db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == src,
