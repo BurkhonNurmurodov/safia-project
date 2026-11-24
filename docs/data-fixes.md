@@ -1014,3 +1014,24 @@ does to the day**: the copied figures are the day's typed values — the
 retyped value simply replaces the copy. Undo: clear the 24th's ПЛАН /
 «Bugungi fakt» for those units on «Zagruzka fayli» (the rows the copy made are
 plain typed values). Not a standing rule: every other day and unit is untouched.
+
+## The 29 unconnected guest profiles deleted (`startup.drop_unconnected_guests`, 2026-11-24)
+
+The operator: «delete all not connected guests except PwC». «Bog'lanmagan» on
+the Profiles tab's «Mehmonlar» = a guest profile with no pending or approved
+request. Production held 29 that day (read through the report door): 26 job
+seekers whose requests were refused BEFORE 9 Nov, when a refusal started
+deleting the guest (`docs/registration.md` «A rejected guest is deleted»), and
+3 an admin made on 17 Nov that nobody claimed (Ayupov Asomiddin, Kadirov
+Baxodir, Olimjonova Odinaxon). The operator confirmed all 29. PwC has an approved
+holder, so it was never among them; neither was Jahongir Umurzokov's pending one.
+
+- **The ids are pinned** (`_UNCONNECTED_GUESTS`, id + name), never re-derived:
+  a guest who files a request or is renamed before the boot is left alone and
+  named in the report. A `later` step, flag `oneshot:drop_unconnected_guests_nov24`.
+- **Exactly the panel's profile delete**: each one's rejected requests go
+  through `profiles._remove_role_row` (the Telegram account goes too when that
+  was its only role), then `_purge_profile_key`, then the profile. Nobody is
+  messaged; the admins get one report (deleted · left).
+- **Nothing undoes it.** The 26 can file a new guest request; the bot mints a
+  fresh profile.

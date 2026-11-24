@@ -12956,3 +12956,66 @@ def seed_bolims() -> None:
         print(f"[startup] bolims seed skipped: {exc}")
     finally:
         db.close()
+
+
+# 2026-11-24, the operator: «delete all not connected guests except PwC». The
+# 29 guest profiles with no pending or approved request on production that day,
+# confirmed one by one: 26 job seekers refused before 9 Nov (when a refusal
+# started deleting them) and 3 an admin made on 17 Nov that nobody claimed.
+UNCONNECTED_GUESTS_FLAG = "oneshot:drop_unconnected_guests_nov24"
+_UNCONNECTED_GUESTS = (
+    (419, 'Suyunboyeva Solixa'), (420, 'Xasanov Samandar'), (423, 'Iroda Yangiboyeva'),
+    (424, 'Iroda Yangiboyeva'), (425, 'Umarova Mubina'), (426, 'Isroilov Dilshodbek'),
+    (427, 'Shomurodova Nozima'), (429, 'Elmurod Mamayev'), (431, 'Sevara Toxirova'),
+    (432, 'Aziza Rayimova'), (433, 'Gofurova shahrizoda'), (434, 'Xurramova Surayyo'),
+    (437, 'Ilesbekova Ayjan'), (438, 'Nargiza xusanova'), (439, 'Nozimova Gulzoda'),
+    (440, 'Zarina Abdumalikova'), (441, 'Ikromova nozima'), (443, 'Ibragimova Shahnoza'),
+    (444, 'Goʻzal Hasanova'), (446, 'Ismoilov Begmurod'), (447, 'Mamarasulova Durdona'),
+    (449, 'Samandar Mamayusupov'), (451, 'Shabbona Oʻtkitova'), (452, 'Xazratov Boxodir'),
+    (453, 'Muxayyo xidayeva'), (455, 'Burxonjon Kimdir'), (463, 'Ayupov Asomiddin'),
+    (464, 'Kadirov Baxodir'), (465, 'Olimjonova Odinaxon'),
+)
+
+
+def drop_unconnected_guests() -> None:
+    """Delete the confirmed `_UNCONNECTED_GUESTS` exactly as the panel's profile
+    delete does: each one's (rejected) requests — the account too when that was
+    its only role — then everything keyed to the profile, then the profile. A
+    profile that changed since (renamed, or a request now pending / approved)
+    is left alone and named in the report. Nobody is messaged. Flag-guarded."""
+    from app.routers.profiles import _remove_role_row, _purge_profile_key
+    from app.telegram_bot import KEPT_GUESTS
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=UNCONNECTED_GUESTS_FLAG).first():
+            return
+        gone, left = [], []
+        for pid, name in _UNCONNECTED_GUESTS:
+            p = db.query(RoleProfile).filter_by(id=pid, role="guest").first()
+            if not p:
+                continue  # already deleted
+            rows = db.query(TelegramUserRole).filter_by(role="guest", role_id=pid).all()
+            if (p.name != name or p.name.strip().lower() in KEPT_GUESTS
+                    or any(r.status != "rejected" for r in rows)):
+                left.append(f"{pid} · {p.name}")
+                continue
+            for r in rows:
+                _remove_role_row(db, r)
+                db.flush()
+            _purge_profile_key(db, "guest", pid)
+            db.delete(p)
+            gone.append(name)
+        db.add(AppSetting(key=UNCONNECTED_GUESTS_FLAG,
+                          value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] unconnected guests: {len(gone)} deleted, {len(left)} left {left}")
+        _dm_report("ok", "Bog'lanmagan mehmonlar o'chirildi",
+                   status=f"{len(gone)} ta o'chirildi, {len(left)} ta qoldirildi",
+                   rows=[("🗑", "O'chirildi", gone),
+                         ("✋", "O'zgargani uchun qoldirildi", left)])
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] unconnected guests skipped: {exc}")
+    finally:
+        db.close()

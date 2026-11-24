@@ -86,7 +86,10 @@ profile delete does), then deletes the guest profile and everything keyed to it
 (`_purge_profile_key`) unless another request still names it. The same holds
 for the auto-rejected rivals when one claim on a profile is approved — their
 requests go, the profile stays with the winner. **An admin's pre-created guest
-profile is deleted too** when the one claim on it is refused. The HR DM still goes
+profile is deleted too** when the one claim on it is refused — **except «PwC»**
+(the operator, 2026-11-24: «delete all, keep PwC»; `telegram_bot.KEPT_GUESTS`,
+matched by name — registration mints only names of 2+ words, so a one-word
+«PwC» is always the admin's own): its refused request goes, the profile stays. The HR DM still goes
 out (it needs only the account id and language, read before the delete);
 nothing undoes the delete. Requests
 refused before this change (2 on 9 Nov) are left as they were.

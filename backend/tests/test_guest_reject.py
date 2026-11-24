@@ -86,6 +86,47 @@ class GuestReject(unittest.TestCase):
         self.assertIsNotNone(db.query(TelegramUser).filter_by(telegram_id=202).first())
         db.close()
 
+    def test_reject_keeps_pwc_profile(self):
+        from app.models import RoleProfile, TelegramUserRole
+        db = self.pg.Session()
+        p = RoleProfile(role="guest", name="PwC")
+        db.add(p)
+        db.flush()
+        pid, ref = p.id, self._claim(db, 301, p.id)
+        db.commit()
+        db.close()
+        self.assertTrue(self.tb.decide_registration(ref, "rejected"))
+        db = self.pg.Session()
+        self.assertIsNotNone(db.get(RoleProfile, pid))
+        self.assertIsNone(db.get(TelegramUserRole, ref))
+        db.close()
+
+    def test_oneshot_drops_only_unchanged_unconnected(self):
+        from app import startup
+        from app.models import AppSetting, RoleProfile, TelegramUser, TelegramUserRole
+        db = self.pg.Session()
+        db.add_all([RoleProfile(id=419, role="guest", name="Suyunboyeva Solixa"),
+                    RoleProfile(id=420, role="guest", name="Renamed Since"),
+                    RoleProfile(id=423, role="guest", name="Iroda Yangiboyeva"),
+                    RoleProfile(id=463, role="guest", name="Ayupov Asomiddin")])
+        db.flush()
+        rej = self._claim(db, 401, 419)
+        db.get(TelegramUserRole, rej).status = "rejected"
+        self._claim(db, 402, 423)          # pending again → stays
+        db.commit()
+        db.close()
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+                mock.patch.object(startup, "_dm_report"):
+            startup.drop_unconnected_guests()
+        db = self.pg.Session()
+        self.assertIsNone(db.get(RoleProfile, 419))
+        self.assertIsNone(db.query(TelegramUser).filter_by(telegram_id=401).first())
+        self.assertIsNone(db.get(RoleProfile, 463))
+        self.assertIsNotNone(db.get(RoleProfile, 420))
+        self.assertIsNotNone(db.get(RoleProfile, 423))
+        self.assertIsNotNone(db.get(AppSetting, startup.UNCONNECTED_GUESTS_FLAG))
+        db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

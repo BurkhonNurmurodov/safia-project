@@ -1888,17 +1888,23 @@ def forget_registration_notices(target_telegram_id: int):
         db.commit()
 
 
+# Guest profiles a rejection never deletes (the operator, 2026-11-24: «keep
+# PwC»). Registration mints only names of 2+ words, so «PwC» is the admin's own.
+KEPT_GUESTS = frozenset({"pwc"})
+
+
 def _drop_rejected_guest(db, role_row: TelegramUserRole) -> None:
     """A rejected guest claim leaves nothing behind (docs/registration.md):
     the request goes — the account too when it was its only role — and the
-    guest profile with it unless another request still names it. Caller commits."""
+    guest profile with it unless another request still names it or it is one
+    of `KEPT_GUESTS`. Caller commits."""
     from app.routers.profiles import _remove_role_row, _purge_profile_key
     pid = role_row.role_id
     _remove_role_row(db, role_row)
     db.flush()
     if pid and not db.query(TelegramUserRole).filter_by(role="guest", role_id=pid).first():
         p = db.query(RoleProfile).filter_by(id=pid, role="guest").first()
-        if p:
+        if p and (p.name or "").strip().lower() not in KEPT_GUESTS:
             _purge_profile_key(db, "guest", pid)
             db.delete(p)
 

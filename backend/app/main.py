@@ -386,6 +386,8 @@ async def lifespan(app: FastAPI):
     later(container_cols_artikova)              # 23 Nov: Artikova Masuda sees them
     from app.startup import idle_4412_not_stopped
     later(idle_4412_not_stopped)                # 22 Nov: 4412's 08:10–15:50 wait was not a stop
+    from app.startup import drop_unconnected_guests
+    later(drop_unconnected_guests)              # 24 Nov: the 29 unconnected guests, PwC kept
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)

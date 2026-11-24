@@ -358,6 +358,8 @@ try:
     container_cols_artikova()
     from app.startup import idle_4412_not_stopped
     idle_4412_not_stopped()
+    from app.startup import drop_unconnected_guests
+    drop_unconnected_guests()
     from app.startup import restore_wiped_accounts
     restore_wiped_accounts()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).
