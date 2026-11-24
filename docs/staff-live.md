@@ -705,6 +705,20 @@ minutes old, so not a sync behind Verifix): 17 = 7 in 6866 · 8898 · 9888 + 4 i
 itself: the unit's brigadir Karimov Islombek and five people Verifix puts in
 no cell. Those five stay off every page until HR places them in a cell.
 
+**…and the people on the unit's own division, in no cell (the same day, the
+operator: «List them anyway»).** `verifix_live._floor`: a division right
+above ONE unit's cells (counted or not) and itself no cell of ours is that
+unit's own division; the people Verifix puts on it are listed exactly like an
+off-load cell's people (`_listed_only` joins the two), with no cell in
+«Yacheyka». Never a brigadir: anyone a unit is tied to
+(`managers.vfx_employee_id`) or on a brigadir's job is left out, so Uchtepa's
+workshop divisions — each holding only its brigadir on 2026-11-24 — add
+nobody, and a workshop over two units' cells («Цех - 4») is nobody's floor.
+The directory read now keeps each division's `parent` (the stored «dir» read
+gains it at its next 10-minute read). Put to counted work, such a person is
+placed into a counted cell like an arrival; the external API's live answer
+lists nobody under no cell.
+
 - **Listed, counted nowhere.** `verifix_live._off_cells` is `_registry`'s other
   half (live cells with `in_load` off); the minute job and a unit's own read
   read their people too. The page's own reads — GET `/attendance`, `_build`

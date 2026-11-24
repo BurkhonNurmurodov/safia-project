@@ -214,8 +214,8 @@ def attendance(date: Optional[str] = Query(None), cell: Optional[str] = Query(No
         if store:
             ctx = live_staff.load(db, day, directory, store)
             for eid, (mid, key) in ctx.homes.items():
-                if mid in closed or (mid, eid) in ctx.deleted or eid not in ctx.store:
-                    continue
+                if mid in closed or (mid, eid) in ctx.deleted or eid not in ctx.store or not key:
+                    continue            # (no key: on the unit's own division, in no cell)
                 w = live_staff.person(ctx, eid)
                 by_cell[live_staff._cell_of(ctx, key)].append({
                     "employee_id": eid, "name": w.name, "job": w.role,

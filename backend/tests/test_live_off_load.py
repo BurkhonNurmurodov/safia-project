@@ -5,7 +5,7 @@ No database: the day's context is built by hand."""
 import unittest
 from datetime import date, datetime
 
-from app.services import live_staff
+from app.services import live_staff, verifix_live
 
 DAY = date(2026, 11, 24)
 MID = 31
@@ -43,6 +43,37 @@ class OffLoadRows(unittest.TestCase):
         ud = _day()
         self.assertEqual({r["employee_id"] for r in live_staff.busy(ud)}, {"1", "3"})
         self.assertEqual([r["employee_id"] for r in live_staff.unplaced(ud["workers"])], ["3"])
+
+
+class UnitFloor(unittest.TestCase):
+    """«Алмата Фабрика» (1761) over the unit's cells, with people on it."""
+    DIR = {
+        "divs": {"1761": {"code": None, "parent": "3941"},
+                 "8681": {"code": "8898", "parent": "1761"},
+                 "8684": {"code": "6668", "parent": "1761"},
+                 "50": {"code": None, "parent": "3941"},
+                 "51": {"code": "4112", "parent": "50"}, "52": {"code": "4113", "parent": "50"}},
+        "emps": {"a": {"unit": "1761", "job": "Кондитер"},
+                 "boss": {"unit": "1761", "job": "Технолог"},       # tied to the unit
+                 "sup": {"unit": "1761", "job": "Бригадир"},
+                 "x": {"unit": "50", "job": "Кондитер"},            # two units' workshop
+                 "c": {"unit": "8681", "job": "Кондитер"}},
+    }
+    CELLS = {"8898": {"manager_id": MID}, "6668": {"manager_id": MID},
+             "4112": {"manager_id": 1}, "4113": {"manager_id": 2}}
+
+    def test_only_workers_of_one_units_own_division(self):
+        self.assertEqual(verifix_live._floor(self.DIR, self.CELLS, {"boss"}), {"a": (MID, None)})
+
+    def test_a_floor_worker_is_listed_with_no_cell(self):
+        ctx = live_staff.Ctx(
+            day=DAY, now=datetime(2026, 11, 24, 10, 0), store={"a": INSIDE},
+            directory={"emps": {"a": {"name": "WORKER A", "job": "Кондитер"}}},
+            cells={}, units={MID: {"name": "Unit", "shift": 1}}, homes={"a": (MID, None)},
+            formula=None, docs=[], drafts=[], deleted=set(), pending_del={}, placements={},
+            windows={1: ("08:00", "20:00")}, off_cells={}, off={"a"})
+        r = live_staff.unit_day(ctx, MID)["workers"][0]
+        self.assertEqual((r["off_load"], r["verifix_code"]), (True, None))
 
 
 if __name__ == "__main__":

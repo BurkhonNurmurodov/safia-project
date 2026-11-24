@@ -193,7 +193,7 @@ def load(db: Session, day: date, directory: dict, store: dict,
     cells, units = verifix_live._registry(db, day)
     homes = verifix_live._homes(directory, cells)
     off_cells = verifix_live._off_cells(db, day)
-    off_homes = verifix_live._homes(directory, off_cells)
+    off_homes = verifix_live._listed_only(db, directory, cells, off_cells)
     docs = (db.query(LiveDocument).filter(LiveDocument.day == day)
             .order_by(LiveDocument.approved_at.nullslast(), LiveDocument.id).all())
     dels = db.query(LiveDeletion).filter(LiveDeletion.day == day).all()

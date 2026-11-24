@@ -239,7 +239,8 @@ def _read_directory(cfg: dict) -> dict:
                 did = str(d.get("division_id") or "")
                 code = str(d.get("code") or "").strip()
                 divs[did] = {"code": verifix._code_key(code) if code else None,
-                             "raw": code, "name": d.get("name") or ""}
+                             "raw": code, "name": d.get("name") or "",
+                             "parent": str(d.get("parent_id") or "") or None}
         return divs
 
     def read_jobs(cl) -> dict:
@@ -521,7 +522,7 @@ def _read_day(db: Session, cfg: dict, day: date, ids: list[str],
         # placement, which the directory (current only) forgets by tomorrow:
         # the «Ish grafigi» list reads it for a live day (`kelish`).
         home = (homes or {}).get(eid)
-        if home:
+        if home and home[1]:
             emps[eid]["c"] = home[1]
     cur["emps"] = emps
     if unit_id is None:
@@ -819,6 +820,35 @@ def _registry(db: Session, day: Optional[date] = None) -> tuple[dict, dict]:
     return _on_day(cells, day), units
 
 
+def _floor(directory: dict, cells: dict, tied: set) -> dict[str, tuple[int, None]]:
+    """employee id → (unit, None) for the people Verifix puts on a unit's OWN
+    division — the one right above that unit's cells and no other unit's — in
+    no cell (Almaty's five on «Алмата Фабрика», the operator 2026-11-24: «list
+    them anyway»). Never a brigadir: a person tied to a unit (`tied`) or on a
+    brigadir's job runs the unit. Listed only, as `_off_cells`' people."""
+    from app.services import supervisor_kind
+    divs = directory.get("divs") or {}
+    over: dict = defaultdict(set)
+    for d in divs.values():
+        c = cells.get(d.get("code")) if d.get("code") else None
+        if c and c["manager_id"] and d.get("parent"):
+            over[d["parent"]].add(c["manager_id"])
+    floors = {p: next(iter(us)) for p, us in over.items()
+              if len(us) == 1 and not cells.get((divs.get(p) or {}).get("code") or "")}
+    return {eid: (floors[e["unit"]], None) for eid, e in (directory.get("emps") or {}).items()
+            if e.get("unit") in floors and eid not in tied
+            and not supervisor_kind.is_supervisor_job(e.get("job"))}
+
+
+def _listed_only(db: Session, directory: dict, cells: dict, off: dict) -> dict:
+    """Everybody a unit's day lists without counting: the people of its cells
+    not counted in the загрузка (`_off_cells`) and those on its own division in
+    no cell (`_floor`)."""
+    tied = {v for (v,) in db.query(Manager.vfx_employee_id)
+            .filter(Manager.vfx_employee_id.isnot(None)).all()}
+    return {**_floor(directory, {**off, **cells}, tied), **_homes(directory, off)}
+
+
 def _off_cells(db: Session, day: Optional[date] = None) -> dict:
     """`_registry`'s other half: the live cells NOT counted in the загрузка
     (`in_load` off). Their people are on their unit's /staff list and count
@@ -1053,7 +1083,7 @@ def day_read(db: Session, manager_id: int, day: Optional[date], force: bool = Fa
                                            else DIR_FORCE_S if force else DIR_FALLBACK_S)
         except verifix.VerifixError as exc:
             return {"error": exc.code, "message": exc.message}
-    homes = _homes(directory, {**_off_cells(db, day), **cells})
+    homes = {**_listed_only(db, directory, cells, _off_cells(db, day)), **_homes(directory, cells)}
     ids = sorted({eid for eid, (mid, _) in homes.items() if mid == manager_id} | _doc_ids(db, day))
 
     key = _day_key(day)
@@ -1450,7 +1480,8 @@ def _pass(db: Session) -> None:
         return
     # The off-load cells' people too: /staff lists them (`_off_cells`).
     off = _off_cells(db)
-    homes = {eid: h for eid, h in _homes(directory, {**off, **cells}).items() if h[0] in with_cells}
+    homes = {eid: h for eid, h in {**_listed_only(db, directory, cells, off),
+                                   **_homes(directory, cells)}.items() if h[0] in with_cells}
     now_tz = datetime.now(TZ)
     shifts = {units[m]["shift"] or 1 for m in with_cells}
     by_shift = {s: shift_day(db, s, now_tz) for s in shifts}
@@ -1485,7 +1516,8 @@ def _pass(db: Session) -> None:
             with_d, homes_d = with_cells, homes
         else:
             with_d = {c["manager_id"] for c in cells_d.values() if c["manager_id"] in units}
-            homes_d = {eid: h for eid, h in _homes(directory, {**off_d, **cells_d}).items()
+            homes_d = {eid: h for eid, h in {**_listed_only(db, directory, cells_d, off_d),
+                                             **_homes(directory, cells_d)}.items()
                        if h[0] in with_d}
             for m in with_d - unit_days.keys():
                 unit_days[m] = shift_day(db, units[m]["shift"] or 1, now_tz)
