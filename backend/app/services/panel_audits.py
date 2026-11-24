@@ -47,6 +47,7 @@ SORTS = {"day", "workshop", "inspector", "total", "rating", "task", "question", 
 # section stays young enough to be read again.
 PHOTO_BATCH = 600
 PHOTO_BUDGET_S = 600.0
+PHOTO_CHUNK = 100                # pages per login, kept as each is done: a timeout or a worker swap loses one chunk
 PHOTO_YOUNG_DAYS = 1
 PHOTO_AGAIN = timedelta(minutes=90)
 PHOTO_SIDE = 480                 # the size a photo tile asks for; anything bigger = the panel's own file
@@ -350,29 +351,35 @@ def read_photos(db: Session) -> dict:
         db.rollback()  # hand the connection back for the network wait
         if not plan:
             return {"ok": True, "read": 0}
-        try:
-            got = sd_panel.read_reports(user, password, list(plan), deadline=started + PHOTO_BUDGET_S,
-                                        reader=sd_panel.parse_section)
-        except sd_panel.PanelError as e:
-            if e.code == "refused":
-                st["refused"] = _fingerprint(sealed)
-                _save_state(db, st)
-            log.info("panel audits: photo read stopped — %s", e.code)
-            return {"ok": False, "code": e.code}
+        todo, stopped = list(plan), None
         read = photos = failed = 0
-        for path, res in got.items():
-            t, d = plan[path]
-            if isinstance(res, sd_panel.PanelError) and res.status == 404:
-                res = {}                       # a section the panel no longer has: read, no photos
-            if not isinstance(res, dict):
-                failed += 1
-                continue
-            photos += _keep_section(db, t, d, res, now)
-            read += 1
-        db.commit()
+        for i in range(0, len(todo), PHOTO_CHUNK):
+            if time.monotonic() > started + PHOTO_BUDGET_S:
+                break
+            try:
+                got = sd_panel.read_reports(user, password, todo[i:i + PHOTO_CHUNK],
+                                            deadline=started + PHOTO_BUDGET_S, reader=sd_panel.parse_section)
+            except sd_panel.PanelError as e:
+                if e.code == "refused":
+                    st["refused"] = _fingerprint(sealed)
+                    _save_state(db, st)
+                stopped = e.code
+                break
+            for path, res in got.items():
+                t, d = plan[path]
+                if isinstance(res, sd_panel.PanelError) and res.status == 404:
+                    res = {}                   # a section the panel no longer has: read, no photos
+                if not isinstance(res, dict):
+                    failed += 1
+                    continue
+                photos += _keep_section(db, t, d, res, now)
+                read += 1
+            db.commit()
         ms = int((time.monotonic() - started) * 1000)
-        log.info("panel audits: %s section pages read, %s photos, %s failed, in %s ms", read, photos, failed, ms)
-        return {"ok": failed == 0, "read": read, "photos": photos, "failed": failed, "ms": ms}
+        log.info("panel audits: %s section pages read, %s photos, %s failed%s, in %s ms", read, photos, failed,
+                 f", stopped — {stopped}" if stopped else "", ms)
+        return {"ok": failed == 0 and not stopped, "code": stopped, "read": read, "photos": photos,
+                "failed": failed, "ms": ms}
     finally:
         _photo_lock.release()
 

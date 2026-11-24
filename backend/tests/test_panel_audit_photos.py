@@ -109,7 +109,7 @@ class PhotoReadTest(unittest.TestCase):
         db.commit()
 
         pages = {"100": _section(_item(1, A, B) + _item(2) + _item(9, C))}   # 200: gone (404)
-        with _panel(pages):
+        with _panel(pages), mock.patch.object(pa, "PHOTO_CHUNK", 1):   # one login per page, kept as it goes
             got = pa.read_photos(db)
         self.assertEqual((got["read"], got["photos"], got["failed"]), (2, 3, 0))
         self.assertEqual(pa.photo_due(db, datetime.now(pa.TZ)), [])

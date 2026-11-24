@@ -81,7 +81,8 @@ was built and dropped the same day: it duplicated that card.)
   «Комментарий», «Предупреждение» were empty on 80 sampled pages). Sampled
   1–24 Nov: tech ~1.3 photos per minus, KRU ~0.75 — about 7 000 a month.
   - **Each section page is read ONCE** (`panel_audits.read_photos`, one login,
-    newest first, `PHOTO_BATCH` 600 a run) and again only while young (its day
+    newest first, `PHOTO_BATCH` 600 a run, kept and committed every
+    `PHOTO_CHUNK` 100 pages — a slow page or a worker swap loses one chunk) and again only while young (its day
     is today or yesterday, every `PHOTO_AGAIN` 90 min) — after every scheduled
     read, eight minutes after a boot (the first fill), and on a thread after a
     press on «Yangilash». A section the panel answers 404 for counts as read
