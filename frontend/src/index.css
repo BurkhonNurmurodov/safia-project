@@ -1712,3 +1712,9 @@ body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-s
 .tgp-tap:active { opacity: 0.7; }
 .tgp-tap:focus-visible { outline: 2px solid var(--tg-link); outline-offset: 2px; }
 .tgp-hover:hover { background: var(--bg-accent) !important; }
+
+/* «Zagruzka fayli»: a cell typed like a spreadsheet (QtyCell in Production.jsx)
+   outlines itself under a pointer, so the editable columns read as such. */
+@media (hover: hover) {
+  .qty-cell:hover { box-shadow: inset 0 0 0 1px var(--border-md); }
+}

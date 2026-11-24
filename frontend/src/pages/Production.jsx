@@ -426,11 +426,15 @@ const moveCell = (el, dCol, dRow) => {
   all.find((n) => n.dataset.qcol === col && Number(n.dataset.qrow) === row)?.focus();
 };
 
-// One click SELECTS the cell (ring around the whole cell); a double-click — or a
-// second tap on a phone, or F2, or simply typing a digit — opens the editor, and
-// the editor FILLS the cell instead of floating a small box inside it. Enter
-// commits and drops to the cell below, Tab commits and steps right, Escape
-// cancels, Delete clears the override.
+// It works like a spreadsheet (the operator, 2026-11-24: «not first click edit
+// it or smth else — like a spreadsheet»): ONE click or tap opens the cell with
+// its whole value selected, so whatever is typed replaces it. Enter commits and
+// drops to the cell below, Tab steps right, ↑ ↓ commit and move by row, ← →
+// move once the caret is at the edge, Escape cancels. A cell reached by the
+// keys is SELECTED (gold ring): typing a digit opens it on that digit, Enter /
+// F2 open it on its value, Delete clears it. Pasting a block copied from Excel
+// (tabs and new lines) fills the grid from this cell right and down — each
+// cell saved, and undone, on its own.
 // What a typed quantity means: «+20» adds 20 to what the cell holds, «50+20»
 // sums as typed, a blank clears (null). `undefined` = not a number — nothing
 // is saved. ONE reading for the table's cell and the phone card's field.
@@ -442,27 +446,59 @@ const parseQty = (draft, value) => {
   return raw !== "" && Number.isNaN(num) ? undefined : num;
 };
 
+// A copied spreadsheet block → rows of cells; one bare value is NOT a block.
+const pastedGrid = (text) => {
+  const rows = String(text ?? "").replace(/\r/g, "").replace(/\n+$/, "").split("\n");
+  if (rows.length === 1 && !rows[0].includes("\t")) return null;
+  return rows.map((line) => line.split("\t"));
+};
+// Fill the grid from `el`: column by column right, row by row down. A cell the
+// block reaches that is not editable (a closed day, another column) is skipped.
+const pasteGrid = (el, grid) => {
+  const all = qCells(el);
+  const cols = [...new Set(all.map((n) => n.dataset.qcol))];
+  const c0 = cols.indexOf(el.dataset.qcol);
+  const r0 = Number(el.dataset.qrow);
+  grid.forEach((line, dr) => line.forEach((v, dc) => {
+    const col = cols[c0 + dc];
+    if (col === undefined) return;
+    const cell = all.find((n) => n.dataset.qcol === col && Number(n.dataset.qrow) === r0 + dr);
+    cell?._qsave?.(v.trim().replace(/\s/g, ""));
+  }));
+};
+
 function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = false, decimals = 0 }) {
-  const { t } = useLang();
   const tdRef = useRef(null);
   const [editing, setEditing] = useState(false);
   const [sel, setSel] = useState(false);
   const [draft, setDraft] = useState("");
   const closed = useRef(false);   // this edit already committed or cancelled
-  const touch = useRef(false);    // the last pointer on this cell was a finger
-  const wasSel = useRef(false);   // …and the cell was already selected when it landed
   const grab = useRef(false);     // open the editor with its whole value selected
   const nav = useRef(null);       // where focus goes once the editor unmounts
 
+  // What a pasted block writes into this cell — read at paste time, so it is
+  // never a stale value or handler from an earlier render.
+  const live = useRef({});
+  live.current = { value, onSave };
+  useEffect(() => {
+    const el = tdRef.current;
+    if (!el) return undefined;
+    el._qsave = (raw) => {
+      const { value: v, onSave: save } = live.current;
+      const num = parseQty(raw, v);
+      if (num !== undefined && num !== (v ?? null)) save(num);
+    };
+    return () => { delete el._qsave; };
+  }, [readOnly]);
+
   // `seed` = the character that opened the editor — typing over a selected cell
-  // replaces its contents, as in Excel. Opened without one, the current value is
-  // kept: a mouse or keyboard puts the caret at its end (the spreadsheet rule),
-  // a finger takes the whole value selected, because a double-tap is a phone's
-  // ONLY way in and clearing digits by hand on a touch keyboard is not editing.
+  // replaces its contents, as in Excel. Opened without one (a click, Enter,
+  // F2), the editor shows the value with all of it selected: the next key
+  // replaces it, a click inside places the caret.
   const start = (seed) => {
     if (editing) return;
     closed.current = false;
-    grab.current = seed === undefined && touch.current;
+    grab.current = seed === undefined;
     setDraft(seed ?? (value === null || value === undefined ? "" : String(value)));
     setEditing(true);
   };
@@ -489,9 +525,7 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     // No target = the editor was closed by a blur, and focus went wherever the
     // click that closed it landed. Removing a FOCUSED input fires no focusout of
     // its own, so the ring is re-read off the DOM rather than trusted to an
-    // event that may never come — otherwise a cell somebody typed in keeps its
-    // ring and reads as "this one was changed", which is exactly the mark an
-    // edited value must not carry.
+    // event that may never come.
     if (!next) { setSel(document.activeElement === tdRef.current); return; }
     if (next.step) stepCell(tdRef.current, next.step);
     else if (next.d) moveCell(tdRef.current, next.d[0], next.d[1]);
@@ -509,13 +543,25 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     else if (k === "ArrowUp") { e.preventDefault(); moveCell(e.currentTarget, 0, -1); }
     else if (k === "ArrowRight") { e.preventDefault(); moveCell(e.currentTarget, 1, 0); }
     else if (k === "ArrowLeft") { e.preventDefault(); moveCell(e.currentTarget, -1, 0); }
-    else if (k.length === 1 && /[\d.,+-]/.test(k)) { e.preventDefault(); start(k); }
+    else if (k.length === 1 && /[\d.,+-]/.test(k) && !e.ctrlKey && !e.metaKey) { e.preventDefault(); start(k); }
+  };
+
+  // A selected cell takes a paste too: one value is that cell's, a block fills
+  // the grid from it.
+  const onCellPaste = (e) => {
+    if (editing) return;
+    const text = e.clipboardData?.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+    const grid = pastedGrid(text);
+    if (grid) pasteGrid(e.currentTarget, grid);
+    else e.currentTarget._qsave?.(text.trim().replace(/\s/g, ""));
   };
 
   // A day the unit has signed off on is read-only, and it renders as an ORDINARY
-  // cell: no grid coordinates, no cursor, no hover pencil, no tab stop. Leaving
-  // the affordances on a cell whose save the API refuses teaches the operator
-  // that editing here silently does nothing.
+  // cell: no grid coordinates, no cursor, no tab stop. Leaving the affordances
+  // on a cell whose save the API refuses teaches the operator that editing here
+  // silently does nothing.
   if (readOnly) {
     return (
       <td title={title || undefined} className="px-3 py-2 text-center tabular-nums" style={{ color: warn ? "#ef4444" : "var(--text-1)" }}>
@@ -524,53 +570,44 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
     );
   }
 
+  // The caret sits at an edge of the editor (or the whole value is selected,
+  // as it is on opening) — ← / → then leave the cell instead of moving inside.
+  const atEdge = (input, dir) => {
+    const { selectionStart: a, selectionEnd: b, value: v } = input;
+    if (a === 0 && b === v.length) return true;
+    return a === b && (dir < 0 ? a === 0 : a === v.length);
+  };
+
   return (
     <td
       ref={tdRef}
       tabIndex={0}
       data-qcol={col}
       data-qrow={row}
-      // ONE title. The shared-quantity sentence replaces the edit hint only on the
-      // rows that carry it — a second `title` attribute here silently won over
-      // this one and stripped the edit affordance off every cell in the table.
-      title={title || t("production.editManually")}
+      title={title || undefined}
       onKeyDown={onKeyDown}
+      onPaste={onCellPaste}
       // The cell's OWN focus only. React's onFocus/onBlur are focusin/focusout,
       // which bubble — unguarded, the editor's focus marked the cell selected and
-      // its unmount fired no focusout to unmark it, so every cell that had ever
-      // been edited kept a gold ring and read as "this one was changed".
+      // its unmount fired no focusout to unmark it.
       onFocus={(e) => { if (e.target === e.currentTarget) setSel(true); }}
       onBlur={(e) => { if (e.target === e.currentTarget) setSel(false); }}
-      // Read the selection BEFORE the browser's own focus-on-press lands, so the
-      // tap that selects the cell is never the tap that opens it.
-      onPointerDown={(e) => {
-        touch.current = e.pointerType === "touch";
-        wasSel.current = document.activeElement === e.currentTarget;
-      }}
       onClick={(e) => {
         e.stopPropagation();          // never toggles the row's action strip
-        // A finger has no double-click: the second tap on an already-selected
-        // cell opens it. A mouse keeps the spreadsheet rule — only a real
-        // double-click does.
-        if (!touch.current) return;
-        if (wasSel.current) start();
-        else e.currentTarget.focus();  // some WebViews don't focus a tapped cell — arm it by hand
+        start();
       }}
-      onDoubleClick={() => start()}
-      className="px-3 py-2 text-center relative select-none group outline-none"
+      className="qty-cell px-3 py-2 text-center relative select-none outline-none"
       style={{
-        cursor: "cell",
-        touchAction: "manipulation",  // a double-tap edits the cell, never zooms the page
-        boxShadow: sel && !editing ? "inset 0 0 0 1px var(--brand)" : undefined,
+        cursor: "text",
+        touchAction: "manipulation",  // a quick second tap never zooms the page
+        boxShadow: sel && !editing ? "inset 0 0 0 2px var(--brand)" : undefined,
       }}
     >
       {/* A typed value is displayed as ANY REGULAR CELL — no colour, no weight,
-          no dot. What the operator entered IS the figure for that day, not an
-          annotation on the sheet’s, so nothing here says where it came from. */}
-      <span className="inline-flex items-center gap-1 tabular-nums"
+          no dot. What the operator entered IS the figure for that day. */}
+      <span className="tabular-nums"
         style={{ color: warn ? "#ef4444" : "var(--text-1)", fontWeight: warn ? 700 : undefined }}>
         {fmt(value, decimals)}
-        <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
       </span>
       {/* the editor covers the cell's whole box — inset-0 resolves against the
           td's padding box, so the table's own grid lines stay visible around it */}
@@ -582,10 +619,24 @@ function QtyCell({ col, row, value, onSave, readOnly = false, title, warn = fals
           onChange={(e) => setDraft(e.target.value)}
           onFocus={(e) => { if (grab.current) e.target.select(); }}
           onBlur={() => finish(true)}
+          onClick={(e) => e.stopPropagation()}
+          onPaste={(e) => {
+            const grid = pastedGrid(e.clipboardData?.getData("text/plain"));
+            if (!grid) return;          // one value — the input takes it as typed
+            e.preventDefault();
+            const el = tdRef.current;
+            finish(false, {});
+            pasteGrid(el, grid);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); finish(true, { d: [0, 1] }); }
-            else if (e.key === "Tab") { e.preventDefault(); finish(true, { step: e.shiftKey ? -1 : 1 }); }
-            else if (e.key === "Escape") { e.preventDefault(); finish(false, {}); }
+            const k = e.key;
+            if (k === "Enter") { e.preventDefault(); finish(true, { d: [0, e.shiftKey ? -1 : 1] }); }
+            else if (k === "Tab") { e.preventDefault(); finish(true, { step: e.shiftKey ? -1 : 1 }); }
+            else if (k === "Escape") { e.preventDefault(); finish(false, {}); }
+            else if (k === "ArrowDown") { e.preventDefault(); finish(true, { d: [0, 1] }); }
+            else if (k === "ArrowUp") { e.preventDefault(); finish(true, { d: [0, -1] }); }
+            else if (k === "ArrowRight" && atEdge(e.currentTarget, 1)) { e.preventDefault(); finish(true, { d: [1, 0] }); }
+            else if (k === "ArrowLeft" && atEdge(e.currentTarget, -1)) { e.preventDefault(); finish(true, { d: [-1, 0] }); }
           }}
           className="absolute inset-0 w-full h-full text-center text-xs px-2 outline-none tabular-nums"
           style={{ background: "var(--bg-card)", border: "2px solid var(--brand)", borderRadius: 4, color: "var(--text-1)" }}

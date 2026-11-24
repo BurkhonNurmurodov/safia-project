@@ -1103,3 +1103,26 @@ Excel has no «№» column (Excel's own row numbers), so the file is unchanged.
 ## On a phone (2026-11-20)
 
 See `docs/leader-phone.md` — «Zagruzka fayli» on a phone (cells by code, positions as cards, «Odamlar soni» hidden for leaders) and the «—» empty day for non-admins (every width). md+ is unchanged.
+
+## The positions table is typed like a spreadsheet (2026-11-24)
+
+The operator: «can we write it in easier way, not first click edit it or smth
+else — like a spreadsheet». Every typed cell of the «Pozitsiyalar» table
+(ПЛАН, ФАКТ, «Navbat», a container's «sig'im») is `QtyCell` in
+`pages/Production.jsx`, and it now opens on ONE click or tap, its whole value
+selected, so what is typed replaces it. Before, a click only selected the cell
+and a double-click (or a second tap) opened it, behind a hover pencil and a
+«Qo'lda o'zgartirish» tooltip on every cell — both are gone; an editable cell
+outlines itself under a pointer instead (`.qty-cell` in `index.css`).
+
+- Enter commits and goes down (Shift+Enter up), Tab right, ↑ ↓ commit and move
+  by row, ← → move once the caret is at the edge (or on the just-opened,
+  all-selected value), Escape cancels.
+- A cell reached by the keys is SELECTED (gold ring): a digit opens it on that
+  digit, Enter / F2 on its value, Delete clears it — unchanged.
+- **A block pasted from Excel fills the grid** (`pastedGrid` / `pasteGrid`):
+  tabs step right, new lines step down, from the cell it lands on; each cell is
+  saved — and undone — on its own through its own `onSave`, a cell the block
+  reaches that is not editable (a closed day) is skipped. One pasted value is
+  that cell's.
+- The phone cards (`QtyField`, below md) are untouched.
