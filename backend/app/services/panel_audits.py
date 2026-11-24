@@ -27,10 +27,10 @@ from datetime import date, datetime, timedelta
 from statistics import mean
 from typing import Any, Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session
 
-from app.models import PanelAuditDay, PanelAuditRow
+from app.models import PanelAuditDay, PanelAuditPhoto, PanelAuditRow, PanelAuditSection
 from app.services import sd_panel
 from app.services.verifix import TZ, _get, _put
 
@@ -43,8 +43,16 @@ MAX_MONTHS = 6                   # one press reads at most this many months
 BUDGET_S = 70.0                  # inside Cloudflare's 100 s
 BANDS = (90.0, 80.0, 70.0)       # the technologists' audit bands (tech_audit): >90 · >80 · >70 · else
 SORTS = {"day", "workshop", "inspector", "total", "rating", "task", "question", "top"}
+# Photos (see «photos» below): section pages per run, its time, and how long a
+# section stays young enough to be read again.
+PHOTO_BATCH = 600
+PHOTO_BUDGET_S = 600.0
+PHOTO_YOUNG_DAYS = 1
+PHOTO_AGAIN = timedelta(minutes=90)
+PHOTO_SIDE = 480                 # the size a photo tile asks for; anything bigger = the panel's own file
 
 _lock = threading.Lock()
+_photo_lock = threading.Lock()
 
 
 # ── months and state ──────────────────────────────────────────────────────────
@@ -236,8 +244,24 @@ def _scheduled() -> None:
         if not configured(db)["configured"]:
             return
         refresh(db, list(KINDS), months, actor="auto", auto=True)
+        read_photos(db)
     except Exception:  # noqa: BLE001
         log.exception("panel audits: the scheduled read failed")
+    finally:
+        db.close()
+
+
+def photos_job() -> None:
+    """The photos alone — after a boot (the first fill) and after a press
+    on «Yangilash» (routers/audits.py), on a thread of its own."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        if configured(db)["configured"]:
+            read_photos(db)
+    except Exception:  # noqa: BLE001
+        log.exception("panel audits: the photo read failed")
     finally:
         db.close()
 
@@ -267,9 +291,127 @@ def register_jobs() -> None:
             _scheduled, trigger=CronTrigger(hour="7-21/2", minute=20, timezone=SCHEDULER_TZ),
             id="panel-audits-read", replace_existing=True)
         schedule_at("panel-audits-boot", datetime.now(TZ) + timedelta(minutes=3), _boot)
+        schedule_at("panel-audit-photos-boot", datetime.now(TZ) + timedelta(minutes=8), photos_job)
         log.info("panel audits: jobs registered (every 2 h by day)")
     except Exception:  # noqa: BLE001
         log.exception("panel audits: could not register the jobs")
+
+
+# ── photos ────────────────────────────────────────────────────────────────────
+# A question's photos sit on its SECTION page (`/task-scheduler/view?id=` = a
+# row's `task_id`), not in «Минусы». Each section is read once, and again only
+# while young (its day is today or yesterday), so a month's ~2 000 pages are
+# read about once and the clock then reads a few dozen new ones per run. Only
+# the panel's file paths are kept; the bytes stay on the panel and
+# `/api/audits/photo/…` fetches them (photo_bytes).
+
+def photo_due(db: Session, now: datetime) -> list[tuple[int, Optional[date]]]:
+    """(section id, day) to read now, newest first: never read, or young and
+    not read in the last PHOTO_AGAIN."""
+    S = PanelAuditSection
+    young = now.date() - timedelta(days=PHOTO_YOUNG_DAYS)
+    last = func.max(PanelAuditRow.day)
+    return (db.query(PanelAuditRow.task_id, last)
+            .outerjoin(S, S.task_id == PanelAuditRow.task_id)
+            .filter(PanelAuditRow.task_id.isnot(None),
+                    or_(S.task_id.is_(None), and_(PanelAuditRow.day >= young, S.read_at < now - PHOTO_AGAIN)))
+            .group_by(PanelAuditRow.task_id).order_by(last.desc().nullslast(), PanelAuditRow.task_id.desc())
+            .limit(PHOTO_BATCH).all())
+
+
+def _keep_section(db: Session, task_id: int, day: Optional[date], photos: dict[int, list[str]],
+                  now: datetime) -> int:
+    db.query(PanelAuditPhoto).filter(PanelAuditPhoto.task_id == task_id).delete(synchronize_session=False)
+    db.bulk_save_objects([PanelAuditPhoto(task_id=task_id, question_id=q, n=i, path=p)
+                          for q, ps in photos.items() for i, p in enumerate(ps)])
+    n = sum(len(ps) for ps in photos.values())
+    db.merge(PanelAuditSection(task_id=task_id, day=day, photos=n, read_at=now))
+    return n
+
+
+def read_photos(db: Session) -> dict:
+    """Read the due section pages with ONE login and keep their photos.
+    Never raises; a refused login is kept like refresh's, so the clock stops."""
+    from app.web_auth import open_password
+
+    if not _photo_lock.acquire(blocking=False):
+        return {"ok": False, "code": "busy"}
+    try:
+        started = time.monotonic()
+        user, sealed = _get(db, sd_panel.K_USER), _get(db, sd_panel.K_PASS)
+        password = open_password(sealed) if sealed else None
+        st = state(db)
+        if not user or password is None:
+            return {"ok": False, "code": "no_login"}
+        if st.get("refused") == _fingerprint(sealed):
+            return {"ok": False, "code": "refused_before"}
+        now = datetime.now(TZ)
+        plan = {sd_panel.section_path(t): (t, d) for t, d in photo_due(db, now)}
+        db.rollback()  # hand the connection back for the network wait
+        if not plan:
+            return {"ok": True, "read": 0}
+        try:
+            got = sd_panel.read_reports(user, password, list(plan), deadline=started + PHOTO_BUDGET_S,
+                                        reader=sd_panel.parse_section)
+        except sd_panel.PanelError as e:
+            if e.code == "refused":
+                st["refused"] = _fingerprint(sealed)
+                _save_state(db, st)
+            log.info("panel audits: photo read stopped — %s", e.code)
+            return {"ok": False, "code": e.code}
+        read = photos = failed = 0
+        for path, res in got.items():
+            t, d = plan[path]
+            if isinstance(res, sd_panel.PanelError) and res.status == 404:
+                res = {}                       # a section the panel no longer has: read, no photos
+            if not isinstance(res, dict):
+                failed += 1
+                continue
+            photos += _keep_section(db, t, d, res, now)
+            read += 1
+        db.commit()
+        ms = int((time.monotonic() - started) * 1000)
+        log.info("panel audits: %s section pages read, %s photos, %s failed, in %s ms", read, photos, failed, ms)
+        return {"ok": failed == 0, "read": read, "photos": photos, "failed": failed, "ms": ms}
+    finally:
+        _photo_lock.release()
+
+
+def photo_known(db: Session, path: str) -> bool:
+    """The photo door serves only a path some section page linked."""
+    return db.query(exists().where(PanelAuditPhoto.path == path)).scalar()
+
+
+PHOTO_MAX_BYTES = 8 * 1024 * 1024
+
+
+def photo_bytes(path: str, side: Optional[int]) -> tuple[bytes, str]:
+    """(bytes, media type) of one panel photo, scaled to fit `side` px when
+    asked (never enlarged). Raises PanelError when the panel does not give it."""
+    import httpx
+
+    from app.services.profile_photo import smaller
+
+    # shortcut: fetched WITHOUT a login — the panel serves /uploads openly
+    # (checked 2026-11-24); if it ever guards them, fetch inside read_reports' session.
+    with httpx.Client(base_url=sd_panel.BASE, timeout=sd_panel.TIMEOUT, follow_redirects=False,
+                      headers={"User-Agent": sd_panel.UA}) as c:
+        res = sd_panel._call(c, "GET", path)
+    mime = res.headers.get("content-type", "").split(";")[0].strip()
+    if res.status_code != 200 or not mime.startswith("image/"):
+        raise sd_panel.PanelError("status", "GET photo", res.status_code)
+    data = res.content
+    if len(data) > PHOTO_MAX_BYTES:
+        raise sd_panel.PanelError("too_big")
+    if side:
+        try:
+            scaled = smaller(data, side)
+        except Exception:  # noqa: BLE001 — a picture that cannot be scaled is served as it is
+            log.warning("panel audits: could not scale %s", path)
+        else:
+            if scaled is not data:
+                return scaled, "image/jpeg"
+    return data, mime
 
 
 # ── the page's questions ──────────────────────────────────────────────────────
@@ -287,6 +429,12 @@ def _scoped(db: Session, kind: str, d1: date, d2: date, f: dict):
         q = q.filter(PanelAuditRow.question == f["question"])
     if f.get("top"):
         q = q.filter(PanelAuditRow.top.isnot(None))
+    if f.get("photo") in ("yes", "no"):
+        has = exists().where(PanelAuditPhoto.question_id == PanelAuditRow.question_id)
+        if f["photo"] == "yes":
+            q = q.filter(has)
+        else:                              # «none» only where the section was read
+            q = q.filter(~has, exists().where(PanelAuditSection.task_id == PanelAuditRow.task_id))
     return q
 
 
@@ -303,10 +451,11 @@ def facets(db: Session, kind: str, d1: date, d2: date) -> dict:
             "task": counts(PanelAuditRow.task)}
 
 
-def _row(r: PanelAuditRow) -> dict:
+def _row(r: PanelAuditRow, photos: Optional[dict] = None) -> dict:
     return {"id": r.id, "day": r.day.isoformat() if r.day else None, "workshop": r.workshop,
             "workshop_id": r.workshop_id, "inspector": r.inspector, "total": r.total, "rating": r.rating,
-            "task": r.task, "task_id": r.task_id, "question": r.question, "comment": r.comment, "top": r.top}
+            "task": r.task, "task_id": r.task_id, "question": r.question, "comment": r.comment, "top": r.top,
+            "photos": (photos or {}).get(r.question_id, [])}
 
 
 def rows(db: Session, kind: str, d1: date, d2: date, f: dict, q: str = "", sort: str = "day",
@@ -322,7 +471,14 @@ def rows(db: Session, kind: str, d1: date, d2: date, f: dict, q: str = "", sort:
     order = [col.desc().nullslast() if desc else col.asc().nullsfirst(), PanelAuditRow.id.desc()]
     page = max(1, page)
     items = query.order_by(*order).offset((page - 1) * size).limit(size).all()
-    return {"total": total, "page": page, "size": size, "rows": [_row(r) for r in items]}
+    photos: dict[int, list[str]] = defaultdict(list)
+    ids = [r.question_id for r in items if r.question_id is not None]
+    if ids:
+        for qid, path in (db.query(PanelAuditPhoto.question_id, PanelAuditPhoto.path)
+                          .filter(PanelAuditPhoto.question_id.in_(ids))
+                          .order_by(PanelAuditPhoto.question_id, PanelAuditPhoto.n)):
+            photos[qid].append(path)
+    return {"total": total, "page": page, "size": size, "rows": [_row(r, photos) for r in items]}
 
 
 def band_of(total: Optional[float]) -> Optional[str]:

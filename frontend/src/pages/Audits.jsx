@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Factory, UserRound, ListTree, MessageSquareText, Flag, KeyRound, CloudDownload } from "lucide-react";
+import { RefreshCw, Factory, UserRound, ListTree, MessageSquareText, Flag, Camera, KeyRound, CloudDownload } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker, { localISO } from "../components/ui/DateRangePicker";
@@ -34,7 +34,7 @@ import { useAuT, fill } from "./auditsText";
 
 const KINDS = ["tech", "kru"];
 const VIEWS = ["list", "analysis"];
-const NO_FILTERS = { workshop: [], inspector: [], task: [], question: null, top: false };
+const NO_FILTERS = { workshop: [], inspector: [], task: [], question: null, top: false, photo: null };
 
 function monthStart() {
   const d = new Date();
@@ -124,6 +124,17 @@ export default function Audits() {
         <div className="p-2">
           <SegmentedToggle fill value={f.top ? "top" : "all"} onChange={(v) => setF((s) => ({ ...s, top: v === "top" }))}
             options={[["all", T.topAll], ["top", T.topOnly]]} />
+        </div>
+      ),
+    },
+    {
+      key: "photo", icon: Camera, label: T.fPhoto, group: T.grpWhat, active: Boolean(f.photo),
+      display: f.photo === "yes" ? T.photoYes : f.photo === "no" ? T.photoNo : "",
+      onClear: () => setF((s) => ({ ...s, photo: null })),
+      render: () => (
+        <div className="p-2">
+          <SegmentedToggle fill value={f.photo || "all"} onChange={(v) => setF((s) => ({ ...s, photo: v === "all" ? null : v }))}
+            options={[["all", T.topAll], ["yes", T.photoYes], ["no", T.photoNo]]} />
         </div>
       ),
     },

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList } from "lucide-react";
+import { Camera, ClipboardList } from "lucide-react";
 import TableCard, { Th, EmptyRow } from "../ui/DataTable";
 import Pagination from "../ui/Pagination";
 import Modal from "../ui/Modal";
@@ -10,6 +10,7 @@ import api from "../../utils/api";
 import { useTranslit } from "../../utils/transliterate";
 import { fill } from "../../pages/auditsText";
 import { bandColor, fmtDay, fmtPct, shopLabel } from "./auditUtil";
+import AuditPhotos from "./AuditPhotos";
 
 /**
  * «Ro'yxat» — the panel's minuses, one row per question that lost points,
@@ -32,7 +33,7 @@ export default function AuditsRegister({ period, f, q, setQ, T, onClearAll }) {
 
   const params = {
     ...period, workshop: f.workshop, inspector: f.inspector, task: f.task,
-    question: f.question || undefined, top: f.top || undefined, q: qDeb || undefined,
+    question: f.question || undefined, top: f.top || undefined, photo: f.photo || undefined, q: qDeb || undefined,
     sort: sort.key, dir: sort.dir, page, size: SIZE,
   };
   const { data, isLoading, isError, refetch } = useQuery({
@@ -44,8 +45,8 @@ export default function AuditsRegister({ period, f, q, setQ, T, onClearAll }) {
   const onSort = (k) => setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" }
     : { key: k, dir: k === "day" || k === "top" ? "desc" : "asc" }));
   const rows = data?.rows || [];
-  const filtered = f.workshop.length || f.inspector.length || f.task.length || f.question || f.top || qDeb;
-  const COLS = 9;
+  const filtered = f.workshop.length || f.inspector.length || f.task.length || f.question || f.top || f.photo || qDeb;
+  const COLS = 10;
 
   return (
     <>
@@ -65,6 +66,7 @@ export default function AuditsRegister({ period, f, q, setQ, T, onClearAll }) {
             <Th label={T.col.task} k="task" sort={sort} onSort={onSort} />
             <Th label={T.col.question} k="question" sort={sort} onSort={onSort} />
             <Th label={T.col.comment} />
+            <Th label={T.fPhoto} align="right" />
             <Th label={T.col.top} k="top" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
@@ -100,6 +102,14 @@ export default function AuditsRegister({ period, f, q, setQ, T, onClearAll }) {
               <td className="px-3 py-2 whitespace-nowrap max-w-[200px] truncate" title={tx(r.task || "")}>{tx(r.task || "—")}</td>
               <td className="px-3 py-2 whitespace-nowrap max-w-[320px] truncate" title={tx(r.question || "")}>{tx(r.question || "—")}</td>
               <td className="px-3 py-2 whitespace-nowrap max-w-[240px] truncate" style={{ color: "var(--text-2)" }} title={tx(r.comment || "")}>{tx(r.comment || "")}</td>
+              <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+                {r.photos?.length > 0 && (
+                  <span className="inline-flex items-center gap-1" title={fill(T.photoN, { n: r.photos.length })}
+                    aria-label={fill(T.photoN, { n: r.photos.length })}>
+                    <Camera size={14} aria-hidden style={{ color: "var(--text-3)" }} />{r.photos.length}
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>{r.top != null ? `TOP ${r.top}` : ""}</td>
             </tr>
           ))}
@@ -113,6 +123,7 @@ export default function AuditsRegister({ period, f, q, setQ, T, onClearAll }) {
         <Modal open onClose={() => setOpen(null)} title={tx(open.question || T.detailTitle)}
           subtitle={[fmtDay(open.day), shopLabel(tx(open.workshop || "")), tl(open.inspector || "")].filter(Boolean).join(" · ")}
           footer={<Button variant="secondary" onClick={() => setOpen(null)}>{T.close}</Button>}>
+          {open.photos?.length > 0 && <AuditPhotos key={open.id} photos={open.photos} T={T} />}
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {[
               [T.col.total, <span key="t" className="tabular-nums"><span aria-hidden className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: bandColor(open.total) }} />{fmtPct(open.total)}</span>],

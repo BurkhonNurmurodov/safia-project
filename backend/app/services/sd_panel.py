@@ -274,6 +274,32 @@ def parse_days(page: str, year: int) -> list[dict]:
     return out
 
 
+def section_path(task_id: int) -> str:
+    """One inspection section's page — a «Минусы» row's «Задача» link."""
+    return f"/task-scheduler/view?id={int(task_id)}"
+
+
+# A panel photo as the section page links it; the ONLY paths the photo door
+# (routers/audits.py) will fetch.
+PHOTO_PATH = re.compile(r"/uploads/tasks/\d{4}/\d{2}/\d{2}/[\w.-]{1,80}\.(?:jpe?g|png|webp)", re.I)
+_PHOTO_HREF = re.compile(r'(?:href|src)="(' + PHOTO_PATH.pattern + r')"', re.I)
+
+
+def parse_section(page: str) -> dict[int, list[str]]:
+    """A section page's photos: {question item id: [path, …]} in page order.
+    Each question row (`tr#item-<id>`) carries its photos in the «Файл» column
+    («-» when none). Raises ``PanelError('shape')`` on a page with no «Файл»
+    column — not the page this was written against (checked 2026-11-24)."""
+    if "Файл" not in (_text(h) for h in _TH.findall(page)):
+        raise PanelError("shape", "no «Файл» column on the section page")
+    out: dict[int, list[str]] = {}
+    for item, tr in _ROW.findall(page):
+        paths = list(dict.fromkeys(_PHOTO_HREF.findall(tr)))
+        if paths:
+            out[int(item)] = paths
+    return out
+
+
 def read_reports(user: str, password: str, paths: list[str],
                  deadline: Optional[float] = None, reader=None) -> dict[str, Any]:
     """Log in ONCE and read each report path — one attempt, redirects never

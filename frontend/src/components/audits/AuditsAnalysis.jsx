@@ -109,7 +109,7 @@ export default function AuditsAnalysis({ period, f, T, onOpen, onClearAll }) {
   const [trendRef, trendW] = useElementWidth();
 
   const params = { ...period, workshop: f.workshop, inspector: f.inspector, task: f.task,
-    question: f.question || undefined, top: f.top || undefined };
+    question: f.question || undefined, top: f.top || undefined, photo: f.photo || undefined };
   const { data: A, isLoading, isError, refetch } = useQuery({
     queryKey: ["audits-analysis", params],
     queryFn: () => api.get("/api/audits/analysis", { params }).then((r) => r.data),
@@ -133,7 +133,7 @@ export default function AuditsAnalysis({ period, f, T, onOpen, onClearAll }) {
     return <EmptyState tone="danger" title={T.loadFail} message="" showUploadLink={false}
       action={<Button size="lg" variant="secondary" onClick={() => refetch()}>{T.retry}</Button>} />;
   }
-  const filtered = f.workshop.length || f.inspector.length || f.task.length || f.question || f.top;
+  const filtered = f.workshop.length || f.inspector.length || f.task.length || f.question || f.top || f.photo;
   if (!A.inspections) {
     return <EmptyState title={filtered ? T.noMatch : T.noData} message="" showUploadLink={false}
       action={filtered ? <Button size="lg" variant="secondary" onClick={onClearAll}>{T.clearAll}</Button> : null} />;

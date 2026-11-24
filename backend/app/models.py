@@ -6473,3 +6473,33 @@ class PanelAuditDay(Base):
     workshop = Column(String(300), nullable=True)
     rating = Column(Float, nullable=False)
     read_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PanelAuditSection(Base):
+    """One inspection SECTION page of the panel (`/task-scheduler/view?id=`,
+    a «Минусы» row's `task_id`) as last read for its photos
+    (services/panel_audits.py «photos»). Kept apart from `panel_audit_rows`,
+    which a read replaces whole: a page is read once, again only while young."""
+    __tablename__ = "panel_audit_sections"
+
+    task_id = Column(Integer, primary_key=True)
+    day = Column(Date, nullable=True)
+    photos = Column(Integer, nullable=False, default=0)
+    read_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PanelAuditPhoto(Base):
+    """One photo on a panel inspection question — `question_id` is the
+    question's item id, the same as a «Минусы» row's `question_id`; `path` is
+    the panel's own file (`/uploads/tasks/…`), served through
+    `/api/audits/photo/…`, never copied."""
+    __tablename__ = "panel_audit_photos"
+    __table_args__ = (Index("ix_panel_audit_photos_question", "question_id"),
+                      Index("ix_panel_audit_photos_task", "task_id"),
+                      Index("ix_panel_audit_photos_path", "path"))
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, nullable=False)
+    question_id = Column(Integer, nullable=False)
+    n = Column(Integer, nullable=False, default=0)   # its place among the question's photos
+    path = Column(String(200), nullable=False)

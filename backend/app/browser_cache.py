@@ -27,7 +27,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-PATHS = ("/api/profiles/photo/",)
+# An audit photo's URL is the panel's own file name, which the panel never
+# reuses (it serves them with a one-year max-age) — routers/audits.py.
+PATHS = ("/api/profiles/photo/", "/api/audits/photo/")
 
 # What the no-store rule adds and a kept answer must not carry.
 _STRIP = (b"pragma", b"expires", b"x-litespeed-cache-control")

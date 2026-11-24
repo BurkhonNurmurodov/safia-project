@@ -49,6 +49,9 @@ const uz = {
   qTitle: "Eng ko'p takrorlanadigan savollar", qSub: "Bosing — ro'yxat shu savol bo'yicha ochiladi",
   qShops: "{n} ta sexda",
   detailTitle: "Minus", close: "Yopish",
+  fPhoto: "Foto", photoYes: "Fotosi bor", photoNo: "Fotosiz",
+  photoN: "{n} ta foto", photoOf: "Foto {i} / {n}", photoFailed: "Foto yuklanmadi",
+  prev: "Oldingi", next: "Keyingi",
   err: {
     no_login: "Login va parol saqlanmagan", unreadable: "Saqlangan parolni ochib bo'lmadi — qaytadan kiriting",
     refused: "Panel login yoki parolni qabul qilmadi", refused_before: "Parol oldin rad etilgan — yangilang",
@@ -103,6 +106,9 @@ const uz_cyrl = {
   qTitle: "Энг кўп такрорланадиган саволлар", qSub: "Босинг — рўйхат шу савол бўйича очилади",
   qShops: "{n} та цехда",
   detailTitle: "Минус", close: "Ёпиш",
+  fPhoto: "Фото", photoYes: "Фотоси бор", photoNo: "Фотосиз",
+  photoN: "{n} та фото", photoOf: "Фото {i} / {n}", photoFailed: "Фото юкланмади",
+  prev: "Олдинги", next: "Кейинги",
   err: {
     no_login: "Логин ва парол сақланмаган", unreadable: "Сақланган паролни очиб бўлмади — қайтадан киритинг",
     refused: "Панел логин ёки паролни қабул қилмади", refused_before: "Парол олдин рад этилган — янгиланг",
@@ -157,6 +163,9 @@ const ru = {
   qTitle: "Самые частые вопросы", qSub: "Нажмите — реестр откроется по этому вопросу",
   qShops: "в {n} цехах",
   detailTitle: "Минус", close: "Закрыть",
+  fPhoto: "Фото", photoYes: "С фото", photoNo: "Без фото",
+  photoN: "Фото: {n}", photoOf: "Фото {i} из {n}", photoFailed: "Фото не загрузилось",
+  prev: "Предыдущее", next: "Следующее",
   err: {
     no_login: "Логин и пароль не сохранены", unreadable: "Сохранённый пароль не открывается — введите заново",
     refused: "Панель не приняла логин или пароль", refused_before: "Пароль ранее отклонён — обновите его",
@@ -211,6 +220,9 @@ const en = {
   qTitle: "Most repeated questions", qSub: "Click — the register opens on that question",
   qShops: "in {n} workshops",
   detailTitle: "Minus", close: "Close",
+  fPhoto: "Photo", photoYes: "With photos", photoNo: "No photos",
+  photoN: "{n} photos", photoOf: "Photo {i} of {n}", photoFailed: "Photo didn't load",
+  prev: "Previous", next: "Next",
   err: {
     no_login: "No login and password saved", unreadable: "The stored password no longer opens — enter it again",
     refused: "The panel refused the login or the password", refused_before: "The password was refused before — update it",

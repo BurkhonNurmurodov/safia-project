@@ -71,6 +71,41 @@ was built and dropped the same day: it duplicated that card.)
     repeated questions (minuses, and in how many workshops). **A click on a bar,
     or on a donut slice, opens «Ro'yxat» filtered to it** — from a pattern to its
     rows.
+- **Photos** (2026-11-24, the operator: «take the images too … through our
+  server»). They are not in «Минусы»: a row's «Задача» link is one SECTION page
+  of the inspection (`/task-scheduler/view?id=` = the row's `task_id`, needs
+  the login), and each question row there (`tr#item-<id>` = the row's
+  `question_id`) carries its photos in the «Файл» column («-» = none) as the
+  panel's own files `/uploads/tasks/YYYY/MM/DD/<n>.jpg` — JPEG, 800×800,
+  360–690 KB, no smaller copy. Nothing else on the page holds photos («ОС»,
+  «Комментарий», «Предупреждение» were empty on 80 sampled pages). Sampled
+  1–24 Nov: tech ~1.3 photos per minus, KRU ~0.75 — about 7 000 a month.
+  - **Each section page is read ONCE** (`panel_audits.read_photos`, one login,
+    newest first, `PHOTO_BATCH` 600 a run) and again only while young (its day
+    is today or yesterday, every `PHOTO_AGAIN` 90 min) — after every scheduled
+    read, eight minutes after a boot (the first fill), and on a thread after a
+    press on «Yangilash». A section the panel answers 404 for counts as read
+    with no photos; any other failure is tried again next run. A refused login
+    stops it like the report read (the same fingerprint).
+  - **Only the paths are kept** — `panel_audit_photos` (task_id, question_id,
+    n, path) and `panel_audit_sections` (what was read, when). Never on
+    `panel_audit_rows`, which a read replaces whole. Photos of approved
+    questions are kept too; the page shows a minus's own.
+  - **The bytes come through our server**: `GET /api/audits/photo/<path>`
+    (page key `audits`) fetches the panel's file — only a path some section
+    page linked (`photo_known`), only the `sd_panel.PHOTO_PATH` shape — `?s=`
+    up to 480 is a 480 px tile (`profile_photo.smaller`), without it the
+    panel's file. **The panel serves `/uploads` WITHOUT a login** (checked
+    2026-11-24), so the fetch carries none; if the panel ever guards them, the
+    fetch has to sign in. Nothing is copied: a photo the panel deletes is gone
+    here too. The URL is the panel's file name, which never changes content,
+    so the answer is the second one the browser keeps (`app/browser_cache.py`).
+  - **The page**: «Ro'yxat» gets a «Foto» column (camera + count, blank when
+    none — rows stay one line); the record opens on the photos (tiles,
+    `components/audits/AuditPhotos.jsx`, through `ProxyPhoto`), a tap opens
+    `Lightbox`, which now steps through a set with ‹ ›, ← → and a swipe
+    (`onPrev` / `onNext`); the «Foto» filter (hammasi · fotosi bor ·
+    fotosiz — «fotosiz» counts only sections already read) narrows «Tahlil» too.
 - A workshop is printed as the panel names it minus its list number («1 - 2811 -
   Фасовка» → «2811 - Фасовка», `shopLabel`); the panel's workshops are not
   matched to our cells here (`docs/tasker.md` notes the open question).
