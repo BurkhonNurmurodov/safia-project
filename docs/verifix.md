@@ -356,7 +356,9 @@ once, and followed through the tie from then on; history is never affected.
   strict match narrowed by its Verifix workshop. Everything else is listed in
   «Bog'lanmaganlar», where the admin ties the pair by hand (`verifix_ties`, a
   hand tie wins over every rule). One person may head two units (the Suvonov
-  pair); one person on two PROFILES is followed for neither (`shared_tie`). The
+  pair); one person on two profiles of the SAME role is followed for neither
+  (`shared_tie`) — of different roles, each is followed (see «One person, one
+  row per role»). The
   boot seed promoted the 4–8 Oct ties (`leader_kind_meta.vfx.id`,
   `supervisor_kind_meta.vfx.id`), dropped ids shared by two profiles, opened
   archive spans for archived cells and marked the 5 Oct photos as the sync's.
@@ -699,3 +701,27 @@ same GET returns the stored result (app setting
   month at a time, 800 people per request, only people who sat in a coded node
   at some point; a read cut short is stored `partial: true` and is not the
   whole.
+
+## One person, one row per role (2026-11-24)
+
+The operator's call, for Erkanboyev Zafarjon — officially a leader (Verifix
+«Лидер · 4112»), on trial in a second role, with two profiles on the platform.
+One Verifix person may now be tied to several rows **by hand**, one per role:
+
+- **The rule** (`verifix_sync.tie_by_hand`): a profile is refused only over
+  another profile of the SAME role (`taken_by` names it). A unit is the
+  brigadir's role, so it shares with any profile, and one brigadir still heads
+  two units (the Suvonov pair). Two leader profiles for one person stay
+  refused — rankings, turnover and KPI would count them twice.
+- **The database** holds it: `uq_role_profiles_vfx_employee_role` on
+  `role_profiles (vfx_employee_id, role)` replaced the one-profile index
+  (`startup._ensure_vfx_profile_unique`), so the pass and a brigadir's pick
+  still cannot both create a leader profile for one seat.
+- **The pass follows every row** (`profiles_by_emp`): name, photo, dismissal
+  on each. Only two profiles of one role are `shared_tie` (followed for
+  neither). The seats read the person's LEADER profile, so a leader who also
+  heads a unit keeps running their cell (the unit check is skipped for them),
+  and stays in the «Boshqaruvchi» picker (`cell_register` `pickable`).
+- **Automatic ties stay one person, one row**: the tie run, `_gone_leader`
+  and `create_leader` still skip anyone tied to anything. A second row is
+  always a person's decision.

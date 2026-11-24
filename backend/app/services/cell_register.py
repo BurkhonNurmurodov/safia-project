@@ -414,8 +414,10 @@ def manager_pool(db: Session, cell: Cell) -> dict:
         base["reason"] = "no_tied_cells"
         return base
     jobs = org.get("jobs") or {}
-    tied = {p.vfx_employee_id: p for p in db.query(RoleProfile).filter(
-        RoleProfile.vfx_employee_id.isnot(None)).all()}
+    tied: dict = {}
+    for p in db.query(RoleProfile).filter(RoleProfile.vfx_employee_id.isnot(None)).all():
+        if p.role == "leader" or p.vfx_employee_id not in tied:
+            tied[p.vfx_employee_id] = p     # the leader profile of a person holding several
     tied_units = {m.vfx_employee_id for m in db.query(Manager).filter(
         Manager.vfx_employee_id.isnot(None)).all()}
     own_div = cell.vfx_division_id or next(
@@ -436,7 +438,7 @@ def manager_pool(db: Session, cell: Cell) -> dict:
                 "profile_name": p.name if p is not None else None,
                 "profile_role": p.role if p is not None else None,
                 "profile_unit": p.manager_id if p is not None else None,
-                "pickable": (p is None or p.role == "leader") and e["id"] not in tied_units}
+                "pickable": p.role == "leader" if p is not None else e["id"] not in tied_units}
         # Nobody tied yet — but an untied profile may already be this person.
         if p is None and item["pickable"]:
             same = namesake(db, item["name"], names_index)

@@ -2002,16 +2002,18 @@ def seed_verifix_sync() -> None:
 
 
 def _ensure_vfx_profile_unique() -> None:
-    """One Verifix person ↔ at most ONE profile (`role_profiles.vfx_employee_id`,
-    a partial unique index): two writers creating a profile for one seat at once
-    (the pass, a brigadir's pick) cannot both win. Created after the seed has
-    dropped the pairs the 4–8 Oct passes left; idempotent, no flag. A unit may
-    share its brigadir with another unit — `managers` gets no such index."""
+    """One Verifix person ↔ at most ONE profile per ROLE (a partial unique index
+    on `role_profiles (vfx_employee_id, role)`): two writers creating a leader
+    profile for one seat at once (the pass, a brigadir's pick) cannot both win.
+    Until 2026-11-24 it was one profile at all; a person may now hold one per
+    role, tied by hand (`verifix_sync.tie_by_hand`). Idempotent, no flag. A
+    unit may share its brigadir with another unit — `managers` gets no index."""
     db = SessionLocal()
     try:
         db.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_role_profiles_vfx_employee "
-            "ON role_profiles (vfx_employee_id) WHERE vfx_employee_id IS NOT NULL"))
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_role_profiles_vfx_employee_role "
+            "ON role_profiles (vfx_employee_id, role) WHERE vfx_employee_id IS NOT NULL"))
+        db.execute(text("DROP INDEX IF EXISTS uq_role_profiles_vfx_employee"))
         db.commit()
     except Exception as exc:
         db.rollback()

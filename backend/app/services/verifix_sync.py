@@ -144,6 +144,25 @@ def set_mode(db: Session, m: str) -> None:
 
 # ── what one read says, folded ────────────────────────────────────────────────
 
+def profiles_by_emp(profiles) -> tuple[dict, dict]:
+    """Verifix person → profiles. A person may hold one profile per ROLE
+    (2026-11-24), each followed. Two profiles of the SAME role are followed for
+    neither — the pass lists them (`shared_tie`) until the operator unties one.
+    Returns (shared, one): `one` names the profile the seats read, the leader
+    one where the person holds several."""
+    by_emp: dict = defaultdict(list)
+    for p in profiles:
+        if p.vfx_employee_id:
+            by_emp[p.vfx_employee_id].append(p)
+    shared, one = {}, {}
+    for k, v in by_emp.items():
+        if len({p.role for p in v}) < len(v):
+            shared[k] = v
+        else:
+            one[k] = next((p for p in v if p.role == "leader"), v[0])
+    return shared, one
+
+
 class Ctx:
     """One org read and our registers, indexed once per pass / tie run."""
 
@@ -167,14 +186,7 @@ class Ctx:
             if k:
                 self.cells_by_key[k].append(c)
         self.profiles = db.query(RoleProfile).order_by(RoleProfile.id).all()
-        # One Verifix person tied to TWO profiles is followed for neither —
-        # the pass lists the pair (`shared_tie`) until the operator unties one.
-        by_emp: dict = defaultdict(list)
-        for p in self.profiles:
-            if p.vfx_employee_id:
-                by_emp[p.vfx_employee_id].append(p)
-        self.shared_emp = {k: v for k, v in by_emp.items() if len(v) > 1}
-        self.prof_by_emp = {k: v[0] for k, v in by_emp.items() if len(v) == 1}
+        self.shared_emp, self.prof_by_emp = profiles_by_emp(self.profiles)
         self.prof_by_id = {p.id: p for p in self.profiles}
         self.units = db.query(Manager).order_by(Manager.id).all()
         self.unit_by_emp = defaultdict(list)
@@ -560,13 +572,13 @@ def tie_by_hand(db: Session, kind: str, our_id: int, vfx_id: Optional[str], *,
             e = (org.get("emps") or {}).get(vid)
             if not e:
                 raise Refused("vfx_not_found", "No such person in Verifix", 404)
-            # One brigadir may head two units (the Suvonov Elshod pair, ruling of
-            # 4 Oct) — a unit is refused only over a PROFILE holding the person.
-            holder = (db.query(RoleProfile.name).filter(
-                          RoleProfile.vfx_employee_id == vid,
-                          RoleProfile.id != (our_id if kind != "unit" else -1)).first()
-                      or (kind != "unit" and db.query(Manager.name).filter(
-                          Manager.vfx_employee_id == vid).first()))
+            # One person, one row per ROLE (2026-11-24, a leader on trial in a
+            # second role): refused only over another profile of the same role.
+            # A unit is the brigadir's role, so it shares with any profile — and
+            # one brigadir may head two units (the Suvonov Elshod pair, 4 Oct).
+            holder = kind != "unit" and db.query(RoleProfile.name).filter(
+                RoleProfile.vfx_employee_id == vid, RoleProfile.role == row.role,
+                RoleProfile.id != our_id).first()
             if holder:
                 # Named, so the operator knows which row to untie first.
                 raise Refused("taken_by", "This person is tied to another row", 409,
@@ -973,7 +985,10 @@ def plan_pass(db: Session, ctx: Ctx) -> Plan:
         kept = ctx.kept_unit.get(c.id)
         # The seat heading the very unit a kept-apart cell is kept in is the
         # exception itself (0811: the unit made to measure its leader's cell).
-        if s["id"] in ctx.unit_by_emp and not (kept and set(ctx.unit_by_emp[s["id"]]) <= {kept}):
+        # A seat tied by hand to a leader profile AND a unit (one row per role)
+        # is followed as that leader.
+        if (prof is None and s["id"] in ctx.unit_by_emp
+                and not (kept and set(ctx.unit_by_emp[s["id"]]) <= {kept})):
             pl.item("seat_other_role", f"cell:{c.id}", {"cell": c.id, "code": c.verifix_code,
                                                         "seat": verifix_org.who(s), "role": "supervisor"})
             continue
