@@ -33,6 +33,11 @@ android {
         // Raise versionCode on EVERY release, or phones refuse the update.
         versionCode 15
         versionName "1.8.1"
+        buildConfigField "boolean", "SELF_UPDATE", "true"
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {
@@ -51,6 +56,13 @@ android {
             minifyEnabled false
             signingConfig signingConfigs.release
         }
+        // The Google Play copy: the release build without the self-updater
+        // (src/play/AndroidManifest.xml drops its install permission). One
+        // versionCode sequence for both — never publish-release.sh this one.
+        play {
+            initWith release
+            buildConfigField "boolean", "SELF_UPDATE", "false"
+        }
     }
 
     compileOptions {
@@ -63,7 +75,7 @@ android {
 // installed copy, and the production app link (assetlinks.json names the
 // release key) would not verify.
 gradle.taskGraph.whenReady { graph ->
-    if (!signingFile.isFile() && graph.allTasks.any { it.name.toLowerCase().contains("release") }) {
+    if (!signingFile.isFile() && graph.allTasks.any { it.name.toLowerCase().contains("release") || it.name.contains("Play") }) {
         throw new GradleException("Release signing key not found: ${signingFile}. See CLAUDE.md «The Android app».")
     }
 }

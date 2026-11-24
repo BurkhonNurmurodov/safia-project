@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Google Play copy (build type «play»): Play installs its updates and its
+     policy forbids an app updating itself, so the permission AppUpdates hands
+     an APK to Android's installer with is dropped. MainActivity skips
+     AppUpdates when BuildConfig.SELF_UPDATE is false. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove" />
+</manifest>

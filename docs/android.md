@@ -355,3 +355,27 @@ daily") **the app downloads every build the site deploys by itself** — see
 - Deliberately not built (yet): a leader checklist screen of the app's own
   (the proof camera is reachable only from the bot's buttons, which open in
   Telegram), instant delivery (Firebase), and the Fullscreen API on `/live`.
+
+## Google Play (2026-11-24)
+
+The operator asked for the app on Google Play. The account is a PERSONAL
+developer account «Safia Production» (burkhon0207@gmail.com, ID
+6656598919050110647) — Safia has no D-U-N-S number, which an organization
+account needs. A personal account must pass identity, device and phone
+verification before it can create an app, and then run a CLOSED TEST with at
+least 12 testers for 14 days in a row before it may apply for production.
+
+- **The Play copy is its own build type, `play`** (`initWith release`,
+  `bundlePlay` → `~/.safia-android/releases/Safia-IMS-<ver>-play.aab`). Play
+  installs its updates and its policy forbids an app updating itself, so:
+  `src/play/AndroidManifest.xml` removes `REQUEST_INSTALL_PACKAGES`,
+  `BuildConfig.SELF_UPDATE` is false and `MainActivity` never starts
+  `AppUpdates`, and the user agent carries ` SafiaIMS-Play`, on which
+  `apkUpdateShown()` hides the «Yangilanishni tekshirish» row — its fallback
+  window would otherwise offer `/api/android/download`. The pages still follow
+  every deploy (`PageUpdates`); JavaScript in a web view is allowed by Play.
+- **The sideload APK is unchanged** (`assembleRelease`, self-updating,
+  `publish-release.sh`). **Never publish the play AAB's APK there**, and keep
+  ONE versionCode sequence for both channels.
+- `build-release.sh` builds both: the release APK and the play AAB (the old
+  release AAB is no longer made — nothing used it).

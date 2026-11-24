@@ -9,7 +9,8 @@
 # frontend/dist, and the build refuses a dist production is not serving: run
 # it right after a deploy has landed. Once installed, the app follows every
 # later deploy by itself (PageUpdates.java) — a new APK is needed only when
-# android/ changes. The APK (sideloading) and the AAB (Google Play) are
+# android/ changes. The APK (sideloading, self-updating) and the AAB (Google
+# Play: build type «play», no self-updater — never publish-release.sh it) are
 # copied to ~/.safia-android/releases/, never into the repo.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -17,14 +18,14 @@ cd "$(dirname "$0")"
 export JAVA_HOME="${SAFIA_JAVA_HOME:-$HOME/.safia-android/jdk-21/Contents/Home}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 
-./gradlew --no-daemon clean assembleRelease bundleRelease
+./gradlew --no-daemon clean assembleRelease bundlePlay
 
 VER=$(sed -n 's/^ *versionName "\(.*\)"$/\1/p' app/build.gradle)
 CODE=$(sed -n 's/^ *versionCode \([0-9][0-9]*\)$/\1/p' app/build.gradle)
 OUT="$HOME/.safia-android/releases"
 mkdir -p "$OUT"
 cp app/build/outputs/apk/release/app-release.apk "$OUT/Safia-IMS-$VER.apk"
-cp app/build/outputs/bundle/release/app-release.aab "$OUT/Safia-IMS-$VER.aab"
+cp app/build/outputs/bundle/play/app-play.aab "$OUT/Safia-IMS-$VER-play.aab"
 
 # The printed SHA-256 must be the one backend/app/main.py serves in
 # /.well-known/assetlinks.json, or production links stop opening in the app.

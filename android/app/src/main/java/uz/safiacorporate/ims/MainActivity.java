@@ -126,7 +126,8 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         bridgeScript = WebBundle.readAsset(this, "app-bridge.js");
-        if (!isSession()) appUpdates = new AppUpdates(this, () -> siteLang, this::sendAppUpdate);
+        // The Google Play copy never updates itself: Play does, and its policy forbids it.
+        if (!isSession() && BuildConfig.SELF_UPDATE) appUpdates = new AppUpdates(this, () -> siteLang, this::sendAppUpdate);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(DARK);
@@ -270,7 +271,9 @@ public class MainActivity extends ComponentActivity {
         // The pages are laid out for the size Telegram shows them at; a large
         // system font would break the dense tables rather than enlarge them.
         s.setTextZoom(100);
-        s.setUserAgentString(s.getUserAgentString() + " SafiaIMS-Android/" + appVersion());
+        // «SafiaIMS-Play» tells the pages (utils/androidUpdate.js) to offer no APK of their own.
+        s.setUserAgentString(s.getUserAgentString() + " SafiaIMS-Android/" + appVersion()
+                + (BuildConfig.SELF_UPDATE ? "" : " SafiaIMS-Play"));
         w.setBackgroundColor(DARK);
         w.setWebViewClient(new PageClient());
         w.setWebChromeClient(new ChromeClient());

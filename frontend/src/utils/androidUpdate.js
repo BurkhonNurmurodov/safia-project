@@ -26,10 +26,12 @@ export const APK_DOWNLOAD_URL = "/api/android/download";
 
 /**
  * The row belongs to the app's own screen: never a browser or Telegram, and
- * never the admin's «open as this profile» screen, which has no updater.
+ * never the admin's «open as this profile» screen, which has no updater, and
+ * never the Google Play copy («SafiaIMS-Play» in its user agent), which Play
+ * itself updates.
  */
 export function apkUpdateShown() {
-  return inAndroidApp() && !isTabSession();
+  return inAndroidApp() && !isTabSession() && !/SafiaIMS-Play/.test(navigator.userAgent || "");
 }
 
 /** 1.7.0+: the app's updater answers the page. */
