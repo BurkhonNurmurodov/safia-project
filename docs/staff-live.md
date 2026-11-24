@@ -725,7 +725,12 @@ no cell. Those five stay off every page until HR places them in a cell.
 - **Every other reader is unchanged**: the close and its copy
   (`live_projection`), «everybody left», «Davomat» on «Smena hisoboti»
   (`unit_people`), /workers' live day, the external API and «Xodim kartasi»
-  load without `with_off` and read exactly the day they read before.
+  load without `with_off` and read exactly the day they read before. The
+  page lists such a worker only once the read holds them (`e in store`): a
+  past day read before 2026-11-24 never read them, and would print them all
+  «Келмаган».
 - The minute job reads more people: on 2026-11-24 the plant's off-load cells
-  held ~550 working people beside the ~1,600 in counted ones.
+  held ~550 working people beside the ~1,600 in counted ones. «Oshxona»
+  (`kitchen`), which lays the stored read over its own report, simply finds
+  fresher marks for them.
 - Tests: `tests/test_live_off_load.py`.

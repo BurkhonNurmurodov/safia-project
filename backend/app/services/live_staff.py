@@ -203,7 +203,10 @@ def load(db: Session, day: date, directory: dict, store: dict,
     put_to_work = ({e for d in approved for e in _doc_eids(d)}
                    | {e for (mid, e), p in placements.items()
                       if p.verifix_code and off_homes.get(e, (None,))[0] == mid})
-    off = {e: h for e, h in off_homes.items() if e not in put_to_work} if with_off else {}
+    # Only once the read holds them: a day read before they were listed (every
+    # past day) never read them, and would print them all «absent».
+    off = ({e: h for e, h in off_homes.items() if e not in put_to_work and e in store}
+           if with_off else {})
     homes = {**homes, **{e: h for e, h in off_homes.items() if e in put_to_work}, **off}
     return Ctx(
         day=day, now=now or verifix_live.now_local(), store=store, directory=directory,
