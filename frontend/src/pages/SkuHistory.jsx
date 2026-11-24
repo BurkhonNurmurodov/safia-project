@@ -379,11 +379,15 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
     grid: { borderColor: gridColor, strokeDashArray: 0, padding: { left: 6, right: 10 } },
     legend: { show: false }, dataLabels: { enabled: false },
     tooltip: { custom: ({ dataPointIndex }) => tip(dataPointIndex) },
-    xaxis,
   };
+  // Each chart its own axis object: Apex writes into the options it is given.
+  const ownAxis = () => ({ ...xaxis, labels: { ...xaxis.labels, style: { ...xaxis.labels.style } } });
+  // Two charts, never an Apex `group`: a grouped chart's updateOptions is
+  // copied onto its siblings, and the size chart turned into the flow's bars.
   const sizeOpts = {
     ...common,
-    chart: { id: "skuh-size", group: "skuh", type: "area", stacked: true, background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, parentHeightOffset: 0 },
+    chart: { id: "skuh-size", type: "area", stacked: true, background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, parentHeightOffset: 0 },
+    xaxis: ownAxis(),
     colors: [HUE.coded, HUE.nocode],
     stroke: { curve: "stepline", width: 2 },
     fill: { type: "solid", opacity: 0.35 },
@@ -393,7 +397,7 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
   const flowOpts = {
     ...common,
     chart: {
-      id: "skuh-flow", group: "skuh", type: "bar", stacked: true, background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, parentHeightOffset: 0,
+      id: "skuh-flow", type: "bar", stacked: true, background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, parentHeightOffset: 0,
       events: {
         dataPointSelection: (_e, _c, cfg) => {
           // A padded column before the period holds nothing the register lists.
@@ -404,6 +408,7 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
         },
       },
     },
+    xaxis: ownAxis(),
     colors: used.map((s) => s.color),
     plotOptions: { bar: { columnWidth: points.length > 40 ? "85%" : "60%", borderRadius: 2, borderRadiusApplication: "end", borderRadiusWhenStacked: "last" } },
     states: { active: { filter: { type: "none" } } },
@@ -417,7 +422,11 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
     { key: "coded", label: t("skuh.coded"), color: HUE.coded },
     { key: "nocode", label: t("skuh.nocode"), color: HUE.nocode },
   ];
-  const flowLegend = used.map((s) => ({ key: s.key, label: s.name, color: s.color }));
+  const flowLegend = [];
+  used.forEach((s) => {
+    const g = s.key.replace(/_(in|out)$/, "");
+    if (!flowLegend.some((p) => p.key === g)) flowLegend.push({ key: g, label: t(`skuh.k.${g}`), color: s.color });
+  });
 
   return (
     <ChartCard icon={CalendarRange} title={t(`skuh.when.${grain}`)}>
@@ -486,6 +495,10 @@ function UnitsCard({ data, t, unitName, unitById, unit, onPick }) {
         <span>{t("skuh.cameIn")}</span>
         <span className="text-right">{t("skuh.net")}</span>
       </div>
+      <div className="sm:hidden grid grid-cols-2 gap-4 px-4 pt-2 text-[11px] font-medium" style={{ color: "var(--text-3)" }}>
+        <span className="text-right">← {t("skuh.wentOut")}</span>
+        <span>{t("skuh.cameIn")} →</span>
+      </div>
       <div className="pb-2">
         {rows.map((u) => {
           const on = unit === u.manager_id;
@@ -498,8 +511,9 @@ function UnitsCard({ data, t, unitName, unitById, unit, onPick }) {
               <span className="text-right text-xs tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
                 {fmtN(u.start)} → <b style={{ color: "var(--text-1)" }}>{fmtN(u.end)}</b>
               </span>
-              <span className="col-span-3 sm:col-span-2 sm:col-start-3 grid grid-cols-2 gap-[2px] h-3 sm:order-none order-last"
-                role="img" aria-label={`−${fmtN(u.outs)} / +${fmtN(u.ins)}`}>
+              <span className="relative col-span-3 sm:col-span-2 sm:col-start-3 grid grid-cols-2 gap-[2px] h-3 sm:order-none order-last"
+                role="img" aria-label={`${t("skuh.wentOut")} ${fmtN(u.outs)} · ${t("skuh.cameIn")} ${fmtN(u.ins)}`}>
+                <span aria-hidden className="absolute left-1/2 -top-1 -bottom-1 w-px" style={{ background: "var(--border-md)" }} />
                 {half(u, OUT_PARTS, "out")}
                 {half(u, IN_PARTS, "in")}
               </span>
@@ -524,13 +538,13 @@ function changeLabel(e, t) {
 }
 const eventHue = (e) => (e.kind === "removed" && e.how === "deleted" ? HUE.deleted : KIND_HUE[e.kind]);
 
-function Life({ spans, d0, d1, at, hue }) {
+function Life({ spans, d0, d1, at, hue, className = "w-32" }) {
   const a = dayNo(d0), n = Math.max(1, dayNo(d1) - a + 1);
   const x = (iso) => ((dayNo(iso) - a) / n) * 100;
   return (
-    <span className="relative block w-32 h-2.5 rounded-full" style={{ background: "var(--bg-inner)" }} aria-hidden>
-      {(spans || []).map(([f, z]) => (
-        <span key={f} className="absolute inset-y-0 rounded-full" style={{ left: `${x(f)}%`, width: `max(3px, ${x(z) + 100 / n - x(f)}%)`, background: "#94a3b8" }} />
+    <span className={`relative block h-2.5 rounded-full ${className}`} style={{ background: "var(--bg-inner)" }} aria-hidden>
+      {(spans || []).map(([f, z], i) => (
+        <span key={i} className="absolute inset-y-0 rounded-full" style={{ left: `${x(f)}%`, width: `max(3px, ${x(z) + 100 / n - x(f)}%)`, background: "#94a3b8" }} />
       ))}
       <span className="absolute w-[3px] rounded-sm" style={{ left: `calc(${x(at)}% - 1px)`, top: -2, bottom: -2, background: hue }} />
     </span>
@@ -550,6 +564,8 @@ function Register({ data, t, tx, fmtD, unitName, kind, setKind, range, setRange,
   const events = data.events || NO_LIST;
   const lives = data.lives || {};
   const code = (k) => (isLocal(k) ? "" : k);
+  // A re-coded position is one line under two codes: its strip joins both.
+  const lifeOf = (e) => (e.kind === "recoded" ? [...(lives[e.from_key] || []), ...(lives[e.key] || [])] : lives[e.key]);
   const needle = q.trim().toLowerCase();
   const base = useMemo(() => events.filter((e) => (!range || (e.date >= range.from && e.date <= range.to))
     && (unit == null || e.manager_id === unit)
@@ -611,7 +627,7 @@ function Register({ data, t, tx, fmtD, unitName, kind, setKind, range, setRange,
             <span className="font-mono truncate min-w-0">{skuCell(e)}</span>
             <span className="truncate min-w-0 text-right">{unitName(e.manager_id)}{e.wc ? ` · ${e.wc}` : ""}</span>
           </div>
-          <Life spans={lives[e.key]} d0={data.date_from} d1={data.date_to} at={e.date} hue={eventHue(e)} />
+          <Life spans={lifeOf(e)} d0={data.date_from} d1={data.date_to} at={e.date} hue={eventHue(e)} className="w-full" />
         </div>
       ))}
     </div>
@@ -662,7 +678,7 @@ function Register({ data, t, tx, fmtD, unitName, kind, setKind, range, setRange,
               <td className="px-3 py-2 max-w-[22rem] truncate" title={nameTitle(e)}>{tx(e.name)}</td>
               <td className="px-3 py-2 max-w-[14rem] truncate" style={{ color: "var(--text-2)" }}>{unitName(e.manager_id)}</td>
               <td className="px-3 py-2 font-mono" style={{ color: "var(--text-2)" }}>{e.wc || "—"}</td>
-              <td className="px-3 py-2"><Life spans={lives[e.key]} d0={data.date_from} d1={data.date_to} at={e.date} hue={eventHue(e)} /></td>
+              <td className="px-3 py-2"><Life spans={lifeOf(e)} d0={data.date_from} d1={data.date_to} at={e.date} hue={eventHue(e)} /></td>
             </tr>
           ))}
         </tbody>
