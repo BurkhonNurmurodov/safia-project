@@ -385,6 +385,8 @@ async def lifespan(app: FastAPI):
     later(container_cols_close_five)            # 22 Nov, last: closed again for all five
     from app.startup import container_cols_artikova
     later(container_cols_artikova)              # 23 Nov: Artikova Masuda sees them
+    from app.startup import container_cols_ochilov
+    later(container_cols_ochilov)               # 24 Nov: and Murodali Ochilov
     from app.startup import idle_4412_not_stopped
     later(idle_4412_not_stopped)                # 22 Nov: 4412's 08:10–15:50 wait was not a stop
     from app.startup import drop_unconnected_guests

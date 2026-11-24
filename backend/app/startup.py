@@ -12826,6 +12826,17 @@ def container_cols_artikova() -> None:
                           "Zagruzka fayli · konteyner ustunlari Artikova Masudaga ochildi")
 
 
+# ── 24 Nov: and Ochilov Murodali, a brigadir (the operator: «can you open this
+# page for Murodali Ochilov too»). The unit is named «Murodali Ochilov» —
+# given name first — which the matcher takes in either order. Own flag.
+CONTAINER_COLS_OCHILOV_FLAG = "oneshot:container_cols_ochilov_nov24"
+
+
+def container_cols_ochilov() -> None:
+    _grant_container_cols(CONTAINER_COLS_OCHILOV_FLAG, ("Murodali Ochilov",),
+                          "Zagruzka fayli · konteyner ustunlari Murodali Ochilovga ochildi")
+
+
 def _grant_container_cols(flag: str, names: tuple, title: str, revoke: bool = False) -> None:
     """Grant (or, with `revoke`, take back) `CAP_CONTAINER_COLS` on the unit
     profiles named, once under `flag`. A name must fold to exactly ONE
@@ -12844,7 +12855,12 @@ def _grant_container_cols(flag: str, names: tuple, title: str, revoke: bool = Fa
         found, missing = [], []
         for want in names:
             w = fold(want)
-            hits = [m for m in units if fold(m.name) == w or fold(m.name).startswith(w + " ")]
+            n = len(w.split())
+            # Whole, or its first words — in either order («Murodali Ochilov»
+            # is a unit's name with the given name first).
+            hits = [m for m in units
+                    if fold(m.name) == w or fold(m.name).startswith(w + " ")
+                    or sorted(fold(m.name).split()[:n]) == sorted(w.split())]
             if len(hits) == 1:
                 found.append(hits[0])
             else:

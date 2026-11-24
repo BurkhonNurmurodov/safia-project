@@ -357,6 +357,8 @@ try:
     container_cols_close_five()
     from app.startup import container_cols_artikova
     container_cols_artikova()
+    from app.startup import container_cols_ochilov
+    container_cols_ochilov()
     from app.startup import idle_4412_not_stopped
     idle_4412_not_stopped()
     from app.startup import drop_unconnected_guests
