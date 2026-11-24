@@ -4,7 +4,7 @@
 // that search inside its phone drawer without an import loop). The comments on
 // each section and link stay beside the sidebar code that reads them.
 import {
-  FileClock, Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
+  FileClock, History, Activity, ArrowLeftRight, ArrowRightLeft, Award, BadgeCheck, BarChart2, BookMarked, BookOpenCheck, BotMessageSquare,
   Briefcase, BriefcaseBusiness, CalendarCheck, ChefHat, CalendarClock, CalendarRange, ClipboardCheck, ClipboardList, Clock, Cog, Contact,
   Cpu, Crown, Factory, FileBarChart, Fingerprint, FlaskConical, Gauge, Gavel, Goal,
   GraduationCap, Grid3x3, IdCard, KeyRound, Lightbulb, LayoutDashboard, LayoutGrid, ListChecks, ListTodo, Medal, MessageSquarePlus,
@@ -59,6 +59,9 @@ export const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/shift-daily", page: "shift-daily", key: "nav.shiftDaily", icon: ClipboardList, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
+  // «SKU tarixi» — the «Zagruzka fayli» catalog's SKUs over time (new,
+  // removed, restored, re-coded). Admin-only until opened on the Access tab.
+  { to: "/sku-history", page: "sku-history", key: "nav.skuHistory", icon: History, group: "prod" },
   // «Konteynerlar» — the day's containers (totals · hour by hour · per
   // brigadir) laid out for a TV. Admin-only until opened on the Access tab.
   // On the launcher it is the first page of the «Konteynerlar» app (2026-11-14,

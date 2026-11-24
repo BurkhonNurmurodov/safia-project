@@ -662,3 +662,42 @@ four and nothing else.
 - The «Excel» button (the «ABC форма») carries it as an inserted column after
   ПЛАН while it is visible on the table, green as the form's inputs are (see
   the UI-template table, «Column show/hide»).
+
+## «SKU tarixi» — the catalog's SKUs over time (`/sku-history`, 2026-11-24)
+
+The operator: «On the workload file page there's infos of which SKUs are there?
+How many added when? How many removed when? … build an analysis page for new
+SKUs, removed SKUs, and restored SKUs. When? The progress». «Zagruzka fayli»
+itself shows only the catalog of one day (and its «Arxiv» card); the history
+lives in the dated catalog, so the page reads `pp_catalog.spans` and nothing
+else (`services/sku_history.py`, `GET /api/sku-history`, page key
+`sku-history`, ADMIN-ONLY until opened on the Access tab, Production group).
+
+- **An SKU is `pp_calc.daily_key`** — the SAP code, or «~name» for a code-less
+  line. It is IN a scope (plant → shift → brigadir, resolved as on /plan) on a
+  day when any unit of the scope holds an ACTIVE line with that key; archived
+  = lines kept, none active; absent = no line.
+- **Every change says WHY**, because most raw «removals» were not removals (the
+  9 Nov copy: 350 of 460): **re-coded** — a line that kept its id carries
+  another key (a code-less line given its SAP code, a code retyped, a
+  code-less line renamed; several code-less lines often take ONE code, so the
+  count moves and the bridge shows «311 old → 128 new»); **moved** — the key
+  left a unit in the scope for one outside it the same day (a cell's
+  positions following it, a unit merge; the whole plant never sees one);
+  **restored** — archived the day before; **new** — none of these;
+  **removed** — `how` = archived (can come back) or deleted.
+- **History starts at `TRACK_FROM` = 2026-09-24**, the first dated edit; an
+  earlier period is clamped. A unit whose FIRST catalog came later left no
+  version (`pp_catalog.is_empty`), so before its rows' creation day it reads
+  as empty and its catalog arrives as «new» (Almaty, 20 Nov).
+- **Brigadir rows are each unit as its own scope** (`per_unit`), so every row
+  adds up (start + ins − outs = end) and a merge reads as moved out of one
+  row and into the other; their sum is NOT the plant's figure (an SKU new to
+  one unit may already be live in another).
+- **The page**: the bridge «Davr hisobi» (start → each kind → end, each step a
+  button narrowing the register; start/end bars split SAP-coded / code-less),
+  «Kunma-kun» (catalog size stacked coded / code-less, and the day's ins and
+  outs; a column narrows the register; weeks past 92 days), «Brigadirlar
+  bo'yicha» (diverging bar per unit), «O'zgarishlar» (every change, its
+  lifeline over the period, paged). One hue per kind, none a status colour.
+  Rules tested in `tests/test_sku_history.py`.

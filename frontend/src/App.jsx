@@ -64,6 +64,7 @@ const Ontime = lazyWithReload(() => import("./pages/Ontime"));
 const Reports = lazyWithReload(() => import("./pages/Reports"));
 const Ovens = lazyWithReload(() => import("./pages/Ovens"));
 const Kitchen = lazyWithReload(() => import("./pages/Kitchen"));
+const SkuHistory = lazyWithReload(() => import("./pages/SkuHistory"));
 const Containers = lazyWithReload(() => import("./pages/Containers"));
 // «Konteynerlar oqimi» — AXO → Logistics → Leader (admins only while tried out).
 const ContainerFlow = lazyWithReload(() => import("./pages/ContainerFlow"));
@@ -147,7 +148,7 @@ const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 const ROUTE_PAGES = {
   "": Overview, zagruzka: Zagruzka, leaderboard: Leaderboard, brigadir: BrigadirProfile,
   workers: WorkersAttendance, plan: PlanFulfillment, ontime: Ontime, downtime: Downtime, "idle-solutions": IdleSolutions,
-  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, audits: Audits, equipment: Equipment, ovens: Ovens, kitchen: Kitchen, tokens: ApiAccess,
+  reports: Reports, assessment: Assessment, people: People, trello: TrelloAnalytics, audit: AuditTable, audits: Audits, equipment: Equipment, ovens: Ovens, kitchen: Kitchen, tokens: ApiAccess, "sku-history": SkuHistory,
   staff: Staff, daily: Daily, "shift-daily": ShiftDaily, production: Production, containers: Containers,
   trudoyomkost: Trudoyomkost, cells: Cells, kaizen: Kaizen, "notion-tasks": NotionTasks, quality: Quality,
   concerns: Concerns, "cell-concerns": CellConcerns, "leaders-kpi": LeadersKpi, "brigadirs-kpi": BrigadirsKpi,
@@ -772,6 +773,7 @@ function AppWithLang() {
             <Route path="/workers/composition" element={<AuthGate><RequirePage page="workers-composition"><WorkersComposition /></RequirePage></AuthGate>} />
             <Route path="/doc-audit" element={<AuthGate><RequirePage page="doc-audit"><DocAudit /></RequirePage></AuthGate>} />
             <Route path="/plan" element={<AuthGate><RequirePage page="plan"><PlanFulfillment /></RequirePage></AuthGate>} />
+            <Route path="/sku-history" element={<AuthGate><RequirePage page="sku-history"><SkuHistory /></RequirePage></AuthGate>} />
             <Route path="/ontime" element={<AuthGate><RequirePage page="ontime"><Ontime /></RequirePage></AuthGate>} />
             {/* «Trello tahlili» — ADMINS ONLY, not grantable (no page key). */}
             <Route path="/trello" element={<AuthGate><RequirePage page="trello"><TrelloAnalytics /></RequirePage></AuthGate>} />

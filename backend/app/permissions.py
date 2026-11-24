@@ -41,7 +41,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra", "container-bolims", "workers-composition", "doc-audit", "trello", "audit", "audits", "tg-user", "gamification", "targets", "verifix-test"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "shift-daily", "production", "sku-history", "containers", "trudoyomkost", "leaders", "cells", "kaizen", "notion-tasks", "quality", "concerns", "cell-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc", "live", "ontime", "kelish", "leaders-kpi", "brigadirs-kpi", "education", "exam", "assistant", "reports", "assessment", "people", "ovens", "equipment", "api", "kitchen", "container-flow", "container-logistics", "container-receive", "container-watch", "container-extra", "container-bolims", "workers-composition", "doc-audit", "trello", "audit", "audits", "tg-user", "gamification", "targets", "verifix-test"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -86,6 +86,10 @@ DEFAULT_PAGE_ACCESS = {
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
     "trudoyomkost": ["top-manager", "shift-manager"],
+    # «SKU tarixi» (/sku-history, routers/sku_history.py) — the «Zagruzka
+    # fayli» catalog's SKUs over time: new, removed, restored, re-coded.
+    # ADMIN-ONLY until the operator opens it on the Access tab.
+    "sku-history": [],
     # Leader checklist monitoring (parsed from the leaders Google Sheet). Pilot:
     # admin-only by default; open up roles from the Access tab.
     "leaders": [],
