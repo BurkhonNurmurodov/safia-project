@@ -265,6 +265,10 @@ future».
     same numbers as a read of that day alone). Stepping back costs one read a
     week, not one a day; stepping FORWARD from an old day still reads each.
   - A past day skips `kitchen_forecast.load` — only today and tomorrow forecast.
+  - **Yesterday rides on the live read**: the live snapshot (every 120 s while
+    the page is open) reads yesterday's day before too and keeps yesterday's
+    snapshot in memory (`_build`), so the first ‹ from today answers at once.
+    Yesterday still moves (late check-outs), so it is never stored.
   The page waits 350 ms after the last ‹ › before it asks, so steps clicked in
   a row cost one read; a past day is not re-asked, tomorrow every 5 minutes,
   and a failed other day is not retried by itself. A request that waits

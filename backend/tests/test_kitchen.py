@@ -126,6 +126,24 @@ class OtherDayTest(unittest.TestCase):
         self.assertEqual(got, [(day - timedelta(days=i)).day for i in range(7)])
         self.assertEqual(reads, [[day - timedelta(days=i) for i in range(6, -1, -1)]])
 
+    def test_the_live_read_brings_yesterday(self):
+        """The live snapshot's read also keeps yesterday: the first ‹ reads nothing."""
+        reads = []
+
+        def build(db, cfg, targets):
+            reads.append(sorted(targets))
+            return {d: {"configured": True, "came": d.day} for d in targets}, 1
+        saved = (kitchen._build_days, kitchen.verifix_live.now_local)
+        kitchen._build_days, kitchen.verifix_live.now_local = build, lambda: NOW
+        kitchen._days.clear()
+        try:
+            self.assertEqual(kitchen._build(None, {})["came"], TODAY.day)
+            self.assertEqual(kitchen.other_day(_NoRows(), YDAY)["came"], YDAY.day)
+        finally:
+            kitchen._build_days, kitchen.verifix_live.now_local = saved
+            kitchen._days.clear()
+        self.assertEqual(reads, [[YDAY, TODAY]])
+
 
 class ForecastTest(unittest.TestCase):
     """The hours ahead learned from `kitchen_history` (`services/kitchen_forecast`)."""

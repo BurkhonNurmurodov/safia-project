@@ -192,9 +192,13 @@ def _build_days(db: Session, cfg: dict, targets: list[date]) -> tuple[dict[date,
 
 
 def _build(db: Session, cfg: dict) -> dict:
-    """Today's snapshot (the live one)."""
+    """Today's snapshot (the live one). The same read also yields yesterday's —
+    one more day costs no more pages — so the first ‹ on the page answers at once."""
     today = verifix_live.now_local().date()
-    return _build_days(db, cfg, [today])[0][today]
+    yday = today - timedelta(days=1)
+    snaps, _ = _build_days(db, cfg, [yday, today])
+    _days[yday] = (time.monotonic(), snaps[yday])      # one dict write: no lock against `other_day`
+    return snaps[today]
 
 
 def _out(hit: tuple[float, dict]) -> dict:
@@ -233,7 +237,7 @@ def _keep(day: date, hit: tuple[float, dict]) -> tuple[float, dict]:
     _days.pop(day, None)
     _days[day] = hit
     while len(_days) > DAY_KEEP:
-        _days.pop(next(iter(_days)))                           # the longest kept goes first
+        _days.pop(list(_days)[0], None)                        # the longest kept goes first (a copy: the live read writes too)
     return hit
 
 
