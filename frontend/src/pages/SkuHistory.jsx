@@ -193,7 +193,7 @@ export default function SkuHistory() {
         <EmptyState title={t("skuh.title")} message={fill(t("skuh.beforeFloor"), { d: fmtD(data.floor) })} showUploadLink={false} />
       ) : (
         <div className="space-y-4 lg:space-y-6" style={{ opacity: isPlaceholderData ? 0.6 : 1, transition: "opacity 150ms" }} aria-busy={isPlaceholderData}>
-          <Summary data={data} t={t} endLabel={endLabel} onPick={pickKind} />
+          <Summary data={data} t={t} onPick={pickKind} />
           <TimeCard data={data} chart={padded && chartData?.days ? chartData : data} t={t} fmtD={fmtD} range={range} onPick={pickRange} />
           <UnitsCard data={data} t={t} unitName={unitName} unitById={unitById} unit={unit} onPick={pickUnit} endLabel={endLabel} />
           <div ref={registerRef} style={{ scrollMarginTop: 72 }}>
@@ -211,7 +211,7 @@ export default function SkuHistory() {
 // ── the answer: the catalog now, and what came in, went out, came back ──────
 // Re-coded / moved show only when they happened, as their NET, so the row
 // adds up: start + every card = now.
-function Summary({ data, t, endLabel, onPick }) {
+function Summary({ data, t, onPick }) {
   const T = data.totals;
   const cards = [
     ["new", T.new, true],
@@ -227,7 +227,7 @@ function Summary({ data, t, endLabel, onPick }) {
     <div className={`grid grid-cols-2 ${grid} gap-3`}>
       <KPICard className={cards.length % 2 === 0 ? "col-span-2 xl:col-span-1" : ""} size="lg"
         icon={Package} color={HUE.catalog} valueColor="var(--text-1)"
-        label={`${t("skuh.inCatalog")} · ${endLabel}`} value={fmtN(data.end.total)}
+        label={t("skuh.inCatalog")} value={fmtN(data.end.total)}
         sub={`${t("skuh.start")}: ${fmtN(data.start.total)}`} />
       {cards.map(([k, v]) => (
         <KPICard key={k} icon={KIND_ICON[k]} color={HUE[k]} valueColor="var(--text-1)"
@@ -295,7 +295,9 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
   const totals = points.map((p) => p.total);
   const lo = Math.min(...totals), hi = Math.max(...totals);
   const pad = Math.max(5, (hi - lo) * 0.2);
-  const yMin = Math.max(0, Math.floor((lo - pad) / 10) * 10), yMax = Math.ceil((hi + pad) / 10) * 10;
+  const raw = (hi - lo + 2 * pad) / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].find((m) => m * mag >= raw) * mag;
+  const yMin = Math.max(0, Math.floor((lo - pad) / step) * step), yMax = Math.ceil((hi + pad) / step) * step;
   const xaxis = {
     categories: cats, tickAmount,
     labels: { rotate: 0, rotateAlways: false, hideOverlappingLabels: true, style: { colors: labelColor, fontSize: "10px" } },
@@ -320,7 +322,7 @@ function TimeCard({ data, chart, t, fmtD, range, onPick }) {
     stroke: { curve: "straight", width: 2.5 },
     fill: { type: "solid", opacity: 0.12 },
     markers: { size: 0, hover: { size: 4 } },
-    yaxis: { min: yMin, max: yMax, tickAmount: 4, labels: { ...yLabels, formatter: (v) => fmtN(Math.round(v)) } },
+    yaxis: { min: yMin, max: yMax, tickAmount: Math.round((yMax - yMin) / step), labels: { ...yLabels, formatter: (v) => fmtN(Math.round(v)) } },
   };
   const selIdx = range ? points.findIndex((p) => p.from <= range.from && range.from <= p.to) : -1;
   const flowOpts = {
@@ -381,8 +383,11 @@ function UnitsCard({ data, t, unitName, unitById, unit, onPick, endLabel }) {
     .filter((u) => touched(u) > 0)
     .sort((a, b) => touched(b) - touched(a) || unitName(a.manager_id).localeCompare(unitName(b.manager_id)));
   if ((data.units || []).length < 2 || !rows.length) return null;
-  // Phone: the three counts under their icons; the catalog column from sm up.
-  const grid = "grid grid-cols-[minmax(0,1fr)_repeat(3,3rem)] sm:grid-cols-[minmax(0,1fr)_repeat(3,7.5rem)_7.5rem] items-center gap-x-2 sm:gap-x-4 px-4";
+  const cols = UNIT_COLS.filter((k) => rows.some((u) => u[k] > 0));
+  // Phone: the counts under their icons; the catalog column from sm up.
+  const grid = `grid ${["", "grid-cols-[minmax(0,1fr)_3rem] sm:grid-cols-[minmax(0,1fr)_7.5rem_7.5rem]",
+    "grid-cols-[minmax(0,1fr)_repeat(2,3rem)] sm:grid-cols-[minmax(0,1fr)_repeat(2,7.5rem)_7.5rem]",
+    "grid-cols-[minmax(0,1fr)_repeat(3,3rem)] sm:grid-cols-[minmax(0,1fr)_repeat(3,7.5rem)_7.5rem]"][cols.length]} items-center gap-x-2 sm:gap-x-4 px-4`;
   const num = (v) => (v
     ? <span className="text-[14px] font-semibold" style={{ color: "var(--text-1)" }}>{fmtN(v)}</span>
     : <span style={{ color: "var(--text-4)" }}>—</span>);
@@ -392,7 +397,7 @@ function UnitsCard({ data, t, unitName, unitById, unit, onPick, endLabel }) {
       right={<span className="text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{fill(t("skuh.nUnits"), { n: rows.length })}</span>}>
       <div className={`${grid} pt-2 pb-2 text-[11px] font-medium`} style={{ color: "var(--text-3)" }}>
         <span>{t("plan.fBrig")}</span>
-        {UNIT_COLS.map((k) => {
+        {cols.map((k) => {
           const Icon = KIND_ICON[k];
           return (
             <span key={k} className="flex items-center justify-end gap-1.5 min-w-0" title={t(`skuh.k.${k}`)}>
@@ -414,7 +419,7 @@ function UnitsCard({ data, t, unitName, unitById, unit, onPick, endLabel }) {
               className={`w-full ${grid} min-h-[44px] py-2 text-left tabular-nums transition-colors hover:bg-[var(--bg-inner)] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand)]`}
               style={on ? { background: "var(--bg-inner)", boxShadow: "inset 3px 0 0 var(--text-2)" } : undefined}>
               <span className="truncate text-[13px] font-medium" style={{ color: archived ? "var(--text-3)" : "var(--text-1)" }}>{unitName(u.manager_id)}</span>
-              {UNIT_COLS.map((k) => <span key={k} className="text-right">{num(u[k])}</span>)}
+              {cols.map((k) => <span key={k} className="text-right">{num(u[k])}</span>)}
               <span className="hidden sm:block text-right text-[13px]" style={{ color: "var(--text-2)" }}>{fmtN(u.end)}</span>
             </button>
           );
