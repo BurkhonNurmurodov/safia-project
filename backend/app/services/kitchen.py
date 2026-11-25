@@ -28,12 +28,13 @@ import logging
 import threading
 import time
 from collections import Counter, defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
+from app.models import LiveVerifixRead
 from app.services import kitchen_forecast, verifix, verifix_live
 
 log = logging.getLogger(__name__)
@@ -151,29 +152,49 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
     }
 
 
-def _build(db: Session, cfg: dict, day: Optional[date] = None) -> dict:
+def _slice(report: dict, days: list[date]) -> dict:
+    """The report as a read of `days` alone would have returned it."""
+    return {e: r for e, rows in report.items() if (r := {d: rows[d] for d in days if d in rows})}
+
+
+def _build_days(db: Session, cfg: dict, targets: list[date]) -> tuple[dict[date, dict], int]:
+    """The snapshots of `targets` from ONE report read, and how long it took (ms).
+    The report pages by EMPLOYEE (~30 pages of 100), not by day, so a week costs
+    about what two days do."""
     now = verifix_live.now_local()
     today = now.date()
-    day = day or today
     # A night shift is filed under the day it STARTED, so the day before's rows
     # are always read too: its people are in this morning's hours and, until
     # they leave, in the count. For tomorrow that is today — tonight's shift.
-    days = [day - timedelta(days=1), day]
+    first, last = min(targets) - timedelta(days=1), max(targets)
+    span = [first + timedelta(days=i) for i in range((last - first).days + 1)]
     directory, _ = verifix_live._directory(db, cfg, verifix_live.DIR_FALLBACK_S)
     stored = {}
-    for d in days:
+    for d in span:
         if d < today - timedelta(days=1):
             continue                                 # a settled day: the report has its late check-outs
         row = verifix_live._row(db, verifix_live._day_key(d))
         stored[d] = ((row.data or {}).get("emps") or {}) if row else {}
-    model = kitchen_forecast.load(db, today)
+    # Only today and tomorrow forecast; a past day skips learning two years of history.
+    model = kitchen_forecast.load(db, today) if last >= today else kitchen_forecast.DEFAULT
     db.rollback()                                    # no transaction held across the Verifix read
     t0 = time.monotonic()
-    report = _read_report(cfg, days)
-    out = tally(now, days, report, stored, directory, model)
-    log.info("kitchen: read %d people of %s in %.1f s — %d inside", len(report), day,
-             time.monotonic() - t0, out["inside"])
-    return {"configured": True, "read_at": verifix_live._iso(now), **out}
+    report = _read_report(cfg, span)
+    ms = int((time.monotonic() - t0) * 1000)
+    out = {}
+    for t in targets:
+        days = [t - timedelta(days=1), t]
+        out[t] = {"configured": True, "read_at": verifix_live._iso(now),
+                  **tally(now, days, _slice(report, days), stored, directory, model)}
+    log.info("kitchen: read %d people of %s – %s in %.1f s — %d day(s)", len(report), span[0], last,
+             ms / 1000, len(targets))
+    return out, ms
+
+
+def _build(db: Session, cfg: dict) -> dict:
+    """Today's snapshot (the live one)."""
+    today = verifix_live.now_local().date()
+    return _build_days(db, cfg, [today])[0][today]
 
 
 def _out(hit: tuple[float, dict]) -> dict:
@@ -197,42 +218,97 @@ def _renew(cfg: dict) -> None:
 
 _days: dict[date, tuple[float, dict]] = {}       # another day's snapshot, by day
 _day_lock = threading.Lock()                       # one other-day read at a time, never the live one's
-DAY_KEEP = 60                                      # snapshots of other days kept
+DAY_KEEP = 60                                      # snapshots of other days kept in memory
 DAY_WAIT_S = 45                                    # a request waits this long for another day's read, then «busy»
+SETTLED_D = 2       # a day this old is final and kept in the database — `kitchen_history`'s rule
+WEEK_D = 7          # a read of a day also fills the settled days of the week before it not kept yet
+FORMAT = 1          # bump when a snapshot's shape changes: a kept one of another format is not served
+
+
+def _key(day: date) -> str:
+    return f"kitchen:{day.isoformat()}"
+
+
+def _keep(day: date, hit: tuple[float, dict]) -> tuple[float, dict]:
+    _days.pop(day, None)
+    _days[day] = hit
+    while len(_days) > DAY_KEEP:
+        _days.pop(next(iter(_days)))                           # the longest kept goes first
+    return hit
+
+
+def _kept(db: Session, days: list[date], today: date) -> dict[date, tuple[float, dict]]:
+    """The snapshots of `days` still good: in memory (10 minutes for yesterday and
+    tomorrow, which still move, 6 hours for an older day), else a settled day's
+    kept in the database — it survives deploys."""
+    out, ask = {}, []
+    for d in days:
+        hit = _days.get(d)
+        if hit and time.monotonic() - hit[0] < (600 if abs((d - today).days) <= 1 else 6 * 3600):
+            out[d] = hit
+        elif (today - d).days >= SETTLED_D:
+            ask.append(_key(d))
+    if ask:
+        for key, data, at in (db.query(LiveVerifixRead.key, LiveVerifixRead.data, LiveVerifixRead.read_at)
+                              .filter(LiveVerifixRead.key.in_(ask))):
+            if (data or {}).get("v") == FORMAT:
+                age = (datetime.now(timezone.utc) - at).total_seconds() if at else 0
+                d = date.fromisoformat(key.split(":", 1)[1])
+                out[d] = _keep(d, (time.monotonic() - age, {k: v for k, v in data.items() if k != "v"}))
+    return out
+
+
+def _store(db: Session, snaps: dict[date, dict], today: date, ms: int) -> None:
+    """Keep the settled days' snapshots in the database; a failed write only
+    means the next open reads Verifix again."""
+    try:
+        for d, snap in snaps.items():
+            if (today - d).days >= SETTLED_D:
+                row = verifix_live._locked_row(db, _key(d))
+                row.data, row.read_at, row.ms = {"v": FORMAT, **snap}, datetime.now(timezone.utc), ms
+                row.error = row.error_at = None
+        db.commit()
+    except Exception:  # noqa: BLE001 — the answer stands without it
+        db.rollback()
+        log.exception("kitchen: the snapshots were not stored")
 
 
 def other_day(db: Session, day: date) -> dict:
     """A past day (every hour from the clocks) or tomorrow (every hour forecast),
-    read on demand and kept: 10 minutes for yesterday and tomorrow, which still
-    move, 6 hours for an older day, which Verifix has settled."""
+    read on demand and kept (`_kept`). The read also fills the settled days of
+    the week before it, so stepping back a day costs nothing."""
     today = verifix_live.now_local().date()
-    ttl = 600 if abs((day - today).days) <= 1 else 6 * 3600
-    hit = _days.get(day)
-    if hit and time.monotonic() - hit[0] < ttl:
+    hit = _kept(db, [day], today).get(day)
+    if hit:
         return _out(hit)
+    stale = _days.get(day)                                     # a kept one past its time answers a failure
     cfg = verifix.config(db, with_password=True)
     if not verifix_live._configured(cfg):
         return {"configured": False}
     db.rollback()                                              # no connection held while waiting
     if not _day_lock.acquire(timeout=DAY_WAIT_S):
-        if hit:
-            return _out(hit)
+        if stale:
+            return _out(stale)
         raise TimeoutError("another day is being read")
     try:
-        hit = _days.get(day)
-        if hit and time.monotonic() - hit[0] < ttl:           # read while we waited
+        hit = _kept(db, [day], today).get(day)                # read while we waited
+        if hit:
             return _out(hit)
+        week = [day - timedelta(days=i) for i in range(1, WEEK_D)]
+        settled = [d for d in week if (today - d).days >= SETTLED_D]
+        have = _kept(db, settled, today)
+        targets = [day] + [d for d in settled if d not in have]
         try:
-            data = _build(db, cfg, day)
+            snaps, ms = _build_days(db, cfg, targets)
         except verifix.VerifixError as exc:
             log.warning("kitchen: the read of %s failed (%s: %s)", day, exc.code, exc.message)
-            if hit:
-                return _out(hit)
+            if stale:
+                return _out(stale)
             raise
-        _days.pop(day, None)
-        _days[day] = (time.monotonic(), data)
-        while len(_days) > DAY_KEEP:
-            _days.pop(next(iter(_days)))                       # the longest kept goes first
+        now = time.monotonic()
+        for d, snap in snaps.items():
+            _keep(d, (now, snap))
+        _store(db, snaps, today, ms)
         return _out(_days[day])
     finally:
         _day_lock.release()

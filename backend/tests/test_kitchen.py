@@ -81,6 +81,52 @@ class TallyTest(unittest.TestCase):
         self.assertEqual((out["inside"], out["left"]), (0, 1))
 
 
+class _NoRows:
+    """A session whose database keeps nothing (`kitchen._kept` asks it)."""
+    def query(self, *a): return self
+    def filter(self, *a): return self
+    def __iter__(self): return iter(())
+    def rollback(self): pass
+
+
+class OtherDayTest(unittest.TestCase):
+    def test_a_week_read_counts_each_day_as_its_own_read(self):
+        """One wide read sliced per day = what a two-day read of that day counts."""
+        span = [TODAY - timedelta(days=i) for i in range(8, -1, -1)]
+        wide = {str(i): {d: row(d, "20:00", "08:00", came="19:50" if (i + d.day) % 3 else "",
+                                left="08:05" if i % 2 else "", next_day=True)
+                         for d in span if (i * d.day) % 4} for i in range(40)}
+        for t in span[1:]:
+            days = [t - timedelta(days=1), t]
+            narrow = {e: {d: r for d, r in rows.items() if d in days} for e, rows in wide.items()}
+            narrow = {e: r for e, r in narrow.items() if r}
+            self.assertEqual(kitchen.tally(NOW, days, kitchen._slice(wide, days), {}, {}),
+                             kitchen.tally(NOW, days, narrow, {}, {}))
+
+    def test_stepping_back_reads_verifix_once_a_week(self):
+        reads = []
+
+        def build(db, cfg, targets):
+            reads.append(sorted(targets))
+            return {d: {"configured": True, "came": d.day} for d in targets}, 1
+        saved = (kitchen._build_days, kitchen._store, kitchen.verifix.config,
+                 kitchen.verifix_live._configured, kitchen.verifix_live.now_local)
+        kitchen._build_days, kitchen._store = build, lambda *a: None
+        kitchen.verifix.config = lambda *a, **k: {}
+        kitchen.verifix_live._configured = lambda cfg: True
+        kitchen.verifix_live.now_local = lambda: NOW
+        kitchen._days.clear()
+        try:
+            day = TODAY - timedelta(days=3)
+            got = [kitchen.other_day(_NoRows(), day - timedelta(days=i))["came"] for i in range(7)]
+        finally:
+            (kitchen._build_days, kitchen._store, kitchen.verifix.config,
+             kitchen.verifix_live._configured, kitchen.verifix_live.now_local) = saved
+            kitchen._days.clear()
+        self.assertEqual(got, [(day - timedelta(days=i)).day for i in range(7)])
+        self.assertEqual(reads, [[day - timedelta(days=i) for i in range(6, -1, -1)]])
+
+
 class ForecastTest(unittest.TestCase):
     """The hours ahead learned from `kitchen_history` (`services/kitchen_forecast`)."""
 

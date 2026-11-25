@@ -247,8 +247,24 @@ future».
   made a day ahead is — the 2.6 % above is same-day hours only.
 - **Each other day is a plant-wide Verifix read**: kept per day in memory
   (`_days`, up to `DAY_KEEP` 60) for 10 minutes (yesterday, tomorrow — they
-  still move) or 6 hours (older, settled); ONE such read at a time
+  still move) or 6 hours (older); ONE such read at a time
   (`_day_lock`, never the live `_lock`); a failed re-read serves the kept one.
+- **A past day loads at once after its first read (2026-11-25, the operator:
+  «previous days are taking so long to load»).** The wait was ~30 Verifix
+  report pages read one after another (~25–30 s, estimated — the counting
+  itself is ~60 ms for 3,000 people, measured), paid again for every day and
+  again after every deploy, since the snapshots lived in memory only. Now:
+  - **A settled day (2+ days old — `kitchen_history`'s rule) is FINAL and kept
+    in the database** (`live_verifix_reads`, key `kitchen:YYYY-MM-DD`, with
+    `FORMAT` — bump it when a snapshot's shape changes; `ms` = the read's
+    time), so it survives deploys. Before, it was re-read after 6 h, so a late
+    Verifix correction or a department move would have shown; now it does not.
+  - **One read fills the week**: the report pages by EMPLOYEE, not by day, so
+    a read of a day also asks for the settled days of the six before it not
+    kept yet (`WEEK_D`), each counted on its own two-day slice (`_slice` — the
+    same numbers as a read of that day alone). Stepping back costs one read a
+    week, not one a day; stepping FORWARD from an old day still reads each.
+  - A past day skips `kitchen_forecast.load` — only today and tomorrow forecast.
   The page waits 350 ms after the last ‹ › before it asks, so steps clicked in
   a row cost one read; a past day is not re-asked, tomorrow every 5 minutes,
   and a failed other day is not retried by itself. A request that waits
