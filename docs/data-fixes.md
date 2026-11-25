@@ -1088,3 +1088,9 @@ and a further day is one more three-line one-shot with a new flag. Same rule:
 active shift-1 units, only a unit-day with no typed plan for `dst`, «Navbat»
 where empty, no headcount, a closed `dst` skipped, nothing once `dst` has
 passed. Report «1-smena reja · 25.11 → 26.11».
+The operator, asked whether the headcount should follow: «Yes, copy it» —
+`startup.people_copy_nov25` (flag `oneshot:people_copy_nov25_to_nov26_shift1`),
+through the headcount helper `startup._shift1_people_copy(flag, src, dst)`
+(`carry_day(..., plan=False)`, the 24 → 25 step now calls it too). Same rule as
+24 → 25: per work centre, only where the 26th has no people pin and plans the
+centre; ШТАТКА never. Report «1-smena odam soni · 25.11 → 26.11».

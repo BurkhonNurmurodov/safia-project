@@ -13208,35 +13208,38 @@ def plan_copy_nov25() -> None:
 PEOPLE_COPY_FLAG = "oneshot:people_copy_nov24_to_nov25_shift1"
 
 
-def people_copy_nov24() -> None:
+def _shift1_people_copy(flag: str, src: date, dst: date) -> None:
+    """Carry the first shift's «Odam soni» from `src` into `dst` — per work
+    centre, only where `dst` has no people pin and plans the centre
+    (`plan_carry.carry_day`, `plan=False`). Once per `flag`."""
     from zoneinfo import ZoneInfo
 
     from app.models import Manager
     from app.services import action_log, plan_carry
     from app.services.day_state import day_state
 
-    title = "1-smena odam soni · 24 → 25 noyabr"
+    title = f"1-smena odam soni · {src:%d.%m} → {dst:%d.%m}"
     db = SessionLocal()
     try:
         db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": PLAN_CARRY_LOCK})
-        if db.query(AppSetting).filter_by(key=PEOPLE_COPY_FLAG).first():
+        if db.query(AppSetting).filter_by(key=flag).first():
             db.rollback()
             return
         today = datetime.now(ZoneInfo("Asia/Tashkent")).date()
-        if today > PLAN_COPY_TO:
-            db.add(AppSetting(key=PEOPLE_COPY_FLAG, value=f"skipped {today.isoformat()}"))
+        if today > dst:
+            db.add(AppSetting(key=flag, value=f"skipped {today.isoformat()}"))
             db.commit()
-            print(f"[startup] people copy 24→25 Nov: skipped, today is {today}")
-            _dm_report("warn", title, status=f"Ko'chirilmadi — bugun {today:%d.%m}, 25 noyabr o'tib ketgan")
+            print(f"[startup] people copy {src}→{dst}: skipped, today is {today}")
+            _dm_report("warn", title, status=f"Ko'chirilmadi — bugun {today:%d.%m}, {dst:%d.%m} o'tib ketgan")
             return
         units = (db.query(Manager).filter(Manager.shift == 1, Manager.archived.is_(False))
                  .order_by(Manager.name).all())
         rows, closed, n_units = [], [], 0
         for m in units:
-            if day_state(db, m.id, PLAN_COPY_TO)[0] != "open":
+            if day_state(db, m.id, dst)[0] != "open":
                 closed.append(m.name)
                 continue
-            r = plan_carry.carry_day(db, m.id, PLAN_COPY_FROM, PLAN_COPY_TO, plan=False)
+            r = plan_carry.carry_day(db, m.id, src, dst, plan=False)
             if not (r["people"] or r["people_kept"] or r["people_skipped"]):
                 continue
             parts = []
@@ -13246,32 +13249,45 @@ def people_copy_nov24() -> None:
                     f"{wc}{' · ' + g if g else ''}: {n}" for wc, g, n in r["people"]))
                 action_log.record_system(
                     "shopfloor", "production.wc_override_set", target_kind="wc_override",
-                    target_id=f"{m.id}:{PLAN_COPY_TO}", target_name=m.name, unit_id=m.id,
-                    day=PLAN_COPY_TO,
-                    details=[("date", str(PLAN_COPY_TO)), ("from", str(PLAN_COPY_FROM)),
+                    target_id=f"{m.id}:{dst}", target_name=m.name, unit_id=m.id,
+                    day=dst,
+                    details=[("date", str(dst)), ("from", str(src)),
                              ("people", len(r["people"]))],
-                    reason="1-smena: 24.11 odam soni 25.11 ga ko'chirildi (one-shot 2026-11-24)")
+                    reason=f"1-smena: {src:%d.%m} odam soni {dst:%d.%m} ga ko'chirildi (one-shot)")
             if r["people_kept"]:
                 parts.append("o'zi kiritgan: " + ", ".join(r["people_kept"]))
             if r["people_skipped"]:
-                parts.append("25-noyabr rejasiz: " + ", ".join(r["people_skipped"]))
+                parts.append(f"{dst:%d.%m} rejasiz: " + ", ".join(r["people_skipped"]))
             rows.append(("👷", m.name, parts))
-            print(f"[startup] people copy 24→25 Nov: unit {m.id} {m.name} → {r['people']} "
+            print(f"[startup] people copy {src}→{dst}: unit {m.id} {m.name} → {r['people']} "
                   f"kept {r['people_kept']} skipped {r['people_skipped']}")
         if closed:
-            rows.append(("🔒", "25-noyabr yopilgan", closed))
-        db.add(AppSetting(key=PEOPLE_COPY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+            rows.append(("🔒", f"{dst:%d.%m} yopilgan", closed))
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         _dm_report("ok", title, status=f"{n_units} ta bo'linmaga ko'chirildi", rows=rows,
-                   notes=[("ℹ️", "Faqat 1-smena; 25-noyabrda bo'sh va rejasi bor jamoalarga "
+                   notes=[("ℹ️", f"Faqat 1-smena; {dst:%d.%m} da bo'sh va rejasi bor jamoalarga "
                                 "ko'chirildi, o'zi kiritgan odam soni o'zgarmadi. ШТАТКА ko'chirilmadi.")],
                    open=_REPORT_PRODUCTION)
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        print(f"[startup] people copy 24→25 Nov failed: {exc}")
+        print(f"[startup] people copy {src}→{dst} failed: {exc}")
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+def people_copy_nov24() -> None:
+    _shift1_people_copy(PEOPLE_COPY_FLAG, PLAN_COPY_FROM, PLAN_COPY_TO)
+
+
+# 25 Nov, after the plan copy above: «Yes, copy it» — the first shift's
+# 25 Nov «Odam soni» into 26 Nov too, by the same rule.
+PEOPLE_COPY_NOV25_FLAG = "oneshot:people_copy_nov25_to_nov26_shift1"
+
+
+def people_copy_nov25() -> None:
+    _shift1_people_copy(PEOPLE_COPY_NOV25_FLAG, date(2026, 11, 25), date(2026, 11, 26))
 
 
 # ── 25 Nov: Umarbek Karimov (shift manager) → every page of «Konteynerlar» ──
