@@ -386,7 +386,10 @@ least 12 testers for 14 days in a row before it may apply for production.
   found on a fresh `/android` install stuck on the APK's own v4.611.3).
   `emitFileList` in `vite.config.js` now leaves every other `.html` out: those
   are browser-only pages, and one rewritten file must never block the app's
-  pages again.
+  pages again. **1.8.2** (versionCode 16, the operator's yes, same day) was
+  built and published only so a fresh `/android` install opens on current
+  pages instead of 20 Nov's; its one native change is the 24 Nov `play`
+  switch, which leaves the sideload APK self-updating as before.
 - **The privacy policy Play requires** is `frontend/public/privacy.html`,
   served whole and without login at
   `https://production.safiacorporate.uz/privacy.html` (English, static — no
