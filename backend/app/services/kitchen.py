@@ -65,6 +65,7 @@ def _read_report(cfg: dict, days: list[date]) -> dict[str, dict[date, dict]]:
                     day = verifix_live._d(d.get("date"))
                     if eid and day in days:
                         out[eid][day] = {"schedule": r.get("schedule_name") or "",
+                                         "div": str(r.get("division_id") or ""),   # for who left the directory
                                          "days": [verifix_live._trim_day(d)]}
     return out
 
@@ -125,7 +126,9 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
             hit.append(p["status"])
         if not hit:
             continue                                 # a day off: on no line of the page
-        name = (divs.get((emps.get(eid) or {}).get("div")) or {}).get("name") or ""
+        div = (emps.get(eid) or {}).get("div") or next(
+            (r["div"] for r in (report.get(eid) or {}).values() if r.get("div")), None)
+        name = (divs.get(div) or {}).get("name") or ""
         for k in hit:
             tot[k] += 1
             by_div[name][k] += 1
@@ -159,6 +162,8 @@ def _build(db: Session, cfg: dict, day: Optional[date] = None) -> dict:
     directory, _ = verifix_live._directory(db, cfg, verifix_live.DIR_FALLBACK_S)
     stored = {}
     for d in days:
+        if d < today - timedelta(days=1):
+            continue                                 # a settled day: the report has its late check-outs
         row = verifix_live._row(db, verifix_live._day_key(d))
         stored[d] = ((row.data or {}).get("emps") or {}) if row else {}
     model = kitchen_forecast.load(db, today)
@@ -193,6 +198,7 @@ def _renew(cfg: dict) -> None:
 _days: dict[date, tuple[float, dict]] = {}       # another day's snapshot, by day
 _day_lock = threading.Lock()                       # one other-day read at a time, never the live one's
 DAY_KEEP = 60                                      # snapshots of other days kept
+DAY_WAIT_S = 45                                    # a request waits this long for another day's read, then «busy»
 
 
 def other_day(db: Session, day: date) -> dict:
@@ -208,7 +214,11 @@ def other_day(db: Session, day: date) -> dict:
     if not verifix_live._configured(cfg):
         return {"configured": False}
     db.rollback()                                              # no connection held while waiting
-    with _day_lock:
+    if not _day_lock.acquire(timeout=DAY_WAIT_S):
+        if hit:
+            return _out(hit)
+        raise TimeoutError("another day is being read")
+    try:
         hit = _days.get(day)
         if hit and time.monotonic() - hit[0] < ttl:           # read while we waited
             return _out(hit)
@@ -224,6 +234,8 @@ def other_day(db: Session, day: date) -> dict:
         while len(_days) > DAY_KEEP:
             _days.pop(next(iter(_days)))                       # the longest kept goes first
         return _out(_days[day])
+    finally:
+        _day_lock.release()
 
 
 def headcount(db: Session) -> dict:

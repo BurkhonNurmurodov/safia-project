@@ -51,8 +51,10 @@ class TallyTest(unittest.TestCase):
         before = YDAY - timedelta(days=1)
         report = {"1": {YDAY: row(YDAY, "08:00", "17:00", came="07:55", left="17:05")},
                   "2": {YDAY: row(YDAY, "08:00", "17:00")}}
-        out = kitchen.tally(NOW, [before, YDAY], report, {}, {})
+        report["2"][YDAY]["div"] = "d9"                    # gone from the directory: the report's own division
+        out = kitchen.tally(NOW, [before, YDAY], report, {}, {"divs": {"d9": {"name": "Ombor"}}})
         self.assertEqual((out["came"], out["left"], out["absent"], out["inside"]), (1, 1, 1, 0))
+        self.assertEqual({r["name"] for r in out["departments"]}, {"", "Ombor"})
         self.assertFalse(any(h["plan"] for h in out["hours"]))
         hours = {h["t"]: h["n"] for h in out["hours"]}
         self.assertEqual((hours["07:00"], hours["08:00"], hours["17:00"], hours["18:00"]), (0, 1, 1, 0))

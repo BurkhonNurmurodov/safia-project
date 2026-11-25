@@ -250,5 +250,12 @@ future».
   still move) or 6 hours (older, settled); ONE such read at a time
   (`_day_lock`, never the live `_lock`); a failed re-read serves the kept one.
   The page waits 350 ms after the last ‹ › before it asks, so steps clicked in
-  a row cost one read; a past day is not re-asked, tomorrow every 5 minutes.
+  a row cost one read; a past day is not re-asked, tomorrow every 5 minutes,
+  and a failed other day is not retried by itself. A request that waits
+  `DAY_WAIT_S` (45 s) for another day's read is answered 424 `busy` (424,
+  never 502 — the client reads a 502 as a restart).
+- **The minute job's stored read counts only from yesterday on**; an older
+  day is the report alone, which by then has Verifix's late check-outs.
+- **A department is the directory's, else the report row's own
+  `division_id`** — somebody who has left since is still placed on an old day.
 

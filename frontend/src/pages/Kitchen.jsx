@@ -170,6 +170,7 @@ export default function Kitchen() {
     refetchInterval: (query) => (asked !== live ? (asked > live ? 300_000 : false)
       : query.state.data?.refreshing ? 5000 : 60_000),
     staleTime: asked === live ? 30_000 : 300_000,
+    ...(asked === live ? {} : { retry: false }),        // a failed plant-wide read is not repeated by itself
     placeholderData: keepPreviousData,
   });
   const d = asked === day && !q.isPlaceholderData ? q.data : undefined;   // never another day's numbers under this date

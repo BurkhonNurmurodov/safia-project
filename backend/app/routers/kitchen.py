@@ -24,7 +24,14 @@ def now(day: Optional[date] = None, db: Session = Depends(get_db)):
     today = verifix_live.now_local().date()
     if day and day > today + timedelta(days=1):
         raise HTTPException(status_code=400, detail={"code": "future"})
+    if day and day != today:
+        try:
+            return kitchen.other_day(db, day)
+        except TimeoutError:                         # another day's read holds the line: ask again
+            raise HTTPException(status_code=424, detail={"code": "busy"})
+        except verifix.VerifixError as exc:          # 424, never 502: the client reads that as a restart
+            raise HTTPException(status_code=424, detail={"code": exc.code, "message": exc.message})
     try:
-        return kitchen.headcount(db) if not day or day == today else kitchen.other_day(db, day)
+        return kitchen.headcount(db)
     except verifix.VerifixError as exc:
         raise HTTPException(status_code=502, detail={"code": exc.code, "message": exc.message})
