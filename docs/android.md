@@ -379,6 +379,14 @@ least 12 testers for 14 days in a row before it may apply for production.
   ONE versionCode sequence for both channels.
 - `build-release.sh` builds both: the release APK and the play AAB (the old
   release AAB is no longer made — nothing used it).
+- **No HTML page but `index.html` is in `build-files.json`** (2026-11-25).
+  Cloudflare's email obfuscation rewrote `privacy.html`'s `mailto:` on the
+  way, so its bytes never matched the list, and every app refused every
+  build from 24 Nov on («Yangi versiyani yuklab bo'lmadi», endlessly —
+  found on a fresh `/android` install stuck on the APK's own v4.611.3).
+  `emitFileList` in `vite.config.js` now leaves every other `.html` out: those
+  are browser-only pages, and one rewritten file must never block the app's
+  pages again.
 - **The privacy policy Play requires** is `frontend/public/privacy.html`,
   served whole and without login at
   `https://production.safiacorporate.uz/privacy.html` (English, static — no

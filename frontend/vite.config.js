@@ -138,6 +138,11 @@ function emitFileList() {
             }
             const rel = relative(dist, full).split(sep).join('/')
             if (rel === FILE_LIST) continue
+            // Cloudflare rewrites HTML on the way (privacy.html's mailto → email
+            // obfuscation), and the app refuses a WHOLE build over one file that
+            // differs. index.html is the one HTML page the app needs (it strips the
+            // beacon itself); any other is a browser-only page, left out of the list.
+            if (rel.endsWith('.html') && rel !== 'index.html') continue
             const data = readFileSync(full)
             files[rel] = { sha256: createHash('sha256').update(data).digest('hex'), size: data.length }
           }
