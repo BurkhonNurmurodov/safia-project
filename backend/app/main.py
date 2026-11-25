@@ -397,6 +397,8 @@ async def lifespan(app: FastAPI):
     later(plan_copy_nov24)                      # 24 Nov: today's ПЛАН onto 25 Nov, every unit (once)
     from app.startup import people_copy_nov24
     later(people_copy_nov24)                    # 24 Nov: and the first shift's «Odam soni» (once)
+    from app.startup import plan_copy_nov25
+    later(plan_copy_nov25)                      # 25 Nov: the first shift's ПЛАН onto 26 Nov (once)
     from app.startup import umarbek_containers_all
     later(umarbek_containers_all)               # 25 Nov: every container page for Umarbek Karimov (once)
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).

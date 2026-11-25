@@ -13118,65 +13118,83 @@ PLAN_COPY_FROM = date(2026, 11, 24)
 PLAN_COPY_TO = date(2026, 11, 25)
 
 
-def plan_copy_nov24() -> None:
+def _shift1_plan_copy(flag: str, src: date, dst: date) -> None:
+    """Carry the first shift's typed ПЛАН from `src` into `dst` — every active
+    unit on shift 1 whose `dst` has no typed plan yet (`plan_carry.carry_day`,
+    `people=False`). Once per `flag`; nothing once `dst` has passed."""
     from zoneinfo import ZoneInfo
 
     from app.models import Manager
     from app.services import action_log, plan_carry
     from app.services.day_state import day_state
 
-    title = "1-smena reja · 24 → 25 noyabr"
+    title = f"1-smena reja · {src:%d.%m} → {dst:%d.%m}"
     db = SessionLocal()
     try:
         db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": PLAN_CARRY_LOCK})
-        if db.query(AppSetting).filter_by(key=PLAN_COPY_FLAG).first():
+        if db.query(AppSetting).filter_by(key=flag).first():
             db.rollback()
             return
         today = datetime.now(ZoneInfo("Asia/Tashkent")).date()
-        if today > PLAN_COPY_TO:
-            db.add(AppSetting(key=PLAN_COPY_FLAG, value=f"skipped {today.isoformat()}"))
+        if today > dst:
+            db.add(AppSetting(key=flag, value=f"skipped {today.isoformat()}"))
             db.commit()
-            print(f"[startup] plan copy 24→25 Nov: skipped, today is {today}")
-            _dm_report("warn", title, status=f"Ko'chirilmadi — bugun {today:%d.%m}, 25 noyabr o'tib ketgan")
+            print(f"[startup] plan copy {src}→{dst}: skipped, today is {today}")
+            _dm_report("warn", title, status=f"Ko'chirilmadi — bugun {today:%d.%m}, {dst:%d.%m} o'tib ketgan")
             return
         units = (db.query(Manager).filter(Manager.shift == 1, Manager.archived.is_(False))
                  .order_by(Manager.name).all())
         copied, kept, empty, closed = [], [], [], []
         for m in units:
-            if day_state(db, m.id, PLAN_COPY_TO)[0] != "open":
+            if day_state(db, m.id, dst)[0] != "open":
                 closed.append(m.name)
                 continue
-            r = plan_carry.carry_day(db, m.id, PLAN_COPY_FROM, PLAN_COPY_TO, people=False)
+            r = plan_carry.carry_day(db, m.id, src, dst, people=False)
             if r["plan"] == "copied":
                 copied.append(f"{m.name}: {r['lines'] + r['groups']} ta pozitsiya")
                 action_log.record_system(
                     "shopfloor", "production.override_set", target_kind="override",
-                    target_id=f"{m.id}:{PLAN_COPY_TO}", target_name=m.name, unit_id=m.id,
-                    day=PLAN_COPY_TO,
-                    details=[("date", str(PLAN_COPY_TO)), ("from", str(PLAN_COPY_FROM)),
+                    target_id=f"{m.id}:{dst}", target_name=m.name, unit_id=m.id,
+                    day=dst,
+                    details=[("date", str(dst)), ("from", str(src)),
                              ("lines", r["lines"]), ("groups", r["groups"])],
-                    reason="1-smena: 24.11 rejasi 25.11 ga ko'chirildi (one-shot 2026-11-24)")
+                    reason=f"1-smena: {src:%d.%m} rejasi {dst:%d.%m} ga ko'chirildi (one-shot)")
             elif r["plan"] == "kept":
                 kept.append(m.name)
             else:
                 empty.append(m.name)
-            print(f"[startup] plan copy 24→25 Nov: unit {m.id} {m.name} → {r['plan']} {r['lines']}+{r['groups']}")
-        db.add(AppSetting(key=PLAN_COPY_FLAG, value=datetime.now(timezone.utc).isoformat()))
+            print(f"[startup] plan copy {src}→{dst}: unit {m.id} {m.name} → {r['plan']} {r['lines']}+{r['groups']}")
+        db.add(AppSetting(key=flag, value=datetime.now(timezone.utc).isoformat()))
         db.commit()
         _dm_report("ok", title, status=f"{len(copied)} ta bo'linmaga ko'chirildi",
                    rows=[("✅", "Ko'chirildi", copied),
-                         ("✋", "25-noyabr rejasi bor — tegilmadi", kept),
-                         ("➖", "24-noyabrda reja yo'q", empty),
-                         ("🔒", "25-noyabr yopilgan", closed)],
+                         ("✋", f"{dst:%d.%m} rejasi bor — tegilmadi", kept),
+                         ("➖", f"{src:%d.%m} da reja yo'q", empty),
+                         ("🔒", f"{dst:%d.%m} yopilgan", closed)],
                    notes=[("ℹ️", "Faqat 1-smena va faqat REJA (navbati bilan) ko'chirildi; "
                                 "odam soni, fakt ko'chirilmadi. 2-smenaga tegilmadi.")],
                    open=_REPORT_PRODUCTION)
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        print(f"[startup] plan copy 24→25 Nov failed: {exc}")
+        print(f"[startup] plan copy {src}→{dst} failed: {exc}")
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+def plan_copy_nov24() -> None:
+    _shift1_plan_copy(PLAN_COPY_FLAG, PLAN_COPY_FROM, PLAN_COPY_TO)
+
+
+# ── 25 Nov: the same, 25 Nov's first-shift ПЛАН carried into 26 Nov (docs/data-fixes.md) ──
+# The operator, 2026-11-25 evening, word for word the 24 Nov request one day
+# on: «copy the plan from today 25.11.2026 and put this plan to the
+# 26.11.2026 too … for all supervisors for the shift 1». ПЛАН only.
+PLAN_COPY_NOV25_FLAG = "oneshot:plan_copy_nov25_to_nov26_shift1"
+
+
+def plan_copy_nov25() -> None:
+    _shift1_plan_copy(PLAN_COPY_NOV25_FLAG, date(2026, 11, 25), date(2026, 11, 26))
 
 
 # ── 24 Nov: the first shift's 24 Nov «Odam soni» carried into 25 Nov (docs/data-fixes.md) ──

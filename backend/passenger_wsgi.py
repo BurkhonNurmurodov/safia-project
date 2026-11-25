@@ -369,6 +369,8 @@ try:
     plan_copy_nov24()
     from app.startup import people_copy_nov24
     people_copy_nov24()
+    from app.startup import plan_copy_nov25
+    plan_copy_nov25()
     from app.startup import umarbek_containers_all
     umarbek_containers_all()
     from app.startup import restore_wiped_accounts

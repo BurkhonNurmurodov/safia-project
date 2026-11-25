@@ -1077,3 +1077,14 @@ copied. Same units (active, shift 1), a closed 25th skipped, nothing after
 admins' report «1-smena odam soni · 24 → 25 noyabr» names per unit the centres
 copied, those the supervisor had typed, and those with no plan on the 25th.
 Undo: clear the 25th's «Bugungi fakt» on «Zagruzka fayli».
+
+**…and again a day on, 25 → 26 Nov, ПЛАН only** (`startup.plan_copy_nov25`,
+flag `oneshot:plan_copy_nov25_to_nov26_shift1`, 2026-11-25). The operator, the
+same words one day later: «copy the plan from today 25.11.2026 and put this
+plan to the 26.11.2026 too … for all supervisors for the shift 1». The plan
+copy is now ONE helper, `startup._shift1_plan_copy(flag, src, dst)` — the
+24 → 25 step calls it with its own flag (already spent, so it does nothing),
+and a further day is one more three-line one-shot with a new flag. Same rule:
+active shift-1 units, only a unit-day with no typed plan for `dst`, «Navbat»
+where empty, no headcount, a closed `dst` skipped, nothing once `dst` has
+passed. Report «1-smena reja · 25.11 → 26.11».
