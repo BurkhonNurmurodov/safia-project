@@ -399,3 +399,10 @@ least 12 testers for 14 days in a row before it may apply for production.
   notifications polled from our own server. **A new data use — a permission,
   a third party, an AI feature — changes this page and the Play Data safety
   form together.**
+- **Two signing keys from 2026-11-25** (the operator chose Google's key over
+  uploading ours): the sideload APK is signed with our key (`4D:09:E1…`), the
+  Play copy with Google's Play App Signing key (`C4:7B:4E…`). Both are in
+  `ANDROID_ASSET_LINKS` (main.py). The two copies share the package but not
+  the signature, so **a phone moving from the APK to Play (or back) must
+  uninstall first** — its sign-in and downloaded pages go with it. Our key
+  stays the Play UPLOAD key (`bundlePlay` signs with it).

@@ -1668,6 +1668,8 @@ ANDROID_ASSET_LINKS = [{
         "package_name": "uz.safiacorporate.ims",
         "sha256_cert_fingerprints": [
             "4D:09:E1:1C:59:D8:21:BD:F4:BE:19:50:B7:56:D1:C3:DE:D0:10:57:A6:A1:71:BA:8C:01:7E:28:A5:2F:FE:9E",
+            # Google Play's app signing key (Play App Signing, chosen 2026-11-25): the Play copy.
+            "C4:7B:4E:D4:A2:4C:D1:AF:98:9E:46:D5:BE:73:43:50:F8:3B:E8:02:D4:37:09:35:78:25:7B:24:AA:24:CD:14",
         ],
     },
 }]
