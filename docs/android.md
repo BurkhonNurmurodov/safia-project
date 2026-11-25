@@ -423,3 +423,9 @@ least 12 testers for 14 days in a row before it may apply for production.
   account's personal grants) and types the login into Play's «Sign in
   details». **A page key added later is NOT denied to it by itself** — deny it
   on the Permissions tab, or the reviewer may see it.
+  **The bot cannot claim it** (the name search lists only leaders standing in
+  a unit — `profiles.registration_options`), so a second one-shot
+  (`startup.play_reviewer_login`, v4.667.1) makes the operator's own Telegram
+  account (`REPORT_CHAT_BURKHON`) its holder — one more role on that account —
+  and issues its browser login the Users tab's way (`web_auth.dm_credentials`):
+  the password reaches the operator by DM and is never printed or logged.

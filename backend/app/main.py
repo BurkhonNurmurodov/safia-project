@@ -405,6 +405,8 @@ async def lifespan(app: FastAPI):
     later(umarbek_containers_all)               # 25 Nov: every container page for Umarbek Karimov (once)
     from app.startup import play_reviewer_profile
     later(play_reviewer_profile)                # 25 Nov: the Google Play reviewer login (once)
+    from app.startup import play_reviewer_login
+    later(play_reviewer_login)                  # 25 Nov: its holder + browser login, DM'd to Burkhon (once)
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)

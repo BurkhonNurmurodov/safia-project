@@ -13434,3 +13434,59 @@ def play_reviewer_profile() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+PLAY_REVIEWER_LOGIN_FLAG = "oneshot:play_reviewer_login_nov25"
+
+
+def play_reviewer_login() -> None:
+    """The reviewer profile's holder and browser login (25 Nov, the same
+    evening). The bot's name search lists only leaders standing in a unit
+    (`profiles.registration_options`), so the unit-less «Play Reviewer» cannot
+    be claimed there: the operator's own Telegram account is made its holder
+    (one more role on that account — its password sessions carry none of the
+    account's grants), and a login is issued exactly as the Users tab issues one
+    (`web_auth.dm_credentials` — the password goes to the holder by DM and is
+    never printed or logged)."""
+    from app.models import WebCredential
+    from app import web_auth
+
+    title = "Google Play · sharhlovchi logini"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PLAY_REVIEWER_LOGIN_FLAG).first():
+            return
+        p = db.query(RoleProfile).filter_by(role="leader", name=PLAY_REVIEWER_NAME).first()
+        if p is None:
+            return                                   # the profile's own step has not run yet
+        key = f"leader:{p.id}"
+        tg = REPORT_CHAT_BURKHON
+        if not db.query(TelegramUserRole).filter_by(telegram_id=tg, profile_key=key).first():
+            db.add(TelegramUserRole(telegram_id=tg, role="leader", role_id=None, status="approved",
+                                    full_name=PLAY_REVIEWER_NAME, profile_key=key))
+            db.flush()
+        cred = db.query(WebCredential).filter_by(profile_key=key).first()
+        username = cred.username if cred else web_auth.suggest_username(db, PLAY_REVIEWER_NAME)
+        password = web_auth.generate_password()
+        if cred is None:
+            cred = WebCredential(profile_key=key, username=username,
+                                 token_version=web_auth.new_token_version())
+            db.add(cred)
+        web_auth.set_password(cred, password)
+        cred.enabled = True
+        db.add(AppSetting(key=PLAY_REVIEWER_LOGIN_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        ok = web_auth.session_identity(db, key) is not None
+        sent = web_auth.dm_credentials(db, key, username, password)
+        print(f"[startup] play reviewer login {username}: holder ok={ok}, dm sent={sent}")
+        _dm_report("ok" if ok and sent else "fail", title,
+                   status=f"Login «{username}» berildi" + ("" if sent else " — DM yuborilmadi"),
+                   rows=[("👤", "Profil", f"{PLAY_REVIEWER_NAME} ({key})"),
+                         ("📨", "Parol", "alohida xabarda — faqat sizga"),
+                         ("▶️", "Keyin", "login va parolni Google Play «Sign in details»ga o'zingiz yozing")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] play reviewer login failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()
