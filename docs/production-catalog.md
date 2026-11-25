@@ -694,10 +694,17 @@ else (`services/sku_history.py`, `GET /api/sku-history`, page key
   adds up (start + ins − outs = end) and a merge reads as moved out of one
   row and into the other; their sum is NOT the plant's figure (an SKU new to
   one unit may already be live in another).
-- **The page**: the bridge «Davr hisobi» (start → each kind → end, each step a
-  button narrowing the register; start/end bars split SAP-coded / code-less),
-  «Kunma-kun» (catalog size stacked coded / code-less, and the day's ins and
-  outs; a column narrows the register; weeks past 92 days), «Brigadirlar
-  bo'yicha» (diverging bar per unit), «O'zgarishlar» (every change, its
-  lifeline over the period, paged). One hue per kind, none a status colour.
+- **The page** (simplified 2026-11-25, v4.665.0, after the operator called
+  every chart «as complex as possible, as not readable as possible»): a row of
+  cards — the catalog now (with its size at the start) and «Yangi»,
+  «Qaytarilgan», «Olib tashlangan», plus «Qayta kodlangan» / «Ko'chirilgan»
+  ONLY when they happened, as their NET, so the row adds up (start + every
+  card = now); a card narrows the register. «Kunma-kun»: ONE line of the
+  catalog's size (axis fitted to the catalog, not from zero) over THREE bar
+  series — new and restored up, removed down; re-codes and moves are no bars,
+  only named in the tooltip; a column narrows the register; weeks past 92
+  days. «Brigadirlar bo'yicha»: one row per unit with three plain counts and
+  its catalog now — no start column, so nothing there needs re-codes to add
+  up. «O'zgarishlar»: every change, paged (no lifeline strip). The SAP-coded /
+  code-less split is no longer drawn. One hue per kind, none a status colour.
   Rules tested in `tests/test_sku_history.py`.
