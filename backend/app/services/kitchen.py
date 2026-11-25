@@ -79,10 +79,13 @@ def _group(day: date, p: dict) -> tuple[date, str, str]:
 
 def tally(now: datetime, days: list[date], report: dict, stored: dict, directory: dict,
           model: dict = kitchen_forecast.DEFAULT) -> dict:
-    """The counts. `days` ends with today; `stored[day]` is the minute job's
-    `emps` of that day (wins over the report's row — it carries the marks)."""
+    """The counts of the day `days` ends with — today, a past day (every hour from
+    the clocks) or tomorrow (every hour forecast, nobody «inside»); `stored[day]`
+    is the minute job's `emps` of that day (wins over the report's row — it
+    carries the marks)."""
     emps, divs = directory.get("emps") or {}, directory.get("divs") or {}
     today = days[-1]
+    ahead_day = today > now.date()
     tot: Counter = Counter()
     by_div: dict[str, Counter] = defaultdict(Counter)
     spans: list[tuple[datetime, datetime]] = []      # who was in the building, from – to
@@ -110,7 +113,7 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
                 # A missing check-out counts up to the shift's end, never past it.
                 spans.append((p["in"], now if here else (p["out"] or p["end"] or p["in"])))
         hit = []                                     # `p` is today's reading now
-        if on_site:
+        if on_site and not ahead_day:
             hit.append("inside")
             if p["status"] not in ON_SITE:
                 hit.append("night")                  # still here from yesterday's shift
@@ -128,7 +131,8 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
             by_div[name][k] += 1
 
     keys = ("inside", "night", "came", "left", "not_yet", "absent")
-    ahead = kitchen_forecast.expect(now, groups, model)
+    groups.setdefault((today, "", ""), [0, 0, 0])    # the people with no window come on any day
+    ahead = kitchen_forecast.expect(now, groups, model, today) if today >= now.date() else {}
     hours = []
     t = datetime.combine(today, datetime.min.time())
     while t < midnight:
@@ -144,13 +148,14 @@ def tally(now: datetime, days: list[date], report: dict, stored: dict, directory
     }
 
 
-def _build(db: Session, cfg: dict) -> dict:
+def _build(db: Session, cfg: dict, day: Optional[date] = None) -> dict:
     now = verifix_live.now_local()
     today = now.date()
-    # A night shift is filed under the day it STARTED, so yesterday's rows are
-    # always read too: its people are in this morning's hours and, until they
-    # leave, in the count.
-    days = [today - timedelta(days=1), today]
+    day = day or today
+    # A night shift is filed under the day it STARTED, so the day before's rows
+    # are always read too: its people are in this morning's hours and, until
+    # they leave, in the count. For tomorrow that is today — tonight's shift.
+    days = [day - timedelta(days=1), day]
     directory, _ = verifix_live._directory(db, cfg, verifix_live.DIR_FALLBACK_S)
     stored = {}
     for d in days:
@@ -161,7 +166,7 @@ def _build(db: Session, cfg: dict) -> dict:
     t0 = time.monotonic()
     report = _read_report(cfg, days)
     out = tally(now, days, report, stored, directory, model)
-    log.info("kitchen: read %d people in %.1f s — %d inside", len(report),
+    log.info("kitchen: read %d people of %s in %.1f s — %d inside", len(report), day,
              time.monotonic() - t0, out["inside"])
     return {"configured": True, "read_at": verifix_live._iso(now), **out}
 
@@ -183,6 +188,42 @@ def _renew(cfg: dict) -> None:
     finally:
         db.close()
         _lock.release()
+
+
+_days: dict[date, tuple[float, dict]] = {}       # another day's snapshot, by day
+_day_lock = threading.Lock()                       # one other-day read at a time, never the live one's
+DAY_KEEP = 60                                      # snapshots of other days kept
+
+
+def other_day(db: Session, day: date) -> dict:
+    """A past day (every hour from the clocks) or tomorrow (every hour forecast),
+    read on demand and kept: 10 minutes for yesterday and tomorrow, which still
+    move, 6 hours for an older day, which Verifix has settled."""
+    today = verifix_live.now_local().date()
+    ttl = 600 if abs((day - today).days) <= 1 else 6 * 3600
+    hit = _days.get(day)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return _out(hit)
+    cfg = verifix.config(db, with_password=True)
+    if not verifix_live._configured(cfg):
+        return {"configured": False}
+    db.rollback()                                              # no connection held while waiting
+    with _day_lock:
+        hit = _days.get(day)
+        if hit and time.monotonic() - hit[0] < ttl:           # read while we waited
+            return _out(hit)
+        try:
+            data = _build(db, cfg, day)
+        except verifix.VerifixError as exc:
+            log.warning("kitchen: the read of %s failed (%s: %s)", day, exc.code, exc.message)
+            if hit:
+                return _out(hit)
+            raise
+        _days.pop(day, None)
+        _days[day] = (time.monotonic(), data)
+        while len(_days) > DAY_KEEP:
+            _days.pop(next(iter(_days)))                       # the longest kept goes first
+        return _out(_days[day])
 
 
 def headcount(db: Session) -> dict:

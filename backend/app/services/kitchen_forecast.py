@@ -363,12 +363,12 @@ def _settle(rows_between, d0: date) -> date:
 
 
 def holidays(rows_between, today: date, eids: dict) -> dict:
-    """Yesterday and today, when on a holiday's ramp → (day factor, {window: factor}): how the
-    same day of the same holiday came in earlier years against what the model expected of it.
-    `rows_between(first, last)` reads `kitchen_history`; a day on no ramp reads nothing."""
+    """Yesterday, today and tomorrow, when on a holiday's ramp → (day factor, {window: factor}):
+    how the same day of the same holiday came in earlier years against what the model expected
+    of it. `rows_between(first, last)` reads `kitchen_history`; a day on no ramp reads nothing."""
     last = today - timedelta(days=LAG)
     out = {}
-    for day in (today - timedelta(days=1), today):
+    for day in (today - timedelta(days=1), today, today + timedelta(days=1)):
         hit = ramp_day(day, eids)
         if not hit:
             continue
@@ -406,13 +406,15 @@ def _stay(in_now: float, out_now: float, out_t: float) -> float:
     return min(1.0, max(0.0, (1 - out_t) / (1 - out_now))) if out_now < 1 else 0.0
 
 
-def expect(now: datetime, groups: dict, model: dict) -> dict[int, float]:
-    """Hour of today still ahead → the people expected in at its start.
-    `groups`: (day, starts, ends) → [planned, arrived, in now], read today for
-    yesterday's and today's rows; ("", "") holds the people with no window."""
+def expect(now: datetime, groups: dict, model: dict, target: date | None = None) -> dict[int, float]:
+    """Hour of `target` (today, or tomorrow) still ahead → the people expected in at its start.
+    `groups`: (day, starts, ends) → [planned, arrived, in now], read today for the
+    rows of the day before `target` and of `target`; ("", "") holds the people with no window.
+    Today's own factor never scales a day still to come — it was measured on today alone."""
     today = now.date()
+    base = ((target or today) - today).days * 1440           # `target`'s 00:00, in minutes from today's
     x = (now - datetime.combine(today, time())).total_seconds() / 60
-    hours = [h for h in range(24) if h * 60 > x]
+    hours = [h for h in range(24) if base + h * 60 > x]
     windows, pool = model["windows"], model["pool"]
     hol = model.get("hol") or {}
 
@@ -435,25 +437,26 @@ def expect(now: datetime, groups: dict, model: dict) -> dict[int, float]:
     out = dict.fromkeys(hours, 0.0)
     for (day, s, e), (planned, arrived, present) in groups.items():
         off = (day - today).days * 1440
+        f = 1.0 if day > today else factor
         if not s:
             fa, fd, comers = model["null"]
             in_now, out_now = fa(x - off), fd(x - off)
-            come = comers[today.weekday()] * hf(today) * factor if day == today else 0.0
+            come = comers[day.weekday()] * hf(day) * f if day >= today else 0.0
             for h in hours:
-                out_t = fd(h * 60 - off)
+                out_t = fd(base + h * 60 - off)
                 out[h] += present * _stay(in_now, out_now, out_t) \
-                    + come * max(0.0, fa(h * 60 - off) - max(in_now, out_t))
+                    + come * max(0.0, fa(base + h * 60 - off) - max(in_now, out_t))
             continue
         rate, fa, fd = windows.get((s, e)) or pool
         s0, e0 = (m + off for m in _window(s, e))
-        r = min(1.0, rate[day.weekday()] * hf(day, (s, e)) * factor)
+        r = min(1.0, rate[day.weekday()] * hf(day, (s, e)) * f)
         in_now, out_now = fa(x - s0), fd(x - e0)
         waiting = max(0, planned - arrived)
         for h in hours:
-            out_t = fd(h * 60 - e0)
+            out_t = fd(base + h * 60 - e0)
             out[h] += present * _stay(in_now, out_now, out_t)
             if waiting:                                      # of those not in yet, the ones still to come
-                out[h] += waiting * r * max(0.0, fa(h * 60 - s0) - max(in_now, out_t)) \
+                out[h] += waiting * r * max(0.0, fa(base + h * 60 - s0) - max(in_now, out_t)) \
                     / max(1e-9, 1 - r * in_now)
     return out
 

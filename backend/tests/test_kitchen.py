@@ -46,6 +46,31 @@ class TallyTest(unittest.TestCase):
                           hours["23:00"]), (1, 1, 0, 0, 1, 1))
         self.assertEqual([h["plan"] for h in out["hours"]], [False] * 11 + [True] * 13)
 
+    def test_a_past_day_is_all_clocks(self):
+        """Yesterday picked: every hour from the clocks, nothing forecast."""
+        before = YDAY - timedelta(days=1)
+        report = {"1": {YDAY: row(YDAY, "08:00", "17:00", came="07:55", left="17:05")},
+                  "2": {YDAY: row(YDAY, "08:00", "17:00")}}
+        out = kitchen.tally(NOW, [before, YDAY], report, {}, {})
+        self.assertEqual((out["came"], out["left"], out["absent"], out["inside"]), (1, 1, 1, 0))
+        self.assertFalse(any(h["plan"] for h in out["hours"]))
+        hours = {h["t"]: h["n"] for h in out["hours"]}
+        self.assertEqual((hours["07:00"], hours["08:00"], hours["17:00"], hours["18:00"]), (0, 1, 1, 0))
+
+    def test_tomorrow_is_all_forecast(self):
+        """Tomorrow picked: 24 forecast hours; tonight's shift fills its morning,
+        and nobody in the building today counts as «inside»."""
+        tmrw = TODAY + timedelta(days=1)
+        report = {"1": {TODAY: row(TODAY, "08:00", "17:00", came="07:55")},              # in now, not tomorrow
+                  "2": {TODAY: row(TODAY, "20:00", "08:00", next_day=True)},             # tonight
+                  "3": {tmrw: row(tmrw, "08:00", "17:00")}}                              # tomorrow's day shift
+        out = kitchen.tally(NOW, [TODAY, tmrw], report, {}, {})
+        self.assertEqual((out["inside"], out["night"], out["not_yet"]), (0, 0, 1))
+        self.assertTrue(all(h["plan"] for h in out["hours"]))
+        hours = {h["t"]: h["n"] for h in out["hours"]}
+        self.assertEqual((hours["00:00"], hours["07:00"], hours["08:00"], hours["16:00"], hours["17:00"]),
+                         (1, 1, 1, 1, 0))
+
     def test_stored_read_wins(self):
         """The minute job's entry (with a door mark out) replaces the report's row."""
         report = {"1": {TODAY: row(TODAY, "06:00", "10:00", came="06:00")}}

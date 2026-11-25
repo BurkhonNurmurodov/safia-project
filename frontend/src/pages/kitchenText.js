@@ -26,6 +26,16 @@ const uz = {
   depEmpty: "Bugun hali hech kim kelmagan.",
   errTitle: "Sonlar olinmadi", errText: "Verifix javob bermadi. Birozdan keyin qayta urinib ko'ring.", retry: "Qayta urinish",
   offTitle: "Verifix ulanmagan", offText: "Sonlar Verifix'dan o'qiladi. Ulanishni administrator sozlaydi.", offOpen: "Ulanishni ochish",
+  // Another day picked: a past day from the clocks, tomorrow forecast.
+  dayCame: "Kelganlar", nextPeak: "Ertaga eng ko'p",
+  peakLine: "Eng ko'p — soat {t} da {n} kishi", nextAt: "Soat {t} da kutilmoqda",
+  asOfPast: "Verifix, {t} holatiga", asOfNext: "Prognoz {t} da tuzilgan",
+  rosterTitlePast: "Kun tarkibi", rosterTitleNext: "Ertangi jadval",
+  kInSubPast: "kelgan, hali shu yerda", kLeftSubPast: "kelib, ketganlar", kAbsentSubPast: "smenasi bor edi, belgisi yo'q",
+  kPlanned: "Jadvalda", kPlannedSub: "ertaga smenasi bor",
+  hoursSubPast: "Har soat boshida ishda bo'lganlar soni — Verifix belgilaridan.",
+  hoursSubNext: "Har soat boshida kutilayotgan son: ertangi jadval va ikki yillik davomatdan o'rganilgan prognoz — har smenadan odatda qanchasi va qachon keladi, qancha qoladi, bayramlar.",
+  depEmptyPast: "Bu kuni hech kim kelmagan.", depEmptyNext: "Ertaga hech kimning smenasi yo'q.",
 };
 
 const uz_cyrl = {
@@ -49,6 +59,15 @@ const uz_cyrl = {
   depEmpty: "Бугун ҳали ҳеч ким келмаган.",
   errTitle: "Сонлар олинмади", errText: "Verifix жавоб бермади. Бироздан кейин қайта уриниб кўринг.", retry: "Қайта уриниш",
   offTitle: "Verifix уланмаган", offText: "Сонлар Verifix'дан ўқилади. Уланишни администратор созлайди.", offOpen: "Уланишни очиш",
+  dayCame: "Келганлар", nextPeak: "Эртага энг кўп",
+  peakLine: "Энг кўп — соат {t} да {n} киши", nextAt: "Соат {t} да кутилмоқда",
+  asOfPast: "Verifix, {t} ҳолатига", asOfNext: "Прогноз {t} да тузилган",
+  rosterTitlePast: "Кун таркиби", rosterTitleNext: "Эртанги жадвал",
+  kInSubPast: "келган, ҳали шу ерда", kLeftSubPast: "келиб, кетганлар", kAbsentSubPast: "сменаси бор эди, белгиси йўқ",
+  kPlanned: "Жадвалда", kPlannedSub: "эртага сменаси бор",
+  hoursSubPast: "Ҳар соат бошида ишда бўлганлар сони — Verifix белгиларидан.",
+  hoursSubNext: "Ҳар соат бошида кутилаётган сон: эртанги жадвал ва икки йиллик давоматдан ўрганилган прогноз — ҳар сменадан одатда қанчаси ва қачон келади, қанча қолади, байрамлар.",
+  depEmptyPast: "Бу куни ҳеч ким келмаган.", depEmptyNext: "Эртага ҳеч кимнинг сменаси йўқ.",
 };
 
 const ru = {
@@ -72,6 +91,15 @@ const ru = {
   depEmpty: "Сегодня ещё никто не пришёл.",
   errTitle: "Цифры не получены", errText: "Verifix не ответил. Попробуйте ещё раз чуть позже.", retry: "Повторить",
   offTitle: "Verifix не подключён", offText: "Цифры читаются из Verifix. Подключение настраивает администратор.", offOpen: "Открыть подключение",
+  dayCame: "Пришли за день", nextPeak: "Больше всего завтра",
+  peakLine: "Пик — {n} чел. в {t}", nextAt: "Ожидается к {t}",
+  asOfPast: "Verifix на {t}", asOfNext: "Прогноз от {t}",
+  rosterTitlePast: "Состав дня", rosterTitleNext: "График на завтра",
+  kInSubPast: "пришли и ещё здесь", kLeftSubPast: "пришли и ушли", kAbsentSubPast: "смена была, отметки нет",
+  kPlanned: "По графику", kPlannedSub: "завтра есть смена",
+  hoursSubPast: "Число людей на работе на начало каждого часа — по отметкам Verifix.",
+  hoursSubNext: "Ожидаемое число на начало каждого часа: график на завтра и прогноз по посещаемости за два года — сколько из каждой смены обычно приходит и когда, сколько остаются, праздники.",
+  depEmptyPast: "В этот день никто не пришёл.", depEmptyNext: "На завтра смен нет.",
 };
 
 const en = {
@@ -95,6 +123,15 @@ const en = {
   depEmpty: "Nobody has come in yet today.",
   errTitle: "Could not get the numbers", errText: "Verifix did not answer. Try again in a moment.", retry: "Try again",
   offTitle: "Verifix is not connected", offText: "The numbers are read from Verifix. An administrator sets the connection up.", offOpen: "Open the connection",
+  dayCame: "Came that day", nextPeak: "Most at once tomorrow",
+  peakLine: "Peak: {n} at {t}", nextAt: "Expected at {t}",
+  asOfPast: "Verifix as of {t}", asOfNext: "Forecast made at {t}",
+  rosterTitlePast: "The day's roster", rosterTitleNext: "Tomorrow's schedule",
+  kInSubPast: "came, still here", kLeftSubPast: "came and went home", kAbsentSubPast: "had a shift, no clock-in",
+  kPlanned: "Scheduled", kPlannedSub: "have a shift tomorrow",
+  hoursSubPast: "The count at work at the start of each hour, from the Verifix clocks.",
+  hoursSubNext: "The count expected at the start of each hour: tomorrow's schedule and a forecast learned from two years of attendance — how many of each shift usually come and when, how long they stay, holidays.",
+  depEmptyPast: "Nobody came in that day.", depEmptyNext: "Nobody has a shift tomorrow.",
 };
 
 export const TXT = { uz, uz_cyrl, ru, en };

@@ -64,8 +64,8 @@ names change.
   past 10 minutes the page says Verifix is silent and the live dot turns amber.
   Nobody on the page = no Verifix calls at all.
 - **Not built:** a split by plant (only brigadirs hang on a plant), meal times
-  or portions, names, past days, an export, sortable columns, arrivals and
-  departures per hour, a forecast past midnight.
+  or portions, names, an export, sortable columns, arrivals and departures per
+  hour. (Past days and tomorrow's forecast came on 2026-11-25 — «Another day».)
 
 ## The page redesigned — one roster, four colours (2026-11-14)
 
@@ -213,3 +213,42 @@ after a day-by-day check on 50 random normal and 50 holiday days.
   kuni»); a ± range on the page.
 - The page's text changed in one place: the «Soatlar bo'yicha» subtitle
   (`hoursSub`, 4 languages) now says what the dashed figures are learned from.
+
+## Another day — the past from the clocks, tomorrow forecast (2026-11-25)
+
+The operator: «add a date selector on this page. It should show the history
+also, and one day future forecast also … today is 25th they must be able to
+select 26th day and see the forecast also but it's the maximum into the
+future».
+
+- **The page**: THE `DayStepper` above the cards, `max` = tomorrow in
+  Tashkent (`tashkentNow`); `picked ?? live` (the Containers pattern), so an
+  untouched page rolls to the next day at midnight. Today reads exactly as
+  before — `/api/kitchen/now` with no `day` answers as it always did.
+- **`GET /api/kitchen/now?day=YYYY-MM-DD`**: today (or no `day`) → the live
+  snapshot; any other day → `kitchen.other_day`; past tomorrow → 400
+  `future`. Another day is the SAME `_build` → `tally` over the day before it
+  and the day itself (for tomorrow that is today — tonight's shift fills its
+  morning), so its counts follow `_person` like today's.
+- **A past day** is every hour from the clocks (no forecast at all); its
+  headline is «Kelganlar» (came that day) with the peak hour under it; its
+  roster drops «Hali kelmagan» and shows «Ishda» only while somebody of it is
+  still in; the department table is Keldi · Ketdi · Kelmadi.
+- **Tomorrow** is every hour forecast by `kitchen_forecast.expect(…, target)`
+  — tomorrow's schedules from Verifix plus tonight's shift as it stands now.
+  Verifix DOES return future days in «Отчёт по посещениям» (`day_kind`,
+  `begin_time`, `end_time` filled, asked through the report door on
+  2026-11-25 for 26–27 Nov). Nobody counts «inside» tomorrow; its headline is
+  the busiest hour («Ertaga eng ko'p»), its roster the people scheduled
+  («Jadvalda» = not in yet + did not come, the latter being a shift whose
+  schedule names no hours), the table that count per department.
+  **Today's own factor is NOT applied to tomorrow's shifts** (1.0 there) and
+  `holidays` now also covers tomorrow. **Not measured**: how good a forecast
+  made a day ahead is — the 2.6 % above is same-day hours only.
+- **Each other day is a plant-wide Verifix read**: kept per day in memory
+  (`_days`, up to `DAY_KEEP` 60) for 10 minutes (yesterday, tomorrow — they
+  still move) or 6 hours (older, settled); ONE such read at a time
+  (`_day_lock`, never the live `_lock`); a failed re-read serves the kept one.
+  The page waits 350 ms after the last ‹ › before it asks, so steps clicked in
+  a row cost one read; a past day is not re-asked, tomorrow every 5 minutes.
+
