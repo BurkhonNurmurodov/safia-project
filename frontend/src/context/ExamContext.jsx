@@ -78,6 +78,10 @@ export function ExamProvider({ children }) {
   const tasks = attempt?.tasks || [];
   const currentTask = tasks.find((t) => t.key === current) || null;
   const on = !!attemptId && !!attempt && attempt.status === "running";
+  // A demo profile (the Google Play reviewer — `exam.SETTING_DEMO`) lives in
+  // practice mode for good: no strip, no band, no checks — just the sandbox.
+  const demo = !!me?.demo;
+  const live = on && !demo;
 
   const refreshMe = useCallback(() => qc.invalidateQueries({ queryKey: ["exam-me"] }), [qc]);
 
@@ -182,17 +186,34 @@ export function ExamProvider({ children }) {
     }
   }, [on, tasks, current, setCurrent]);
 
+  // ── the demo pin ──────────────────────────────────────────────────────────
+  // Whenever a demo profile is not in the sandbox (first load, a lapsed or
+  // purged practice, «Tanaffus» from anywhere), put it straight back in.
+  const pinning = useRef(false);
+  useEffect(() => {
+    if (!demo || attemptId || pinning.current) return;   // a set mode settles (or is thrown back) by itself
+    pinning.current = true;
+    (async () => {
+      try {
+        const att = me.practice?.status === "running"
+          ? me.practice
+          : (await api.post("/api/exam/practice/start", { app_version: APP_VERSION })).data;
+        await enter(att);
+      } catch { /* the next /exam/me refetch tries again */ } finally { pinning.current = false; }
+    })();
+  }, [demo, attemptId, me, enter]);
+
   // ── the three triggers ────────────────────────────────────────────────────
   // 1. a route change → a visit event, then a check
   useEffect(() => {
-    if (!on) return;
+    if (!live) return;
     api.post(`/api/exam/live/${attemptId}/events`, { kind: "visit", path: location.pathname, ui: uiSnapshot() })
       .then(() => checkSoon(600)).catch(() => {});
-  }, [on, attemptId, location.pathname]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live, attemptId, location.pathname]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // 2. the pages' persisted state moved → a ui event, then a check
   useEffect(() => {
-    if (!on) return undefined;
+    if (!live) return undefined;
     const tick = () => {
       const snap = uiSnapshot();
       const s = JSON.stringify(snap);
@@ -203,13 +224,13 @@ export function ExamProvider({ children }) {
     };
     const id = setInterval(tick, UI_POLL_MS);
     return () => clearInterval(id);
-  }, [on, attemptId, location.pathname, checkSoon]);
+  }, [live, attemptId, location.pathname, checkSoon]);
 
   // 3. a sandbox write succeeded → a check
   useEffect(() => {
-    if (!on) return undefined;
+    if (!live) return undefined;
     return onExamMutation(() => checkSoon(400));
-  }, [on, checkSoon]);
+  }, [live, checkSoon]);
 
   const hidden = HIDDEN_PATHS.some((p) => location.pathname.startsWith(p));
 
@@ -224,7 +245,7 @@ export function ExamProvider({ children }) {
   return (
     <ExamContext.Provider value={value}>
       {children}
-      {on && !hidden && <ExamStrip />}
+      {live && !hidden && <ExamStrip />}
     </ExamContext.Provider>
   );
 }

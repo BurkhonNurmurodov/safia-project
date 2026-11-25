@@ -101,6 +101,7 @@ def me(db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
         "sandbox_prefixes": sb.SANDBOX_PREFIXES, "parked_keys": sb.PARKED_KEYS,
         "pass_mark": exam.pass_mark(db), "badge": None, "attempt": None, "practice": None, "unit": None,
         "task_count": len(exam_bank.enabled_tasks(exam.disabled_tasks(db))),
+        "demo": bool(key) and key in exam.demo_profiles(db),
     }
     if key:
         at = exam.latest_exam(db, key)

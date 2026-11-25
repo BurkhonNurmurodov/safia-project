@@ -11,7 +11,7 @@ import Button from "../ui/Button";
 export default function ExamBand() {
   const exam = useExam();
   const { t } = useLang();
-  if (!exam?.on) return null;
+  if (!exam?.on || exam.me?.demo) return null;   // the Play reviewer's pinned sandbox shows no band
   const practice = exam.attempt?.kind === "practice";
   return (
     <div

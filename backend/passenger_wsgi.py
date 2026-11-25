@@ -375,6 +375,8 @@ try:
     people_copy_nov25()
     from app.startup import umarbek_containers_all
     umarbek_containers_all()
+    from app.startup import play_reviewer_profile
+    play_reviewer_profile()             # 25 Nov: the Google Play reviewer login (once)
     from app.startup import restore_wiped_accounts
     restore_wiped_accounts()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).

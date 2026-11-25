@@ -13371,3 +13371,66 @@ def umarbek_containers_all() -> None:
         _dm_report("fail", f"{title} berilmadi", error=exc)
     finally:
         db.close()
+
+
+# ── 25 Nov: the Google Play reviewer login ────────────────────────────────────
+PLAY_REVIEWER_FLAG = "oneshot:play_reviewer_nov25"
+PLAY_REVIEWER_NAME = "Play Reviewer"
+# The pages the exam sandbox serves — the ONLY ones this profile may open. Every
+# other page key is denied to it (and these five granted), so no later edit of the
+# role × page matrix can hand a reviewer a page that reads real data.
+PLAY_REVIEWER_PAGES = ("tasks", "concerns", "cell-concerns", "idle-cell", "leaders")
+
+
+def play_reviewer_profile() -> None:
+    """The Google Play reviewer login (docs/android.md «Google Play»): a LEADER
+    profile with no unit and no cells, pinned in the exam sandbox
+    (`exam.SETTING_DEMO` — the client keeps it in practice mode for good) and
+    denied the leader pages the sandbox does not serve. Created once; an admin
+    claims it in the bot and gives it a browser login afterwards. No Verifix id
+    and an invented name, so the sync's dismissed-namesake tie never takes it."""
+    import json
+    from app.models import ProfilePermission
+    from app.permissions import PAGE_KEYS
+    from app.services import exam
+
+    title = "Google Play · sharhlovchi profili"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PLAY_REVIEWER_FLAG).first():
+            return
+        p = db.query(RoleProfile).filter_by(role="leader", name=PLAY_REVIEWER_NAME).first()
+        if p is None:
+            p = RoleProfile(role="leader", name=PLAY_REVIEWER_NAME)
+            db.add(p)
+            db.flush()
+        key = f"leader:{p.id}"
+        keys = json.dumps(sorted(exam.demo_profiles(db) | {key}))
+        row = db.query(AppSetting).filter_by(key=exam.SETTING_DEMO).first()
+        if row is None:
+            db.add(AppSetting(key=exam.SETTING_DEMO, value=keys))
+        else:
+            row.value = keys
+        denied = [pg for pg in PAGE_KEYS if pg not in PLAY_REVIEWER_PAGES]
+        for page in PAGE_KEYS:
+            cap = f"page.view.{page}"
+            if not db.query(ProfilePermission).filter_by(profile_key=key, capability=cap).first():
+                db.add(ProfilePermission(profile_key=key, capability=cap,
+                                         mode="grant" if page in PLAY_REVIEWER_PAGES else "deny",
+                                         scope="own", granted_by="Google Play"))
+        db.add(AppSetting(key=PLAY_REVIEWER_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        print(f"[startup] play reviewer profile {key} pinned in the sandbox, {len(denied)} pages denied")
+        _dm_report("ok", title,
+                   status=f"«{PLAY_REVIEWER_NAME}» lider profili yaratildi ({key})",
+                   rows=[("🧪", "Ochilganda", "har doim Imtihon «Mashq» rejimida — faqat namunaviy ma'lumot"),
+                         ("✅", "Ochiq sahifalar", list(PLAY_REVIEWER_PAGES)),
+                         ("🚫", "Qolgan sahifalar", f"{len(denied)} ta — yopiq")],
+                   notes=[("ℹ️", "Keyin: botda shu profilni egallang, «Foydalanuvchilar»da sayt loginini bering, "
+                                 "parolni Google Play «Sign in details»ga o'zingiz yozing.")])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] play reviewer profile failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

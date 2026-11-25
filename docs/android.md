@@ -406,3 +406,20 @@ least 12 testers for 14 days in a row before it may apply for production.
   the signature, so **a phone moving from the APK to Play (or back) must
   uninstall first** — its sign-in and downloaded pages go with it. Our key
   stays the Play UPLOAD key (`bundlePlay` signs with it).
+- **The Google Play reviewer login (2026-11-25, v4.667.0).** Google's
+  reviewers must reach the app behind its login, and production data must not
+  be shown to them. A LEADER profile «Play Reviewer» (no unit, no cells, no
+  Verifix id) is created once (`startup.play_reviewer_profile`) and listed in
+  `exam.SETTING_DEMO` (`exam_demo_profiles`): `/api/exam/me` answers `demo`,
+  and `ExamContext` keeps that login in exam PRACTICE for good — no strip, no
+  band, no checks, re-entered whenever it is not on — so every page it opens
+  runs on the sandbox's fictional unit (cells 9901/9902). It is granted ONLY
+  the five pages the sandbox serves (tasks, concerns, cell-concerns,
+  idle-cell, leaders) and denied every other page key, so no edit of the
+  role × page matrix can open a page that reads real data. Checked locally as
+  that login (2026-11-25): every real call it makes answers generic content or
+  its own empty rows. An admin claims it in the bot (its browser password is
+  delivered by Telegram DM — a password session carries none of the holder
+  account's personal grants) and types the login into Play's «Sign in
+  details». **A page key added later is NOT denied to it by itself** — deny it
+  on the Permissions tab, or the reviewer may see it.

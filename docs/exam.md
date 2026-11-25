@@ -124,3 +124,8 @@ destination is `/panel/exam` (capability `admin.exam.manage`).
   restore never depends on which list the CURRENT bundle happens to be
   carrying — a leftover park from an older, shorter list is unparked by the
   list it was parked with.
+- **Demo profiles (2026-11-25)** — `exam.SETTING_DEMO` lists profiles PINNED in
+  practice: `/api/exam/me` carries `demo`, and `ExamContext` re-enters practice
+  whenever such a login is not in it, with no strip, no band and no event or
+  check traffic (`live` = on and not demo). Its one user is the Google Play
+  reviewer login (`docs/android.md` «Google Play»).

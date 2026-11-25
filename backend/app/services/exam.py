@@ -70,6 +70,20 @@ def disabled_tasks(db: Session) -> set[str]:
         return set()
 
 
+SETTING_DEMO = "exam_demo_profiles"
+
+
+def demo_profiles(db: Session) -> set[str]:
+    """Profile keys PINNED in the sandbox (2026-11-25, the Google Play reviewer
+    login — docs/android.md «Google Play»): the client keeps them in practice
+    mode for good, so every page they open runs on the fictional unit."""
+    raw = _setting(db, SETTING_DEMO)
+    try:
+        return {str(k) for k in json.loads(raw)} if raw else set()
+    except (ValueError, TypeError):
+        return set()
+
+
 def set_disabled_tasks(db: Session, keys: set[str]) -> None:
     row = db.query(AppSetting).filter_by(key=SETTING_DISABLED).first()
     value = json.dumps(sorted(k for k in keys if k in exam_bank.BY_KEY))
