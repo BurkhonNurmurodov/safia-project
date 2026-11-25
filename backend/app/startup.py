@@ -13254,3 +13254,86 @@ def people_copy_nov24() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 25 Nov: Umarbek Karimov (shift manager) → every page of «Konteynerlar» ──
+# The operator, 2026-11-25: «open container app for Umarbek Karimov shift
+# manager all page which has in container app», and — told that the split
+# page makes its holder a logistics person (every AXO request, its Telegram
+# card and the 30-minute re-send) and AXO's page an AXO — chose «All 4, full
+# powers». So his profile gets PERSONAL grants of the four rows' keys:
+# «Konteynerlar» (`containers`), «Konteyner berish» as AXO (`container-flow`),
+# «Konteyner taqsimlash» as logistics (`container-logistics`) and «Bo'limlar»
+# (`container-bolims`). `container-receive` (a brigadir's own unit) and
+# `container-extra` (a brigadir's ask, closed «for now») are a brigadir's
+# keys, not pages of their own, and stay as they are. His profile is the one
+# live profile named «Umarbek Karimov» — the shift-manager one first; anything
+# else changes nothing, tells the admins, and tries again on the next start.
+UMARBEK_CONTAINERS_FLAG = "oneshot:umarbek_containers_all_nov25"
+UMARBEK_CONTAINER_KEYS = ("containers", "container-flow", "container-logistics", "container-bolims")
+
+
+def _umarbek_profile(db):
+    """(profile, candidates): the one profile to grant, or None + who matched."""
+    from app.services.people import fold_name
+
+    def toks(p):
+        return {t for n in (p.name, p.name_uz_cyrl, p.name_ru, p.name_en) if n
+                for t in fold_name(n).split()}
+
+    def surname(ts):        # Karimov / Qarimov
+        return any(t.replace("q", "k").startswith("karimov") for t in ts)
+
+    pool = [p for p in db.query(RoleProfile).filter(RoleProfile.ended_on.is_(None)).all()
+            if any(t.startswith("umarbek") for t in toks(p)) and surname(toks(p))]
+    for group in ([p for p in pool if p.role == "shift-manager"],
+                  [p for p in pool if p.role != "leader"], pool):
+        if len(group) == 1:
+            return group[0], pool
+    return None, pool
+
+
+def umarbek_containers_all() -> None:
+    from app import capabilities
+    from app.identity import profile_holders
+    from app.services import container_flow as flow
+
+    title = "Umarbek Karimov · «Konteynerlar» ilovasi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=UMARBEK_CONTAINERS_FLAG).first():
+            return
+        prof, pool = _umarbek_profile(db)
+        if prof is None:
+            listed = [f"{p.name} · {p.role}:{p.id}" for p in pool]
+            print(f"[startup] Umarbek containers: {len(pool)} profiles match — nothing changed")
+            _dm_report("warn", f"{title} berilmadi",
+                       rows=[("🔎", "«Umarbek Karimov» nomli profillar", listed or "mos kelmadi")],
+                       notes=[("👉", "«Shaxsiy vakolatlar»da qo'lda Konteynerlar, Konteyner berish, "
+                                    "Konteyner taqsimlash va Bo'limlar sahifalarini yoqing.")],
+                       open=_REPORT_PERMS)
+            return
+        key = f"{prof.role}:{prof.id}"
+        grants = {f"page.view.{k}": "all" for k in UMARBEK_CONTAINER_KEYS}
+        capabilities.apply_profile_perms(
+            db, [key], grants=grants, actor_name="system (one-shot 2026-11-25)")
+        db.add(AppSetting(key=UMARBEK_CONTAINERS_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        tg = len(profile_holders(db, key))
+        names = [p["name"] for p in flow.logistics_people(db)]
+        print(f"[startup] Umarbek containers: {key} → {sorted(grants)} (Telegram: {tg})")
+        _dm_report("ok", title,
+                   status="Ilovaning 4 sahifasi berildi",
+                   rows=[("🪪", "Profil", _report_who(prof)),
+                         ("📦", "Sahifalar", ["Konteynerlar", "Konteyner berish (AXO)",
+                                              "Konteyner taqsimlash (logistika)", "Bo'limlar"]),
+                         ("📲", "Telegram", f"{tg} ta akkaunt" if tg else "ulanmagan"),
+                         ("🚚", "Logistlar endi", names)],
+                   notes=[] if tg else [("⚠️", "Profilga hali hech kim ulanmagan — xabarlar bormaydi.")],
+                   open=_report_open(prof))
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] Umarbek containers failed: {exc}")
+        _dm_report("fail", f"{title} berilmadi", error=exc)
+    finally:
+        db.close()

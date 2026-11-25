@@ -276,6 +276,15 @@ containers row from production and move it into the new button».
     docs/data-fixes.md. With two, AXO picks the addressee on «Yangi so'rov»;
     the form starts on whoever that device sent to last (`cflow_last_logistics`),
     and each logistics person sees only the requests addressed to them.
+  - **Umarbek Karimov (shift manager) holds every page of the app** (2026-11-25,
+    the operator: «open container app for Umarbek Karimov shift manager all
+    page»; told that the split page makes him a logistics person — every
+    AXO request, its Telegram card, the 30-minute re-send — and AXO's page an
+    AXO, chose «All 4, full powers»): personal grants of `containers`,
+    `container-flow`, `container-logistics` and `container-bolims` on his
+    profile (`startup.umarbek_containers_all`, once, flag
+    `oneshot:umarbek_containers_all_nov25`). `container-receive` and
+    `container-extra` are a brigadir's keys and were left alone.
   - **`container-receive` is a brigadir's «Qabul»** (2026-11-14): confirming
     what reached their line from a split request — their OWN unit only (a
     supervisor's `role_id` is the unit), admins any. **Open to the brigadir
