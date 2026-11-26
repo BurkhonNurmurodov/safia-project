@@ -287,7 +287,7 @@ export default function Downtime() {
   // picked one isn't among them, the pick is dropped rather than left standing
   // over an empty page.
   const scopedSupervisors = useFactorySupervisors(
-    allSupervisors, brigadirIds, setBrigadirIds);
+    allSupervisors, brigadirIds, setBrigadirIds, "manager_id", { loadOnly: true });
   const supOptions = useMemo(
     () => [...scopedSupervisors]
       .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))

@@ -290,8 +290,15 @@ drafts like every field there (the page's one Save):
   `/api/managers/all` and `/api/staff/supervisors` carry `zagruzka_on`, and the
   page filters (`useFactorySupervisors(…, { loadOnly: true })`; /daily inline),
   because both lists are shared caches that every other page reads whole. A
-  remembered pick of an OFF unit is dropped, on «All factories» too. An OFF
-  unit's attendance day (close / reopen) stays on /staff. The brigadir board
+  remembered pick of an OFF unit is dropped, on «All factories» too. **From
+  2026-11-26 (v4.668.0, the operator: «remove them from the workload related
+  pages») every workload page's picker drops them too**: /staff (the unit
+  picker and «Tasdiqlash» — a viewer's own unit excepted), «Davomat» and
+  «Harakatlar» (`WorkersPage loadOnly`), /downtime, «Kutish yechimlari» and
+  /idle-cell (`/api/idle-cell/supervisors` carries `zagruzka_on`; a locked
+  viewer keeps their own). Still listing every unit: the admin
+  Cleanup tab, «Tarkib», and — because the Almaty unit is OFF yet works there —
+  «Zagruzka fayli» (/production) and the container flow. The brigadir board
   (`brigadir_board.board_units`) already listed ON units only.
   Deliberately NOT gated: /production, Plan Bajarish, Plan Prognoz and its call
   DMs, /live, the leader auto-checks, the ojidaniya pages.

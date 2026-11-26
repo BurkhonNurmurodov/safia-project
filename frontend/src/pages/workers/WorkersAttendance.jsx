@@ -511,7 +511,7 @@ export default function WorkersAttendance() {
 
   // ── render ─────────────────────────────────────────────────────────────────────
   return (
-    <WorkersPage titleKey="nav.workersAttendance"
+    <WorkersPage titleKey="nav.workersAttendance" loadOnly
       right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}>
       {failed ? (
         // A failure is not «no closed days»: it says so, and offers the way back.

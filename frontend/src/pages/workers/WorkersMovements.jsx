@@ -309,7 +309,7 @@ export default function WorkersMovements() {
 
   // ── render ─────────────────────────────────────────────────────────────────────
   return (
-    <WorkersPage titleKey="nav.workersMovements">
+    <WorkersPage titleKey="nav.workersMovements" loadOnly>
       {isError && !req ? (
         // A failure is not «no requests»: it says so, and offers the way back.
         <div className="rounded-2xl p-4 mb-6" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

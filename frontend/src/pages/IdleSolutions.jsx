@@ -76,7 +76,7 @@ export default function IdleSolutions() {
     staleTime: 300_000,
     enabled: !isSupervisor,
   });
-  const scopedSupervisors = useFactorySupervisors(allSupervisors, brigadirIds, setBrigadirIds);
+  const scopedSupervisors = useFactorySupervisors(allSupervisors, brigadirIds, setBrigadirIds, "manager_id", { loadOnly: true });
   const supOptions = useMemo(
     () => [...scopedSupervisors]
       .map((b) => ({ value: String(b.manager_id), label: tl(b.name) }))

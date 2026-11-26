@@ -842,7 +842,9 @@ export default function IdleCell() {
     queryKey: ["idle-supervisors"],
     queryFn: () => api.get("/api/idle-cell/supervisors").then((r) => r.data),
   });
-  const supervisors = supData ?? [];
+  // A unit whose загрузка is switched off is not offered (a locked viewer keeps their own).
+  const supervisors = useMemo(
+    () => (supData ?? []).filter((s) => locked || s.zagruzka_on !== false), [supData, locked]);
   const shiftSupervisors = useMemo(
     () => supervisors.filter((s) => shiftTab === "all" || s.shift === shiftTab),
     [supervisors, shiftTab],

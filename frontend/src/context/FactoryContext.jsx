@@ -164,7 +164,8 @@ export function useFactoryParams(params) {
  * `supervisors` is any array of objects carrying `factory_id` and an id under
  * `idKey` (/api/managers/all says `manager_id`, /api/quality says `id`).
  *
- * `loadOnly` is for a загрузка page (/zagruzka, Overview): it also drops every
+ * `loadOnly` is for a workload page (/zagruzka, Overview, attendance, movements,
+ * /downtime, «Kutish yechimlari»): it also drops every
  * unit whose загрузка is switched off (`zagruzka_on` false on
  * /api/managers/all) — the загрузка skips such a unit, so picking it could
  * only show an empty page — and clears such a pick on «All factories» too.

@@ -34,7 +34,7 @@ import api from "../../utils/api";
 // read line and refresh. It is said ONCE here; until 2026-11-13 the switch was
 // repeated in the header of every card it drove (six of them on «Davomat»),
 // and the cards that did not carry it silently ignored it.
-export function WorkersPage({ titleKey, period = true, right, children }) {
+export function WorkersPage({ titleKey, period = true, right, children, loadOnly = false }) {
   const { dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
@@ -52,8 +52,9 @@ export function WorkersPage({ titleKey, period = true, right, children }) {
   // Only the supervisors of the plant this tab is on — and if the currently
   // picked one isn't among them, the pick is dropped rather than left standing
   // over an empty page.
+  // `loadOnly`: a workload page offers no unit whose загрузка is switched off.
   const scopedSupervisors = useFactorySupervisors(
-    allSupervisors, brigadirIds, setBrigadirIds);
+    allSupervisors, brigadirIds, setBrigadirIds, "manager_id", { loadOnly });
   const supOptions = useMemo(
     () => [...scopedSupervisors]
       .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))

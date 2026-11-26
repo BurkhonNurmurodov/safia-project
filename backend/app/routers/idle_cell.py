@@ -435,7 +435,8 @@ def list_supervisors(
         return []
     mgrs = db.query(Manager).filter(Manager.id.in_(ids), Manager.archived == False).all()  # noqa: E712
     mgrs.sort(key=lambda m: (m.shift or 0, (m.name or "").lower()))
-    return [{"id": m.id, "name": m.name, "shift": m.shift} for m in mgrs]
+    return [{"id": m.id, "name": m.name, "shift": m.shift, "zagruzka_on": bool(m.zagruzka_on)}
+            for m in mgrs]
 
 
 @router.get("/cells")

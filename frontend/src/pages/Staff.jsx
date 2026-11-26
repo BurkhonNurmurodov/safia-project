@@ -4635,6 +4635,11 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
 
   const [selManagerId, setSelManagerId] = usePersistentState(S.pk("staff_approvals_manager_id"), null);
   const effManagerId = crossUnit ? selManagerId : auth?.role_id;
+  // A remembered pick the picker no longer offers (an off-загрузка unit) is dropped.
+  useEffect(() => {
+    if (supervisors.length && selManagerId != null
+        && !supervisors.some(s => s.manager_id === selManagerId)) setSelManagerId(null);
+  }, [supervisors, selManagerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const now = new Date();
   const [view, setView] = usePersistentState(S.pk("staff_approvals_month"), { year: now.getFullYear(), month: now.getMonth() });
@@ -4963,12 +4968,21 @@ export default function Staff() {
   // list to the shift-manager's own shift (admins see everyone).
   const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
-  const { data: supervisors = [] } = useQuery({
+  const { data: allSupervisors = [] } = useQuery({
     queryKey: B.qk("staff-supervisors"),
     queryFn: () => api.get(`${B.base}/supervisors`).then(r => r.data),
     enabled: isManagerView,
     staleTime: 120_000,
   });
+  // A unit whose загрузка is switched off (`zagruzka_on`) is not offered here
+  // (the operator, 2026-11-26) — the viewer's own unit excepted.
+  const supervisors = useMemo(
+    () => allSupervisors.filter(s => s.zagruzka_on !== false || s.manager_id === auth?.role_id),
+    [allSupervisors, auth?.role_id]);
+  useEffect(() => {
+    if (supervisors.length && selectedManagerId != null
+        && !supervisors.some(s => s.manager_id === selectedManagerId)) setSelectedManagerId(null);
+  }, [supervisors, selectedManagerId]); // eslint-disable-line react-hooks/exhaustive-deps
   // How many of this unit's workers still have no cell — the number the day
   // close will REFUSE on. It rides the day-state endpoint the close itself
   // consults (`needs_cell`), so the badge and the refusal can never disagree.
