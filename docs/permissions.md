@@ -67,6 +67,13 @@ THE name of a capability, wherever one is printed), so they need no
   `admin.tab.permissions` can hand out every grant, themselves included —
   the operator's call.
 - Additive like every grant: nobody's current access changed on deploy.
+- **The bot's `/broadcast` follows `admin.tab.broadcast` too** (2026-11-26 —
+  it had stayed on the admins table, so a guest given «Xabarnoma» got
+  «Boshlash uchun /start ni bosing»): `telegram_bot._may_broadcast`, the same
+  answer `verify_broadcast_admin` gives the recipient picker — an admin, or
+  the grant on the account or any profile it holds. The journal names such a
+  draft by the grant (`via_capability`), never as an admin's. The command
+  MENU still lists `/broadcast` for nobody; it is typed.
 
 ## On a phone (2026-11-20)
 

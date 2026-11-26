@@ -2254,11 +2254,28 @@ def handle_incoming_rich_message(msg: dict) -> bool:
     return True
 
 
+def _may_broadcast(tid: int) -> bool:
+    """An admin, or the «Xabarnoma» grant on the account or a profile it holds —
+    the answer `routers/broadcast.verify_broadcast_admin` gives the picker, so
+    the command and the page behind it never disagree."""
+    if tid in _admin_ids():
+        return True
+    from app.capabilities import account_cap_scope, tab_cap
+    with SessionLocal() as db:
+        return account_cap_scope(db, tid, tab_cap("broadcast")) is not None
+
+
+def _bc_actor(tid: int) -> dict:
+    """How the journal names who composed a draft: an admin, else the grant."""
+    return ({"actor_role": "admin"} if tid in _admin_ids()
+            else {"via_capability": "admin.tab.broadcast"})
+
+
 @bot.message_handler(commands=["broadcast"])
 def _broadcast_start(message: types.Message):
     tid = message.from_user.id
     lang = _get_lang(tid)
-    if tid not in _admin_ids():
+    if not _may_broadcast(tid):
         bot.send_message(tid, _msg(lang, "unknown_command"))
         return
     # One active draft per admin — a fresh /broadcast replaces any old one.
@@ -2369,7 +2386,7 @@ def _broadcast_callback(call: types.CallbackQuery):
             db.commit()
             if dropped:
                 action_log.record_bot(db, tid, "comms", "broadcast.draft_discarded",
-                                      actor_role="admin", target_kind="broadcast")
+                                      target_kind="broadcast", **_bc_actor(tid))
         try:
             bot.edit_message_text(_msg(lang, "bc_cancelled"), chat_id=call.message.chat.id,
                                   message_id=call.message.message_id)
@@ -2394,7 +2411,7 @@ def _broadcast_callback(call: types.CallbackQuery):
         # is the composer handing the draft over to the recipient picker.
         action_log.record_bot(
             db, tid, "comms", "broadcast.draft_composed",
-            actor_role="admin", target_kind="broadcast", target_id=token,
+            target_kind="broadcast", target_id=token, **_bc_actor(tid),
             details=[("count", count)],
             changes=[("status", "awaiting_continue", "awaiting_recipients")],
         )
