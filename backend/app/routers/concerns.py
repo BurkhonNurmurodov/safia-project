@@ -250,8 +250,14 @@ def _cell_manager_id(db: Session, cell_code: str) -> Optional[int]:
     code = (cell_code or "").strip()
     if not code:
         return None
+    # FROM the cell, explicitly: the selected column names BOTH tables, so
+    # without it SQLAlchemy cannot tell which side the outer join starts from
+    # and refuses the query — every concern an admin or a shift-manager filed
+    # (the creators with no unit of their own, the only ones who reach this)
+    # failed with «Internal Server Error» (found 2026-11-26).
     row = (
         db.query(func.coalesce(RoleProfile.manager_id, Cell.manager_id))
+        .select_from(Cell)
         .outerjoin(RoleProfile, and_(RoleProfile.id == Cell.leader_id,
                                      RoleProfile.role == "leader"))
         .filter(Cell.verifix_code == code)
