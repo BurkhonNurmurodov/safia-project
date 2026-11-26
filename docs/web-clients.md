@@ -605,25 +605,40 @@ a fresh WebKit, with and without the worker). That screen is `staleReload`
 did not help. A reload that does not help means the failing answer is STORED ON
 THE DEVICE, and «close and reopen» reads the same store.
 
-- **A missing `/assets` file is answered `no-store`** (`ImmutableStaticFiles`
-  in `main.py`, `tests/test_missing_asset_not_cached.py`). Its 404 used to leave
-  with no Cache-Control; Cloudflare stamped it `max-age=14400` and cached it at
-  the edge, so a browser that asked for a chunk in a moment it was not on disk
-  kept «not found» for four hours after the file was back. Check after any
-  change there: two `curl -I` of a made-up `/assets/x.js` must both say
-  `no-store` and never `cf-cache-status: HIT`.
 - **The dead end repairs once, then reports** (`repairStored` in `index.html`):
-  it notes how each code file the page asked for answers as stored
-  (`cache: 'force-cache'`), unregisters the worker and drops the `safia-*`
+  for every code file and stylesheet the page asked for it notes the answer as
+  stored (`cache: 'force-cache'` — status, type and size) and whether the
+  worker's cache holds it, unregisters the worker and drops the `safia-*`
   caches, asks the server for each again (`cache: 'reload'`, which overwrites
   the stored answer), posts what it found to `/api/boot-report` (stage
-  `stale-reload` — «stored: 404, server: 200» names a kept «not found»), and
-  reloads. Only a failure within two minutes of that repair shows the «close
-  and reopen» text, and reports again. Nothing in localStorage is touched, so
-  nobody is signed out.
-- **Not settled:** what made a code file answer 404 on that Mac in the first
-  place — its storage could not be read (macOS protects the web app's
-  container). The first `stale-reload` report names the file and both answers.
+  `stale-reload`) and reloads. Only a failure within two minutes of that
+  repair shows the «close and reopen» text, and reports again. Nothing in
+  localStorage is touched, so nobody is signed out.
+- **How to read that report.** «Engine said» is the browser's own error for the
+  import (Vite's `vite:preloadError`; a script tag writes its own line). A file
+  line — «stored: 200 text/html 15 B (worker cache: yes), server: 200
+  application/javascript 9680 B» — names the bad copy and which store held it.
+  «Every file answered the same» with an engine error means the file loaded and
+  THREW, or was not among those checked.
+- **What happened on that Mac is NOT known.** Its first report (status only,
+  scripts only) read «worker in control: true — 68 files — every file answered
+  200, as stored and from the server», and the app opened after the repair. So
+  it was not a kept «not found». Left open: a stored copy answering 200 with
+  the wrong body, a stylesheet (not checked then), or the worker itself — two
+  new workers had been deployed between the stuck screen and that open, so the
+  old cache may have been on its way out anyway. macOS does not let the web
+  app's container be read, so the next report is the only evidence there is.
+- **A missing `/assets` file is answered `no-store`** (`ImmutableStaticFiles`
+  in `main.py`, `tests/test_missing_asset_not_cached.py`) — found on the way and
+  closed, not the cause above. Its 404 left with no Cache-Control, Cloudflare
+  stamped it `max-age=14400` and cached it at the edge, so a browser asking for
+  a chunk in a moment it is not on disk would keep «not found» for four hours.
+  Check after any change there: two `curl -I` of a made-up `/assets/x.js` must
+  both say `no-store` and never `cf-cache-status: HIT`.
+- **Not closed:** the worker's install stores whatever answers 200
+  (`cache.add` in `src/sw.js` skips `storable`), and nginx's restart fallback
+  answers a file missing from disk with `index.html`/200 — together a way to
+  park the shell under a code file's name. Nothing ties it to that Mac.
 - **Known mislabel:** a stall report from under that overlay says «the session
   check»: the loader AuthGate rendered stays mounted (hidden) while the page's
   code is awaited, and its clock keeps running. Read such a report as «a

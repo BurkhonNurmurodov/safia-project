@@ -1734,10 +1734,11 @@ if STATIC_DIR:
             except StarletteHTTPException as exc:
                 # A MISSING file must never be kept (2026-11-26): the 404 left
                 # here with no Cache-Control, Cloudflare stamped it max-age=4h
-                # and cached it at the edge — so a browser that asked for a
-                # chunk in a moment it was not on disk kept «not found» for
-                # four hours after the file was back, and the app dead-ended
-                # on «Yangilanish kerak» through every reload and re-open.
+                # and cached it at the edge — a browser asking for a chunk in
+                # a moment it is not on disk would keep «not found» for four
+                # hours after the file is back. Found while chasing a
+                # «Yangilanish kerak» dead end and closed; it was NOT that
+                # one's cause (docs/web-clients.md).
                 exc.headers = {**(exc.headers or {}), "Cache-Control": "no-store"}
                 raise
             resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"

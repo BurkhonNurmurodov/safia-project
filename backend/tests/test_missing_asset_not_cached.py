@@ -1,8 +1,8 @@
 """A missing /assets file is answered `no-store`.
 
 Left without a Cache-Control, Cloudflare stamped that 404 `max-age=14400` and
-kept it at the edge — a browser then held «not found» for four hours after the
-file was back, and the app dead-ended on «Yangilanish kerak» (2026-11-26).
+kept it at the edge — a browser would then hold «not found» for four hours
+after the file was back (2026-11-26; a hazard closed, not a seen failure).
 """
 import os
 import tempfile

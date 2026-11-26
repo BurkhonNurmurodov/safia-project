@@ -289,42 +289,64 @@
         // this page asked for answers AS STORED, drop the worker and its caches,
         // ask the SERVER for each again (which overwrites the stored answer),
         // and send the team what was found. `done` runs once, after at most 15 s.
+        // The engine's own words for the code file that would not import. Vite
+        // announces a failed import (or a failed stylesheet of one) on the
+        // window before utils/importRecovery.js swallows it; chunkLoadFailed
+        // below writes the same note for a script tag.
+        var lastImportError = '';
+        window.addEventListener('vite:preloadError', function (e) {
+          var r = e && e.payload;
+          if (r) lastImportError = String((r.name ? r.name + ': ' : '') + (r.message || r)).slice(0, 300);
+        });
         function repairStored(note, done) {
-          var urls = [], stored = {}, fresh = {}, ended = false;
+          var urls = [], stored = {}, held = {}, fresh = {}, ended = false;
           function end() { if (!ended) { ended = true; done(); } }
           if (typeof fetch !== 'function' || typeof Promise !== 'function') { end(); return; }
           setTimeout(end, 15000); // a dead link must not hold the screen
           function add(u) {
             if (u && u.indexOf(location.origin + '/assets/') === 0 &&
-                /\.js$/.test(u) && urls.indexOf(u) < 0) urls.push(u);
+                /\.(js|css)$/.test(u) && urls.indexOf(u) < 0) urls.push(u);
           }
           try {
             var es = performance.getEntriesByType('resource');
             for (var i = 0; i < es.length; i++) add(es[i].name);
           } catch (e) {}
           try {
-            // Vite adds a modulepreload link for a lazy chunk and each of its imports.
-            var ls = document.querySelectorAll('link[rel="modulepreload"],script[src]');
+            // Vite adds a link for a lazy chunk, each of its imports and its stylesheets.
+            var ls = document.querySelectorAll(
+              'link[rel="modulepreload"],link[as="script"],link[rel="stylesheet"],script[src]');
             for (var j = 0; j < ls.length; j++) add(ls[j].href || ls[j].src);
           } catch (e) {}
           var ctl = false;
           try { ctl = !!(navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) {}
 
-          function ask(mode, into, next) {
+          // Runs `probe(u, fin)` for every file, then `next`; each `fin` counts once.
+          function each(into, probe, next) {
             var left = urls.length;
             if (!left) { next(); return; }
             function one(u) {
               var told = false;
-              function fin(s) { if (told) return; told = true; into[u] = s; if (--left === 0) next(); }
-              try {
-                fetch(u, { cache: mode, credentials: 'same-origin' }).then(function (r) {
-                  var s = r.status;
-                  // Read to the end: a cache entry is only written by a finished body.
-                  return r.arrayBuffer().then(function () { fin(s); });
-                }).then(null, function () { fin(0); });
-              } catch (e) { fin(0); }
+              function fin(v) { if (told) return; told = true; into[u] = v; if (--left === 0) next(); }
+              try { probe(u, fin); } catch (e) { fin('?'); }
             }
             for (var k = 0; k < urls.length; k++) one(urls[k]);
+          }
+          // Status, type and size: the first report (2026-11-26) said «200» for
+          // every file and could not see a stored copy that answers 200 with
+          // the wrong body. Read to the end — a cache entry is only written by
+          // a finished body.
+          function ask(mode) {
+            return function (u, fin) {
+              fetch(u, { cache: mode, credentials: 'same-origin' }).then(function (r) {
+                var head = r.status + ' ' + String(r.headers.get('content-type') || '?').split(';')[0];
+                return r.arrayBuffer().then(function (b) { fin(head + ' ' + b.byteLength + ' B'); });
+              }).then(null, function () { fin('no answer'); });
+            };
+          }
+          // The worker's copy or the browser's own? Asked before the caches go.
+          function inWorkerCache(u, fin) {
+            caches.match(u, { ignoreVary: true }).then(
+              function (r) { fin(r ? 'yes' : 'no'); }, function () { fin('?'); });
           }
           function drop(next) {
             var n = 2;
@@ -345,18 +367,21 @@
             } catch (e) { step(); }
           }
           function tell() {
-            var lines = [note, 'worker in control: ' + ctl + ' - code files checked: ' + urls.length];
+            var lines = [note, 'Engine said: ' + (lastImportError || 'nothing recorded'),
+              'worker in control: ' + ctl + ' - files checked: ' + urls.length];
             var bad = 0;
             for (var c = 0; c < urls.length; c++) {
               var u = urls[c];
-              if (stored[u] === 200 && fresh[u] === 200) continue;
+              var want = /\.css$/.test(u) ? 'text/css' : 'javascript';
+              if (stored[u] === fresh[u] && fresh[u].indexOf('200 ') === 0 && fresh[u].indexOf(want) > 0) continue;
               bad += 1;
-              if (bad <= 12) {
-                lines.push(u.replace(location.origin, '') + ' - stored: ' + stored[u] + ', server: ' + fresh[u]);
+              if (bad <= 10) {
+                lines.push(u.replace(location.origin, '') + ' - stored: ' + stored[u] +
+                  ' (worker cache: ' + held[u] + '), server: ' + fresh[u]);
               }
             }
-            lines.push(bad ? bad + ' file(s) did not answer 200 (0 = no answer)'
-                           : 'Every file answered 200, as stored and from the server.');
+            lines.push(bad ? bad + ' file(s) stored differently from the server, or not what their name says'
+                           : 'Every file answered the same, stored and from the server.');
             lines.push('Engine: ' + navigator.userAgent);
             var initData = '';
             try { var wa = window.Telegram && window.Telegram.WebApp; initData = (wa && wa.initData) || ''; } catch (e) {}
@@ -372,8 +397,10 @@
               }).then(end, end);
             } catch (e) { end(); }
           }
-          ask('force-cache', stored, function () {
-            drop(function () { ask('reload', fresh, tell); });
+          each(stored, ask('force-cache'), function () {
+            each(held, inWorkerCache, function () {
+              drop(function () { each(fresh, ask('reload'), tell); });
+            });
           });
         }
         // A content-hashed asset chunk 404'd — this client is running a stale
@@ -689,7 +716,11 @@
           function settle(status) {
             if (settled) return;
             settled = true;
-            if (status === 404 || status === 410 || status === -1) { staleReload(); return; }
+            if (status === 404 || status === 410 || status === -1) {
+              lastImportError = 'script tag ' + url + ' - the server answered HTTP ' + status;
+              staleReload();
+              return;
+            }
             errors.push('Failed to load: ' + url + (status
               ? ' (re-check: HTTP ' + status + ' - the file is on the server; the transfer was dropped, or this engine could not parse it)'
               : ' (re-check: no answer - the connection is dropping or timing out)'));
