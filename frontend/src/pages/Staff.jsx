@@ -4677,6 +4677,9 @@ function ApprovalsCalendar({ role, supervisors, liveFrom = null }) {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: S.qk("staff-approvals-calendar") });
+    // A close rejects the day's drafts (`_reject_drafts_at_close`).
+    qc.invalidateQueries({ queryKey: S.qk("staff-documents") });
+    qc.invalidateQueries({ queryKey: S.qk("staff-documents-pending-count") });
     qc.invalidateQueries({ queryKey: S.qk("approved-cells") });
     qc.invalidateQueries({ queryKey: S.qk("daily-approval") });
     qc.invalidateQueries({ queryKey: TODAY_STAFF_API.qk("staff-approvals-calendar") });

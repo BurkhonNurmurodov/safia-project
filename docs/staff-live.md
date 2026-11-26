@@ -693,6 +693,33 @@ one exception to «A day closes BY HAND only» above; the manual close and its
   per-shift setting for the two clocks; a worker still shown inside keeps the
   hours the stored read gave them.
 
+## A close REJECTS the day's draft documents (`_reject_drafts_at_close`, 2026-11-26)
+
+The operator, after Niyozov Izzatilla's 25.11 stayed ⏳ on /zagruzka although
+he had closed it: «If it's not approved by the closure, the document should be
+marked as rejected by the one who closed the day.» A draft document (transfer
+#2350 to Yogmirov Feruz) keeps a closed day «closed» instead of «confirmed»
+(`day_state.confirmed_pairs`), and the /zagruzka tables show only confirmed
+days — while the heatmap's own figures need only the close (`_closed_pairs`),
+so the page had the numbers and hid them behind a ⏳ that said «not closed».
+
+- **Both closes do it**: a person's (`close_day` — /staff, Kunlik, an admin
+  on a brigadir's behalf) and the platform's (`_auto_close_one`, «System»).
+  Every draft (`people_exchange`, `role_change`) of THAT unit-day becomes
+  `rejected`, decided by the closer (name, telegram id, a «rejected» history
+  row) — inside the close's own transaction, so the day is confirmed the
+  moment it closes, and a close refused or lost to a same-second close rejects
+  nothing. The rows are locked like every other decision on a document
+  (`FOR UPDATE`, documents before the day), so an approval tapped in the same
+  second either lands first or finds the document rejected.
+- **After the commit, what a reject always does**: a Jurnal
+  row (`lab.live_document_rejected`, details naming `closed_by`; source
+  «system» for the automatic close), the filer's notice (`_tell_rejected` —
+  never to the closer themself) and the admins' one-tap cards retired.
+- **Not covered**: pending DELETION requests (`live_deletions`) still hold a
+  closed day back, and so do drafts on days closed before this rule (it acts
+  at the close only). /staff's documents list and badge re-read after a close.
+
 
 ## A unit's cells NOT counted in the загрузка are on its /staff list too (`live_staff.load(with_off)`, 2026-11-24)
 

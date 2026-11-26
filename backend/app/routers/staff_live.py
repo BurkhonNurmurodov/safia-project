@@ -1290,6 +1290,44 @@ def _tell_rejected(db: Session, doc: LiveDocument, caller: dict) -> None:
                 ntype="error")
 
 
+# The automatic close's actor (`_auto_close_one`) — the `DayApproval` it writes
+# says «System» with telegram id 0 too (`live_projection.close`).
+_SYSTEM = {"sub": 0, "full_name": "System", "role": "system"}
+
+
+def _reject_drafts_at_close(db: Session, mid: int, d: date, caller: dict) -> list:
+    """A document still a draft when its day closes is REJECTED by whoever
+    closed the day (the operator, 2026-11-26): a draft keeps a closed day from
+    being confirmed, so the day stayed off the /zagruzka tables for good
+    (Niyozov's 25.11, document #2350). Inside the close's own transaction, so
+    the day is confirmed the moment it closes; locked like every other decision
+    on a document, so an approval tapped in the same second either lands first
+    (and the document is no longer a draft here) or finds it rejected."""
+    docs = (db.query(LiveDocument)
+            .filter(LiveDocument.manager_id == mid, LiveDocument.day == d,
+                    LiveDocument.status == "draft")
+            .order_by(LiveDocument.id).with_for_update(of=LiveDocument).all())
+    for doc in docs:
+        _reject(doc, caller, db)
+    return docs
+
+
+def _tell_drafts_rejected(db: Session, docs: list, caller: dict) -> None:
+    """After the close's commit: the journal row, the filer's notice and the
+    retired approval cards — what `reject_document` does for one document."""
+    for doc in docs:
+        log = _log_doc(doc, [("status", "draft", "rejected")])
+        log["details"].append(("closed_by", _who(caller)))
+        if caller is _SYSTEM:
+            action_log.record_system("documents", "lab.live_document_rejected", db, **log)
+        else:
+            action_log.record(db, category="documents", action="lab.live_document_rejected",
+                              source="web" if caller.get("web") else "telegram",
+                              actor=caller, **log)
+        _tell_rejected(db, doc, caller)
+        _retire("live_document", doc.id, "rejected", _who(caller))
+
+
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateBody, db: Session = Depends(get_db), caller: dict = Depends(_page)):
     if caller.get("role") != "supervisor" and not _adm(db, caller):
@@ -2275,11 +2313,13 @@ def close_day(body: ApprovalBody, db: Session = Depends(get_db), caller: dict = 
         refuse("verifix_unreachable", 0,
                f"Verifix'ga ulanib bo'lmadi, oxirgi o'qish {CLOSE_READ_MAX_MIN} daqiqadan eski "
                f"({(out['read_at'] or '—')[11:16]}). Birozdan keyin qayta urinib ko'ring.")
+    rejected = _reject_drafts_at_close(db, mid, d, caller)
     db.add(LiveDayClose(manager_id=mid, day=d, closed_by_name=_who(caller)))
     copied = None
     if live:
         copied = live_projection.close(db, mid, ctx, _tg(caller), _who(caller))
     db.commit()
+    _tell_drafts_rejected(db, rejected, caller)
     if live:
         # A document decided while this close was being built re-copied the
         # CLOSED units it could see, and this one's close was not committed yet:
@@ -2321,6 +2361,7 @@ def _auto_close_one(db: Session, mid: int, d: date, name: str) -> int:
     if not (ud["counts"]["came"] or ud["counts"].get("extra_came")):
         _claim(db, "auto_close", mid, d)        # nobody came: no day to close
         return 0
+    rejected = _reject_drafts_at_close(db, mid, d, _SYSTEM)
     db.add(LiveDayClose(manager_id=mid, day=d, closed_by_name="System"))
     try:
         copied = live_projection.close(db, mid, ctx, None, "System")
@@ -2328,6 +2369,7 @@ def _auto_close_one(db: Session, mid: int, d: date, name: str) -> int:
     except IntegrityError:                       # a brigadir closed it in the same second
         db.rollback()
         return 0
+    _tell_drafts_rejected(db, rejected, _SYSTEM)
     _recopy(db, d, only=mid)
     no_out, inside, no_cell = len(out["no_checkout"]), out["busy_count"], out["unplaced"]
     bad = no_out + inside + no_cell
