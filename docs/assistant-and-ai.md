@@ -425,9 +425,11 @@ reading of it.
   answer is sent to be spoken (the orb answers in text).
 - **Keeping speech inside the country means another provider**, not a
   setting: both rows are Gemini-only today. The local services (Muxlisa,
-  UzbekVoice / Mohir, Kotib, Aisha, NeuronAI) are the candidates; the
-  operator's ruling of 26 Nov is to test Gemini first and look at them if it
-  falls short.
+  UzbekVoice / Mohir, Kotib, Aisha, NeuronAI) are the candidates, priced and
+  compared in `docs/plan-voice-uzbek-models.md` (read 26 Nov 2026 — Gemini is
+  the cheapest by three to nine times, and only Kotib states in-country
+  storage); the operator's ruling of 26 Nov is to test Gemini first and look
+  at them if it falls short.
 
 ## AI keys, and which feature runs on which («AI kalitlari», `/panel/aikeys`)
 
