@@ -6734,6 +6734,87 @@ def _meta_set(key: str, value: str) -> None:
         logger.warning("app_meta write failed (%s): %s", key, e)
 
 
+# Default command menu for every user — Uzbek default plus ru/en variants
+# (Telegram has no uz-Cyrillic language code; the default covers it).
+_MENUS = {
+    None: [
+        types.BotCommand("start", "Boshlash / dashboard"),
+        types.BotCommand("register", "Ro'yxatdan o'tish / yangi rol qo'shish"),
+        types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
+        types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
+        types.BotCommand("android", "Android ilovasini yuklab olish"),
+    ],
+    "ru": [
+        types.BotCommand("start", "Запуск / дашборд"),
+        types.BotCommand("register", "Регистрация / добавить роль"),
+        types.BotCommand("tasks", "Ежедневные задачи (лидеры)"),
+        types.BotCommand("ojidaniya", "Снимок страницы «Ожидания»"),
+        types.BotCommand("android", "Скачать приложение для Android"),
+    ],
+    "en": [
+        types.BotCommand("start", "Start / dashboard"),
+        types.BotCommand("register", "Register / add a role"),
+        types.BotCommand("tasks", "Daily tasks (leaders)"),
+        types.BotCommand("ojidaniya", "Snapshot of the Ojidaniya page"),
+        types.BotCommand("android", "Download the Android app"),
+    ],
+}
+
+# /broadcast in the menu of whoever may use it (`_may_broadcast`). A chat's own
+# menu REPLACES the default one, so a grantee's is the default plus this row.
+_BC_ROW = {None: "Xabarnoma yuborish", "ru": "Отправить рассылку", "en": "Send a broadcast"}
+
+
+def _bc_menu(code: str | None) -> list:
+    return _MENUS[code] + [types.BotCommand("broadcast", _BC_ROW[code])]
+
+
+def sync_broadcast_menus() -> None:
+    """Give every non-admin holder of «Xabarnoma» a menu with /broadcast, in
+    their own language, and take it back from whoever lost the grant. Diffed
+    against what was last applied (app_meta `bot_bc_menus`), so Telegram hears
+    only a change — setMyCommands is rate-limited (see `setup_webhook`).
+
+    Runs at boot and after every save that touches the grant
+    (`capabilities._menus_follow`). Admins are not here: their menu is
+    `setup_webhook`'s, and carries the row itself."""
+    if not settings.telegram_bot_token or not (settings.backend_url or "").startswith("https://"):
+        return  # local dev — no Telegram
+    try:
+        from app.capabilities import tab_cap, users_with_cap
+        admins = _admin_ids()
+        with SessionLocal() as db:
+            holders = set(users_with_cap(db, tab_cap("broadcast"))) - admins
+        want = {str(t): {"ru": "ru", "en": "en"}.get(_get_lang(t)) for t in holders}
+        sig = hashlib.sha256(json.dumps(
+            {str(c): [(x.command, x.description) for x in _bc_menu(c)] for c in _MENUS},
+            sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        old = json.loads(_meta_get("bot_bc_menus") or "{}")
+        had = (old.get("chats") or {}) if old.get("sig") == sig else {}
+        done: dict = {}
+        for tid, code in want.items():
+            if tid in had and had[tid] == code:
+                done[tid] = code
+                continue
+            try:
+                bot.set_my_commands(_bc_menu(code), scope=types.BotCommandScopeChat(int(tid)))
+                done[tid] = code
+            except Exception as e:  # not recorded — the next sync tries again
+                logger.warning("Failed to set the broadcast menu for %s: %s", tid, e)
+        for tid, code in (old.get("chats") or {}).items():
+            if tid in want or int(tid) in admins:  # an admin's chat menu is setup_webhook's
+                continue
+            try:
+                bot.delete_my_commands(scope=types.BotCommandScopeChat(int(tid)))
+            except Exception as e:
+                logger.warning("Failed to clear the broadcast menu for %s: %s", tid, e)
+                done[tid] = code  # still listed, so the next sync tries again
+        if {"sig": sig, "chats": done} != old:
+            _meta_set("bot_bc_menus", json.dumps({"sig": sig, "chats": done}))
+    except Exception:
+        logger.warning("Broadcast menu sync failed", exc_info=True)
+
+
 def setup_webhook():
     if not settings.telegram_bot_token or not settings.backend_url:
         logger.warning("Bot token or backend_url not set — skipping webhook registration")
@@ -6743,31 +6824,7 @@ def setup_webhook():
         return
     webhook_url = f"{settings.backend_url.rstrip('/')}/bot/webhook"
 
-    # Default command menu for every user — Uzbek default plus ru/en variants
-    # (Telegram has no uz-Cyrillic language code; the default covers it).
-    menus = {
-        None: [
-            types.BotCommand("start", "Boshlash / dashboard"),
-            types.BotCommand("register", "Ro'yxatdan o'tish / yangi rol qo'shish"),
-            types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
-            types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
-            types.BotCommand("android", "Android ilovasini yuklab olish"),
-        ],
-        "ru": [
-            types.BotCommand("start", "Запуск / дашборд"),
-            types.BotCommand("register", "Регистрация / добавить роль"),
-            types.BotCommand("tasks", "Ежедневные задачи (лидеры)"),
-            types.BotCommand("ojidaniya", "Снимок страницы «Ожидания»"),
-            types.BotCommand("android", "Скачать приложение для Android"),
-        ],
-        "en": [
-            types.BotCommand("start", "Start / dashboard"),
-            types.BotCommand("register", "Register / add a role"),
-            types.BotCommand("tasks", "Daily tasks (leaders)"),
-            types.BotCommand("ojidaniya", "Snapshot of the Ojidaniya page"),
-            types.BotCommand("android", "Download the Android app"),
-        ],
-    }
+    menus = _MENUS
     # /forecast is deliberately NOT in the public menus: it is gated on the
     # trudoyomkost page, so advertising it to everyone would offer most users a
     # command that can only answer "no access".
@@ -6777,9 +6834,11 @@ def setup_webhook():
         types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
         types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
         types.BotCommand("forecast", "Xodim chaqirish prognozi (sinov)"),
+        types.BotCommand("broadcast", _BC_ROW[None]),
         types.BotCommand("android", "Android ilovasini yuklab olish"),
     ]
     admin_ids = sorted(_admin_ids())
+    sync_broadcast_menus()
 
     # Webhook + command registration are GLOBAL, idempotent Telegram settings
     # that only need updating when their CONTENT changes. But this runs on every

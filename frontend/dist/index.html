@@ -72,7 +72,7 @@
     <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-CKAPfDOx.js">
     <link rel="modulepreload" crossorigin href="/assets/LangContext-mL2fcC7w.js">
     <link rel="stylesheet" crossorigin href="/assets/index-DVB0Dg__.css">
-    <meta name="safia-build" data-version="4.668.1" data-built="2026-11-26T06:09:02.523Z">
+    <meta name="safia-build" data-version="4.669.0" data-built="2026-11-26T06:18:40.260Z">
     <script>(function(){try{var f={"en":"/assets/en-CrQRnHYW.js","ru":"/assets/ru-DGhQ38bs.js","all":"/assets/translations-DBIJxhyx.js","uz":"/assets/uz-rMPN9hqg.js","uz_cyrl":"/assets/uz_cyrl-CYhVcHmH.js"};window.__i18nPacks=f;var l=null;try{l=localStorage.getItem("lang")}catch(e){}var h=f[l||"uz"]||f.en;var e=document.createElement("link");e.rel="modulepreload";e.setAttribute("crossorigin","");e.href=h;document.head.appendChild(e)}catch(e){}})();</script>
   </head>
   <body>
@@ -288,6 +288,102 @@
           if (code.indexOf('en') === 0) return 'en';
           return 'uz';
         }
+        // A reload that did not help means the answer for the failing file is
+        // STORED ON THIS DEVICE — a kept «not found» in the browser's own cache,
+        // or the offline worker's copy — and «close and reopen» reads the same
+        // store (2026-11-26, the operator's Mac: the server and the engine were
+        // fine, every code file loaded in a fresh browser, and the installed app
+        // dead-ended for an hour). So before giving up: note how each code file
+        // this page asked for answers AS STORED, drop the worker and its caches,
+        // ask the SERVER for each again (which overwrites the stored answer),
+        // and send the team what was found. `done` runs once, after at most 15 s.
+        function repairStored(note, done) {
+          var urls = [], stored = {}, fresh = {}, ended = false;
+          function end() { if (!ended) { ended = true; done(); } }
+          if (typeof fetch !== 'function' || typeof Promise !== 'function') { end(); return; }
+          setTimeout(end, 15000); // a dead link must not hold the screen
+          function add(u) {
+            if (u && u.indexOf(location.origin + '/assets/') === 0 &&
+                /\.js$/.test(u) && urls.indexOf(u) < 0) urls.push(u);
+          }
+          try {
+            var es = performance.getEntriesByType('resource');
+            for (var i = 0; i < es.length; i++) add(es[i].name);
+          } catch (e) {}
+          try {
+            // Vite adds a modulepreload link for a lazy chunk and each of its imports.
+            var ls = document.querySelectorAll('link[rel="modulepreload"],script[src]');
+            for (var j = 0; j < ls.length; j++) add(ls[j].href || ls[j].src);
+          } catch (e) {}
+          var ctl = false;
+          try { ctl = !!(navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) {}
+
+          function ask(mode, into, next) {
+            var left = urls.length;
+            if (!left) { next(); return; }
+            function one(u) {
+              var told = false;
+              function fin(s) { if (told) return; told = true; into[u] = s; if (--left === 0) next(); }
+              try {
+                fetch(u, { cache: mode, credentials: 'same-origin' }).then(function (r) {
+                  var s = r.status;
+                  // Read to the end: a cache entry is only written by a finished body.
+                  return r.arrayBuffer().then(function () { fin(s); });
+                }).then(null, function () { fin(0); });
+              } catch (e) { fin(0); }
+            }
+            for (var k = 0; k < urls.length; k++) one(urls[k]);
+          }
+          function drop(next) {
+            var n = 2;
+            function step() { if (--n === 0) next(); }
+            try {
+              navigator.serviceWorker.getRegistrations().then(function (rs) {
+                for (var a = 0; a < rs.length; a++) rs[a].unregister();
+              }).then(step, step);
+            } catch (e) { step(); }
+            try {
+              caches.keys().then(function (ks) {
+                var ps = [];
+                for (var b = 0; b < ks.length; b++) {
+                  if (ks[b].indexOf('safia-') === 0) ps.push(caches.delete(ks[b]));
+                }
+                return Promise.all(ps);
+              }).then(step, step);
+            } catch (e) { step(); }
+          }
+          function tell() {
+            var lines = [note, 'worker in control: ' + ctl + ' - code files checked: ' + urls.length];
+            var bad = 0;
+            for (var c = 0; c < urls.length; c++) {
+              var u = urls[c];
+              if (stored[u] === 200 && fresh[u] === 200) continue;
+              bad += 1;
+              if (bad <= 12) {
+                lines.push(u.replace(location.origin, '') + ' - stored: ' + stored[u] + ', server: ' + fresh[u]);
+              }
+            }
+            lines.push(bad ? bad + ' file(s) did not answer 200 (0 = no answer)'
+                           : 'Every file answered 200, as stored and from the server.');
+            lines.push('Engine: ' + navigator.userAgent);
+            var initData = '';
+            try { var wa = window.Telegram && window.Telegram.WebApp; initData = (wa && wa.initData) || ''; } catch (e) {}
+            try {
+              fetch('/api/boot-report', {
+                method: 'POST',
+                keepalive: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  stage: 'stale-reload', ua: navigator.userAgent,
+                  details: lines.join('\n').slice(0, 3400), initData: initData
+                })
+              }).then(end, end);
+            } catch (e) { end(); }
+          }
+          ask('force-cache', stored, function () {
+            drop(function () { ask('reload', fresh, tell); });
+          });
+        }
         // A content-hashed asset chunk 404'd — this client is running a stale
         // build after a redeploy (old index.html/bundle references hashes the
         // server has already pruned). Instead of the scary red diagnostics,
@@ -321,7 +417,22 @@
             "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
 
           if (reloadDidNotHelp) {
-            box.innerHTML = overlay(false, S.updTitle, S.updMsg);
+            var RKEY = 'chunkRepairAt';
+            var repairedAt = 0;
+            try { repairedAt = Number(sessionStorage.getItem(RKEY) || 0); } catch (e) {}
+            if (repairedAt && Date.now() - repairedAt < 120000) {
+              // Repaired a moment ago and it failed again: nothing stored on
+              // this device is left to blame. Say so, and tell the team.
+              box.innerHTML = overlay(false, S.updTitle, S.updMsg);
+              repairStored('Stale-reload dead end: the repair did NOT help.', function () {});
+              return;
+            }
+            try { sessionStorage.setItem(RKEY, String(Date.now())); } catch (e) {}
+            box.innerHTML = overlay(true, S.updTitle, S.slowTitle);
+            repairStored('Stale-reload dead end: a reload did not help - stored copies dropped, reloading.', function () {
+              try { sessionStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+              location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+            });
             return;
           }
 

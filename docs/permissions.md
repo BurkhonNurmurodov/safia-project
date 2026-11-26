@@ -72,8 +72,18 @@ THE name of a capability, wherever one is printed), so they need no
   «Boshlash uchun /start ni bosing»): `telegram_bot._may_broadcast`, the same
   answer `verify_broadcast_admin` gives the recipient picker — an admin, or
   the grant on the account or any profile it holds. The journal names such a
-  draft by the grant (`via_capability`), never as an admin's. The command
-  MENU still lists `/broadcast` for nobody; it is typed.
+  draft by the grant (`via_capability`), never as an admin's.
+- **…and the bot's command menu shows `/broadcast` to whoever may use it**
+  (2026-11-26, v4.669.0; it was listed for nobody): admins in their own menu
+  (`setup_webhook`), every other holder through
+  `telegram_bot.sync_broadcast_menus` — the default menu plus the row, in the
+  holder's bot language, as that chat's own menu (a chat menu REPLACES the
+  default, so a new default command reaches them when the sync's signature
+  changes). It is a DIFF against `app_meta` `bot_bc_menus`, so Telegram hears
+  only a change; a lost grant clears the chat's menu. It runs at boot and
+  after every save of the grant (`capabilities._menus_follow`, on a thread).
+  Until the next of those it does not notice a person joining or leaving a
+  PROFILE that holds the grant, or a changed bot language.
 
 ## On a phone (2026-11-20)
 

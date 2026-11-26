@@ -838,6 +838,17 @@ def _clean_diff(grants: dict[str, str] | None,
     return clean, block, drop
 
 
+def _menus_follow(*diffs) -> None:
+    """A save that grants or clears «Xabarnoma» moves the bot's /broadcast menu
+    row with it (`telegram_bot.sync_broadcast_menus`) — on a thread, because it
+    talks to Telegram and the save must not wait for that."""
+    cap = tab_cap("broadcast")
+    if any(cap in d for d in diffs):
+        import threading
+        from app.telegram_bot import sync_broadcast_menus
+        threading.Thread(target=sync_broadcast_menus, daemon=True).start()
+
+
 def apply_caps(db: Session, telegram_ids: list[int],
                grants: dict[str, str] | None = None,
                revokes: list[str] | None = None,
@@ -914,6 +925,7 @@ def apply_caps(db: Session, telegram_ids: list[int],
                 _audit(tid, capability, "undenied" if was_deny else "revoked", None)
 
     db.commit()
+    _menus_follow(clean, drop)
     return {tid: caps_for_user(db, tid) for tid in telegram_ids}
 
 
@@ -1005,6 +1017,7 @@ def apply_profile_perms(db: Session, profile_keys: list[str],
                 _audit(key, capability, "undenied" if was_deny else "revoked", None)
 
     db.commit()
+    _menus_follow(clean, drop)
     return {key: perms_for_profile(db, key) for key in profile_keys}
 
 

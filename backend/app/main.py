@@ -1714,6 +1714,8 @@ for d in possible_dirs:
 # serve_spa) guesses the type through this table at response time.
 import mimetypes  # noqa: E402
 
+from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
+
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("application/javascript", ".mjs")
 # The launcher's product photos (assets/launcher/*.webp, 2026-11-03): the
@@ -1727,7 +1729,17 @@ if STATIC_DIR:
         and can't end up with a stale/mismatched copy."""
 
         async def get_response(self, path, scope):
-            resp = await super().get_response(path, scope)
+            try:
+                resp = await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                # A MISSING file must never be kept (2026-11-26): the 404 left
+                # here with no Cache-Control, Cloudflare stamped it max-age=4h
+                # and cached it at the edge — so a browser that asked for a
+                # chunk in a moment it was not on disk kept «not found» for
+                # four hours after the file was back, and the app dead-ended
+                # on «Yangilanish kerak» through every reload and re-open.
+                exc.headers = {**(exc.headers or {}), "Cache-Control": "no-store"}
+                raise
             resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             return resp
 
