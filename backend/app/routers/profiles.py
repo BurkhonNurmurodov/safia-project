@@ -57,6 +57,7 @@ from app.identity import (
     profile_holders, profile_key, viewer_profile_key,
 )
 from app.permissions import require_page
+from app.services import factory_scope
 from app.services import (
     action_log, cell_hours, cell_links, cell_register, hr_contact, kept_answer, leader_kind,
     leader_shift, profile_photo, supervisor_kind, wc_group,
@@ -658,6 +659,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
                 "name_ru": p.name_ru, "name_en": p.name_en}
         if p.role == "top-manager":
             item["bindings"] = [binding(r) for r in by_key.get(("top-manager", p.id), [])]
+            # The plant this top-manager is pinned to, or null for every plant
+            # (`factory_scope.PLANT_BOUND_ROLES`, 2026-11-26) — the «Zavod» picker.
+            item["factory_id"] = p.factory_id
             out["top_managers"].append(item)
         elif p.role == "guest":
             item["bindings"] = [binding(r) for r in by_key.get(("guest", p.id), [])]
@@ -1221,7 +1225,12 @@ def admin_list_cells(db: Session = Depends(get_db),
                        .order_by(RoleProfile.id).all())
     prof_names = {p.id: p.name for p in leader_profiles}
     prof_units = {p.id: p.manager_id for p in leader_profiles}
-    if not narrowed:
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:
+        # A top-manager pinned to one plant reads that plant's cells (2026-11-26).
+        cell_rows = (db.query(Cell).filter(Cell.manager_id.in_(plant or [factory_scope.NO_UNIT]))
+                     .order_by(Cell.verifix_code).all())
+    elif not narrowed:
         cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
     elif unit_id is None:
         cell_rows = []
@@ -2023,6 +2032,10 @@ def cell_details(cid: int, caller: dict = Depends(_caller),
     c = db.query(Cell).filter_by(id=cid).first()
     if not c:
         raise HTTPException(status_code=404, detail="Cell not found")
+    # A top-manager pinned to one plant opens that plant's cells only (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None and c.manager_id not in plant:
+        raise HTTPException(status_code=404, detail="Cell not found")
 
     mgr = db.query(Manager).filter_by(id=c.manager_id).first() if c.manager_id else None
     leader = (db.query(RoleProfile).filter_by(id=c.leader_id, role="leader").first()
@@ -2167,6 +2180,9 @@ class UpdateProfilePayload(BaseModel):
     checklist_shift: Optional[int] = None       # leader → 1 | 2: the shift their checklist runs on from tomorrow
     supervisor_kind: Optional[str] = None       # supervisor → "supervisor" | "acting" (None = untouched)
     zagruzka_on:    Optional[bool] = None       # supervisor → is the unit's загрузка calculated
+    # top-manager → the plant every page answers them for (2026-11-26,
+    # `factory_scope.PLANT_BOUND_ROLES`); 0 = every plant again, None = untouched
+    factory_id:     Optional[int] = None
 
 
 _NAME_LANG_COLS = ("name_uz_cyrl", "name_ru", "name_en")
@@ -2277,15 +2293,26 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     if payload.checklist_shift is not None and (ptype != "leader"
                                                 or payload.checklist_shift not in (1, 2)):
         raise HTTPException(status_code=400, detail="Invalid checklist shift")
+    if payload.factory_id is not None:
+        if ptype != "top-manager":
+            raise HTTPException(status_code=400, detail="Only a top-manager is pinned to a plant here")
+        if payload.factory_id and not db.query(Factory.id).filter(
+                Factory.id == payload.factory_id).first():
+            raise HTTPException(status_code=400, detail="Factory not found")
 
     old = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id,
            "leader_kind": p.leader_kind}
+    old_factory = p.factory_id
     cl_old = _checklist_shift_word(db, p)
     if payload.name is not None:
         _rename_profile(db, ptype, pid, payload.name)
     _apply_name_columns(p, payload)
     if ptype == "shift-manager" and payload.shift in (1, 2):
         p.shift = payload.shift
+    if payload.factory_id is not None:
+        # A top-manager's plant: every page answers them for it from their next
+        # request on — the lock is read live (`factory_scope.viewer_factory_id`).
+        p.factory_id = payload.factory_id or None
     if ptype == "leader" and payload.manager_id and payload.manager_id != p.manager_id:
         mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
         if not mgr:
@@ -2323,6 +2350,11 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     leader_shift.forget()
     cl_new = _checklist_shift_word(db, p)
     diff = [(k, old[k], new_vals[k]) for k in ("name", "shift") if old[k] != new_vals[k]]
+    if old_factory != p.factory_id:
+        def _fname(fid):
+            f = db.query(Factory).filter_by(id=fid).first() if fid else None
+            return (f.name_ru or f.code) if f else None
+        diff.append(("factory", _fname(old_factory), _fname(p.factory_id)))
     if old["manager_id"] != new_vals["manager_id"]:
         diff.append(("unit", unit_name(db, old["manager_id"]),
                      unit_name(db, new_vals["manager_id"])))
@@ -3747,6 +3779,8 @@ def my_profile_details(caller: dict = Depends(_caller), db: Session = Depends(ge
                             "en": p.name_en or ""}
             if ptype == "shift-manager":
                 out["shift"] = p.shift
+            if ptype == "top-manager" and p.factory_id:
+                factory_id = p.factory_id       # the plant they are pinned to
             if ptype == "leader" and p.manager_id:
                 m = db.query(Manager).filter_by(id=p.manager_id).first()
                 if m:

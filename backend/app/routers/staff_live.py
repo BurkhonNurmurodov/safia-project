@@ -53,6 +53,7 @@ from app.models import (
 )
 from app.notify_ctx import notifications_suppressed
 from app.permissions import get_page_access, require_page
+from app.services import factory_scope
 from app.services import (
     action_log, close_window, live_day, live_projection, live_staff, shift_scope, verifix_live,
 )
@@ -95,6 +96,10 @@ def _adm(db: Session, caller: dict) -> bool:
 def _visible(db: Session, caller: dict) -> Optional[list[int]]:
     """Units the caller may read. None = every unit (admin / grant at "all")."""
     role, rid = caller.get("role"), caller.get("role_id")
+    # A top-manager pinned to one plant reads that plant's units (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:
+        return plant
     if role == "admin" or _sees_all(db, caller):
         return None
     if role == "supervisor":
@@ -636,6 +641,9 @@ def _scope_docs(q, caller: dict, db: Session):
     supervisor, shift ∩ plant for a shift-manager, everything for an admin, a
     top-manager (READ only — every write door checks its own rights, none of
     which a top-manager holds) or a documents grant at "all"."""
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return q.filter(LiveDocument.manager_id.in_(plant or [factory_scope.NO_UNIT]))
     if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE) or _adm(db, caller):
         return q
     role, rid = caller.get("role"), caller.get("role_id")
@@ -749,7 +757,10 @@ def _log_doc(doc: LiveDocument, changes: Optional[list] = None) -> dict:
 
 def _scope_deletions(caller: dict, db: Session) -> list:
     q = db.query(LiveDeletion)
-    if not (scope_is_all(db, caller, CAP_REQUESTS_APPROVE) or _adm(db, caller)):
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        q = q.filter(LiveDeletion.manager_id.in_(plant or [factory_scope.NO_UNIT]))
+    elif not (scope_is_all(db, caller, CAP_REQUESTS_APPROVE) or _adm(db, caller)):
         role, rid = caller.get("role"), caller.get("role_id")
         if role == "supervisor":
             q = q.filter(LiveDeletion.manager_id == rid) if rid else \

@@ -195,6 +195,18 @@ def _tag_plant(db: Session, rows: list) -> list:
     return rows
 
 
+def _plant_only(db: Session, payload: dict, rows: list) -> list:
+    """Rows (each naming a `manager_id`) cut to a PLANT-BOUND viewer's plant —
+    a top-manager pinned to one plant (`factory_scope.viewer_unit_ids`,
+    2026-11-26) reads that plant's brigadirs only. Everybody else: unchanged."""
+    from app.services import factory_scope
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is None:
+        return rows
+    keep = set(plant)
+    return [r for r in rows if r.get("manager_id") in keep]
+
+
 def _span(d_from: date, d_to: date) -> None:
     if d_to < d_from or (d_to - d_from).days > 366:
         raise HTTPException(status_code=422, detail="bad period")
@@ -333,6 +345,10 @@ def get_requests(day: date = Query(...), db: Session = Depends(get_db),
     # `logistics`: the viewer is one of the people a request «to everybody»
     # goes to — such a request is new and theirs to split, as their own is
     rows = flow.requests_of(db, day, mine)
+    # a request is shared by the plants the flow serves; a plant-bound viewer
+    # reads only the part of its split that went to their plant's brigadirs
+    for x in rows:
+        x["parts"] = _plant_only(db, payload, x.get("parts") or [])
     # each split cell's WORKSHOP name ({code: {lang: name}}, 2026-11-21): the
     # logistics row («Konteyner taqsimlash») prints it under the cell on every
     # request card; a bundle from before ignores the key
@@ -703,7 +719,7 @@ def get_receipts(day: date = Query(...), db: Session = Depends(get_db), payload:
     """The day's split requests per brigadir: a brigadir sees their own unit,
     everybody else (admins, the managers watching) every unit."""
     mine = None if page_admin(db, payload, ADMIN_PAGE) else _my_unit(payload)
-    return {"day": day.isoformat(), "unit": mine, "receipts": _tag_plant(db, flow.receipts_of(db, day, mine))}
+    return {"day": day.isoformat(), "unit": mine, "receipts": _plant_only(db, payload, _tag_plant(db, flow.receipts_of(db, day, mine)))}
 
 
 # ── a brigadir's EXTRA request (2026-11-18) ─────────────────────────────────
@@ -722,7 +738,7 @@ def get_extras(day: date = Query(...), db: Session = Depends(get_db), payload: d
     managers watching and admins every unit's."""
     mine = (_my_unit(payload) if payload.get("role") == "supervisor"
             and not page_admin(db, payload, ADMIN_PAGE) else None)
-    return {"day": day.isoformat(), "unit": mine, "extras": _tag_plant(db, flow.extras_of(db, day, mine))}
+    return {"day": day.isoformat(), "unit": mine, "extras": _plant_only(db, payload, _tag_plant(db, flow.extras_of(db, day, mine)))}
 
 
 class ExtraBody(BaseModel):

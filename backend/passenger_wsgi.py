@@ -384,6 +384,8 @@ try:
     play_reviewer_login()               # 25 Nov: its holder + browser login (once)
     from app.startup import reject_drafts_on_closed_days
     reject_drafts_on_closed_days()      # 26 Nov: #2350 rejected by its day's closer (once)
+    from app.startup import almaty_top_manager_plant
+    almaty_top_manager_plant()          # 26 Nov: Almaz Khusainov pinned to the Almaty plant (once)
     from app.startup import restore_wiped_accounts
     restore_wiped_accounts()
     # The 13 Nov leader window edits count from 13 Nov, not every night (once).

@@ -73,6 +73,7 @@ from app.permissions import require_page
 from app.services import (action_log, cell_archive, concerns_deck, concerns_narrative, report_week,
                           shift_scope)
 from app.services.concerns_export import build_concerns_workbook
+from app.services import factory_scope
 from app.services.factory_scope import factory_manager_ids, resolve_factory
 from app.services.ojidaniya_matrix import TZ as PLANT_TZ, today_local
 from app.translit import transliterate, transliterate_text
@@ -559,6 +560,16 @@ def _scope_query(query, payload: dict, db: Session):
     entirely — that scope is what the grant means. It widens READING only;
     _can_edit / _assert_can_edit still decide who may touch a row."""
     role = payload.get("role")
+    # A top-manager pinned to one plant (`factory_scope.viewer_unit_ids`,
+    # 2026-11-26) reads that plant's concerns, plus whatever was raised to them
+    # or filed by them — a concern waiting on them is theirs wherever it is.
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return query.filter(or_(
+            LeaderConcern.brigadir_manager_id.in_(plant or [factory_scope.NO_UNIT]),
+            LeaderConcern.top_manager_profile_id == payload.get("role_id"),
+            _owner_filter(payload),
+        ))
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, "concerns"):
         return query
     if role == "shift-manager":
@@ -1044,7 +1055,10 @@ def list_cells(
         .filter(RoleProfile.role == "leader",
                 cell_archive.alive_clause())    # an archived cell takes no filing
     )
-    if role == "shift-manager":
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:      # a top-manager pinned to one plant
+        q = q.filter(RoleProfile.manager_id.in_(plant or [factory_scope.NO_UNIT]))
+    elif role == "shift-manager":
         q = q.filter(RoleProfile.manager_id.in_(_shift_unit_ids(db, payload.get("role_id"))))
     elif role == "supervisor":
         q = q.filter(RoleProfile.manager_id == payload.get("role_id"))

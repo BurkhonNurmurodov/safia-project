@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import LiveVerifixRead, QualitySyncMeta
 from app.permissions import require_page
+from app.services import factory_scope
 from app.services import action_log, brigadirs_kpi, turnover, verifix_org
 from app.capabilities import page_scope_is_all
 from app.services.factory_scope import resolve_factory, scoped_manager_ids
@@ -60,6 +61,10 @@ def _lock(db: Session, payload: dict) -> Optional[list]:
     from app.routers.concerns import _shift_unit_ids
 
     role = payload.get("role")
+    # A top-manager pinned to one plant: that plant's units (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return plant
     if role in ("admin", "top-manager"):
         return None
     if page_scope_is_all(db, payload, PAGE):

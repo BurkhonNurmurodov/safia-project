@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Cell, CellAttendance, Manager, RoleProfile
+from app.services import factory_scope
 from app.capabilities import page_admin, page_scope_is_all, profile_unit_ids
 from app.permissions import require_page
 from app import identity
@@ -52,6 +53,10 @@ def _scope(db: Session, payload: dict) -> tuple[list[Cell], bool]:
     whether unmatched-code rows are included — they belong to no cell."""
     role = payload.get("role")
     q = db.query(Cell)
+    # A top-manager pinned to one plant: that plant's cells (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return q.filter(Cell.manager_id.in_(plant or [factory_scope.NO_UNIT])).all(), False
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
         return q.all(), True
     if role == "leader":

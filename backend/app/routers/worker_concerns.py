@@ -76,6 +76,7 @@ from app.models import AppSetting, Cell, ConcernEscalation, LeaderConcern, Manag
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
 from app.routers.concerns import _no, _shift_unit_ids
+from app.services import factory_scope
 from app.services import action_log
 from app.services.turnover import cell_map as dated_cells, owned
 from app.services.factory_scope import scoped_manager_ids, viewer_factory_id
@@ -303,6 +304,10 @@ def _viewer_lock(db: Session, payload: dict, sees_all: Optional[bool] = None
     per request and handed to every query that needs it (`lock=`): a leader's
     lock costs several lookups, and /stats asks twice (period + comparison)."""
     role = payload.get("role")
+    # A top-manager pinned to one plant: that plant's units (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return plant, None
     if role in ("admin", "top-manager"):
         return None, None
     if sees_all is None:

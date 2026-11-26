@@ -151,6 +151,15 @@ def get_quality(
             "hw": {"cell": "c", "name": "n"}.get(w.how),
         })
 
+    # A viewer pinned to one plant — a plant-bound top-manager
+    # (`factory_scope.PLANT_BOUND_ROLES`, 2026-11-26) — is answered for that
+    # plant only, here on the server: their register, their units, their cells.
+    locked = viewer_factory_id(db, payload)
+    if locked is not None:
+        out_rows = [r for r in out_rows if r["fi"] == locked]
+        managers = [m for m in managers if m.factory_id == locked]
+        registry = {k: v for k, v in registry.items() if v.get("fi") == locked}
+
     return {
         # Refresh is offered to every profile that can open the page.
         "can_refresh": True,
@@ -163,12 +172,10 @@ def get_quality(
             key=lambda m: m["name"],
         ),
         # Non-null when the viewer is pinned to one plant: the page filters to it
-        # and renders a static context chip instead of the tab strip. The whole
-        # register still ships (it is one payload the page charts client-side),
-        # so this is a VIEW pin, not a security boundary — the register is
-        # already gated to admin / top- / shift-manager by the page-access
-        # matrix, none of whom are ever locked.
-        "locked_factory_id": viewer_factory_id(db, payload),
+        # and renders a static context chip instead of the tab strip. The rows
+        # above are already cut to that plant (a plant-bound top-manager reads
+        # this register too); an unpinned viewer gets the whole register.
+        "locked_factory_id": locked,
         # id → {verifix_code, sap_code, per-language workshop names, leader,
         # mid/sup/sh/fi of the owning brigadir unit} for EVERY registered cell,
         # not just the ones a row resolved to (see the registry block above).

@@ -68,6 +68,7 @@ from app.capabilities import (
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.security import require_auth
+from app.services import factory_scope
 from app.services import (action_log, cell_archive, cell_links, idle_intervals, idle_lock,
                           idle_scope)
 from app.services.sheets_reader import CLEANERS_CATS
@@ -129,6 +130,10 @@ def _scoped_cells(db: Session, payload: dict, *pages: str) -> list[Cell]:
     role = payload.get("role")
     page_list = pages or (PAGE,)
     q = db.query(Cell)
+    # A top-manager pinned to one plant: that plant's cells (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return q.filter(Cell.manager_id.in_(plant or [factory_scope.NO_UNIT])).all()
     if role in ("admin", "top-manager") or any(page_scope_is_all(db, payload, p) for p in page_list):
         return q.all()
     if role == "leader":
@@ -182,6 +187,9 @@ def _reaches_unit(db: Session, payload: dict, unit_id: int) -> bool:
     """Does the caller's `_scoped_cells` reach cover a whole unit — the same
     ladder, asked of one unit (a leader's reach is cells, never a unit)."""
     role = payload.get("role")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return unit_id in plant
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
         return True
     if role == "leader":
@@ -229,6 +237,12 @@ def _decider(db: Session, payload: dict) -> dict:
     role = payload.get("role")
     ctx = {"role": role, "all": role in ("admin", "top-manager") or page_admin(db, payload, PAGE),
            "own_units": set(), "granted_units": set()}
+    # A top-manager pinned to one plant corrects that plant's cells only.
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        ctx["all"] = False
+        ctx["own_units"] = set(plant)
+        return ctx
     if ctx["all"]:
         return ctx
 
@@ -565,6 +579,9 @@ def day_summary(
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
     role = payload.get("role")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None and manager_id not in plant:
+        raise HTTPException(status_code=403, detail="Not your plant")
     if role not in ("admin", "top-manager") and not page_admin(db, payload, PAGE):
         if role != "supervisor":
             raise HTTPException(status_code=403, detail="Not allowed")

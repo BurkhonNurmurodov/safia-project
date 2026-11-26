@@ -118,7 +118,7 @@ from app.models import (
     UserCapability,
 )
 from app.permissions import PAGE_KEYS
-from app.services import shift_scope
+from app.services import factory_scope, shift_scope
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
@@ -509,9 +509,20 @@ def caller_caps(db: Session, payload: dict,
     return caps
 
 
+def _bounded(db: Session, payload: dict, scope: Optional[str]) -> Optional[str]:
+    """A scope as the SERVER applies it. A top-manager pinned to one plant
+    (`factory_scope.PLANT_BOUND_ROLES`, 2026-11-26) never reaches every unit:
+    a grant at «all» reads as «own» for them, and their «own» is their plant's
+    units (:func:`profile_unit_ids`). The UI's reading (:func:`page_scopes`)
+    keeps «all» — it shows them the unit pickers, which the server cuts."""
+    if scope == "all" and factory_scope.plant_bound(db, payload):
+        return "own"
+    return scope
+
+
 def cap_scope(db: Session, payload: dict, capability: str) -> Optional[str]:
     """``"own"`` / ``"all"`` if the caller holds the capability, else None."""
-    return caller_caps(db, payload).get(capability)
+    return _bounded(db, payload, caller_caps(db, payload).get(capability))
 
 
 def has_cap(db: Session, payload: dict, capability: str) -> bool:
@@ -539,8 +550,10 @@ def page_view_scope(db: Session, payload: dict, page: str) -> Optional[str]:
     :data:`_READS_PAGE_WHOLE` for this page reads as ``"all"``."""
     held = caller_caps(db, payload)
     if any(p == page and c in held for c, p in _READS_PAGE_WHOLE.items()):
-        return "all"
-    return held.get(page_cap(page))
+        # A plant-bound top-manager reads even a page they administer within
+        # their plant only (see :func:`_bounded`).
+        return _bounded(db, payload, "all")
+    return _bounded(db, payload, held.get(page_cap(page)))
 
 
 def page_scope_is_all(db: Session, payload: dict, page: str) -> bool:
@@ -752,9 +765,15 @@ def account_cap_scope(db: Session, telegram_id: int,
     entry or any position it holds wins, because a notification withheld is not
     recoverable the way an extra one is."""
     scopes = {caps_for_user(db, telegram_id).get(capability)}
-    for key in account_profile_keys(db, telegram_id):
+    keys = account_profile_keys(db, telegram_id)
+    for key in keys:
         scopes.add(caps_for_profile(db, key).get(capability))
     if "all" in scopes:
+        # An account whose every profile is a top-manager pinned to one plant
+        # is told about that plant's units only (see :func:`_bounded`).
+        if keys and all(factory_scope.profile_factory_id(db, *parse_profile_key(k)) is not None
+                        for k in keys):
+            return "own"
         return "all"
     if "own" in scopes:
         return "own"
@@ -786,10 +805,15 @@ def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
     caller's active profile) and by notification fan-out (via a stored grant),
     so what a grantee is *told about* can never drift from what they may act on.
     Roles the staff scoping leaves unfiltered — admin, top-manager, leader —
-    return None here for the same reason."""
+    return None here for the same reason; a top-manager pinned to one plant
+    (`factory_scope.PLANT_BOUND_ROLES`, 2026-11-26) returns that plant's units,
+    archived ones included."""
     role, ref = parse_profile_key(key)
     if role == "supervisor":
         return [ref] if ref else []
+    if role in factory_scope.PLANT_BOUND_ROLES:
+        return factory_scope.factory_manager_ids(
+            db, factory_scope.profile_factory_id(db, role, ref))
     if role == "shift-manager":
         # Every unit, every plant — services/shift_scope.py, the reach /staff,
         # /concerns and /production read (2026-11-04).

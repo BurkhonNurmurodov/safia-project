@@ -28,6 +28,7 @@ from app.database import get_db
 from app.identity import viewer_leader_profile_ids, viewer_profile_key
 from app.models import Cell, EmployeeHonour, Manager
 from app.permissions import page_allowed, require_page
+from app.services import factory_scope
 from app.services import action_log, people, shift_scope
 from app.services import turnover as tv
 from app.services.day_state import confirmed_pairs
@@ -64,6 +65,10 @@ def _iso(d) -> Optional[str]:
 
 def _scope(db: Session, payload: dict) -> people.Scope:
     role = payload.get("role")
+    # A top-manager pinned to one plant reads that plant's people (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        return people.Scope(units=plant)
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, "people"):
         return people.Scope(all_=True)
     if role == "supervisor":

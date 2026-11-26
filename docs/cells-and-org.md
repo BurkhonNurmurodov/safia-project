@@ -684,7 +684,9 @@ no correct way to render that.
   (`resolve_factory` overrides whatever `?factory=` says), answered through
   their UNIT (`managers.factory_id`). Hiding the tab is not the mechanism — the
   query parameter is typeable. Admin, top-manager and (from 2026-11-04)
-  shift-manager switch freely.
+  shift-manager switch freely — **except a top-manager whose profile names a
+  plant (2026-11-26), locked like a supervisor**: see «A top-manager pinned to
+  ONE plant» below.
 - Factory-aware pages: Overview, Zagruzka, Ojidaniya (`Downtime`), Workers,
   Quality, Concerns. Frontend state is ONE shared value in
   `context/FactoryContext.jsx` (`useFactoryParams` merges it into request
@@ -700,6 +702,73 @@ no correct way to render that.
 - Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   both assignments — supervisor units and shift-manager profiles.
+
+## A top-manager pinned to ONE plant (`factory_scope.PLANT_BOUND_ROLES`, 2026-11-26)
+
+The operator, 2026-11-26, on the account of the Almaty plant's top-manager
+(Almaz Khusainov, given several screens): «All screens should show only the
+data of Almaty plant for this account». A top-manager reads every plant by
+default, as always; **one whose PROFILE names a plant
+(`role_profiles.factory_id`) is locked to it on every page**, server-side, like
+a supervisor to their unit's. The column already existed for shift-managers (a
+record only since 2026-11-04); for a top-manager it now decides. It says where
+a PERSON works — a ROW still belongs to the plant of its unit
+(`managers.factory_id`), so this is not a second copy of the data dimension.
+
+- **Set on the profile page** (admin, «Profillar» → the top-manager → Details →
+  «Zavod»: «Barcha zavodlar» or one plant; `PUT /api/profiles/admin/top-manager/{id}`
+  with `factory_id`, 0 = every plant again, a Jurnal «Zavod» change). Read LIVE
+  on every request (`factory_scope.profile_factory_id`, memoised per session):
+  no re-login, no token change. The person's own /profile names the plant.
+- **`factory_scope` is THE answer** — `viewer_factory_id` returns the profile's
+  plant, so `resolve_factory` / `scoped_manager_ids` lock every plant-aware page
+  at once (Overview, Zagruzka, Ojidaniya, Workers, Quality, Concerns, the shift
+  dashboard and «Smena hisoboti», «Konteynerlar», Leaderboard, Plan, Liderlar
+  KPI, Brigadirlar KPI, Kelish, Live, Reports, Search, «Kutish yechimlari»,
+  SKU history, Zagruzka cell, «Rahbariyat vazifalari») and `/api/factories`
+  answers `locked_factory_id`, so the UI shows the inert plant chip.
+  `plant_bound(db, payload)` asks the question; **`viewer_unit_ids(db,
+  payload)`** is the plant's units (archived included) for a plant-bound viewer
+  and None for everybody else — the one call a page that never was
+  plant-aware makes before handing a top-manager every unit; `cut_to_plant`
+  is its list-shaped twin for endpoints whose EMPTY id list means «every unit»
+  (it never returns an empty list — `[NO_UNIT]` instead).
+- **The pages that were not plant-aware ask `viewer_unit_ids`**: «Zagruzka
+  fayli» (`_resolve_manager_id`, its picker, the raw file's pin), the
+  «Trudoyomkost» family (analysis, export, worker stats, forecast, call
+  tomorrow / notify), the shared unit picker `/api/managers/all`, Quality (rows,
+  units and cells cut on the SERVER for any locked viewer — it used to ship the
+  whole register and filter in the browser), Concerns (`_scope_query`: the
+  plant's rows plus what was raised to them or filed by them; the cell picker),
+  /leaders (sheet rows, bot days, orphan rows and roster cut; a plant-bound
+  viewer gets a SCOPED kept build keyed by the plant; one report / one unit
+  day refused outside it) and the appeal chats, /kelish (list by the lock,
+  one cell / edit / roster refused outside), «Kutish (yacheyka)» and
+  «Perenaladka» (`_scoped_cells`, `_reaches_unit`, `_decider`), cell
+  attendance, /people, /staff and /daily (`_visible_manager_ids`, the unit
+  list, the documents; the live day's `_visible`, documents and deletions),
+  /tasks (the board, the leader-tier list, the leader and brigadir pickers,
+  `_can_manage`), «Konteyner berish» (a request's split, the receipts and the
+  extras cut to the plant's brigadirs — a request itself is shared by the
+  plants the flow serves), the /cells register and `/cells/:id`, the bell's
+  open-day line.
+- **Grants**: their «own» scope is their plant's units
+  (`capabilities.profile_unit_ids`), and a grant at «all» reads as «own» on
+  the SERVER (`cap_scope`, `page_view_scope`, `page_scope_is_all` —
+  `capabilities._bounded`) — never every plant. The UI's reading
+  (`page_scopes`, `/api/my-capabilities`) keeps «all», because it is what shows
+  them the unit pickers, which the server has already cut. Notification
+  fan-out: an account whose every profile is plant-bound is told about its
+  plant's units only (`account_cap_scope`).
+- /staff shows a plant-bound top-manager its unit picker whatever their grant's
+  scope (`Staff.jsx`, `useFactory().locked`).
+- **Not cut, and why**: «Oshxona» (/kitchen) counts one Verifix organization
+  with no unit or plant on its people — there is nothing to cut by; the AI
+  assistant; the shift-manager task tier (a shift-manager reaches every plant,
+  so the people a top-manager sets work for are not plant data). A new page
+  that hands a top-manager every unit must ask `viewer_unit_ids` too.
+- Tests: `tests/test_plant_bound_top_manager.py`. The first such profile —
+  Almaz Khusainov → Almaty — was set by a one-shot (docs/data-fixes.md).
 
 ## A shift-manager reaches EVERY shift and EVERY plant (`shift_scope`, 2026-11-04)
 

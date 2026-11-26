@@ -26,6 +26,7 @@ from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
+from app.services import factory_scope
 from app.services import (
     leader_owes, gc_pause,
     action_log, leader_ai, leader_appeal_chat, leader_bot, leader_cells,
@@ -449,7 +450,8 @@ def get_leaders(
     # (`leader_register`), rebuilt only when something it read has changed.
     # A LEADER's copy is rewritten in place (`_la_hide`), so it is never one
     # another viewer shares.
-    scoped = payload.get("role") in ("supervisor", "leader") and not sees_all
+    scoped = ((payload.get("role") in ("supervisor", "leader") and not sees_all)
+              or factory_scope.plant_bound(db, payload))
     if not scoped and not _la_hides(payload):
         return _assemble(db, leader_register.get(db, payload, _build_shared,
                                                  scope=request.scope), payload, since)
@@ -458,7 +460,8 @@ def get_leaders(
     # one a supervisor's or a leader's own build). The key is everything in the
     # payload a scoped build reads; the tables are the fingerprint's.
     view = {k: payload.get(k) for k in _SCOPED_KEYS}
-    key = ("scoped", sees_all, _la_hides(payload), *view.values())
+    key = ("scoped", sees_all, _la_hides(payload), *view.values(),
+           factory_scope.viewer_factory_id(db, payload))
     b = leader_register.get(db, payload, lambda s: _build_scoped(s, view, sees_all), key=key,
                             scope=request.scope)
     if b.days is None:
@@ -767,6 +770,14 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
         # + spelling drift), which used to drop every row for supervisors.
         rows = [r for r in rows if _unit_of(r) == payload.get("role_id")]
 
+    # A top-manager pinned to one plant (`factory_scope.viewer_unit_ids`,
+    # 2026-11-26) reads that plant's units only — every layer below is cut by
+    # the same set: sheet rows, bot days, orphan rows, the roster.
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    plant_set = set(plant) if plant is not None else None
+    if plant_set is not None:
+        rows = [r for r in rows if _unit_of(r) in plant_set]
+
     # Every leader profile record that IS this viewer (see
     # `identity.viewer_leader_profile_ids`) — the set both halves of the
     # register scope by, so a person entered twice reads one history.
@@ -892,9 +903,12 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
             bot_leader_ids = sorted(my_pids)
             skip_bot = not bot_leader_ids
     if not skip_bot:
+        bot_days = leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_ids)
+        if plant_set is not None:
+            bot_days = [d for d in bot_days if d.manager_id in plant_set]
         bot_rows = leader_bot.dashboard_rows(
             db,
-            leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_ids),
+            bot_days,
             sup_display=sup_display,
             # What the in-app camera recorded per shot is read by the day
             # report and the appeal page, which fetch their one report; no
@@ -936,7 +950,7 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
     # Named once because the cutoff maps further down are scoped by the very
     # same rule, and for the very same reason.
     manager_ids = ({payload.get("role_id")}
-                   if role == "supervisor" and not sees_all else None)
+                   if role == "supervisor" and not sees_all else plant_set)
     leader_ids = my_pids if role == "leader" and not sees_all else None
 
     data += leader_exclusions.orphan_rows(
@@ -1030,6 +1044,8 @@ def _leaders_feed(db: Session, payload: dict, sees_all: bool, *,
                                   for sg in _segments(p))]
     elif role == "leader" and not sees_all:
         scoped_profiles = [p for p in leader_profiles if p.id in my_pids]
+    elif plant_set is not None:
+        scoped_profiles = [p for p in leader_profiles if p.manager_id in plant_set]
 
     is_admin = leaders_admin(db, payload)
 
@@ -1797,6 +1813,9 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
     row scope; authority to ACT is checked separately.
     """
     role = payload.get("role")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return row.get("manager_id") in set(plant)
     if role in ("admin", "shift-manager", "top-manager"):
         return True
     if page_scope_is_all(db, payload, "leaders"):
@@ -1869,6 +1888,9 @@ def unit_scope_ok(db: Session, payload: dict, manager_id: int | None) -> bool:
     whatever the single day report above lets a leader open about themselves.
     """
     role = payload.get("role")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return manager_id is not None and int(manager_id) in set(plant)
     if role in ("admin", "shift-manager", "top-manager"):
         return True
     if page_scope_is_all(db, payload, "leaders"):

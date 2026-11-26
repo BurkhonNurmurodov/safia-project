@@ -25,6 +25,7 @@ import CellPlacementPanel from "../components/staff/CellPlacementPanel";
 import LiveCloseCheck, { useLiveCloseCheck } from "../components/staff/LiveCloseCheck";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
+import { useFactory } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit, transliterate } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
@@ -4968,8 +4969,12 @@ export default function Staff() {
   const deleteToast = useToast();
 
   // Admins and shift-managers pick a supervisor to view. The backend scopes the
-  // list to the shift-manager's own shift (admins see everyone).
-  const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
+  // list to the shift-manager's own shift (admins see everyone). A top-manager
+  // pinned to one plant (`factory_scope.PLANT_BOUND_ROLES`) picks too, among
+  // that plant's units — the server lists no others, whatever their grant says.
+  const { locked: plantLocked } = useFactory();
+  const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits
+    || (role === "top-manager" && plantLocked);
 
   const { data: allSupervisors = [] } = useQuery({
     queryKey: B.qk("staff-supervisors"),

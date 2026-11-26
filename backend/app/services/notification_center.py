@@ -673,8 +673,12 @@ def open_units(db: Session, payload: dict, d: date) -> Optional[list[str]]:
     closed it — the live half of a «kun yopildi» line. None when the viewer
     reaches no unit list (a leader) or the question cannot be answered."""
     from app.models import Attendance, DayApproval, Manager
+    from app.services import factory_scope
     role = payload.get("role")
-    if role == "admin" or role == "top-manager":
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        scope = plant
+    elif role == "admin" or role == "top-manager":
         scope = None
     elif role == "shift-manager":
         from app.services import shift_scope

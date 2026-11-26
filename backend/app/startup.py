@@ -13628,3 +13628,69 @@ def reject_drafts_on_closed_days() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 26 Nov: the Almaty plant's top-manager sees the Almaty plant only (docs/cells-and-org.md) ──
+# The operator, 2026-11-26, having created the account of the Almaty plant's
+# top-manager (Almaz Khusainov) and given it several screens: «All screens
+# should show only the data of Almaty plant for this account». A top-manager
+# whose profile names a plant is pinned to it from v4.675.0
+# (`factory_scope.PLANT_BOUND_ROLES`, the «Zavod» picker on the profile page);
+# this sets that one profile's plant ONCE. Found by name — exactly one
+# top-manager profile must match, else nothing is written and the admins are
+# told why. A plant already set (by an admin on the picker) is left alone.
+ALMATY_TOP_MANAGER_FLAG = "oneshot:almaty_top_manager_plant_nov26"
+
+
+def _fold_name(s: str) -> str:
+    s = (s or "").lower()
+    for a, b in (("х", "x"), ("kh", "x"), ("у", "u"), ("с", "s"), ("а", "a"), ("и", "i"),
+                 ("н", "n"), ("о", "o"), ("в", "v"), ("л", "l"), ("м", "m"), ("з", "z")):
+        s = s.replace(a, b)
+    return s
+
+
+def almaty_top_manager_plant() -> None:
+    """Pin the Almaty top-manager profile to the Almaty plant. Flag-guarded."""
+    from sqlalchemy import func
+    from app.models import Factory, RoleProfile
+
+    title = "Olmaota top-menejeri · faqat Olmaota zavodi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ALMATY_TOP_MANAGER_FLAG).first():
+            return
+        plant = (db.query(Factory).filter(func.lower(Factory.code) == "almaty").first())
+        found = [p for p in db.query(RoleProfile).filter(RoleProfile.role == "top-manager").all()
+                 if any("xusainov" in _fold_name(n) and "almaz" in _fold_name(n)
+                        for n in (p.name, p.name_ru, p.name_en, p.name_uz_cyrl) if n)]
+        db.add(AppSetting(key=ALMATY_TOP_MANAGER_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        if plant is None or len(found) != 1:
+            db.commit()
+            why = ("Olmaota zavodi topilmadi" if plant is None
+                   else f"{len(found)} ta top-menejer profili mos keldi (1 ta kutilgan)")
+            print(f"[startup] almaty top-manager plant: nothing written — {why}")
+            _dm_report("warn", title, status="Hech narsa yozilmadi",
+                       rows=[("⚠️", "Sabab", why),
+                             ("👤", "Mos kelganlar", [p.name for p in found] or "—")],
+                       notes=[("ℹ️", "Profil sahifasida «Zavod» → «Olmaota» qo'lda tanlanadi.")])
+            return
+        p = found[0]
+        before = p.factory_id
+        if before is None:
+            p.factory_id = plant.id
+        db.commit()
+        print(f"[startup] almaty top-manager plant: {p.name} (#{p.id}) "
+              f"{'pinned to' if before is None else 'already on factory ' + str(before) + ', not'} {plant.code}")
+        _dm_report("ok", title,
+                   status=(f"{p.name} — endi faqat Olmaota zavodini ko'radi" if before is None
+                           else f"{p.name} — zavodi oldin tanlangan, o'zgartirilmadi"),
+                   rows=[("👤", "Profil", f"{p.name} · top-menejer #{p.id}"),
+                         ("🏭", "Zavod", plant.name_uz or plant.code)],
+                   notes=[("ℹ️", "Qaytarish: profil sahifasi → «Zavod» → «Barcha zavodlar».")])
+    except Exception as exc:  # noqa: BLE001 — never block startup
+        db.rollback()
+        print(f"[startup] almaty top-manager plant skipped: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

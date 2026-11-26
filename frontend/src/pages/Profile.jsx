@@ -28,6 +28,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { copyText } from "../utils/copyText";
 import { useLang } from "../context/LangContext";
+import { useFactory, factoryName } from "../context/FactoryContext";
 import useIsMobile from "../hooks/useIsMobile";
 import { useAuth } from "../context/AuthContext";
 import { useExam } from "../context/ExamContext";
@@ -865,6 +866,7 @@ function sameProfileForm(a, b) {
   if ((a.checklist_shift ?? null) !== (b.checklist_shift ?? null)) return false;
   if ((a.supervisor_kind ?? null) !== (b.supervisor_kind ?? null)) return false;
   if ((a.zagruzka_on ?? null) !== (b.zagruzka_on ?? null)) return false;
+  if ((a.factory_id ?? null) !== (b.factory_id ?? null)) return false;
   return NAME_LANGS.every((l) => (a.overrides?.[l] || "").trim() === (b.overrides?.[l] || "").trim());
 }
 
@@ -890,7 +892,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     item.id, item.name, item.shift ?? null, item.manager_id ?? null,
     item.cells ?? null, item.name_uz_cyrl ?? null, item.name_ru ?? null, item.name_en ?? null,
     item.leader_kind ?? null, item.supervisor_kind ?? null, item.zagruzka_on ?? null,
-    item.checklist_shift ?? null,
+    item.checklist_shift ?? null, item.factory_id ?? null,
   ]);
   useEffect(() => {
     const ov = {};
@@ -910,6 +912,8 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       // A brigadir unit only; a bundle reading an older payload has no field
       // and must not offer to switch a unit off by accident.
       zagruzka_on: ptype === "supervisor" ? item.zagruzka_on !== false : null,
+      // A top-manager's plant (null = every plant) — factory_scope.PLANT_BOUND_ROLES.
+      factory_id: ptype === "top-manager" ? (item.factory_id ?? null) : null,
       overrides: ov,
     };
     setForm(seeded);
@@ -922,6 +926,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   formRef.current = form;
 
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
+  const { factories } = useFactory();
   const roleChanged = form.role && form.role !== ptype;
   const effType = roleChanged ? form.role : ptype;
   const cellList = form.cells || [];
@@ -1082,6 +1087,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     if (ptype === "supervisor" && form.zagruzka_on !== (item.zagruzka_on !== false)) {
       body.zagruzka_on = form.zagruzka_on;
     }
+    // Sent only when it moved; 0 = every plant again.
+    if (ptype === "top-manager" && (form.factory_id ?? null) !== (item.factory_id ?? null)) {
+      body.factory_id = form.factory_id ?? 0;
+    }
     updateMut.mutate(body);
   }
 
@@ -1143,6 +1152,19 @@ function EditCard({ ptype, item, data, notify, onDone }) {
               onChange={(v) => setForm((f) => ({ ...f, shift: v }))}
               options={[{ value: "1", label: "1" }, { value: "2", label: "2" }]}
               placeholder={roleChanged ? t("admin.users.selectPlaceholder") : undefined}
+            />
+          </FormField>
+        )}
+
+        {ptype === "top-manager" && !roleChanged && (
+          <FormField alignTop label={t("profile.factory")} hint={t("admin.profiles.plantHint")}>
+            <StyledSelect
+              value={form.factory_id == null ? "" : String(form.factory_id)}
+              onChange={(v) => setForm((f) => ({ ...f, factory_id: v ? Number(v) : null }))}
+              options={[
+                { value: "", label: t("factory.all") },
+                ...factories.map((f) => ({ value: String(f.id), label: factoryName(f, lang) })),
+              ]}
             />
           </FormField>
         )}

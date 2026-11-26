@@ -236,7 +236,10 @@ def list_tasks(
     # this a supervisor's own board would silently absorb the tasks their shift
     # manager set them — rows this page can neither name nor reorder.
     q = db.query(LeaderTask).filter(LeaderTask.assignee_kind == tb.KIND_LEADER)
-    if role == "supervisor" and not sees_all:
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        q = q.filter(LeaderTask.supervisor_manager_id.in_(plant or [factory_scope.NO_UNIT]))
+    elif role == "supervisor" and not sees_all:
         q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
     elif role == "leader" and not sees_all:
         # The person's whole queue, from whichever account they logged in with.
@@ -324,7 +327,15 @@ def board(
     is_admin = tb.admin(db, payload)
     sees_all = is_admin or page_scope_is_all(db, payload, "tasks")
     q = db.query(LeaderTask)
-    if not sees_all:
+    # A top-manager pinned to one plant reads that plant's units' tasks — and
+    # every task they set themselves (a shift manager's belongs to no unit)
+    # (`factory_scope.viewer_unit_ids`, 2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        mine = identity.viewer_profile_key(db, payload)
+        q = q.filter(or_(LeaderTask.supervisor_manager_id.in_(plant or [factory_scope.NO_UNIT]),
+                         LeaderTask.created_by_profile == mine))
+    elif not sees_all:
         if role == "shift-manager":
             units = shift_scope.unit_ids(db, payload.get("role_id"), include_archived=True)
             # …and what was set for THEM: a shift manager's own task belongs to
@@ -689,6 +700,9 @@ def list_assignable_leaders(
     profiles = identity.list_leader_profiles(
         db, payload.get("role_id") if pinned else None
     )
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        profiles = [p for p in profiles if p.manager_id in set(plant)]
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     return [
         {

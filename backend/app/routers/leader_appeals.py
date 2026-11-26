@@ -48,6 +48,7 @@ from app.routers.leaders import (
     _lp_stage_rights, appeal_body, relay_uploads,
 )
 from app.security import require_auth
+from app.services import factory_scope
 from app.services import (
     action_log, leader_appeal_chat as chat, leader_dispute, leader_late_proof,
     leader_reports,
@@ -92,6 +93,9 @@ def _is_member(db: Session, payload: dict, thread: str, row) -> bool:
 
 def _reads_by_scope(db: Session, payload: dict, row) -> bool:
     role = payload.get("role")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return row.manager_id is not None and int(row.manager_id) in set(plant)
     if role in ("shift-manager", "top-manager") or leaders_admin(db, payload):
         return True
     if page_scope_is_all(db, payload, "leaders"):

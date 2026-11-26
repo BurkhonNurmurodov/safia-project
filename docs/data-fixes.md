@@ -1116,3 +1116,24 @@ for 25.11, a day he closed at 09:40 on 26.11 — it kept that day ⏳ on /zagruz
 - **What it does to the day**: 25.11 is confirmed, so it shows on /zagruzka at
   the figures the heatmap already had (94.5 % / 98.6 %, 47 people). No undo:
   a rejected document can never be posted again (`staff_live._approve`).
+
+## The Almaty plant's top-manager pinned to the Almaty plant (`startup.almaty_top_manager_plant`, 2026-11-26)
+
+The operator created the account of the Almaty plant's top-manager, **Almaz
+Khusainov** (website login `almaz.k`), gave it several screens and asked: «All
+screens should show only the data of Almaty plant for this account». The rule
+itself — a top-manager whose profile names a plant is locked to it — is
+docs/cells-and-org.md «A top-manager pinned to ONE plant»; this step sets that
+one profile's plant.
+
+- ONCE (flag `oneshot:almaty_top_manager_plant_nov26`): the top-manager profile
+  whose name (any of its four spellings, folded: Khusainov / Xusainov /
+  Хусаинов, Almaz / Алмаз) matches is given `role_profiles.factory_id` = the
+  plant with code `Almaty`. Found by NAME because no cloud session could read
+  production's profile id (the report door refused the environment's key that
+  day) — so exactly ONE match is required: none, several, or no Almaty plant
+  writes nothing and the admins are told why («⚠️ Olmaota top-menejeri · faqat
+  Olmaota zavodi»), and the plant is then picked by hand on the profile page.
+- A plant an admin already picked is left alone. Undo: the profile page →
+  «Zavod» → «Barcha zavodlar»; the step never runs again, so a reboot does not
+  re-pin him.

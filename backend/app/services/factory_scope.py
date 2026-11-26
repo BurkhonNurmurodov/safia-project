@@ -28,7 +28,8 @@ from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, Factory, Manager
+from app import session_memo
+from app.models import AppSetting, Factory, Manager, RoleProfile
 
 # Global default tab + whether «All factories» is offered. Both are set in the
 # admin Factories destination and read by /api/factories.
@@ -39,6 +40,16 @@ FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
 # and shift-manager switch freely — a shift-manager reaches every plant and
 # every shift since 2026-11-04 (services/shift_scope.py).
 LOCKED_ROLES = ("supervisor", "leader")
+
+# Roles pinned to the plant their PROFILE names (2026-11-26, the Almaty plant's
+# top-manager: «all screens should show only the data of Almaty plant for this
+# account»). A top-manager whose ``role_profiles.factory_id`` is set — the
+# «Zavod» picker on their profile page — is locked to that plant exactly as a
+# supervisor is to their unit's; one with no plant keeps every plant, as every
+# top-manager always has. This is where a PERSON works, never a second copy of
+# the data dimension: a row still belongs to the plant of its unit
+# (``managers.factory_id``).
+PLANT_BOUND_ROLES = ("top-manager",)
 
 
 def list_factories(db: Session, include_archived: bool = False) -> list[Factory]:
@@ -79,6 +90,23 @@ def all_tab_enabled(db: Session) -> bool:
     return True if row is None else (row.value or "1") != "0"
 
 
+def profile_factory_id(db: Session, role: Optional[str], ref: Optional[int]) -> Optional[int]:
+    """The plant a PLANT-BOUND profile is pinned to, or None (not bound, not
+    plant-bound, or no such profile). ``ref`` is ``role_profiles.id`` — what a
+    top-manager's ``role_id`` and profile key both carry."""
+    if role not in PLANT_BOUND_ROLES or not ref or db is None:
+        # no session (a pure-payload check, a unit test) has no profile to read
+        return None
+
+    def _read():
+        row = (db.query(RoleProfile.factory_id)
+               .filter(RoleProfile.id == ref, RoleProfile.role == role).first())
+        return row[0] if row else None
+    # Asked several times a request (every capability check of the viewer) —
+    # memoised on the session like the rest of the permission reads.
+    return session_memo.get(db, ("factory_scope.profile_factory_id", role, ref), _read)
+
+
 def viewer_factory_id(db: Session, payload: dict) -> Optional[int]:
     """The factory a LOCKED caller belongs to, or None when they may switch.
 
@@ -86,13 +114,17 @@ def viewer_factory_id(db: Session, payload: dict) -> Optional[int]:
     ``role_id`` (see RoleProfile: leader role rows keep pointing at the unit),
     so one lookup covers both. A shift-manager is NOT locked (2026-11-04, the
     operator: every shift-manager reaches every plant and every shift); their
-    profile's plant now only decides which units' notices reach them.
+    profile's plant now only decides which units' notices reach them. A
+    top-manager is locked only when their profile names a plant
+    (:data:`PLANT_BOUND_ROLES`, 2026-11-26).
 
     A locked caller with no factory yet returns None too — pinning them to
     nothing would empty their pages, so they keep the unfiltered view until an
     admin assigns them.
     """
-    role = payload.get("role")
+    role = (payload or {}).get("role")
+    if role in PLANT_BOUND_ROLES:
+        return profile_factory_id(db, role, payload.get("role_id"))
     if role not in LOCKED_ROLES:
         return None
     unit_id = payload.get("role_id")
@@ -113,6 +145,52 @@ def resolve_factory(db: Session, payload: dict, requested: Optional[int]) -> Opt
     if locked is not None:
         return locked
     return requested
+
+
+def plant_bound(db: Session, payload: dict) -> bool:
+    """Is this viewer a top-manager pinned to one plant? The question a page
+    whose data is not plant-aware asks before it hands a top-manager every
+    unit (see :func:`viewer_unit_ids`)."""
+    return (payload or {}).get("role") in PLANT_BOUND_ROLES and \
+        viewer_factory_id(db, payload) is not None
+
+
+def viewer_unit_ids(db: Session, payload: dict) -> Optional[list[int]]:
+    """The units (archived ones included) of the plant a PLANT-BOUND viewer is
+    pinned to, or None when this viewer is not plant-bound.
+
+    For the endpoints that hand a top-manager every unit without asking the
+    plant (they were never plant-aware): ``None`` leaves them exactly as they
+    were, a list narrows them to the plant. Supervisors and leaders answer None
+    here on purpose — their pages already narrow them to their own unit, which
+    is narrower than their plant.
+    """
+    if not plant_bound(db, payload):
+        return None
+    return factory_manager_ids(db, viewer_factory_id(db, payload))
+
+
+# A unit id no unit carries — what :func:`cut_to_plant` hands back when a
+# plant-bound viewer's pick leaves nothing, for the endpoints that read an
+# EMPTY id list as «every unit».
+NO_UNIT = -1
+
+
+def cut_to_plant(db: Session, payload: dict, ids: Optional[Iterable[int]]) -> list[int]:
+    """``ids`` cut to a PLANT-BOUND viewer's plant, for endpoints whose id list
+    means «every unit» when empty (the /trudoyomkost family).
+
+    A viewer who is not plant-bound gets ``ids`` back as given (``[]`` stays
+    «every unit»). A plant-bound one gets a list that is never empty: their
+    plant's units for «every unit», else the picks inside their plant, else
+    ``[NO_UNIT]`` — so no empty list can ever widen them back to every plant.
+    """
+    picked = [int(i) for i in (ids or [])]
+    plant = viewer_unit_ids(db, payload)
+    if plant is None:
+        return picked
+    out = [m for m in picked if m in set(plant)] if picked else list(plant)
+    return out or [NO_UNIT]
 
 
 def factory_manager_ids(db: Session, factory_id: Optional[int]) -> Optional[list[int]]:

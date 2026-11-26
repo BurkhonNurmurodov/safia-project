@@ -57,6 +57,7 @@ from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services import action_log
+from app.services import factory_scope
 from app.services import cell_archive
 from app.services import forecast_autocall
 from app.services import idle_lock
@@ -273,6 +274,11 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session,
         if (role == "shift-manager" and not sees_all
                 and not shift_scope.covers(db, payload.get("role_id"), mid)):
             raise HTTPException(status_code=403, detail="This unit is not yours to read")
+        # A top-manager pinned to one plant reads that plant's units only
+        # (`factory_scope.viewer_unit_ids`, 2026-11-26).
+        plant = factory_scope.viewer_unit_ids(db, payload)
+        if plant is not None and mid not in plant:
+            raise HTTPException(status_code=403, detail="This unit is not in your plant")
         return mid
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
 
@@ -1832,6 +1838,9 @@ def list_production_managers(
     elif sees_all or role in ("admin", "top-manager", "shift-manager"):
         if role == "shift-manager" and not sees_all:
             q = q.filter(Manager.id.in_(_shift_manager_units(payload, db)))
+        plant = factory_scope.viewer_unit_ids(db, payload)
+        if plant is not None:
+            q = q.filter(Manager.id.in_(plant or [-1]))
         configured = _configured_manager_ids(db)
         mgrs = [m for m in q.order_by(Manager.name).all() if m.id in configured]
     else:
@@ -3746,7 +3755,8 @@ def get_raw(
     # shift-manager to their shift ∩ plant, none of which they chose. A
     # `page.view.production` grant at "all" is the documented way out of every
     # pin on this page, so it is the way out of this one too.
-    unpinned = (payload.get("role") in ("admin", "top-manager")
+    unpinned = ((payload.get("role") in ("admin", "top-manager")
+                 and not factory_scope.plant_bound(db, payload))
                 or page_scope_is_all(db, payload, PAGE))
     # A leader's cells narrow the raw file the same way they narrow the computed
     # dashboard — and unlike the brigadir scoping below, this one applies to the
@@ -5687,6 +5697,7 @@ def trudoyomkost_analysis(
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
+    manager_id = factory_scope.cut_to_plant(db, payload, manager_id)
     return _trudoyomkost_payload(db, manager_id, d_from, d_to, shift)
 
 
@@ -5705,6 +5716,7 @@ def trudoyomkost_export(
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
+    manager_id = factory_scope.cut_to_plant(db, payload, manager_id)
     data = _trudoyomkost_payload(db, manager_id, d_from, d_to, shift)
 
     labels = WEEKDAY_LABELS.get(lang, WEEKDAY_LABELS["uz"])
@@ -6008,6 +6020,7 @@ def trudoyomkost_worker_stats(
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
+    manager_id = factory_scope.cut_to_plant(db, payload, manager_id)
     return _worker_stats_payload(db, manager_id, d_from, d_to, shift, capacity_pct)
 
 
@@ -6090,6 +6103,7 @@ def trudoyomkost_forecast(
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
+    manager_id = factory_scope.cut_to_plant(db, payload, manager_id)
     return _forecast_payload(db, manager_id, _parse_date(week_start), weeks, shift, capacity_pct)
 
 
@@ -6206,8 +6220,11 @@ def trudoyomkost_call_tomorrow(
             raise HTTPException(400, "Bad for_date")
     else:
         target = _tomorrow()
-    return {"date": target.isoformat(), "weeks": FORECAST_WEEKS,
-            "rows": _call_rows(db, target, capacity_pct, shift)}
+    rows = _call_rows(db, target, capacity_pct, shift)
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:   # a top-manager pinned to one plant calls its units only
+        rows = [r for r in rows if r.get("manager_id") in set(plant)]
+    return {"date": target.isoformat(), "weeks": FORECAST_WEEKS, "rows": rows}
 
 
 class CallNotifyItem(BaseModel):
@@ -6286,6 +6303,9 @@ def trudoyomkost_call_notify(
 ):
     if not req.items:
         raise HTTPException(400, "No supervisors selected")
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None and any(i.manager_id not in set(plant) for i in req.items):
+        raise HTTPException(403, "This unit is not in your plant")
     # each item's date comes from its shift section's picker (explicit, so no
     # midnight-rollover guard needed); any calendar date is allowed by design
     targets: dict[int, date] = {}

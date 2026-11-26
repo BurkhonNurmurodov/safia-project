@@ -45,6 +45,7 @@ from app.capabilities import page_scope_is_all
 from app.database import get_db
 from app.models import LeaderTask, LeaderTaskComment, Manager
 from app.permissions import page_allowed, require_page
+from app.services import factory_scope
 from app.services import action_log, shift_scope, task_board as tb
 # Shared notification helpers: _notify writes a single bell row; notify_profile
 # addresses the PERSON — one bell row on the profile plus a DM to every account
@@ -83,6 +84,9 @@ def _scope_units(db: Session, payload: dict) -> Optional[list[int]]:
     """The units this viewer's board covers. ``None`` = every unit; an EMPTY
     list is a real answer ("no unit matches") and must never be read as "no
     filter" — that is the whole plant."""
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return plant
     if _sees_all(db, payload):
         return None
     role = payload.get("role")
@@ -111,7 +115,9 @@ def _can_manage(db: Session, payload: dict, manager_id: Optional[int]) -> bool:
     """
     role = payload.get("role")
     if tb.admin(db, payload) or tb.top_sets(payload):
-        return True
+        # …a top-manager pinned to one plant, that plant's units (2026-11-26)
+        plant = factory_scope.viewer_unit_ids(db, payload)
+        return plant is None or manager_id in set(plant)
     if role == "shift-manager":
         return shift_scope.covers(db, payload.get("role_id"), manager_id)
     return False
@@ -278,7 +284,10 @@ def _manageable_units(db: Session, payload: dict) -> list[Manager]:
     create endpoint accepts can never be two different sets."""
     role = payload.get("role")
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if tb.admin(db, payload) or tb.top_sets(payload):
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        q = q.filter(Manager.id.in_(plant or [factory_scope.NO_UNIT]))
+    elif tb.admin(db, payload) or tb.top_sets(payload):
         pass
     elif role == "shift-manager":
         ids = shift_scope.unit_ids(db, payload.get("role_id"))

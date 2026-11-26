@@ -44,6 +44,7 @@ from app.database import get_db
 from app.models import Cell, Manager, RoleProfile
 from app.permissions import require_page
 from app.services import action_log, cell_archive, cell_hours, kelish, live_overview
+from app.services import factory_scope
 from app.services.factory_scope import empty_scope, resolve_factory, scoped_manager_ids
 
 router = APIRouter(prefix="/api/kelish", tags=["kelish"])
@@ -58,7 +59,13 @@ def _viewer(db: Session, payload: dict) -> dict:
     """The caller's reach, resolved ONCE per request."""
     role = payload.get("role")
     ctx = {"role": role, "read_all": False, "edit_all": False, "admin": False,
-           "units": set(), "edit_units": set(), "leaders": set()}
+           "units": set(), "edit_units": set(), "leaders": set(), "plant": None}
+    # A top-manager pinned to one plant reads every cell OF THAT PLANT
+    # (`factory_scope.viewer_unit_ids`, 2026-11-26); the list is cut by the plant
+    # lock, a single cell by `_can_read`.
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        ctx["plant"] = set(plant)
     if page_admin(db, payload, PAGE):
         ctx["read_all"] = ctx["edit_all"] = ctx["admin"] = True
         return ctx
@@ -75,12 +82,16 @@ def _viewer(db: Session, payload: dict) -> dict:
 
 
 def _can_read(ctx: dict, mid: Optional[int], lid: Optional[int]) -> bool:
+    if ctx.get("plant") is not None and mid not in ctx["plant"]:
+        return False
     return (ctx["read_all"] or ctx["edit_all"]
             or (lid is not None and lid in ctx["leaders"])
             or (mid is not None and mid in ctx["units"]))
 
 
 def _can_edit(ctx: dict, mid: Optional[int], lid: Optional[int]) -> bool:
+    if ctx.get("plant") is not None and mid not in ctx["plant"]:
+        return False
     return (ctx["edit_all"]
             or (lid is not None and lid in ctx["leaders"])
             or (mid is not None and mid in ctx["edit_units"]))
@@ -90,6 +101,8 @@ def _can_roster(ctx: dict, mid: Optional[int]) -> bool:
     """«+» / «−» — who goes ON the list is the unit's own business (the
     operator, 2026-10-04): admin and the cell's own brigadir. A leader marks
     the list and never changes who is on it."""
+    if ctx.get("plant") is not None and mid not in ctx["plant"]:
+        return False
     return ctx["edit_all"] or (mid is not None and mid in ctx["edit_units"])
 
 

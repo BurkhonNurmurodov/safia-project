@@ -9,6 +9,7 @@ from app.security import require_auth
 from app.models import Manager, Attendance, ProductionData, HeadcountData, DowntimeData, DayApproval
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
+from app.services import factory_scope
 from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services import idle_source, zagruzka_source
 from app.services.name_map import sheet_alias_map
@@ -240,7 +241,7 @@ def build_metrics_list(
 
 
 @router.get("/managers/all")
-def list_all_managers(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+def list_all_managers(db: Session = Depends(get_db), payload: dict = Depends(require_auth)):
     """Returns active managers as {manager_id, name, shift, factory_id} for
     filter dropdowns. Archived units are hidden everywhere (their data stays
     stored). The old public /managers registration picker is gone — registration
@@ -253,14 +254,20 @@ def list_all_managers(db: Session = Depends(get_db), _: dict = Depends(require_a
     ``zagruzka_on`` rides along for the same reason: a загрузка page's picker
     drops a unit whose загрузка is switched off (`build_metrics_list` skips
     it, so picking it could only ever show an empty page). Every other page
-    keeps listing it."""
-    rows = (
+    keeps listing it.
+
+    A top-manager pinned to one plant (`factory_scope.viewer_unit_ids`,
+    2026-11-26) is offered that plant's units only — every picker this feeds
+    then names nobody they may not read."""
+    q = (
         db.query(Manager.id, Manager.name, Manager.shift, Manager.factory_id,
                  Manager.zagruzka_on)
         .filter(Manager.archived.is_(False))
-        .order_by(Manager.name)
-        .all()
     )
+    plant = factory_scope.viewer_unit_ids(db, payload)
+    if plant is not None:
+        q = q.filter(Manager.id.in_(plant or [factory_scope.NO_UNIT]))
+    rows = q.order_by(Manager.name).all()
     return [{"manager_id": r.id, "name": r.name, "shift": r.shift,
              "factory_id": r.factory_id, "zagruzka_on": bool(r.zagruzka_on)}
             for r in rows]

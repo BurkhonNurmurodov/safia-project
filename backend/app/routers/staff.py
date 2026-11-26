@@ -42,6 +42,7 @@ from app.models import (
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
+from app.services import factory_scope
 from app.services import action_log, close_window, live_day, shift_scope
 from app.services.day_state import confirmed_pairs, day_state
 from app.xlsx_delivery import deliver_xlsx
@@ -2718,11 +2719,14 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
     # A staff/daily page grant at "all" is the unit picker's whole point: the
     # person may read every unit's day, so they must be able to list the units.
     sees_all_units = _staff_sees_all(db, caller)
+    # A top-manager pinned to one plant lists that plant's units — their grant
+    # «all» reads as their plant (`factory_scope.viewer_unit_ids`, 2026-11-26).
+    plant_bound = factory_scope.plant_bound(db, caller)
     if cleanup_scope is None and not sees_all_units:
         if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
                                capability_pages(db, caller), caller_denied_pages(db, caller)):
             raise HTTPException(status_code=403, detail="Access denied")
-        if caller.get("role") not in ("admin", "shift-manager"):
+        if caller.get("role") not in ("admin", "shift-manager") and not plant_bound:
             raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     q = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name)
     vis = _visible_manager_ids(db, caller)  # None = all (admin); shift-managers see their shift only
@@ -2757,6 +2761,12 @@ def get_attendance(
         manager_id = role_id
         if not manager_id:
             raise HTTPException(status_code=400, detail="Supervisor has no linked manager")
+    elif factory_scope.plant_bound(db, caller):
+        # a top-manager pinned to one plant: any unit of it (2026-11-26)
+        if not manager_id:
+            raise HTTPException(status_code=400, detail="manager_id required")
+        if not _can_touch_manager(db, caller, manager_id):
+            raise HTTPException(status_code=403, detail="Not allowed for this manager")
     elif role == "admin" or sees_all:
         if not manager_id:
             raise HTTPException(status_code=400, detail="manager_id required for admin")
@@ -4114,6 +4124,9 @@ def _scope_documents(q, caller, db: Session):
     role_id = caller.get("role_id")
     tg_id   = int(caller["sub"])
 
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:       # a top-manager pinned to one plant (2026-11-26)
+        return q.filter(HrDocument.manager_id.in_(plant or [factory_scope.NO_UNIT]))
     # An "all"-scoped grant means admin reach — the transfer queue this person
     # handles is every unit's, not just their own.
     if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE) or _staff_admin(db, caller):
@@ -6038,6 +6051,10 @@ def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
     the whole point of that scope is that this person reads every unit's day."""
     role    = caller.get("role")
     role_id = caller.get("role_id")
+    # A top-manager pinned to one plant reads that plant's units (2026-11-26).
+    plant = factory_scope.viewer_unit_ids(db, caller)
+    if plant is not None:
+        return plant
     if role == "admin" or _staff_sees_all(db, caller):
         return None
     if role == "supervisor":
