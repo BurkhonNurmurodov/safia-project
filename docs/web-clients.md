@@ -594,3 +594,37 @@ avatar drawn at 30 px. Every page that draws a `ProfileAvatar` paid the same.
   is `get_profile_photo` now (`tests/test_profile_photo_sizes` holds the name).
 - Not done: the Verifix people photos (`/api/people/:id/photo`, `photoUrl`) —
   their URL names no version, so they stay `no-store`.
+
+## «Yangilanish kerak» repairs the device before it gives up (2026-11-26)
+
+The operator's installed Safari app («Add to Dock») stood on «Yangilanish
+kerak — Ilovani yopib, qaytadan oching» through every reload and re-open, while
+the server, the build and the engine were all fine (every code file imported in
+a fresh WebKit, with and without the worker). That screen is `staleReload`
+(`frontend/index.html`) called twice within 30 s: a code file failed, a reload
+did not help. A reload that does not help means the failing answer is STORED ON
+THE DEVICE, and «close and reopen» reads the same store.
+
+- **A missing `/assets` file is answered `no-store`** (`ImmutableStaticFiles`
+  in `main.py`, `tests/test_missing_asset_not_cached.py`). Its 404 used to leave
+  with no Cache-Control; Cloudflare stamped it `max-age=14400` and cached it at
+  the edge, so a browser that asked for a chunk in a moment it was not on disk
+  kept «not found» for four hours after the file was back. Check after any
+  change there: two `curl -I` of a made-up `/assets/x.js` must both say
+  `no-store` and never `cf-cache-status: HIT`.
+- **The dead end repairs once, then reports** (`repairStored` in `index.html`):
+  it notes how each code file the page asked for answers as stored
+  (`cache: 'force-cache'`), unregisters the worker and drops the `safia-*`
+  caches, asks the server for each again (`cache: 'reload'`, which overwrites
+  the stored answer), posts what it found to `/api/boot-report` (stage
+  `stale-reload` — «stored: 404, server: 200» names a kept «not found»), and
+  reloads. Only a failure within two minutes of that repair shows the «close
+  and reopen» text, and reports again. Nothing in localStorage is touched, so
+  nobody is signed out.
+- **Not settled:** what made a code file answer 404 on that Mac in the first
+  place — its storage could not be read (macOS protects the web app's
+  container). The first `stale-reload` report names the file and both answers.
+- **Known mislabel:** a stall report from under that overlay says «the session
+  check»: the loader AuthGate rendered stays mounted (hidden) while the page's
+  code is awaited, and its clock keeps running. Read such a report as «a
+  page's code».
