@@ -377,12 +377,18 @@ ALTER TABLE cells ADD COLUMN department_id int REFERENCES departments(id);   -- 
 - **«Слойка Отдел» (9422, 9423, 9425–9427) and «Сдоба отдел» (9411–9413,
   9429, 8218, 8610) are two departments** — the filled file put 9429 in Сдоба
   beside Olishev's other cells in Слойка.
-- **A department is NOT a bo'lim.** `bolims` (2026-11-23,
-  `docs/cells-and-org.md`) are ROOMS — block, floor — for the container
-  logistics, 26 of them; departments are the 47 inspection units. Two
-  groupings of the same cells for two jobs, so neither is derived from the
-  other, and the word «Bo'lim» on screen is already the room's — what a
-  department is called on screen is open.
+- **On screen a department is «Bo'lim»; the rooms become «Xona»** (the
+  operator, 26 Nov). Today «Bo'lim» is the ROOM — `bolims` (2026-11-23,
+  `docs/cells-and-org.md`): block and floor for the container logistics, 26 of
+  them — a different grouping of the same cells for another job, so neither is
+  derived from the other. **The rename lands WITH the departments, not before**
+  («With departments»): the change that ships them also relabels the rooms
+  «Xona» / «Xonalar» (ru «Помещение», en «Room») — the `bolim.*` keys and
+  `nav.containerBolims` in all four languages, the `container-bolims` page's
+  name on the Permissions tab, the «Bo'lim not found» errors — and the word
+  changes once. Code names stay: `bolims` / `cells.bolim_id` remain the rooms,
+  `departments` / `cells.department_id` the new «Bo'lim». The «Jurnal»'s
+  «Bo'lim» filter is its own category word and is not touched.
 - **Seeded once** from the two files (a flag-guarded `later` step, the
   `bolims` seed's pattern: it never moves a cell already placed), matched to
   Tasker's departments by name for `tasker_branch_id` — a name Tasker does not
@@ -511,8 +517,7 @@ moves the actual one (ruling 4).
 ## Open — the operator's decisions
 
 1. **0822's real SAP code** (item 8) — who supplies it.
-2. **What a department is called on screen** — «Bo'lim» is already the room.
-3. **Ochilov's 2nd-shift block** (А or Б) — Verifix cannot say.
+2. **Ochilov's 2nd-shift block** (А or Б) — Verifix cannot say.
 
 Settled on 16 Nov: actual vs official people, which pages read which, the
 trigger that replaces a hand-set person, the acting leader's two profiles, the
@@ -520,7 +525,8 @@ label after the test, the 35 cells, the cases of Цех-8 / 11 / 14 / 22 and
 0822, shift-managers, two brigades on one «Цех», the waiting suggestions —
 «Actual and official people» above; a workstation is one
 code on one shift — «Workstations» above. Settled on 26 Nov: departments are
-Tasker's, seeded from the operator's two files — «Departments» above.
+Tasker's, seeded from the operator's two files, called «Bo'lim» on screen
+with the rooms renamed «Xona» when they ship — «Departments» above.
 
 ## Appendix — every department and its cells (the seed)
 
