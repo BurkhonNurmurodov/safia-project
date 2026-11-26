@@ -1382,16 +1382,16 @@ should receive it». For the hour H:
 - **«Kun rejasi»** (AXO's day strip): an hour with no request turns yellow
   «So'rov yo'q — so'rash vaqti» at H−2 and red «muddat o'tdi» past H−1 (was
   yellow from H−3).
-- **The «Konteynerlar» board**: three cards instead of two —
-  «Brigadirlar — hozirgi soat» (H), «Logistika — yetkazadi» (H+1, tinted) and
-  «AXO — hozir so'raydi» (H+2, gold). Between 06:00 and 08:00 the running day
-  is still yesterday's while AXO's (and from 07:00 logistics') hour is the new
-  day's 08:00 / 09:00 — those cards read the next production day. The hour
-  table (`HourlyTable askLead={2}`) marks the same: «Hozir», «Logistika», a
-  gold «AXO», under «13:00: AXO 15:00–16:00 uchun so'raydi · logistika
-  14:00–15:00 uchun yetkazadi». Elsewhere (the totals card, «Soatlik» on
-  «Zagruzka fayli», «Smena kunligi») the brigadirs' one-hour «tayyorlang» is
-  unchanged.
+- **The «Konteynerlar» board**: two cards — «Brigadirlar — hozirgi soat» (H)
+  and «AXO — hozir so'raydi» (H+2, gold; it was the next hour, «Keyingi soat —
+  hozir tayyorlang»). A third card for logistics' hour (H+1) shipped the same
+  day and was removed on the operator's word: «remove the logistics from here,
+  just put 2 hours before». Between 06:00 and 08:00 the running day is still
+  yesterday's while AXO's hour is the new day's 08:00 / 09:00 — that card reads
+  the next production day. The hour table (`HourlyTable askLead={2}`) marks
+  «Hozir» and a gold «AXO» under «14:00 da tayyorlang — 16:00–17:00 uchun
+  kerak». Elsewhere (the totals card, «Soatlik» on «Zagruzka fayli», «Smena
+  kunligi») the brigadirs' one-hour «tayyorlang» is unchanged.
 - Copy that stated the old rule says the new one: the request form's hour
   hints and «Muddat» hint.
 

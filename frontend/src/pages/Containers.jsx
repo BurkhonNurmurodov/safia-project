@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight, AlertTriangle, Truck, ClipboardList } from "lucide-react";
+import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight, AlertTriangle, ClipboardList } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -277,13 +277,13 @@ const nextISO = (iso) => {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 };
 
-// The hour's three sides at once (2026-11-26, the operator: «for 8–9 AXO
-// should see the containers at 6, the logistics at 7, and around 8 the
-// brigadir should receive it»): the brigadirs' hour now, logistics' — the
-// next, delivered within the hour — and AXO's, two ahead, asked NOW (gold).
-// From 06:00 the day running is still yesterday's while AXO's hour (and from
-// 07:00 logistics') is the new day's 08:00 / 09:00 — those are read off the
-// next production day, the figure AXO asks for.
+// The brigadirs' hour now and AXO's — two hours ahead, asked NOW (gold)
+// (2026-11-26, the operator: «for 8–9 AXO should see the containers at 6»;
+// a logistics card for the hour between was shown the same day and removed on
+// his word: «remove the logistics from here, just put 2 hours before»). From
+// 06:00 the day running is still yesterday's while AXO's hour is the new
+// day's 08:00 / 09:00 — read off the next production day, the figure AXO
+// asks for.
 function HourStrip({ q, day, params, refetch, t, tv }) {
   const now = tashkentNow();
   const nowMin = day === now.iso ? now.min : day === prevISO(now.iso) ? now.min + DAY : null;
@@ -303,26 +303,25 @@ function HourStrip({ q, day, params, refetch, t, tv }) {
   const busy = (x) => (x >= 32 ? nextQ.isLoading : q.isLoading);
   const span = (x) => `${hourLabel(x)}:00–${hourLabel(x + 1)}:00`;
   return (
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-2">
       <HourCard title={t("containers.stage.brig")} span={span(h)} counts={at(h)} loading={busy(h)} t={t} tv={tv} icon={Clock} />
-      <HourCard title={t("containers.stage.logi")} span={span(h + 1)} counts={at(h + 1)} loading={busy(h + 1)} t={t} tv={tv} icon={Truck} tint />
       <HourCard title={t("containers.stage.axo")} span={span(h + 2)} counts={at(h + 2)} loading={busy(h + 2)} t={t} tv={tv} icon={ClipboardList} next />
     </div>
   );
 }
 
-function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = false, tint = false }) {
+function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = false }) {
   const keys = KEYS.filter((k) => counts?.[k]);
   const sum = keys.reduce((s, k) => s + counts[k], 0);
   return (
     <div className="rounded-xl p-4"
       style={{
         background: next ? "rgba(200,151,63,0.10)" : "var(--bg-card)",
-        border: `${next ? 2 : 1}px solid ${next ? "var(--brand)" : tint ? "rgba(200,151,63,0.45)" : "var(--border)"}`,
+        border: `${next ? 2 : 1}px solid ${next ? "var(--brand)" : "var(--border)"}`,
       }}>
       <div className="flex items-center gap-2">
-        <Icon size={16} style={{ color: next || tint ? "var(--brand-text)" : "var(--text-3)" }} />
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: next || tint ? "var(--brand-text)" : "var(--text-2)" }}>{title}</span>
+        <Icon size={16} style={{ color: next ? "var(--brand-text)" : "var(--text-3)" }} />
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: next ? "var(--brand-text)" : "var(--text-2)" }}>{title}</span>
         <span className="ml-auto text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{span}</span>
       </div>
       {loading ? (

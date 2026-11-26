@@ -89,10 +89,10 @@ const heat = (n, max) => (n > 0 && max > 0 ? `rgba(200,151,63,${(0.06 + 0.34 * (
 // one to `after` beyond it — a TV cannot be scrolled — while the «Jami»
 // column still counts the whole day; `size="lg"` sets it in reading-distance
 // type. Both apply only where they are passed («Smena kunligi» is unchanged).
-// `askLead` (hours, the «Konteynerlar» board's 2 — 2026-11-26): the table names
-// each side's hour — the next one is logistics' («Logistika», delivered within
-// it), the one after AXO's («AXO», asked now, gold). Without it: «Hozir» and
-// «Tayyorlang» as before.
+// `askLead` (hours, the «Konteynerlar» board's 2 — 2026-11-26): the gold column
+// is AXO's hour, `askLead` ahead («AXO», asked now), and the head says «14:00 da
+// tayyorlang — 16:00–17:00 uchun kerak». Without it: «Hozir» and «Tayyorlang»
+// one hour ahead, as before.
 export function HourlyTable({ day, params, enabled = true, t, refetchInterval = false, around = null, size = "md", askLead = null }) {
   const big = size === "lg";
   const { data, isLoading, isError } = useQuery({
@@ -113,6 +113,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
   const prepHour = nowHour == null ? null : nowHour + 1;
   const askHour = askLead != null && nowHour != null ? nowHour + askLead : null;
   const goldHour = askHour ?? prepHour;          // the hour somebody acts on NOW
+  const markPrep = askHour == null;              // the one-hour «Tayyorlang» mark
 
   // Bring the current hour into view once the table is there: the sticky
   // first column covers the left edge, so the current hour lands just right
@@ -136,12 +137,8 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
       {prepHour != null ? (
         <span className="text-[12px] font-medium px-2 py-0.5 rounded-md"
           style={{ color: "var(--brand-text)", background: "rgba(200,151,63,0.14)", border: "1px solid rgba(200,151,63,0.35)" }}>
-          {askHour != null
-            ? t("production.hourly.stagesNow").replace("{at}", clock(nowHour * 60))
-              .replace("{axo}", `${clock(askHour * 60)}–${clock((askHour + 1) * 60)}`)
-              .replace("{logi}", `${clock(prepHour * 60)}–${clock((prepHour + 1) * 60)}`)
-            : t("production.hourly.prepNow").replace("{at}", clock((prepHour - 1) * 60))
-              .replace("{span}", `${clock(prepHour * 60)}–${clock((prepHour + 1) * 60)}`)}
+          {t("production.hourly.prepNow").replace("{at}", clock((goldHour - (askLead ?? 1)) * 60))
+            .replace("{span}", `${clock(goldHour * 60)}–${clock((goldHour + 1) * 60)}`)}
         </span>
       ) : (
         <span className="text-[12px]" style={{ color: "var(--text-3)" }}>{t("production.contTotals.notToday")}</span>
@@ -225,7 +222,7 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
         background: heat(n, max),
         opacity: past(h) ? 0.55 : 1,
         color: n ? "var(--text-1)" : "var(--text-4)",
-        fontWeight: bold || (n && (h === prepHour || h === askHour)) ? 700 : n ? 600 : 400 }}>
+        fontWeight: bold || (n && h === goldHour) ? 700 : n ? 600 : 400 }}>
       {n ? fmt(n) : "·"}
     </td>
   );
@@ -262,15 +259,13 @@ export function HourlyTable({ day, params, enabled = true, t, refetchInterval = 
               {shown.map((h) => (
                 <th key={h} ref={h === nowHour || (nowHour != null && nowHour < lo && h === lo) ? nowRef : undefined}
                   className={`${big ? "px-3 py-2" : "px-2 py-1.5"} font-medium text-center whitespace-nowrap align-bottom`}
-                  title={askHour != null && h === askHour ? t("containers.stage.axo")
-                    : askHour != null && h === prepHour ? t("containers.stage.logi")
-                    : h === prepHour ? t("production.hourly.prepHint") : h === nowHour ? t("production.contTotals.nowHint") : undefined}
+                  title={h === goldHour ? t(markPrep ? "production.hourly.prepHint" : "containers.stage.axo")
+                    : h === nowHour ? t("production.contTotals.nowHint") : undefined}
                   style={{ borderLeft: "1px solid var(--border)", ...divL(h), ...ring(h, true, false),
-                    background: h === goldHour ? "var(--brand)" : askHour != null && h === prepHour ? "rgba(200,151,63,0.18)" : "transparent",
-                    color: h === goldHour ? "var(--on-brand)" : h === prepHour || h === nowHour ? "var(--brand-text)" : past(h) ? "var(--text-4)" : "var(--text-2)",
-                    fontWeight: h === prepHour || h === nowHour || h === askHour ? 700 : 500 }}>
-                  {askHour != null && h === askHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t("containers.stage.axoShort")}</div>}
-                  {h === prepHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t(askHour != null ? "containers.stage.logiShort" : "production.hourly.prep")}</div>}
+                    background: h === goldHour ? "var(--brand)" : "transparent",
+                    color: h === goldHour ? "var(--on-brand)" : h === nowHour ? "var(--brand-text)" : past(h) ? "var(--text-4)" : "var(--text-2)",
+                    fontWeight: h === goldHour || h === nowHour ? 700 : 500 }}>
+                  {h === goldHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t(markPrep ? "production.hourly.prep" : "containers.stage.axoShort")}</div>}
                   {h === nowHour && <div className={`${big ? "text-[11px]" : "text-[9px]"} uppercase tracking-wider leading-none mb-0.5`}>{t("production.contTotals.now")}</div>}
                   {hourLabel(h)}–{hourLabel(h + 1)}
                 </th>
