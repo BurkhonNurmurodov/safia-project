@@ -27,6 +27,34 @@ export function unlockAudio() {
   } catch { /* no sound on this device — the caption still answers */ }
 }
 
+/**
+ * The orb's two earcons, drawn on the same unlocked context: two soft notes
+ * going UP when it starts to listen, DOWN when it stops and sends. They are
+ * the instant «I heard the tap» a voice needs — the answer itself is seconds
+ * away. Scheduled even while the context is still waking: its clock stands
+ * still until it runs, so the notes sound the moment it does.
+ */
+export function chime(up) {
+  if (!ctx) return;
+  try {
+    const t = ctx.currentTime + 0.01;
+    [up ? 660 : 880, up ? 880 : 660].forEach((hz, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const at = t + i * 0.09;
+      osc.type = "sine";
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.07, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.085);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.09);
+    });
+  } catch { /* a chime is never worth an error */ }
+}
+
 const wait = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
 export default function useSpeaker() {

@@ -4,6 +4,7 @@ assistant to top-managers.
 """
 import asyncio
 import base64
+import os
 import unittest
 from unittest import mock
 
@@ -93,8 +94,13 @@ class SpeechTextTest(unittest.TestCase):
         self.assertEqual(len(assistant_ai.speech_text("a" * 5000)), assistant_ai.MAX_SPEECH)
         self.assertEqual(assistant_ai.speech_text(" \n "), "")
 
+    def test_one_apostrophe_for_the_letters_and_one_for_the_stop(self):
+        self.assertEqual(assistant_ai.speech_text("O'rtacha yuklama: G`ulom ma'lum qildi, to’g’ri", "uz"),
+                         "Oʻrtacha yuklama: Gʻulom maʼlum qildi, toʻgʻri")
+        self.assertEqual(assistant_ai.speech_text("It's the dog's load", "en"), "It's the dog's load")
+
     def test_uzbek_cyrillic_is_latinised_and_russian_is_not(self):
-        self.assertEqual(assistant_ai.speech_text("Ўртача юклама 87 фоиз"), "O'rtacha yuklama 87 foiz")
+        self.assertEqual(assistant_ai.speech_text("Ўртача юклама 87 фоиз"), "Oʻrtacha yuklama 87 foiz")
         self.assertEqual(assistant_ai.speech_text("Средняя загрузка 87 процентов", "ru"),
                          "Средняя загрузка 87 процентов")
         # a Russian answer naming an Uzbek person stays Russian
@@ -179,15 +185,75 @@ class FastTest(unittest.TestCase):
             asyncio.run(engine._drive(1, ctx, 0.0))
         self.assertEqual(gen.call_count, 1)
 
-    def test_only_a_spoken_question_gets_the_spoken_rules(self):
+    def test_a_spoken_question_gets_its_own_prompt(self):
         from app.services import assistant as engine
-        ctx = engine.Ctx({"full_name": "A", "role": "admin"}, {}, "p:1", None)
-        with mock.patch.object(engine.docs, "toc", return_value=""), \
-             mock.patch.object(engine.api, "index_text", return_value=""):
-            self.assertNotIn("SPOKEN", engine._system(ctx, {"path": "/"}))
-            self.assertTrue(engine._system(ctx, {"path": "/", "_orb": True}).rstrip().endswith(
-                engine._SPOKEN.rstrip()))
+        a = engine.Ctx({"full_name": "Aziz", "role": "admin"}, {}, "p:1", None)
+        b = engine.Ctx({"full_name": "Botir", "role": "top-manager"}, {}, "p:2", None)
+        with mock.patch.object(engine.docs, "toc", return_value="TOC " * 500), \
+             mock.patch.object(engine.api, "index_text", return_value="API " * 500):
+            chat = engine._system(a, {"path": "/", "_now": "2026-11-26 12:00"})
+            orb = engine._system(a, {"path": "/", "_now": "2026-11-26 12:00", "_orb": True})
+            other = engine._system(b, {"path": "/zagruzka", "_now": "2026-11-26 12:31", "_orb": True})
+        self.assertNotIn("A SPOKEN QUESTION", chat)
+        self.assertIn("HOW AN ANSWER LOOKS\nBefore you write", chat)       # the chat keeps the shape catalog
+        # the spoken prompt: the core rules, no shape catalog, the SAY line asked for last
+        self.assertLess(len(engine._RULES_CORE), len(engine._RULES) // 2)
+        self.assertTrue(orb.startswith(engine._RULES_CORE))
+        self.assertNotIn("Before you write, decide what KIND", orb)
+        self.assertIn(engine._SPOKEN, orb)
+        self.assertTrue(orb.rstrip().endswith("line."))
+        # … and everything that is the same for everybody comes FIRST, so two
+        # people at two minutes share the provider's cached prefix up to «THE USER»
+        shared = len(os.path.commonprefix([orb, other]))
+        self.assertGreaterEqual(shared, orb.index("THE USER"))
+        self.assertGreater(orb.index("THE USER"), orb.index("API "))
         self.assertLess(engine.MAX_STEPS_SPOKEN, engine.MAX_STEPS)
+
+    def test_the_say_line_is_taken_out_of_what_is_shown(self):
+        from app.services import assistant as engine
+        self.assertEqual(
+            engine.split_say("O'rtacha yuklama 87%.\n\n| a | b |\n\nSAY: O'rtacha yuklama sakson yetti foiz."),
+            ("O'rtacha yuklama 87%.\n\n| a | b |", "O'rtacha yuklama sakson yetti foiz."))
+        self.assertEqual(engine.split_say("**say:** «Bugun besh kishi.»"),
+                         ("Bugun besh kishi.", "Bugun besh kishi."))      # nothing else was written
+        self.assertEqual(engine.split_say("Oddiy javob."), ("Oddiy javob.", ""))
+        # however a model dresses the marker, the word SAY never reaches the screen or the voice
+        said = "Yuklama sakson yetti foiz."
+        for dressed in ("«SAY: » " + said, "«SAY: " + said + "»", "- SAY: " + said, "> **SAY**: " + said,
+                        'say : "' + said + '"'):
+            self.assertEqual(engine.split_say("Yuklama 87%.\n" + dressed), ("Yuklama 87%.", said), dressed)
+        # … and a line that merely contains the letters is left alone
+        self.assertEqual(engine.split_say("Essay: bu matn."), ("Essay: bu matn.", ""))
+        self.assertEqual(engine.split_say("U aytdi: say: yo'q."), ("U aytdi: say: yo'q.", ""))
+
+    def test_a_spoken_run_saves_what_to_say_and_has_no_file_tools(self):
+        from app.services import assistant as engine
+        state = ([{"role": "user", "parts": [{"text": "q"}]}], {}, {"_orb": True, "_now": "2026-11-26 12:00"},
+                 "voice-model", 0)
+        done = []
+
+        async def db(fn, *a, **kw):
+            if fn is engine._load:
+                return state
+            if fn is engine._cancel_asked:
+                return False
+            if fn is engine._finish:
+                done.append((a, kw))
+            return None
+
+        raw = "Yuklama 87%.\nSAY: Yuklama sakson yetti foiz."
+        gen = mock.AsyncMock(return_value=assistant_gemini.Reply(
+            content={"role": "model", "parts": [{"text": raw}]}, text=raw, calls=[], finish="STOP"))
+        ctx = engine.Ctx({"full_name": "A", "role": "admin"}, {}, "p:1", None)
+        with mock.patch.object(engine, "_db", db), mock.patch.object(engine, "_system", return_value="s"), \
+             mock.patch.object(engine.ai, "current", side_effect=lambda fast=False: _assign("voice")), \
+             mock.patch.object(engine.ai, "generate", gen):
+            asyncio.run(engine._drive(1, ctx, 0.0))
+        self.assertEqual(done[0][1]["text"], "Yuklama 87%.")
+        self.assertEqual(done[0][1]["msg"], {"say": "Yuklama sakson yetti foiz."})
+        names = {t["name"] for t in gen.call_args.kwargs["tools"]}
+        self.assertFalse(names & set(engine._FILE_TOOLS))
+        self.assertIn("call_api", names)
 
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")

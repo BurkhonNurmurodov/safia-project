@@ -355,6 +355,42 @@ russians».
   the chat's own microphone is NOT fast — it is typed by voice and answered
   like a typed one. On the orb's side: 1.2 s of quiet sends, and the run is
   read twice a second.
+- **A spoken question has a PROMPT of its own** (the same day, from the
+  research the operator supplied — `~/Downloads/Voice AI Architecture
+  Uzbek.pdf`: the model's time to its first word is the largest single wait,
+  and a short prompt with a cached prefix is how it is cut). `_system` builds
+  it for `_orb`: the core rules without the answer-shape catalog
+  (`_RULES_CORE` — the catalog is two thirds of the rules' text, all about
+  tables and files nobody hears), no file tools (`_FILE_TOOLS`; asked for a
+  file, it says the chat makes it), and **everything that is the same for
+  everybody FIRST** — rules, the rule book's contents, the API list — with
+  the user, «Now» and the page LAST, so the provider's prefix cache holds 99 %
+  of it across people and minutes (the chat's own order puts «Now: 12:07»
+  ahead of its two largest blocks). Measured here: 55,830 → 42,435 characters
+  a call with the tools. The chat's prompt is untouched.
+- **Numbers and dates are SAID in words — by the model, on a hidden line**
+  (`SAY_MARK`). «87%» is right for the eye and wrong for a voice reading
+  Uzbek, and only the model knows whether 25.11 is a date or a figure, how a
+  cell's code is said, and which case a Russian numeral takes — so a spoken
+  answer ends with «SAY: …», its first line written out as it must be spoken.
+  The engine takes that line out of the text (`split_say`) and keeps it as
+  the message's `data.say`; the orb SHOWS the first line (digits) and SPEAKS
+  `say` (words). No such line — the first line is spoken as written. A
+  deterministic number-to-words table was NOT built: it cannot tell a date
+  from a decimal or decline Russian. What is sent to the voice also gets
+  Uzbek's own two apostrophes — ʻ in oʻ gʻ, ʼ for the stop — whatever the
+  text was typed with (`speech_text`; never for an English reader).
+- **The wait is answered at once** (the research: a voice that goes quiet
+  reads as broken). Two soft notes UP when it starts to listen and DOWN when
+  it sends (`useSpeaker.chime`, drawn with oscillators on the unlocked
+  context — no sound files), and, where the answer is still being worked out
+  2 s on, a short spoken «Hozir qarayman» / «Сейчас посмотрю» (`FILLERS`, in
+  the language of the QUESTION, two phrases a language, once a question; its
+  sound is fetched through `/speak` once a session and kept, and one that is
+  not ready in time is skipped rather than said late). The answer waits for a
+  filler still being said. Both follow the mute. The end-of-speech watch
+  starts 400 ms in (`GRACE_MS`): the microphone hears the opening chime's
+  tail, and it must not count as a voice.
 - **Sound is unlocked by the tap** (`useSpeaker.js`): iOS and Telegram's web
   views play only what a touch unlocked, and the answer arrives long after
   the tap — so the tap that starts listening opens the ONE AudioContext the
@@ -367,6 +403,31 @@ russians».
   on a device**: the request shape is the provider's documented one and could
   not be called from here (the build Mac's Gemini key answers 402, credit
   spent), and the Uzbek voice has not been listened to.
+
+## What a spoken question sends, and where it is kept (2026-11-26)
+
+Written for the operator's own review: the research they supplied names
+Uzbekistan's Law «On Personal Data», Article 27-1 (citizens' personal data
+kept on servers inside the country). This is what the code does — not a legal
+reading of it.
+
+| What | Leaves the platform's server for | Kept by the platform |
+|---|---|---|
+| The RECORDING of a question (a WAV, ≤ 2 min) | Google's Gemini API, to be turned into text (`/transcribe`, feature «voice») | **Not kept** — the platform's code writes it to no file, no database row and no log line: the handler reads it from the request, sends it and drops it, and none of the middlewares a request passes keeps a body (checked 2026-11-26). The web server in front and the framework may spool a large upload to a temporary file for the length of the request |
+| The TRANSCRIPT, and whatever platform data the answer reads | The model that answers: Google (a spoken question; feature «voice») or the chat's own (Gemini or Claude; feature «assistant») — the same road a TYPED question has taken since 2026-10-05 | In the platform's own database (`assistant_messages`, `assistant_runs`), seen by their author alone |
+| The answer's FIRST LINE, to be spoken | Google's Gemini API, to be turned into sound (`/speak`, feature «speech») | Not kept — the sound goes to the browser and is played; the browser holds a «Hozir qarayman» for its session |
+
+- What the platform keeps of a voice is the transcript, an ordinary chat
+  message, and the recording's length in seconds. What Google keeps of what
+  it is sent is Google's terms, not something this code decides.
+- **Switching it off is a row each on «AI kalitlari»**: «voice» off — no
+  recording leaves (the microphone and the orb disappear); «speech» off — no
+  answer is sent to be spoken (the orb answers in text).
+- **Keeping speech inside the country means another provider**, not a
+  setting: both rows are Gemini-only today. The local services (Muxlisa,
+  UzbekVoice / Mohir, Kotib, Aisha, NeuronAI) are the candidates; the
+  operator's ruling of 26 Nov is to test Gemini first and look at them if it
+  falls short.
 
 ## AI keys, and which feature runs on which («AI kalitlari», `/panel/aikeys`)
 

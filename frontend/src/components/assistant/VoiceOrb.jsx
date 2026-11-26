@@ -12,7 +12,7 @@ import Button from "../ui/Button";
 import useAT from "./useAT";
 import useAssistantPages from "./useAssistantPages";
 import useVoiceRecorder, { MAX_SECONDS, voiceSupported } from "./useVoiceRecorder";
-import useSpeaker, { unlockAudio } from "./useSpeaker";
+import useSpeaker, { chime, unlockAudio } from "./useSpeaker";
 import { quietGate, spokenLine } from "./voiceUtil";
 
 /**
@@ -37,10 +37,49 @@ import { quietGate, spokenLine } from "./voiceUtil";
  *
  * Turned on from the panel's header (`A.orb`, kept per device); hidden while
  * the panel or the full page is open — the conversation is on screen there.
+ *
+ * A spoken question is waited for with nothing to read, so the wait is
+ * ANSWERED at once: two notes up when it starts to listen and down when it
+ * sends (`chime`), and — where the answer is still being worked out two
+ * seconds on — a short spoken «Hozir qarayman» (`FILLERS`), once a question.
+ * Both follow the mute.
  */
 const HUE = { listening: CATEGORY_COLORS[2], thinking: CATEGORY_COLORS[5], speaking: CATEGORY_COLORS[6] };
 const BARS = [0.5, 0.8, 1, 0.75, 0.45];
 const MUTE_KEY = "assistant_orb_muted";
+// What it says while it looks something up — SPOKEN, never shown, in the
+// language of the QUESTION (not the interface's), two of each so the same
+// words are not heard every time.
+const FILLERS = {
+  uz: ["Hozir qarayman.", "Bir daqiqa."],
+  ru: ["Сейчас посмотрю.", "Одну минуту."],
+  en: ["One moment.", "Let me check."],
+};
+const FILLER_AFTER_MS = 2000;
+// The microphone hears the opening chime's tail: the end-of-speech watch
+// starts once it is over, or the chime would count as a voice.
+const GRACE_MS = 400;
+
+/** The language a question was asked in, from its transcript: Cyrillic is
+ *  Russian unless it carries Uzbek's own letters (or the reader writes Uzbek
+ *  in Cyrillic and nothing says Russian). */
+function spokenLang(said, lang) {
+  if (!/[а-яё]/i.test(said)) return lang === "en" ? "en" : "uz";
+  if (/[ўқғҳ]/i.test(said)) return "uz";
+  return lang === "uz_cyrl" && !/[ыщ]/i.test(said) ? "uz" : "ru";
+}
+
+// A filler's sound, fetched once a session per phrase (a WAV, kept as bytes:
+// decoding consumes the buffer it is given, so each play gets a copy).
+const fillerBytes = new Map();
+function fillerSound(text, lang) {
+  if (!fillerBytes.has(text)) {
+    fillerBytes.set(text, api.post("/api/assistant/speak", { text, lang }, { responseType: "arraybuffer" })
+      .then((r) => r.data)
+      .catch(() => { fillerBytes.delete(text); return null; }));
+  }
+  return fillerBytes.get(text);
+}
 // Refusals of a send that have words of their own (routers/assistant.py).
 const SEND_ERRORS = ["running", "busy", "not_configured", "no_access", "exam"];
 
@@ -78,9 +117,14 @@ function Orb() {
   // opened), but its answer is announced the usual way, not hushed for an orb
   // that is no longer there.
   const gone = useRef(false);
+  // «Hozir qarayman»: its timer, the sound while it plays, and whose turn it is.
+  const fillerTimer = useRef(0);
+  const fillerPlaying = useRef(null);
+  const fillerTurn = useRef(0);
+  const dropFiller = () => { clearTimeout(fillerTimer.current); fillerTimer.current = 0; };
   useEffect(() => {
     gone.current = false;
-    return () => { gone.current = true; A.hush(null); };
+    return () => { gone.current = true; clearTimeout(fillerTimer.current); A.hush(null); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The microphone was refused, or would not open.
@@ -90,16 +134,22 @@ function Orb() {
     rec.reset();
   }, [rec.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const say = async (text, more) => {
+  const canSpeak = !muted && !!A.me?.speech;
+
+  // `text` is shown; `aloud` is the same answer written to be SAID (numbers and
+  // dates in words — the model's `SAY:` line), where the server has one.
+  const say = async (text, more, aloud) => {
     const my = ++seq.current;
+    dropFiller();
     setCaption({ text, tone: "answer", more });
-    if (muted || !A.me?.speech) { setPhase("idle"); return; }
+    if (!canSpeak) { setPhase("idle"); return; }
     // «Speaking» from here on, the second or two the voice takes to arrive
     // included: the answer is on screen, so the orb is no longer thinking —
     // and its shoulder button is the mute, not a Stop that would wipe it.
     setPhase("speaking");
     try {
-      const r = await api.post("/api/assistant/speak", { text, lang }, { responseType: "arraybuffer" });
+      const r = await api.post("/api/assistant/speak", { text: aloud || text, lang }, { responseType: "arraybuffer" });
+      await fillerPlaying.current;        // «Hozir qarayman» is let finish, never cut mid-word
       // Dropped when something newer happened — or the orb itself is gone:
       // a sound started now would have nothing left to stop it.
       if (my !== seq.current || gone.current) return;
@@ -111,6 +161,7 @@ function Orb() {
   const finish = async () => {
     const out = rec.stop();
     if (!out) { fail("assistant.voice.tooShort"); return; }
+    if (!muted) chime(false);
     const my = ++seq.current;
     setPhase("thinking");
     setCaption(null);
@@ -136,6 +187,20 @@ function Orb() {
       if (my !== seq.current) { A.cancel(d.run_id).catch(() => {}); return; }   // stopped while it was being sent
       A.hush(d.run_id);
       setJob({ tid: d.thread_id, runId: d.run_id });
+      if (canSpeak) {
+        // Still working two seconds on: say so, once. The sound is asked for
+        // NOW so it is there by then; one that is not ready in time is skipped
+        // rather than said late, over the answer.
+        const set = FILLERS[spokenLang(said, lang)];
+        fillerTurn.current += 1;
+        const sound = fillerSound(set[fillerTurn.current % set.length], lang);
+        let bytes = null;
+        sound.then((b) => { bytes = b; });
+        fillerTimer.current = setTimeout(() => {
+          if (my !== seq.current || gone.current || !bytes) return;
+          fillerPlaying.current = voice.play(bytes.slice(0)).catch(() => {});
+        }, FILLER_AFTER_MS);
+      }
     } catch (e) {
       if (my !== seq.current) return;
       const code = e?.response?.data?.detail;
@@ -145,6 +210,8 @@ function Orb() {
 
   const stopAll = () => {
     seq.current += 1;
+    dropFiller();
+    voice.stop();
     rec.cancel();
     if (job) { A.cancel(job.runId).catch(() => {}); setJob(null); }
     setPhase("idle");
@@ -170,6 +237,7 @@ function Orb() {
     const from = performance.now();
     const id = setInterval(() => {
       const now = performance.now();
+      if (now - from < GRACE_MS) return;
       const verdict = now - from >= MAX_SECONDS * 1000 ? "send" : gate(live.current.level, now);
       if (verdict) clearInterval(id);      // one verdict per recording — never a second send
       if (verdict === "send") live.current.finish();
@@ -196,14 +264,14 @@ function Orb() {
   useEffect(() => {
     if (!job || !run || run.id !== job.runId || ACTIVE.includes(run.status)) return;
     setJob(null);
-    if (run.status === "cancelled") { setPhase("idle"); setCaption(null); return; }
+    if (run.status === "cancelled") { dropFiller(); setPhase("idle"); setCaption(null); return; }
     // A change waits for a tap on its plan card in the chat — never for a spoken «yes».
     if (run.status === "awaiting_confirm") { say(t("assistant.orb.plan"), true); return; }
-    if (run.status !== "done") { fail("assistant.orb.failed", true); return; }
+    if (run.status !== "done") { dropFiller(); fail("assistant.orb.failed", true); return; }
     const m = [...(q.data.messages || [])].reverse().find((x) => x.role === "assistant" && x.run_id === run.id);
     const { line, more } = spokenLine(m?.text);
     const extra = (m?.data?.files || []).length > 0 || (m?.data?.links || []).length > 0;
-    say(line || t("assistant.orb.ready"), more || extra || !line);
+    say(line || t("assistant.orb.ready"), more || extra || !line, m?.data?.say);
   }, [job, run?.id, run?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onOrb = () => {
@@ -211,7 +279,9 @@ function Orb() {
     if (phase === "listening") { if (recording) finish(); return; }
     if (phase === "thinking") { A.setOpen(true); return; }
     seq.current += 1;
+    dropFiller();
     voice.stop();
+    if (!muted) chime(true);
     setCaption(null);
     setPhase("listening");
     rec.start();
@@ -221,11 +291,12 @@ function Orb() {
     const next = !muted;
     setMuted(next);
     try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch { /* storage refused */ }
+    if (next) dropFiller();
     if (next && phase === "speaking") {      // also the voice still on its way
       seq.current += 1;
       voice.stop();
       setPhase("idle");
-    }
+    } else if (next) voice.stop();            // a filler being said
   };
 
   useEffect(() => {

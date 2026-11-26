@@ -142,6 +142,11 @@ async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
 
 _UZ_CYRL = re.compile("[ўқғҳЎҚҒҲ]")
 _RU_ONLY = re.compile("[ыщЫЩ]")
+# Uzbek Latin is typed with whatever apostrophe the keyboard gave (' ’ ‘ ` ´ ʼ);
+# the voice gets the alphabet's own two: ʻ in oʻ gʻ, ʼ for the stop (maʼno).
+_APOS = "'’‘`´ʼʻ"
+_OG = re.compile(f"(?<=[oOgG])[{_APOS}]")
+_STOP = re.compile(f"(?<=[A-Za-z])(?<![oOgG])[{_APOS}](?=[A-Za-z])")
 
 
 def speech_text(text: str, lang: str = "uz") -> str:
@@ -160,6 +165,8 @@ def speech_text(text: str, lang: str = "uz") -> str:
     if lang != "ru" and _UZ_CYRL.search(s) and not _RU_ONLY.search(s):
         from app.translit import transliterate_text
         s = transliterate_text(s, "uz")
+    if lang != "en":            # an English «it's» keeps its own
+        s = _STOP.sub("ʼ", _OG.sub("ʻ", s))
     return s
 
 

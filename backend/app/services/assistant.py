@@ -39,6 +39,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -525,26 +526,69 @@ unless the user asked for code.
 """
 
 
-# The last word of the prompt for a question SPOKEN to the voice orb
-# (`context["_orb"]`, set by the router from the message's `voice.orb`). The
-# orb reads the answer's first line aloud and shows nothing else until the
-# user opens the chat, and the speaker waits with nothing to read — so the
-# answer is short, sayable, and reached in the fewest steps.
+# ── a question SPOKEN to the voice orb ───────────────────────────────────────
+# (`context["_orb"]`, set by the router from the message's `voice.orb`.) The
+# orb shows the answer's first line and SAYS it, and the speaker waits with
+# nothing to read — so a spoken question gets a prompt of its own:
+#   · the core rules WITHOUT the answer-shape catalog (two thirds of the rules'
+#     text, all of it about tables and files nobody hears) and without the
+#     file tools;
+#   · everything that is the same for everybody FIRST (rules, the rule book's
+#     contents, the API list) and what changes per person and per minute LAST,
+#     so the provider's prefix cache holds nearly the whole prompt — the
+#     chat's own order puts «Now: 12:07» ahead of the two largest blocks;
+#   · a last hidden line, `SAY:`, with the answer as it must be SPOKEN —
+#     numbers, dates and units in words. Writing «87%» is right for the eye
+#     and wrong for a voice reading Uzbek; only the model knows whether 25.11
+#     is a date or a figure, and which case a Russian numeral takes.
+_RULES_CORE = _RULES.partition("\nHOW AN ANSWER LOOKS\n")[0]
+_FILE_TOOLS = ("make_document", "make_excel", "read_attachment")
+SAY_MARK = "SAY:"
+# The marker opens its line — after whatever a model dresses it in (a bullet,
+# bold, a quote mark), never after a letter («Essay: …» is not it).
+_SAY_LINE = re.compile(r"^[^A-Za-zА-Яа-яЁё]*SAY[\s*_`]*:(.*)$", re.I)
+_SAY_WRAP = " \t*_`\"'«»“”„"
+
 _SPOKEN = """
-THIS QUESTION WAS SPOKEN to the voice orb, and the FIRST LINE of your answer
-is read ALOUD to the user. Where this differs from HOW AN ANSWER LOOKS, this
-wins:
+A SPOKEN QUESTION — how its answer looks (in place of HOW AN ANSWER LOOKS)
+This question was SPOKEN to the voice orb. The first line of your answer is
+shown beside the orb and the user HEARS it; nothing else is seen until they
+open the chat.
 - Be quick. Use the fewest steps that still give a CORRECT figure: when the
-  API list above names the endpoint, call it directly — no find_endpoints or
+  API list below names the endpoint, call it directly — no find_endpoints or
   describe_endpoint first unless a call fails — and ask for everything you
   need in ONE step (several tool calls at once). Never estimate a figure.
 - The first line is one or two short sentences that carry the whole answer:
-  the figure, its unit, whose it is and which day. Plain words to be SAID —
-  no Markdown, no table, no list, no link, no brackets, no «—» for a missing
-  figure (say it is not there).
+  the figure, its unit, whose it is and which day. Plain words — no Markdown,
+  no table, no list, no link, no brackets, no «—» for a missing figure (say
+  it is not there). No greeting, no repeating the question, no closing offer.
 - Anything worth SEEING (a ranking, a table, steps) goes after a blank line,
-  short; the user opens it in the chat. Do not offer a file unless asked.
+  short; the user opens it in the chat.
+- No files here (rule 11 does not apply to a spoken question): asked for one,
+  say in one sentence that the chat makes it.
+- THE LAST LINE, always, starts with SAY: and then gives the first line
+  exactly as it must be SPOKEN ALOUD, in the answer's language (nothing
+  before SAY:, no quotes round it) — every number, percent, date,
+  time, unit and code written out in WORDS the way a person says them, with
+  no digit, symbol or abbreviation left (87% → sakson yetti foiz; 12 500 →
+  o'n ikki ming besh yuz; 25.11 → yigirma beshinchi noyabr; 14:30 → o'n
+  to'rt o'ttiz; in Russian in the right case: 21% → двадцать один процент).
+  This line is not shown — it is what the voice reads.
 """
+
+
+def split_say(text: str) -> tuple[str, str]:
+    """A spoken answer's text and its `SAY:` line apart — (what is shown, what
+    is said). No such line: the text as it is and nothing to say (the orb then
+    reads the first line itself)."""
+    lines = (text or "").rstrip().split("\n")
+    for i in range(len(lines) - 1, -1, -1):
+        m = _SAY_LINE.match(lines[i])
+        if m:
+            said = m.group(1).strip(_SAY_WRAP).strip()
+            shown = "\n".join(lines[:i] + lines[i + 1:]).strip()
+            return (shown or said), said
+    return text, ""
 
 
 def _system(ctx: Ctx, context: dict) -> str:
@@ -572,8 +616,7 @@ def _system(ctx: Ctx, context: dict) -> str:
                           if isinstance(x, dict))
         page_lines.append("Pages this user can open: " + names[:3000])
     lang = page.get("lang") or "uz"
-    return "\n".join([
-        _RULES,
+    user = [
         "THE USER",
         *who,
         f"UI language: {lang}",
@@ -582,15 +625,20 @@ def _system(ctx: Ctx, context: dict) -> str:
         "",
         "WHAT THEY ARE LOOKING AT",
         *(page_lines or ["(no page context)"]),
-        "",
+    ]
+    book = [
         "RULE BOOK — contents (read with read_doc)",
         docs.toc(),
         "",
         "API — paths you may use, by area (GET = read · FILE = export · METHOD* = "
         "change, via propose_changes only). Details: describe_endpoint.",
         api.index_text(),
-        *([_SPOKEN] if page.get("_orb") else []),
-    ])
+    ]
+    if page.get("_orb"):        # see «a question SPOKEN to the voice orb» above
+        return "\n".join([_RULES_CORE, _SPOKEN, *book, "", *user, "",
+                          "This question was SPOKEN: answer as A SPOKEN QUESTION says, "
+                          f"and end with the {SAY_MARK} line."])
+    return "\n".join([_RULES, *user, "", *book])
 
 
 # ── history ──────────────────────────────────────────────────────────────────
@@ -836,7 +884,9 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
         context["_now"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
         await _db(_save, run_id, run={"context": context})
     system = _system(ctx, context)
-    fast = bool(context.get("_orb"))        # spoken to the voice orb: `ai.current(fast)`
+    spoken = bool(context.get("_orb"))      # the voice orb's question: its own prompt, tools and cap
+    fast = spoken                           # … and the fast model, until that one gives up
+    tools = [t for t in TOOLS if t["name"] not in _FILE_TOOLS] if spoken else TOOLS
     steps_used = sum(1 for c in contents if c.get("role") == "model")
 
     async def on_retry(attempt: int, why: str) -> None:
@@ -857,7 +907,7 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
                      run_id, run_model, a.model)
             contents = ai.transcode(contents)
         run_model = a.model or run_model
-        over = (steps_used >= (MAX_STEPS_SPOKEN if fast else MAX_STEPS)
+        over = (steps_used >= (MAX_STEPS_SPOKEN if spoken else MAX_STEPS)
                 or (time.monotonic() - started) > RUN_WALL_S)
         if over:
             _append_text(contents, "You have used all the steps this request "
@@ -868,7 +918,7 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
                   msg={"thinking": True, "call_at": _now().isoformat(), "retry": None})
         t0 = time.monotonic()
         try:
-            reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
+            reply = await ai.generate(a, system=system, contents=contents, tools=tools,
                                       mode="NONE" if over else "AUTO", on_retry=on_retry)
         except ai.AssistantAIError as exc:
             if not fast or exc.code in _FAST_GIVES_UP:
@@ -890,7 +940,11 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
                 raise ai.AssistantAIError("empty", f"No answer (finish={reply.finish})")
             await _db(_save, run_id, run={"contents": contents, "usage": usage},
                       msg={"thinking": False, "call_at": None, "retry": None})
-            await _db(_finish, run_id, "done", text=text, usage=usage)
+            said = ""
+            if spoken:
+                text, said = split_say(text)
+            await _db(_finish, run_id, "done", text=text, usage=usage,
+                      msg={"say": said} if said else None)
             return
         await _db(_save, run_id, msg={"call_at": None, "retry": None})
         responses: list[dict] = []
