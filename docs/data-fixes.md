@@ -1094,3 +1094,25 @@ through the headcount helper `startup._shift1_people_copy(flag, src, dst)`
 (`carry_day(..., plan=False)`, the 24 → 25 step now calls it too). Same rule as
 24 → 25: per work centre, only where the 26th has no people pin and plans the
 centre; ШТАТКА never. Report «1-smena odam soni · 25.11 → 26.11».
+
+## The one draft left on a closed day, rejected by its closer (`startup.reject_drafts_on_closed_days`, 2026-11-26)
+
+v4.671.0 made a day's close reject that unit-day's drafts (docs/staff-live.md
+«A close REJECTS the day's draft documents») — at the close only, so the
+drafts days ALREADY closed were holding back stayed. The operator: «Yes, reject
+them». Production held exactly one (read through the report door, live and
+file-flow documents both): **#2350**, Niyozov Izzatilla's transfer of Jo'rayev
+Diyorbek Samadovich (Кондитер, 9412) to Yogmirov Feruz, filed 25.11 at 22:20
+for 25.11, a day he closed at 09:40 on 26.11 — it kept that day ⏳ on /zagruzka.
+
+- ONCE (flag `oneshot:reject_drafts_on_closed_days_nov26`), the id PINNED
+  (`_DRAFTS_ON_CLOSED`), never re-derived: rejected exactly as a close rejects
+  (`staff_live._reject`), decided by the day's closer as `DayApproval` names
+  them — so by Izzatilla — with a «rejected» history row, a Jurnal row
+  (`lab.live_document_rejected`, `closed_by`) and the admins' cards retired.
+- A document no longer a draft, or whose day was reopened by then, is left
+  alone and named in the admins' report («Yopilgan kundagi qoralama
+  hujjatlar»). Nobody else is messaged.
+- **What it does to the day**: 25.11 is confirmed, so it shows on /zagruzka at
+  the figures the heatmap already had (94.5 % / 98.6 %, 47 people). No undo:
+  a rejected document can never be posted again (`staff_live._approve`).

@@ -13570,3 +13570,61 @@ def speech_on_voice_key() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 26 Nov: a draft left on an already-closed day, rejected by that day's closer (docs/data-fixes.md) ──
+# The operator, 2026-11-26, once v4.671.0 made a close reject its day's drafts:
+# «Yes, reject them» — the drafts closed days were ALREADY holding back.
+# Production held one (read through the report door): #2350, Niyozov
+# Izzatilla's transfer of Jo'rayev Diyorbek to Yogmirov Feruz on 25.11, a day
+# he closed at 09:40 on 26.11 — it kept that day ⏳ on /zagruzka.
+DRAFTS_ON_CLOSED_FLAG = "oneshot:reject_drafts_on_closed_days_nov26"
+_DRAFTS_ON_CLOSED = (2350,)
+
+
+def reject_drafts_on_closed_days() -> None:
+    """Reject the pinned `_DRAFTS_ON_CLOSED` as a close does since v4.671.0
+    (`staff_live._reject`): decided by whoever closed the day (`DayApproval`),
+    with a «rejected» history row and a Jurnal row, the admins' cards retired.
+    A document no longer a draft, or whose day was reopened since, is left
+    alone and named in the report. Nobody else is messaged. Flag-guarded."""
+    from app.models import DayApproval, LiveDocument
+    from app.routers import staff_live
+    from app.services import action_log
+
+    title = "Yopilgan kundagi qoralama hujjatlar"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=DRAFTS_ON_CLOSED_FLAG).first():
+            return
+        docs = (db.query(LiveDocument).filter(LiveDocument.id.in_(_DRAFTS_ON_CLOSED))
+                .order_by(LiveDocument.id).with_for_update(of=LiveDocument).all())
+        done, left = [], []
+        for doc in docs:
+            appr = db.query(DayApproval).filter_by(manager_id=doc.manager_id, date=doc.day).first()
+            label = f"#{doc.id} · {doc.supervisor_name or doc.manager_id} · {doc.day:%d.%m}"
+            if doc.status != "draft" or appr is None:
+                left.append(f"{label} ({doc.status if appr else 'kun ochiq'})")
+                continue
+            closer = {"sub": appr.approved_by_telegram_id or 0,
+                      "full_name": appr.approved_by_name or "System"}
+            staff_live._reject(doc, closer, db)
+            done.append((doc, closer, label))
+        db.add(AppSetting(key=DRAFTS_ON_CLOSED_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        for doc, closer, _label in done:
+            log = staff_live._log_doc(doc, [("status", "draft", "rejected")])
+            log["details"].append(("closed_by", closer["full_name"]))
+            action_log.record_system("documents", "lab.live_document_rejected", db, **log)
+            staff_live._retire("live_document", doc.id, "rejected", closer["full_name"])
+        print(f"[startup] drafts on closed days: {len(done)} rejected, {len(left)} left {left}")
+        _dm_report("ok", title,
+                   status=f"{len(done)} ta rad etildi, {len(left)} ta qoldirildi",
+                   rows=[("✖️", "Kunni yopgan rad etdi", [f"{lb} — {c['full_name']}" for _d, c, lb in done]),
+                         ("✋", "O'zgargani uchun qoldirildi", left)])
+    except Exception as exc:  # noqa: BLE001 — never block startup
+        db.rollback()
+        print(f"[startup] drafts on closed days skipped: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

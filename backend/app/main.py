@@ -410,6 +410,8 @@ async def lifespan(app: FastAPI):
     later(play_reviewer_profile)                # 25 Nov: the Google Play reviewer login (once)
     from app.startup import play_reviewer_login
     later(play_reviewer_login)                  # 25 Nov: its holder + browser login, DM'd to Burkhon (once)
+    from app.startup import reject_drafts_on_closed_days
+    later(reject_drafts_on_closed_days)         # 26 Nov: #2350, a draft on a closed day, rejected by its closer (once)
     # The two shared phones the «no pages» sign-out wiped, restored (20 Nov, once).
     from app.startup import restore_wiped_accounts
     later(restore_wiped_accounts)
