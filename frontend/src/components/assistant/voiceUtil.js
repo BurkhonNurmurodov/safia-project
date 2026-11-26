@@ -52,7 +52,7 @@ export function spokenLine(md, max = 280) {
  * reads as quiet — the tap on the orb and the recorder's two-minute cap end
  * the recording there.
  */
-export function quietGate({ quietMs = 1500, idleMs = 7000 } = {}) {
+export function quietGate({ quietMs = 1200, idleMs = 7000 } = {}) {
   let floor = 1;
   let peak = 0;
   let t0 = null;

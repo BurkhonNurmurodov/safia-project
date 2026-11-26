@@ -423,18 +423,29 @@ def generate_json(
 
 
 # ── text → speech ────────────────────────────────────────────────────────────
-# ONE request shape for feature «speech»: the assistant's spoken answer
-# (`assistant_gemini.speak`) and the tab's check of a pair (`ping`) send the
-# same body, so a pair the tab accepted is a pair that speaks. The voice is
-# fixed — an assistant whose voice changes between answers is not one
+# The request of feature «speech» — the assistant's spoken answer
+# (`assistant_gemini.speak`) and the tab's check of a pair (`ping`). The voice
+# is fixed — an assistant whose voice changes between answers is not one
 # assistant. The language is not named: the TTS models detect it from the text.
+#
+# The field that NAMES the voice was renamed between TTS generations, and a
+# model answers the other spelling with a 400. So the shapes are tried in this
+# order and the first one the model accepts is kept (`speak`); the last names
+# no voice at all, which every TTS model takes — and is what `ping` sends,
+# because the tab's check asks only «can this key and model speak».
 SPEECH_VOICE = "Charon"
+SPEECH_SHAPES = (
+    {"voiceConfig": {"voice": SPEECH_VOICE}},                                  # Gemini 3.8 TTS
+    {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": SPEECH_VOICE}}},     # the TTS previews before it
+    None,                                                                       # the model's own voice
+)
 
 
-def speech_body(text: str) -> dict:
-    return {"contents": [{"role": "user", "parts": [{"text": text}]}],
-            "generationConfig": {"responseModalities": ["AUDIO"],
-                                 "speechConfig": {"voiceConfig": {"voice": SPEECH_VOICE}}}}
+def speech_body(text: str, shape: int = 0) -> dict:
+    config: dict = {"responseModalities": ["AUDIO"]}
+    if SPEECH_SHAPES[shape]:
+        config["speechConfig"] = SPEECH_SHAPES[shape]
+    return {"contents": [{"role": "user", "parts": [{"text": text}]}], "generationConfig": config}
 
 
 def ping(key: str, model: str, speech: bool = False) -> None:
@@ -442,7 +453,7 @@ def ping(key: str, model: str, speech: bool = False) -> None:
     feature is moved onto the pair (`ai_features.assign`). Raises the
     reviewer's error classes with their `kind`; returns nothing. ``speech``
     asks for audio: a TTS model answers nothing else."""
-    body = speech_body("OK") if speech else {
+    body = speech_body("OK", len(SPEECH_SHAPES) - 1) if speech else {
         "contents": [{"role": "user", "parts": [{"text": "Reply with the single word OK."}]}],
         "generationConfig": {"temperature": 0}}
     url = f"{_BASE}/{model}:generateContent"

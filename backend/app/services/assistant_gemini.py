@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from app.services.gemini import speech_body
+from app.services.gemini import SPEECH_SHAPES, speech_body
 
 log = logging.getLogger(__name__)
 
@@ -139,12 +139,23 @@ async def _told(on_retry, attempt: int, why: str) -> None:
         log.warning("assistant: could not record a retry", exc_info=True)
 
 
+# A fast turn (a question spoken to the voice orb) asks the model to think
+# LESS: its steps are «which endpoint, then say the figure», and the seconds a
+# model spends deliberating over each are the wait the speaker hears. The field
+# is Gemini 3's; an older model refuses it with a 400 naming it — asked again
+# without it, once, and not sent again by this process.
+_THINK_LESS = {"thinkingConfig": {"thinkingLevel": "low"}}
+_think_less = True
+
+
 async def generate(*, system: str, contents: list[dict], tools: list[dict] | None,
-                   mode: str = "AUTO", model: str, key: str, on_retry=None) -> Reply:
+                   mode: str = "AUTO", model: str, key: str, on_retry=None,
+                   fast: bool = False) -> Reply:
     """One turn of the conversation. ``contents`` is the Gemini transcript
     (user / model turns, function responses as user parts); the model content
     that comes back is returned VERBATIM so the caller can append it — Gemini 3
     function calls carry thought signatures it validates on the next call."""
+    global _think_less
     if not key:
         raise AssistantAIError("no_key", "No Gemini API key is configured")
     mdl = (model or "gemini-pro-latest").strip()
@@ -158,7 +169,19 @@ async def generate(*, system: str, contents: list[dict], tools: list[dict] | Non
         body["tools"] = [{"functionDeclarations": tools}]
         body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
-    payload = await _post(mdl, body, key, on_retry)
+    if fast and _think_less:
+        body["generationConfig"] = dict(_THINK_LESS)
+    try:
+        payload = await _post(mdl, body, key, on_retry)
+    except AssistantAIError as exc:
+        if ("generationConfig" not in body or not exc.message.startswith("Gemini 400")
+                or "thinking" not in exc.message.lower()):
+            raise
+        log.warning("assistant: %s does not take a thinking level — not sent again (%s)",
+                    mdl, exc.message[:200])
+        _think_less = False
+        payload = await _post(mdl, {k: v for k, v in body.items() if k != "generationConfig"},
+                              key, on_retry)
     cands = payload.get("candidates") or []
     usage = payload.get("usageMetadata") or {}
     if not cands:
@@ -220,11 +243,26 @@ def _wav(pcm: bytes, rate: int = 24000) -> bytes:
             + b"data" + struct.pack("<I", len(pcm)) + pcm)
 
 
+_speech_shape = 0       # the request shape this process found the model takes
+
+
 async def speak(text: str, *, model: str, key: str, usage: dict | None = None) -> bytes:
     """Text → a WAV of it spoken (24 kHz mono). Raises AssistantAIError."""
+    global _speech_shape
     if not key:
         raise AssistantAIError("no_key", "No Gemini API key is configured")
-    payload = await _post((model or "").strip(), speech_body(text), key)
+    while True:
+        try:
+            payload = await _post((model or "").strip(), speech_body(text, _speech_shape), key)
+            break
+        except AssistantAIError as exc:
+            # A 400 is the model refusing the REQUEST (`gemini.SPEECH_SHAPES`):
+            # the next spelling is tried, and the one that works is kept.
+            if not exc.message.startswith("Gemini 400") or _speech_shape >= len(SPEECH_SHAPES) - 1:
+                raise
+            log.warning("assistant speech: shape %d refused — trying the next (%s)",
+                        _speech_shape, exc.message[:200])
+            _speech_shape += 1
     if usage is not None:
         usage.update(payload.get("usageMetadata") or {})
     try:

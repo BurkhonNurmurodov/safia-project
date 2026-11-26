@@ -42,9 +42,19 @@ _KIND = {"quota": "quota", "unavailable": "unavailable", "key": "key", "model": 
          "thinking_binding": "other", "slow": "slow"}
 
 
-def current() -> ai_features.Assign:
+def current(fast: bool = False) -> ai_features.Assign:
     """The chat's assignment now (cached 30 s by `ai_features`). Synchronous —
-    an async caller runs it in a thread on a cache miss."""
+    an async caller runs it in a thread on a cache miss.
+
+    ``fast`` — a question SPOKEN to the voice orb. It is answered on the VOICE
+    feature's key and model (a fast one — Flash by default), not the chat's:
+    somebody who asked aloud is waiting with nothing to read, and the chat's
+    best-and-slowest model took a minute over what a spoken answer needs in
+    seconds. The chat's own model answers it where voice is switched off."""
+    if fast:
+        a = ai_features.resolve(VOICE)
+        if a.key:
+            return a
     return ai_features.resolve(FEATURE)
 
 
@@ -109,7 +119,8 @@ async def _call(a, system, contents, tools, mode, on_retry=None) -> Reply:
         return await claude.generate(system=system, contents=contents, tools=tools,
                                      mode=mode, model=a.model, key=a.key)
     return await gemini_t.generate(system=system, contents=contents, tools=tools,
-                                   mode=mode, model=a.model, key=a.key, on_retry=on_retry)
+                                   mode=mode, model=a.model, key=a.key, on_retry=on_retry,
+                                   fast=a.feature == VOICE)      # `current(fast=True)`
 
 
 async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
@@ -130,6 +141,7 @@ async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
 
 
 _UZ_CYRL = re.compile("[ўқғҳЎҚҒҲ]")
+_RU_ONLY = re.compile("[ыщЫЩ]")
 
 
 def speech_text(text: str, lang: str = "uz") -> str:
@@ -137,12 +149,15 @@ def speech_text(text: str, lang: str = "uz") -> str:
     written in Cyrillic is Latinised first — the TTS model detects the
     language from the text, and Cyrillic Uzbek reads as Russian to it. The
     four letters Russian does not have are the tell — but never for a reader
-    in Russian (``lang``): a Russian answer names Uzbek people in those very
-    letters, and Latinising it whole would wreck the sentence around the name.
+    in Russian (``lang``), nor for a line carrying ы or щ, which Uzbek does
+    not have (the assistant answers in the language of the QUESTION, whatever
+    the reader's interface is in): a Russian answer names Uzbek people in
+    those very letters, and Latinising it whole would wreck the sentence
+    around the name.
     shortcut: an Uzbek-Cyrillic line with none of ў қ ғ ҳ goes as written;
     upgrade to a word-level check if such lines are heard mispronounced."""
     s = " ".join((text or "").split())[:MAX_SPEECH]
-    if lang != "ru" and _UZ_CYRL.search(s):
+    if lang != "ru" and _UZ_CYRL.search(s) and not _RU_ONLY.search(s):
         from app.translit import transliterate_text
         s = transliterate_text(s, "uz")
     return s

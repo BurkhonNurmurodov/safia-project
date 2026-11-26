@@ -264,6 +264,15 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
             voice = {"seconds": max(0, min(int(body.voice.get("seconds") or 0), 600))}
         except (TypeError, ValueError):
             voice = {"seconds": 0}
+        if body.voice.get("orb"):
+            voice["orb"] = True
+    # A question spoken to the voice orb: answered on the fast model, in words
+    # meant to be heard (`engine._SPOKEN`). Decided HERE, from the message —
+    # never from whatever a client put in its page context.
+    orb = bool(voice and voice.get("orb"))
+    context = {k: v for k, v in context.items() if k != "_orb"}
+    if orb:
+        context["_orb"] = True
     um = AssistantMessage(thread_id=t.id, role="user", text=text,
                           data={"attachments": [files.meta(f) for f in att_rows],
                                 **({"voice": voice} if voice else {})})
@@ -276,7 +285,7 @@ async def send(body: MessageIn, request: Request, db: Session = Depends(get_db),
     parts = engine.user_parts(db, text, [f.id for f in att_rows], owner, voice)
     contents = engine._history(db, t.id, um.id) + [{"role": "user", "parts": parts}]
     run = AssistantRun(thread_id=t.id, message_id=am.id, owner_key=owner, status="running",
-                       contents=contents, context=context, usage={}, model=ai.model_now())
+                       contents=contents, context=context, usage={}, model=ai.current(orb).model or "")
     db.add(run)
     db.flush()
     am.run_id = run.id

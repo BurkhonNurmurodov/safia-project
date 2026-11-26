@@ -24,12 +24,12 @@ const run = (levels, step = 100, opts) => {
   return [out, at];
 };
 const rep = (v, n) => Array(n).fill(v);
-// quiet room: half a second of speech, then silence → sent 1.5 s after the last word
-assert.deepEqual(run([...rep(0.01, 5), ...rep(0.3, 5), ...rep(0.01, 30)]), ["send", 2400]);
+// quiet room: half a second of speech, then silence → sent 1.2 s after the last word
+assert.deepEqual(run([...rep(0.01, 5), ...rep(0.3, 5), ...rep(0.01, 30)]), ["send", 2100]);
 // nobody says anything → given up after 7 s, never «sent»
 assert.deepEqual(run(rep(0.01, 100)), ["nothing", 7000]);
 // somebody who talks from the very first instant is heard too (their first pause shows it)
-assert.deepEqual(run([...rep(0.3, 10), ...rep(0.01, 30)]), ["send", 2400]);
+assert.deepEqual(run([...rep(0.3, 10), ...rep(0.01, 30)]), ["send", 2100]);
 // a steady hum is the floor, not a voice — and not silence either: nothing is thrown away
 assert.equal(run(rep(0.12, 100))[0], null);
 // a voice over the hum still counts, and its end is still heard

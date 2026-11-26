@@ -13523,3 +13523,50 @@ def assistant_top_managers() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 26 Nov: the voice orb speaks without a setup step ────────────────────────
+# The speech row («Yordamchi — ovozli javob») shipped switched OFF, waiting for
+# a person to pick its key on «AI kalitlari» — and the operator's first word on
+# the orb was «it's not speaking. It's answering by writing». So the row takes
+# the key the VOICE feature already runs on (the same Gemini account that
+# turns their voice into text) and the speech model, once, under a flag — a
+# row somebody already set, and a voice feature that is itself off, are left
+# alone. Switching it off later on the tab sticks.
+SPEECH_ON_FLAG = "oneshot:speech_on_voice_key_nov26"
+
+
+def speech_on_voice_key() -> None:
+    from app.models import AiFeature
+    from app.services import ai_features
+
+    title = "«Yordamchi» · ovozli javob"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=SPEECH_ON_FLAG).first():
+            return
+        voice = db.get(AiFeature, "voice")
+        row = db.get(AiFeature, "speech")
+        if row is None:
+            row = AiFeature(feature="speech")
+            db.add(row)
+        model = ai_features.BY_ID["speech"].defaults["gemini"]
+        took = bool(voice is not None and voice.key_ref and not row.key_ref)
+        if took:
+            row.key_ref, row.model = voice.key_ref, model
+            row.updated_at = datetime.now(timezone.utc)
+            row.updated_by = "took the voice feature's key"
+        db.add(AppSetting(key=SPEECH_ON_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        ai_features.invalidate()
+        print(f"[startup] speech on the voice key: {'on' if took else 'left as it was'}")
+        _dm_report("ok", title,
+                   status=("Yoqildi — ovozli xabar kalitida" if took
+                           else "O'zgarmadi (allaqachon sozlangan yoki ovozli xabar kaliti yo'q)"),
+                   rows=[("🔊", "Model", model)] if took else [])
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] speech on the voice key failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

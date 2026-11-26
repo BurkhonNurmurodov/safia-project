@@ -130,7 +130,8 @@ function Orb() {
     if (!said) { fail("assistant.voice.empty"); return; }
     setCaption({ text: said, tone: "heard" });
     try {
-      const d = await A.send({ text: said, voice: { seconds: out.seconds }, pages });
+      // `orb` is what makes the server answer on the fast model, in words to be heard.
+      const d = await A.send({ text: said, voice: { seconds: out.seconds, orb: true }, pages });
       if (gone.current) return;
       if (my !== seq.current) { A.cancel(d.run_id).catch(() => {}); return; }   // stopped while it was being sent
       A.hush(d.run_id);
@@ -181,13 +182,14 @@ function Orb() {
     return () => clearInterval(id);
   }, [recording]);
 
-  // The run it asked for, read every second while it works (the chat's own
-  // rhythm) — the context reads an out-of-sight chat every three.
+  // The run it asked for, read twice a second while it works — a spoken
+  // question is waited for with nothing to read (the chat reads its own once
+  // a second, the context an out-of-sight chat every three).
   const q = useQuery({
     queryKey: ["assistant", "thread", job?.tid],
     queryFn: () => api.get(`/api/assistant/threads/${job.tid}`).then((r) => r.data),
     enabled: !!job,
-    refetchInterval: (query) => (ACTIVE.includes(query.state.data?.run?.status) ? 1000 : false),
+    refetchInterval: (query) => (ACTIVE.includes(query.state.data?.run?.status) ? 500 : false),
     retry: false,
   });
   const run = q.data?.run;

@@ -61,6 +61,16 @@ log = logging.getLogger(__name__)
 
 TZ = ZoneInfo("Asia/Tashkent")
 MAX_STEPS = 18
+# A question spoken to the voice orb: somebody waiting to HEAR the answer gets
+# one reached in at most this many steps, and is told what is missing if that
+# was short. Kept LOOSE on purpose: production's chat answers of 6–10 Nov took
+# 8–14 model calls each, and nothing has yet shown how many a spoken one takes
+# under `_SPOKEN` — lower it from real `usage.calls` of orb runs, not a guess.
+MAX_STEPS_SPOKEN = 12
+# A fast model's failure that asking it again would not mend (it refused the
+# request, the key, the model; it answered nothing): the run goes on with the
+# chat's own model. Slow, busy and rate-limited are the chat's failures too.
+_FAST_GIVES_UP = ("slow", "quota", "unavailable")
 RUN_WALL_S = 420
 # The task writes its heartbeat every BEAT_S, also while a Gemini call is
 # open, so a beat older than STALE_S means the process driving it is gone.
@@ -515,6 +525,28 @@ unless the user asked for code.
 """
 
 
+# The last word of the prompt for a question SPOKEN to the voice orb
+# (`context["_orb"]`, set by the router from the message's `voice.orb`). The
+# orb reads the answer's first line aloud and shows nothing else until the
+# user opens the chat, and the speaker waits with nothing to read — so the
+# answer is short, sayable, and reached in the fewest steps.
+_SPOKEN = """
+THIS QUESTION WAS SPOKEN to the voice orb, and the FIRST LINE of your answer
+is read ALOUD to the user. Where this differs from HOW AN ANSWER LOOKS, this
+wins:
+- Be quick. Use the fewest steps that still give a CORRECT figure: when the
+  API list above names the endpoint, call it directly — no find_endpoints or
+  describe_endpoint first unless a call fails — and ask for everything you
+  need in ONE step (several tool calls at once). Never estimate a figure.
+- The first line is one or two short sentences that carry the whole answer:
+  the figure, its unit, whose it is and which day. Plain words to be SAID —
+  no Markdown, no table, no list, no link, no brackets, no «—» for a missing
+  figure (say it is not there).
+- Anything worth SEEING (a ranking, a table, steps) goes after a blank line,
+  short; the user opens it in the chat. Do not offer a file unless asked.
+"""
+
+
 def _system(ctx: Ctx, context: dict) -> str:
     p = ctx.payload
     # The run's own «now», frozen when it started: a Claude thinking signature
@@ -557,6 +589,7 @@ def _system(ctx: Ctx, context: dict) -> str:
         "API — paths you may use, by area (GET = read · FILE = export · METHOD* = "
         "change, via propose_changes only). Details: describe_endpoint.",
         api.index_text(),
+        *([_SPOKEN] if page.get("_orb") else []),
     ])
 
 
@@ -803,6 +836,7 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
         context["_now"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
         await _db(_save, run_id, run={"context": context})
     system = _system(ctx, context)
+    fast = bool(context.get("_orb"))        # spoken to the voice orb: `ai.current(fast)`
     steps_used = sum(1 for c in contents if c.get("role") == "model")
 
     async def on_retry(attempt: int, why: str) -> None:
@@ -817,13 +851,14 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
         # The tab's pick NOW (cached): moved onto another model mid-run,
         # the transcript is flattened once — another model's thinking
         # signatures and tool blocks are not accepted back.
-        a = await asyncio.to_thread(ai.current)
+        a = await asyncio.to_thread(ai.current, fast)
         if a.model and run_model and a.model != run_model:
             log.info("assistant run %s: moved from %s to %s — transcript flattened",
                      run_id, run_model, a.model)
             contents = ai.transcode(contents)
         run_model = a.model or run_model
-        over = steps_used >= MAX_STEPS or (time.monotonic() - started) > RUN_WALL_S
+        over = (steps_used >= (MAX_STEPS_SPOKEN if fast else MAX_STEPS)
+                or (time.monotonic() - started) > RUN_WALL_S)
         if over:
             _append_text(contents, "You have used all the steps this request "
                          "allows. Answer now with what you have, and say what is missing.")
@@ -832,8 +867,20 @@ async def _drive(run_id: int, ctx: Ctx, started: float) -> None:
         await _db(_save, run_id, run={"contents": contents, "usage": usage, "model": run_model},
                   msg={"thinking": True, "call_at": _now().isoformat(), "retry": None})
         t0 = time.monotonic()
-        reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
-                                  mode="NONE" if over else "AUTO", on_retry=on_retry)
+        try:
+            reply = await ai.generate(a, system=system, contents=contents, tools=TOOLS,
+                                      mode="NONE" if over else "AUTO", on_retry=on_retry)
+        except ai.AssistantAIError as exc:
+            if not fast or exc.code in _FAST_GIVES_UP:
+                raise
+            # The fast model would not take this question. A spoken question
+            # must never fail where a typed one answers: the rest of the run
+            # is the chat's own model's (the loop flattens the transcript for
+            # it, as for any change of model mid-run).
+            log.warning("assistant run %s: the fast model failed (%s: %s) — on with the chat's own",
+                        run_id, exc.code, exc.message[:200])
+            fast = False
+            continue
         steps_used += 1
         usage = _usage_add(usage, reply.usage, time.monotonic() - t0)
         contents.append(reply.content)

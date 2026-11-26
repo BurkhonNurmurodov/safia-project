@@ -301,7 +301,7 @@ russians».
   while it listens or thinks and the voice's mute at rest (kept per device).
   Escape cancels a recording.
 - **It sends by itself when the speaker stops** — `quietGate`
-  (`voiceUtil.js`): 1.5 s of quiet after speech sends, 7 s of real silence
+  (`voiceUtil.js`): 1.2 s of quiet after speech sends, 7 s of real silence
   gives up (never while sound is coming in — a quiet voice over a loud room
   is not thrown away), the recorder's two-minute cap still holds. What counts as a voice
   is judged against the ROOM (a floor that drops at once and creeps up
@@ -315,18 +315,46 @@ russians».
   no «Javob tayyor» toast and no dot for an answer already on screen.
 - **The voice is the sixth AI feature, `speech`** (`ai_features`, Gemini only
   — Claude answers in text): `POST /api/assistant/speak` {text} → a WAV,
-  through `assistant_ai.speak` → `assistant_gemini.speak`. ONE request shape
-  (`gemini.speech_body` — `responseModalities: ["AUDIO"]`, the fixed voice
-  `SPEECH_VOICE`) serves the answer AND the tab's check of a pair
-  (`ping(speech=True)`), so a pair «AI kalitlari» accepted is a pair that
-  speaks. Default model `gemini-3.8-flash-lite-tts`; a WAV comes back as it
-  is, an older model's bare PCM gets a RIFF header. The row starts OFF (a
-  person picks a paid key — the standing ruling), and until then the orb
-  answers in text only. The language is not named: the model detects it, and
+  through `assistant_ai.speak` → `assistant_gemini.speak`. The request is
+  `gemini.speech_body` (`responseModalities: ["AUDIO"]`, the fixed voice
+  `SPEECH_VOICE`); the field that NAMES the voice was renamed between TTS
+  generations, so `SPEECH_SHAPES` are tried in order on a 400 and the one the
+  model takes is kept for the process — the last names no voice, which every
+  TTS model accepts, and is what the tab's check sends (`ping(speech=True)`:
+  «can this pair speak»). Default model `gemini-3.8-flash-lite-tts`; a WAV
+  comes back as it is, an older model's bare PCM gets a RIFF header. **The
+  row is switched ON by itself** (`startup.speech_on_voice_key`, once): it
+  shipped off, waiting for a person to pick its key, and the operator's first
+  word on the orb was «it's not speaking. It's answering by writing» — so it
+  took the key the VOICE feature already runs on. A row somebody set, and a
+  voice feature that is itself off, are left alone; switching it off on the
+  tab sticks. Off, the orb answers in text only. The language is not named: the model detects it, and
   **Uzbek written in Cyrillic is Latinised first** (`speech_text` — ў қ ғ ҳ
-  are the tell; never for a reader in Russian, whose answer names Uzbek
+  are the tell; never for a reader in Russian nor for a line carrying ы or щ:
+  the answer follows the QUESTION's language, and a Russian one names Uzbek
   people in those very letters). On the tab a row lists only the
   models that can do its job (TTS models on the speech row, none elsewhere).
+- **A spoken question is answered FAST, on another model than the chat**
+  (the same day, the operator: «Too slow. Not answering asap»). Production's
+  chat ran on Claude Sonnet and its answers took 8–14 model calls of about
+  5 s each — 39–111 s, read through the report door. Somebody who asked aloud
+  waits with nothing to read, so the orb's message carries `voice.orb`, the
+  router turns it into the run's `context._orb` (decided from the message,
+  never from a client's page context), and the engine then: answers on the
+  VOICE feature's key and model (`assistant_ai.current(fast=True)` — Flash by
+  default; the chat's own where voice is off), asks it to think less
+  (`thinkingLevel: low`, dropped for the process if a model refuses it with a
+  400 naming it), closes the prompt with `_SPOKEN` (fewest steps, several
+  tool calls at once, a first line of one or two sentences to be SAID,
+  anything to be seen after a blank line), and allows `MAX_STEPS_SPOKEN` (12)
+  steps instead of 18 — loose on purpose until real orb runs show how many a
+  spoken answer takes. **A spoken question never fails where a typed one
+  answers**: a fast model that refuses the request, the key or the model, or
+  answers nothing, hands the rest of the run to the chat's own model
+  (`_FAST_GIVES_UP` are the failures both would share). Its calls are metered under «voice». A message from
+  the chat's own microphone is NOT fast — it is typed by voice and answered
+  like a typed one. On the orb's side: 1.2 s of quiet sends, and the run is
+  read twice a second.
 - **Sound is unlocked by the tap** (`useSpeaker.js`): iOS and Telegram's web
   views play only what a touch unlocked, and the answer arrives long after
   the tap — so the tap that starts listening opens the ONE AudioContext the
@@ -336,8 +364,9 @@ russians».
   nothing may cover it.
 - Checked by `backend/tests/test_assistant_voice.py` and
   `node frontend/tools/voice/check.mjs` (the two pure rules). **Not yet heard
-  on a device**: the request shape is the provider's documented one and was
-  not called from here, and the Uzbek voice has not been listened to.
+  on a device**: the request shape is the provider's documented one and could
+  not be called from here (the build Mac's Gemini key answers 402, credit
+  spent), and the Uzbek voice has not been listened to.
 
 ## AI keys, and which feature runs on which («AI kalitlari», `/panel/aikeys`)
 

@@ -21,6 +21,10 @@ def _reply(data: bytes, key: str = "inlineData") -> dict:
 
 
 class SpeakTest(unittest.TestCase):
+    def setUp(self):
+        assistant_gemini._speech_shape = 0
+        self.addCleanup(setattr, assistant_gemini, "_speech_shape", 0)
+
     def _speak(self, payload):
         usage = {}
         with mock.patch.object(assistant_gemini, "_post", mock.AsyncMock(return_value=payload)) as post:
@@ -53,9 +57,30 @@ class SpeakTest(unittest.TestCase):
             post = client.return_value.__enter__.return_value.post
             post.return_value = res
             ai_features.ping("gemini", "k", "m-tts", "speech")
-            self.assertEqual(post.call_args.kwargs["json"], gemini.speech_body("OK"))
+            # «can this pair speak» — asked with no voice named, the shape every TTS model takes
+            self.assertEqual(post.call_args.kwargs["json"],
+                             {"contents": [{"role": "user", "parts": [{"text": "OK"}]}],
+                              "generationConfig": {"responseModalities": ["AUDIO"]}})
             ai_features.ping("gemini", "k", "m", "voice")
             self.assertNotIn("responseModalities", post.call_args.kwargs["json"]["generationConfig"])
+
+    def test_a_refused_shape_gives_way_to_the_next_and_the_one_that_works_is_kept(self):
+        wav = assistant_gemini._wav(b"\x01\x00" * 50)
+        refused = assistant_gemini.AssistantAIError("rejected", 'Gemini 400: Unknown name "voice"')
+        post = mock.AsyncMock(side_effect=[refused, _reply(wav), _reply(wav)])
+        with mock.patch.object(assistant_gemini, "_post", post):
+            self.assertEqual(asyncio.run(assistant_gemini.speak("Salom", model="m", key="k")), wav)
+            asyncio.run(assistant_gemini.speak("Yana", model="m", key="k"))
+        bodies = [c.args[1] for c in post.call_args_list]
+        self.assertEqual(bodies, [gemini.speech_body("Salom", 0), gemini.speech_body("Salom", 1),
+                                  gemini.speech_body("Yana", 1)])
+
+    def test_a_refusal_that_is_not_about_the_request_is_not_retried(self):
+        broke = assistant_gemini.AssistantAIError("rejected", "Gemini 402: Your prepayment credits are depleted")
+        post = mock.AsyncMock(side_effect=broke)
+        with mock.patch.object(assistant_gemini, "_post", post), self.assertRaises(assistant_gemini.AssistantAIError):
+            asyncio.run(assistant_gemini.speak("Salom", model="m", key="k"))
+        self.assertEqual(post.call_count, 1)
 
     def test_speech_is_a_gemini_only_feature(self):
         self.assertEqual(ai_features.BY_ID["speech"].providers, ("gemini",))
@@ -76,6 +101,93 @@ class SpeechTextTest(unittest.TestCase):
         self.assertEqual(assistant_ai.speech_text("Лидирует Ҳасанов — 97 процентов", "ru"),
                          "Лидирует Ҳасанов — 97 процентов")
         self.assertEqual(assistant_ai.speech_text("Ҳасанов олдинда", "uz_cyrl"), "Hasanov oldinda")
+        # … whatever the reader's interface is in: the answer follows the QUESTION's language
+        self.assertEqual(assistant_ai.speech_text("Первый — Ҳасанов, у него лучший результат", "uz"),
+                         "Первый — Ҳасанов, у него лучший результат")
+
+
+def _assign(feature, key="k"):
+    return ai_features.Assign(feature, "gemini" if key else "", f"{feature}-model" if key else "",
+                              key, None, "", "", "x")
+
+
+class FastTest(unittest.TestCase):
+    """A question spoken to the orb is answered on the voice feature's model,
+    asked to think less, in words to be heard, in fewer steps."""
+
+    def test_the_fast_assignment_is_the_voice_features(self):
+        with mock.patch.object(ai_features, "resolve", side_effect=_assign):
+            self.assertEqual(assistant_ai.current().feature, "assistant")
+            self.assertEqual(assistant_ai.current(True).feature, "voice")
+        off = lambda f: _assign(f, "" if f == "voice" else "k")          # noqa: E731
+        with mock.patch.object(ai_features, "resolve", side_effect=off):
+            self.assertEqual(assistant_ai.current(True).feature, "assistant")   # voice is off: the chat's own
+
+    def _generate(self, post, fast):
+        with mock.patch.object(assistant_gemini, "_post", post):
+            return asyncio.run(assistant_gemini.generate(
+                system="s", contents=[{"role": "user", "parts": [{"text": "q"}]}], tools=None,
+                model="m", key="k", fast=fast))
+
+    def test_a_fast_turn_thinks_less_and_an_older_model_is_asked_without(self):
+        self.addCleanup(setattr, assistant_gemini, "_think_less", True)
+        answer = {"candidates": [{"content": {"parts": [{"text": "87"}]}}]}
+        post = mock.AsyncMock(return_value=answer)
+        self._generate(post, False)
+        self.assertNotIn("generationConfig", post.call_args.args[1])
+        self._generate(post, True)
+        self.assertEqual(post.call_args.args[1]["generationConfig"],
+                         {"thinkingConfig": {"thinkingLevel": "low"}})
+        refused = assistant_gemini.AssistantAIError("rejected", "Gemini 400: Thinking level is not supported")
+        post = mock.AsyncMock(side_effect=[refused, answer, answer])
+        self.assertEqual(self._generate(post, True).text, "87")
+        self._generate(post, True)
+        self.assertEqual(["generationConfig" in c.args[1] for c in post.call_args_list], [True, False, False])
+
+    def test_a_fast_model_that_refuses_hands_the_run_to_the_chats_own(self):
+        from app.services import assistant as engine
+        state = ([{"role": "user", "parts": [{"text": "q"}]}], {}, {"_orb": True, "_now": "2026-11-26 12:00"},
+                 "voice-model", 0)
+        done = []
+
+        async def db(fn, *a, **kw):
+            if fn is engine._load:
+                return state
+            if fn is engine._cancel_asked:
+                return False
+            if fn is engine._finish:
+                done.append((a, kw))
+            return None
+
+        answer = assistant_gemini.Reply(content={"role": "model", "parts": [{"text": "87"}]},
+                                        text="87", calls=[], finish="STOP")
+        refused = assistant_gemini.AssistantAIError("rejected", "Gemini 400: bad tool schema")
+        gen = mock.AsyncMock(side_effect=[refused, answer])
+        ctx = engine.Ctx({"full_name": "A", "role": "admin"}, {}, "p:1", None)
+        with mock.patch.object(engine, "_db", db), mock.patch.object(engine, "_system", return_value="s"), \
+             mock.patch.object(engine.ai, "current", side_effect=lambda fast=False: _assign("voice" if fast else "assistant")), \
+             mock.patch.object(engine.ai, "generate", gen), \
+             mock.patch.object(engine.ai, "transcode", side_effect=lambda c: c):
+            asyncio.run(engine._drive(1, ctx, 0.0))
+        self.assertEqual([c.args[0].feature for c in gen.call_args_list], ["voice", "assistant"])
+        self.assertEqual(done[0][0][1], "done")
+        # a failure the chat's model would share is the run's failure, not a reason to switch
+        gen = mock.AsyncMock(side_effect=assistant_gemini.AssistantAIError("quota", "limit"))
+        with mock.patch.object(engine, "_db", db), mock.patch.object(engine, "_system", return_value="s"), \
+             mock.patch.object(engine.ai, "current", side_effect=lambda fast=False: _assign("voice" if fast else "assistant")), \
+             mock.patch.object(engine.ai, "generate", gen), self.assertRaises(assistant_gemini.AssistantAIError):
+            asyncio.run(engine._drive(1, ctx, 0.0))
+        self.assertEqual(gen.call_count, 1)
+
+    def test_only_a_spoken_question_gets_the_spoken_rules(self):
+        from app.services import assistant as engine
+        ctx = engine.Ctx({"full_name": "A", "role": "admin"}, {}, "p:1", None)
+        with mock.patch.object(engine.docs, "toc", return_value=""), \
+             mock.patch.object(engine.api, "index_text", return_value=""):
+            self.assertNotIn("SPOKEN", engine._system(ctx, {"path": "/"}))
+            self.assertTrue(engine._system(ctx, {"path": "/", "_orb": True}).rstrip().endswith(
+                engine._SPOKEN.rstrip()))
+        self.assertLess(engine.MAX_STEPS_SPOKEN, engine.MAX_STEPS)
 
 
 @unittest.skipUnless(SERVER, "SAFIA_TEST_PG not set")
@@ -117,6 +229,48 @@ class TopManagersTest(unittest.TestCase):
             startup.assistant_top_managers()
             self.assertEqual(access(), [])
             self.assertEqual(dm.call_count, 1)
+
+    def test_speech_takes_the_voice_key_once(self):
+        from app import startup
+        from app.models import AiFeature, AppSetting
+
+        def rows(**new):
+            s = self.pg.Session()
+            try:
+                for feature, ref in new.items():
+                    r = s.get(AiFeature, feature) or AiFeature(feature=feature)
+                    r.key_ref, r.model = ref, ("m" if ref else None)
+                    s.add(r)
+                s.commit()
+                return {r.feature: (r.key_ref, r.model) for r in s.query(AiFeature).all()}
+            finally:
+                s.close()
+
+        def forget():
+            s = self.pg.Session()
+            try:
+                s.query(AppSetting).filter_by(key=startup.SPEECH_ON_FLAG).delete()
+                s.commit()
+            finally:
+                s.close()
+
+        tts = ai_features.BY_ID["speech"].defaults["gemini"]
+        with mock.patch.object(startup, "SessionLocal", self.pg.Session), \
+             mock.patch.object(startup, "_dm_admins_plain"):
+            rows(voice="env")
+            startup.speech_on_voice_key()
+            self.assertEqual(rows()["speech"], ("env", tts))
+            rows(speech=None)                    # an admin switches it off later
+            startup.speech_on_voice_key()
+            self.assertEqual(rows()["speech"], (None, None))
+            forget()
+            rows(speech="7")                     # a row somebody set is left alone
+            startup.speech_on_voice_key()
+            self.assertEqual(rows()["speech"], ("7", "m"))
+            forget()
+            rows(voice=None, speech=None)        # no voice key: nothing to take
+            startup.speech_on_voice_key()
+            self.assertEqual(rows()["speech"], (None, None))
 
 
 if __name__ == "__main__":
