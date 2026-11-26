@@ -636,7 +636,7 @@ _SKIP = (
     # «Yordamchi»: talking to the assistant changes nothing by itself — every
     # change it makes is its own request, recorded with source "assistant".
     "/api/assistant/messages", "/api/assistant/runs/", "/api/assistant/files",
-    "/api/assistant/threads", "/api/assistant/transcribe",
+    "/api/assistant/threads", "/api/assistant/transcribe", "/api/assistant/speak",
     # The report door writes its own rows (routers/ops_door.py): the asker,
     # the approver and what was read, none of which this middleware can see.
     "/api/ops/",

@@ -106,6 +106,7 @@ def me(request: Request, db: Session = Depends(get_db), payload: dict = Depends(
         "allowed": bool(allowed),
         "configured": ai.available(),
         "voice": ai.voice_available(),
+        "speech": ai.speech_available(),
         "model": ai.model_now(),
         "can_configure": is_admin_or(db, payload, tab_cap("aikeys")) and not payload.get("imp"),  # it opens /panel/aikeys
         "impersonated": bool(payload.get("imp")),
@@ -413,6 +414,27 @@ async def transcribe(request: Request, audio: UploadFile = File(...), lang: str 
     except ai.AssistantAIError as exc:
         raise HTTPException(status_code=409 if exc.code == "no_key" else 502, detail=exc.code)
     return {"text": text}
+
+
+class SpeakIn(BaseModel):
+    text: str = Field(min_length=1, max_length=MAX_TEXT)
+    lang: str = Field("uz", max_length=12)       # the reader's UI language
+
+
+@router.post("/speak")
+def speak(body: SpeakIn, request: Request, db: Session = Depends(get_db),
+          payload: dict = Depends(require_auth)):
+    """A line of an answer, spoken — the voice orb (feature «speech»). A WAV."""
+    _gate(request, db, payload)
+    db.close()          # the call below takes seconds; it must not hold a pooled connection
+    text = ai.speech_text(body.text, body.lang)
+    if not text:
+        raise HTTPException(status_code=400, detail="empty")
+    try:
+        audio = anyio.from_thread.run(ai.speak, text)
+    except ai.AssistantAIError as exc:
+        raise HTTPException(status_code=409 if exc.code == "no_key" else 502, detail=exc.code)
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 # ── settings (admins) ────────────────────────────────────────────────────────

@@ -3,13 +3,15 @@ import { createPortal } from "react-dom";
 import { leaveRef } from "../../utils/leave";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, History, Loader2, Maximize2, SquarePen, BotMessageSquare, X } from "lucide-react";
+import { ArrowLeft, AudioLines, History, Loader2, Maximize2, SquarePen, BotMessageSquare, X } from "lucide-react";
 import api from "../../utils/api";
 import useAT from "./useAT";
 import { useAssistant } from "../../context/AssistantContext";
 import { hasOpenDialog } from "../ui/dialogLayers";
 import Chat from "./Chat";
 import ThreadList from "./ThreadList";
+import { voiceSupported } from "./useVoiceRecorder";
+import { unlockAudio } from "./useSpeaker";
 
 const DOCK_QUERY = "(min-width: 1280px)";
 const PHONE_QUERY = "(max-width: 767px)";
@@ -157,6 +159,21 @@ export default function AssistantPanel() {
         </div>
         {view === "chat" && (
           <>
+            {/* The voice orb's switch. Turning it ON closes the panel — the
+                orb lives in the corner of the page, and that is where the
+                eye should find it the moment it is asked for. */}
+            {A.me?.configured !== false && A.me?.voice !== false && voiceSupported() && (
+              <button type="button" className={icon} aria-pressed={!!A.orb}
+                onClick={() => {
+                  if (!A.orb) { unlockAudio(); A.setOpen(false); }
+                  A.setOrb(!A.orb);
+                }}
+                aria-label={t(A.orb ? "assistant.orb.off" : "assistant.orb.on")}
+                title={t(A.orb ? "assistant.orb.off" : "assistant.orb.on")}
+                style={A.orb ? { background: "var(--brand)", color: "var(--on-brand)" } : { color: "var(--text-2)" }}>
+                <AudioLines size={16} />
+              </button>
+            )}
             <button type="button" onClick={() => setView("history")} className={icon}
               aria-label={t("assistant.history")} title={t("assistant.history")} style={{ color: "var(--text-2)" }}>
               <History size={16} />

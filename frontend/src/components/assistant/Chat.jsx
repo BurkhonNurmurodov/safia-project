@@ -5,11 +5,8 @@ import { AlertTriangle, KeyRound, BotMessageSquare } from "lucide-react";
 import api from "../../utils/api";
 import { saveBlob } from "../../utils/exportXlsx";
 import useAT from "./useAT";
-import { useAuth } from "../../context/AuthContext";
 import { ACTIVE, useAssistant } from "../../context/AssistantContext";
-import { usePageAccess } from "../../hooks/usePageAccess";
-import { useCapabilities } from "../../hooks/useCapabilities";
-import { PAGES, canAccessPage } from "../../config/pages";
+import useAssistantPages from "./useAssistantPages";
 import { useToast } from "../ui/Toast";
 import { SkeletonBlock } from "../ui/Skeleton";
 import Button from "../ui/Button";
@@ -34,13 +31,7 @@ export default function Chat({ variant = "panel", onNavigate, onConfigure }) {
   const endRef = useRef(null);
   const listRef = useRef(null);
   const tid = A.threadId;
-  const { auth } = useAuth();
-  const { access } = usePageAccess();
-  const { capPages, deniedPages } = useCapabilities();
-  const pages = useMemo(() => (auth?.role ? PAGES.filter((p) => p.key !== "assistant"
-      && canAccessPage(auth.role, p.key, access, capPages, deniedPages))
-    .map((p) => ({ path: p.route, label: t(p.labelKey) })) : []),
-  [auth?.role, access, capPages, deniedPages, t]);
+  const pages = useAssistantPages();
 
   const q = useQuery({
     queryKey: ["assistant", "thread", tid],

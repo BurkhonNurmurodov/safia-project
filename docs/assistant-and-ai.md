@@ -9,7 +9,10 @@ assistant answers anything about the platform and does the user's work for
 them — «Yordamchi» (ru «Помощник», en «Assistant»). It answers on the key and
 model the «AI kalitlari» tab gives feature «assistant» (Gemini or Claude) and
 turns voice into text on feature «voice» (Gemini only); until 2026-10-19 both
-were fixed — Gemini Pro and Gemini Flash. Page key `assistant`, **admin-only until the operator opens it** — plus any
+were fixed — Gemini Pro and Gemini Flash. Page key `assistant`, **admins and — from 2026-11-26 — top-managers**
+(the operator, approving the voice orb: «Admin + top management»; the stored
+Access matrix got the role through `startup.assistant_top_managers`, once,
+so unticking it later sticks; admin-only before that) — plus any
 tab an admin opened AS somebody else (the `imp` claim), which is how it is
 tested inside another person's permissions. Never during an exam (the client
 hides it, the server refuses `X-Exam-Attempt`).
@@ -266,6 +269,76 @@ hides it, the server refuses `X-Exam-Attempt`).
     and which source; never a table calculated in the model's head. A
     `compute` step wears a calculator icon in the chat's trail (`calc`).
 
+## The voice orb — «Yordamchi» heard and spoken (2026-11-26)
+
+The operator: «It should be a voice assistant just like Siri … It should stay
+on bottom right-side of the screen when activated and when you speak it
+should move like a Siri or dictaphone … it should speak also»; then «Admin +
+top management and approved, build it» and «main users are uzbeks and
+russians».
+
+- **It is the assistant's small form; the panel stays the full one.**
+  `components/assistant/VoiceOrb.jsx`, mounted beside the panel above the
+  routes (`App.jsx`). A spoken question goes down the very road a typed one
+  does — `POST /transcribe` → `A.send` (with `voice`) → the run engine — so
+  the permissions, the Confirm step and the Jurnal are the chat's, and there
+  is no second brain. **A change is NEVER confirmed by voice**: a plan that
+  waits is announced («Reja tayyor…») and confirmed by a tap on its card in
+  the chat. No live-audio engine and no wake word, on purpose: answers take
+  seconds to minutes because they read real data, a live engine would bypass
+  the run and Confirm model, and a tab cannot listen in the background.
+- **Turned on per device** from the panel's header (the `AudioLines` button,
+  `A.orb`, localStorage `assistant_orb`); turning it on closes the panel, the
+  orb appears in the corner. Hidden while the panel or `/assistant` is open,
+  during an exam, where the device cannot record (`voiceSupported` — the
+  Android app until an APK says `__safiaApp.mic`) and while no voice key is
+  chosen.
+- **Four states, told apart by shape first and the halo's hue second**
+  (`index.css` «voice orb»): idle — a microphone, tap to talk · listening —
+  bars moving with the speaker's real level, tap to send · thinking — a
+  turning arc, tap opens the chat · speaking — bars moving with its own
+  voice, tap stops it and listens again. The button on its shoulder is Stop
+  while it listens or thinks and the voice's mute at rest (kept per device).
+  Escape cancels a recording.
+- **It sends by itself when the speaker stops** — `quietGate`
+  (`voiceUtil.js`): 1.5 s of quiet after speech sends, 7 s of real silence
+  gives up (never while sound is coming in — a quiet voice over a loud room
+  is not thrown away), the recorder's two-minute cap still holds. What counts as a voice
+  is judged against the ROOM (a floor that drops at once and creeps up
+  slowly), never a fixed number — a shop floor hums.
+- **It shows and says the answer's FIRST LINE** (`spokenLine`): the answer
+  guide makes that line the answer. Markdown is stripped, 280 characters at
+  most, cut at a sentence. Anything past it — a table, a file, a link, a
+  second paragraph, a plan — is behind «To'liq javob», which opens the chat.
+  The panel is never opened by the orb itself: docking it would move the page
+  under the reader. A run the orb is answering is `hush`ed in the context —
+  no «Javob tayyor» toast and no dot for an answer already on screen.
+- **The voice is the sixth AI feature, `speech`** (`ai_features`, Gemini only
+  — Claude answers in text): `POST /api/assistant/speak` {text} → a WAV,
+  through `assistant_ai.speak` → `assistant_gemini.speak`. ONE request shape
+  (`gemini.speech_body` — `responseModalities: ["AUDIO"]`, the fixed voice
+  `SPEECH_VOICE`) serves the answer AND the tab's check of a pair
+  (`ping(speech=True)`), so a pair «AI kalitlari» accepted is a pair that
+  speaks. Default model `gemini-3.8-flash-lite-tts`; a WAV comes back as it
+  is, an older model's bare PCM gets a RIFF header. The row starts OFF (a
+  person picks a paid key — the standing ruling), and until then the orb
+  answers in text only. The language is not named: the model detects it, and
+  **Uzbek written in Cyrillic is Latinised first** (`speech_text` — ў қ ғ ҳ
+  are the tell; never for a reader in Russian, whose answer names Uzbek
+  people in those very letters). On the tab a row lists only the
+  models that can do its job (TTS models on the speech row, none elsewhere).
+- **Sound is unlocked by the tap** (`useSpeaker.js`): iOS and Telegram's web
+  views play only what a touch unlocked, and the answer arrives long after
+  the tap — so the tap that starts listening opens the ONE AudioContext the
+  answer is later played on.
+- **It sits 5.5rem above the bottom edge**: a page's bottom-docked bar (the
+  appeal chat's composer and send button, a save bar) lives in that strip and
+  nothing may cover it.
+- Checked by `backend/tests/test_assistant_voice.py` and
+  `node frontend/tools/voice/check.mjs` (the two pure rules). **Not yet heard
+  on a device**: the request shape is the provider's documented one and was
+  not called from here, and the Uzbek voice has not been listened to.
+
 ## AI keys, and which feature runs on which («AI kalitlari», `/panel/aikeys`)
 
 From **2026-10-19** (the operator, the day the proof reviewer got its key
@@ -287,7 +360,8 @@ tab, and so does the choice of key + model for every feature that calls an AI.
   rename / delete as icon buttons; «Yangi kalit» opens the add form). Every
   write answers with the whole tab (`ai_features.overview`), so the page never
   re-derives a rule.
-- **THE FIVE FEATURES** (`ai_features.FEATURES`, one row each in
+- **THE FIVE FEATURES** — six from 2026-11-26, with `speech` («Yordamchi»'s
+  spoken answer, Gemini only; see «The voice orb») (`ai_features.FEATURES`, one row each in
   `ai_features`): `review` (the checklist proof checker, Lider nazorati → AI
   tekshiruvi), `assistant` («Yordamchi», the chat), `voice` (a voice message
   turned into text), `deck_ojidaniya` and `deck_concerns` (the two weekly

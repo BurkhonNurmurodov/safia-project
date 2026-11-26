@@ -33,6 +33,10 @@ import useAT from "../components/assistant/useAT";
  * it finishes the header button gets a dot and a toast says so with a way
  * back («Javob tayyor — Ochish»). A reply can take minutes; nobody should
  * have to sit and watch a spinner to learn it is done.
+ *
+ * And it holds the voice orb's switch (`orb`, kept per DEVICE — a preference,
+ * not a session) and the run the orb is answering aloud (`hush`): that answer
+ * is shown and said by the orb itself, so it gets no toast and no dot.
  */
 const Ctx = createContext(null);
 export const useAssistant = () => useContext(Ctx);
@@ -40,6 +44,7 @@ export const useAssistant = () => useContext(Ctx);
 const OPEN_KEY = "assistant_open";
 const THREAD_KEY = "assistant_thread";
 const WATCH_KEY = "assistant_watch";
+const ORB_KEY = "assistant_orb";
 const WATCH_POLL_MS = 3000;
 export const ACTIVE = ["running", "executing"];
 
@@ -165,6 +170,7 @@ export function AssistantProvider({ children }) {
     if (!watchRun || !prev || prev.id !== watchRun.id || prev.tid !== watchTid) return;
     if (!ACTIVE.includes(prev.status) || ACTIVE.includes(watchRun.status)) return;
     if (viewingRef.current || watchRun.status === "cancelled") return;
+    if (hushed.current === watchRun.id) return;      // the orb is saying this one
     const raw = watchQ.data?.thread?.title || at("assistant.untitled");
     const title = raw.length > 60 ? `${raw.slice(0, 59)}…` : raw;
     const action = { label: at("assistant.notice.open"), onClick: () => openRef.current() };
@@ -221,6 +227,17 @@ export function AssistantProvider({ children }) {
 
   const newChat = useCallback(() => setThreadId(null), [setThreadId]);
 
+  // ── the voice orb (components/assistant/VoiceOrb.jsx) ────────────────────
+  const [orb, setOrbState] = useState(() => {
+    try { return localStorage.getItem(ORB_KEY) === "1"; } catch { return false; }
+  });
+  const setOrb = useCallback((v) => {
+    setOrbState(!!v);
+    try { localStorage.setItem(ORB_KEY, v ? "1" : "0"); } catch { /* storage refused */ }
+  }, []);
+  const hushed = useRef(null);
+  const hush = useCallback((runId) => { hushed.current = runId; }, []);
+
   // A link the model was ASKED to open is followed once, when it arrives.
   const followed = useRef(new Set(readSession("assistant_followed", [])));
   const follow = useCallback((msgId, link) => {
@@ -248,9 +265,9 @@ export function AssistantProvider({ children }) {
   const value = useMemo(() => ({
     me, allowed, open, setOpen, toggle,
     threadId, setThreadId, newChat, send, confirm, cancel, refresh, follow,
-    onPage, busy, attention, viewing,
+    onPage, busy, attention, viewing, orb, setOrb, hush,
   }), [me, allowed, open, setOpen, toggle, threadId, setThreadId, newChat, send, confirm, cancel,
-       refresh, follow, onPage, busy, attention, viewing]);
+       refresh, follow, onPage, busy, attention, viewing, orb, setOrb, hush]);
 
   return (
     <Ctx.Provider value={value}>

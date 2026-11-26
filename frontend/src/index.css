@@ -1718,3 +1718,89 @@ body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-s
 @media (hover: hover) {
   .qty-cell:hover { box-shadow: inset 0 0 0 1px var(--border-md); }
 }
+
+/* ── «Yordamchi» voice orb (components/assistant/VoiceOrb.jsx) ───────────────
+   One round button in the bottom-right corner. Its four states are told apart
+   by SHAPE first (a microphone · bars · a turning arc · bars) and by the
+   halo's hue second, so they survive a grey screen. The halo and the bars
+   move with the real sound: `--orb-live` is the level (0–1) of the microphone
+   while it listens and of its own voice while it speaks. Transforms and
+   opacity only.
+   It sits 5.5rem up from the edge on purpose: a page's bottom-docked bar (a
+   chat composer and its send button, a save bar) lives in that strip, and
+   nothing may cover it. What the orb does cover scrolls. */
+.orb-dock {
+  position: fixed; z-index: 40;
+  right: calc(1rem + var(--tg-safe-right, 0px));
+  bottom: calc(5.5rem + var(--tg-safe-bottom, 0px));
+  display: flex; flex-direction: column; align-items: flex-end; gap: .625rem;
+  pointer-events: none;
+}
+.orb-dock > * { pointer-events: auto; }
+@media (min-width: 768px) {
+  .orb-dock { right: 1.5rem; flex-direction: row; gap: .75rem; }
+}
+.orb {
+  position: relative; display: block; width: 3.5rem; height: 3.5rem; border-radius: 9999px;
+  background: var(--brand); color: var(--on-brand);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .24);
+  -webkit-tap-highlight-color: transparent;
+}
+.orb-core { display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%; height: 100%; }
+.orb-halo {
+  position: absolute; inset: -5px; border-radius: 9999px; pointer-events: none;
+  border: 2px solid var(--orb-hue, var(--brand)); opacity: 0;
+}
+/* idle: one slow ring, so the corner reads as alive without asking for the eye */
+@keyframes orbPulse { 0% { opacity: .45; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(1.32); } }
+.orb[data-phase="idle"] .orb-halo:not(.orb-halo-2) { animation: orbPulse 3.6s var(--ease-out) infinite; }
+/* listening · speaking: two rings breathing with the sound */
+.orb:is([data-phase="listening"], [data-phase="speaking"]) .orb-halo {
+  opacity: calc(.4 + var(--orb-live, 0) * .5);
+  transform: scale(calc(1 + var(--orb-live, 0) * .26));
+  transition: transform .1s linear, opacity .1s linear;
+}
+.orb:is([data-phase="listening"], [data-phase="speaking"]) .orb-halo-2 {
+  opacity: calc(var(--orb-live, 0) * .38);
+  transform: scale(calc(1.1 + var(--orb-live, 0) * .5));
+}
+/* thinking: the ring becomes an arc that turns */
+@keyframes orbSpin { to { transform: rotate(360deg); } }
+.orb[data-phase="thinking"] .orb-halo:not(.orb-halo-2) {
+  opacity: 1; border-color: transparent; border-top-color: var(--orb-hue); border-right-color: var(--orb-hue);
+  animation: orbSpin 1s linear infinite;
+}
+/* The bars: each sways at its own pace, as tall as the sound is loud — the
+   level alone would move five bars as one, and the sway is what reads as a
+   voice. Silence lays them flat. */
+@keyframes orbBar {
+  0%, 100% { transform: scaleY(calc(.16 + var(--orb-live, 0) * var(--w, 1) * .5)); }
+  50%      { transform: scaleY(calc(.16 + var(--orb-live, 0) * var(--w, 1) * .84)); }
+}
+.orb-bar { width: 3px; height: 24px; border-radius: 2px; background: currentColor; animation: orbBar .46s ease-in-out infinite; }
+.orb-bar:nth-child(2) { animation-duration: .38s; }
+.orb-bar:nth-child(3) { animation-duration: .52s; }
+.orb-bar:nth-child(4) { animation-duration: .41s; }
+.orb-bar:nth-child(5) { animation-duration: .57s; }
+/* The small button on the orb's shoulder: stop while it works, the voice's
+   mute at rest. A 44px tap area on a 26px disc. */
+.orb-chip {
+  position: absolute; top: -10px; left: -10px; width: 26px; height: 26px; border-radius: 9999px;
+  display: grid; place-items: center;
+  background: var(--bg-card); color: var(--text-2); border: 1px solid var(--border-md);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
+.orb-chip::before { content: ""; position: absolute; inset: -9px; border-radius: 9999px; }
+.orb-chip[aria-pressed="true"] { color: var(--text-3); }
+.orb-caption {
+  max-width: min(20rem, calc(100vw - 2rem)); padding: .625rem .75rem; border-radius: 1rem;
+  background: var(--bg-card); border: 1px solid var(--border-md);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb .orb-halo, .orb-bar { animation: none !important; transition: none !important; }
+  .orb:is([data-phase="listening"], [data-phase="speaking"]) .orb-halo { transform: none; opacity: .85; }
+  .orb:is([data-phase="listening"], [data-phase="speaking"]) .orb-halo-2 { opacity: 0; }
+  .orb[data-phase="thinking"] .orb-halo:not(.orb-halo-2) { border-color: var(--orb-hue); }
+  .orb-bar { transform: scaleY(.5); }
+}

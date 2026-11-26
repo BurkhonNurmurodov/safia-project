@@ -265,7 +265,9 @@ DEFAULT_PAGE_ACCESS = {
     # It acts through the viewer's own session, so opening it to a role gives
     # that role nothing it could not already do by hand. A tab an admin opened
     # AS somebody else also gets it — the way to test it inside their rights.
-    "assistant": [],
+    # Top-managers from 2026-11-26 (the operator: «Admin + top management»; the
+    # stored matrix got them through `startup.assistant_top_managers`).
+    "assistant": ["top-manager"],
     # Pages that were admin-only with no page key until 2026-11-19 («every
     # single page can be granted»): still admin-only by default, opened for one
     # person on the Permissions tab or for a role on the org chart.

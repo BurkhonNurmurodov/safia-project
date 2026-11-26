@@ -13490,3 +13490,36 @@ def play_reviewer_login() -> None:
         _dm_report("fail", title, error=exc)
     finally:
         db.close()
+
+
+# ── 26 Nov: «Yordamchi» for top-managers ─────────────────────────────────────
+# The operator, 2026-11-26, approving the voice orb: «Admin + top management».
+# The assistant was admin-only; the Access tab's STORED matrix already names
+# the page, so the new default alone would change nothing there — the role is
+# added to it once, under a flag, exactly as ticking it on the Access tab
+# would. Unticking it later sticks.
+ASSISTANT_TOP_FLAG = "oneshot:assistant_top_managers_nov26"
+
+
+def assistant_top_managers() -> None:
+    from app.permissions import get_page_access, set_page_access
+
+    title = "«Yordamchi» top menejerlarga ochildi"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=ASSISTANT_TOP_FLAG).first():
+            return
+        matrix = get_page_access(db)
+        roles = list(matrix.get("assistant", []))
+        added = "top-manager" not in roles
+        matrix["assistant"] = roles + (["top-manager"] if added else [])
+        db.add(AppSetting(key=ASSISTANT_TOP_FLAG, value=datetime.now(timezone.utc).isoformat()))
+        set_page_access(db, matrix)          # commits the flag with the matrix
+        print(f"[startup] assistant for top-managers: {'added' if added else 'already open'}")
+        _dm_report("ok", title, status="Qo'shildi" if added else "Allaqachon ochiq edi")
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[startup] assistant for top-managers failed: {exc}")
+        _dm_report("fail", title, error=exc)
+    finally:
+        db.close()

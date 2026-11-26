@@ -422,12 +422,29 @@ def generate_json(
     return out
 
 
-def ping(key: str, model: str) -> None:
+# ── text → speech ────────────────────────────────────────────────────────────
+# ONE request shape for feature «speech»: the assistant's spoken answer
+# (`assistant_gemini.speak`) and the tab's check of a pair (`ping`) send the
+# same body, so a pair the tab accepted is a pair that speaks. The voice is
+# fixed — an assistant whose voice changes between answers is not one
+# assistant. The language is not named: the TTS models detect it from the text.
+SPEECH_VOICE = "Charon"
+
+
+def speech_body(text: str) -> dict:
+    return {"contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "speechConfig": {"voiceConfig": {"voice": SPEECH_VOICE}}}}
+
+
+def ping(key: str, model: str, speech: bool = False) -> None:
     """One tiny real call — proves THIS key may call THIS model before a
     feature is moved onto the pair (`ai_features.assign`). Raises the
-    reviewer's error classes with their `kind`; returns nothing."""
-    body = {"contents": [{"role": "user", "parts": [{"text": "Reply with the single word OK."}]}],
-            "generationConfig": {"temperature": 0}}
+    reviewer's error classes with their `kind`; returns nothing. ``speech``
+    asks for audio: a TTS model answers nothing else."""
+    body = speech_body("OK") if speech else {
+        "contents": [{"role": "user", "parts": [{"text": "Reply with the single word OK."}]}],
+        "generationConfig": {"temperature": 0}}
     url = f"{_BASE}/{model}:generateContent"
     try:
         with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:

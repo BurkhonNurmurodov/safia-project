@@ -172,11 +172,20 @@ export default function AiKeys() {
   const cur = (f) => drafts[f.id] || { keyRef: f.keyRef || null, model: f.model || null };
   const clearErr = (id) => setRowErr((e) => { if (!e[id]) return e; const x = { ...e }; delete x[id]; return x; });
 
-  const modelsFor = (k) => (k?.models || []);
+  // A speaking model answers nothing but audio and the others answer none, so
+  // a row lists only the models that can do ITS job. The speech row's default
+  // is offered even where the key's last test did not list it — the check on
+  // «Saqlash» is what decides whether the key reaches it.
+  const modelsFor = (k, f) => {
+    const speech = f.id === "speech";
+    const list = (k?.models || []).filter((m) => /tts/i.test(m.id) === speech);
+    const want = speech && k ? f.defaults?.[k.provider] : null;
+    return want && !list.some((m) => m.id === want) ? [{ id: want, label: want, note: "" }, ...list] : list;
+  };
   const defaultModel = (f, k) => {
     if (!k) return null;
     const want = f.defaults?.[k.provider];
-    const list = modelsFor(k);
+    const list = modelsFor(k, f);
     if (want && list.some((m) => m.id === want)) return want;
     return providers.find((p) => p.id === k.provider)?.default || list[0]?.id || null;
   };
@@ -387,7 +396,7 @@ export default function AiKeys() {
   ];
   // The panel names each model with its note («eng aniq», «tez»); the closed
   // control shows the model alone, so the row keeps its width.
-  const modelOptions = (k) => modelsFor(k).map((m) => {
+  const modelOptions = (k, f) => modelsFor(k, f).map((m) => {
     const note = m.note ? t(`aik.note.${m.note}`) : "";
     return {
       value: m.id, title: m.id, short: m.label,
@@ -406,7 +415,7 @@ export default function AiKeys() {
         triggerClassName={stacked ? "px-3 py-2 text-sm" : "px-2.5 py-1.5 text-xs"} disabled={savingAll} />
     );
     const model = (
-      <StyledSelect value={d.model || ""} options={modelOptions(k)} disabled={!k || savingAll}
+      <StyledSelect value={d.model || ""} options={modelOptions(k, f)} disabled={!k || savingAll}
         placeholder={k ? t("aik.pickModel") : "—"}
         onChange={(v) => v && pickModel(f, v)} ariaLabel={fill(t("aik.aria.model"), { f: featName(f.id) })}
         triggerClassName={stacked ? "px-3 py-2 text-sm" : "px-2.5 py-1.5 text-xs"} />

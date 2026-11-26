@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from app.services import ai_features
 from app.services import assistant_claude as claude
@@ -28,6 +29,8 @@ log = logging.getLogger(__name__)
 
 FEATURE = "assistant"
 VOICE = "voice"
+SPEECH = "speech"
+MAX_SPEECH = 600
 # No one model step — the provider's own retries included — outlasts this.
 # A step that sends nothing for this long is not going to answer well either;
 # the user gets «slow» and a Retry button instead of a clock ticking for 8 min.
@@ -124,6 +127,44 @@ async def transcribe(audio: bytes, mime: str, lang: str = "uz") -> str:
         raise
     await _record(a, ok=True, usage=usage)
     return text
+
+
+_UZ_CYRL = re.compile("[ўқғҳЎҚҒҲ]")
+
+
+def speech_text(text: str, lang: str = "uz") -> str:
+    """What is sent to be spoken: plain words on one line, capped. Uzbek
+    written in Cyrillic is Latinised first — the TTS model detects the
+    language from the text, and Cyrillic Uzbek reads as Russian to it. The
+    four letters Russian does not have are the tell — but never for a reader
+    in Russian (``lang``): a Russian answer names Uzbek people in those very
+    letters, and Latinising it whole would wreck the sentence around the name.
+    shortcut: an Uzbek-Cyrillic line with none of ў қ ғ ҳ goes as written;
+    upgrade to a word-level check if such lines are heard mispronounced."""
+    s = " ".join((text or "").split())[:MAX_SPEECH]
+    if lang != "ru" and _UZ_CYRL.search(s):
+        from app.translit import transliterate_text
+        s = transliterate_text(s, "uz")
+    return s
+
+
+async def speak(text: str) -> bytes:
+    """Text → a WAV on the speech feature's key and model. Raises AssistantAIError."""
+    a = await asyncio.to_thread(ai_features.resolve, SPEECH)
+    if not a.key:
+        raise AssistantAIError("no_key", "No AI key is chosen for the spoken answer")
+    usage: dict = {}
+    try:
+        audio = await gemini_t.speak(text, model=a.model, key=a.key, usage=usage)
+    except AssistantAIError as exc:
+        await _record(a, ok=False, err=exc)
+        raise
+    await _record(a, ok=True, usage=usage)
+    return audio
+
+
+def speech_available() -> bool:
+    return bool(ai_features.resolve(SPEECH).key)
 
 
 def voice_current() -> ai_features.Assign:

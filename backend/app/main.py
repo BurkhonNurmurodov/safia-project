@@ -360,6 +360,8 @@ async def lifespan(app: FastAPI):
     from app.startup import container_flow_notify_on, containers_tv_managers
     later(container_flow_notify_on)
     later(containers_tv_managers)
+    from app.startup import assistant_top_managers
+    later(assistant_top_managers)
     from app.startup import container_receive_brigadirs
     later(container_receive_brigadirs)
     from app.startup import container_flow_managers_alerts_on

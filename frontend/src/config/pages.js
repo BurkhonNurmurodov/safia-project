@@ -193,8 +193,8 @@ export const DEFAULT_PAGE_ACCESS = {
   education: ["top-manager", "shift-manager", "supervisor", "leader", "guest"],
   // «Imtihon» — the dashboard exam (backend twin: permissions.DEFAULT_PAGE_ACCESS).
   exam: ["supervisor", "leader"],
-  // «Yordamchi» — the AI assistant. Admin-only until the operator opens it.
-  assistant: [],
+  // «Yordamchi» — the AI assistant. Admins and, from 2026-11-26, top-managers.
+  assistant: ["top-manager"],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

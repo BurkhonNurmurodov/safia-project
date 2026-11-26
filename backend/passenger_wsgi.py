@@ -332,6 +332,8 @@ try:
     from app.startup import container_flow_notify_on, containers_tv_managers
     container_flow_notify_on()
     containers_tv_managers()
+    from app.startup import assistant_top_managers
+    assistant_top_managers()
     from app.startup import container_receive_brigadirs
     container_receive_brigadirs()
     from app.startup import container_flow_managers_alerts_on

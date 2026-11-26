@@ -2,16 +2,17 @@
 picked PER FEATURE on the admin «AI kalitlari» tab (from 2026-10-19, the
 operator: «we'll decide which feature uses which key and which model»).
 
-Five features call an AI today, each its own row (`FEATURES`):
+Six features call an AI today, each its own row (`FEATURES`):
   review          the checklist proof checker (Lider nazorati → AI tekshiruvi)
   assistant       «Yordamchi», the chat
   voice           «Yordamchi», a voice message turned into text
+  speech          «Yordamchi», an answer spoken aloud (the voice orb)
   deck_ojidaniya  the Ojidaniya weekly PowerPoint's prose
   deck_concerns   the Concerns weekly PowerPoint's prose
 Every one may run on any provider it can speak (`Feature.providers`): Gemini
-and Claude for all but voice, which needs a model that LISTENS — Claude takes
-text, images and PDFs, never audio — so voice offers Gemini keys alone, and
-the tab says why.
+and Claude for all but voice and speech, which need a model that LISTENS or
+SPEAKS — Claude takes text, images and PDFs and answers in text, never audio —
+so those two offer Gemini keys alone, and the tab says why.
 
 Resolution is the feature's row and nothing else (`resolve`): its key
 (`key_ref` — "env" for backend/.env's GEMINI_API_KEY, else an `ai_keys.id`)
@@ -55,6 +56,7 @@ FEATURES = (
     Feature("assistant", ("gemini", "claude"),
             {"gemini": "gemini-pro-latest", "claude": "claude-sonnet-5-5"}),
     Feature("voice", ("gemini",), {"gemini": "gemini-flash-latest"}),
+    Feature("speech", ("gemini",), {"gemini": "gemini-3.8-flash-lite-tts"}),
     Feature("deck_ojidaniya", ("gemini", "claude"),
             {"gemini": "gemini-pro-latest", "claude": "claude-sonnet-5-5"}),
     Feature("deck_concerns", ("gemini", "claude"),
@@ -68,6 +70,7 @@ NAMES_UZ = {
     "review": "Chek-list isbotlarini tekshirish",
     "assistant": "Yordamchi — suhbat",
     "voice": "Yordamchi — ovozli xabarni matnga aylantirish",
+    "speech": "Yordamchi — javobni ovoz chiqarib aytish",
     "deck_ojidaniya": "Ojidaniya haftalik hisoboti (matn)",
     "deck_concerns": "Xavotirlar haftalik hisoboti (matn)",
 }
@@ -195,11 +198,11 @@ def generate_json(feature: str, prompt: str, images: list, schema: dict, *,
     return out
 
 
-def ping(provider: str, key: str, model: str) -> None:
+def ping(provider: str, key: str, model: str, feature: str = "") -> None:
     if provider == "claude":
         claude_ai.ping(key, model)
     else:
-        gemini.ping(key, model)
+        gemini.ping(key, model, speech=feature == "speech")
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -410,7 +413,7 @@ def assign(db, feature: str, key_ref, model: str, actor: str, actor_tg) -> dict:
         model = ai_keys.check_model(k.provider, model or spec.defaults.get(k.provider, ""),
                                     ai_keys.live_models(db, ref))
         try:
-            ping(k.provider, k.key, model)
+            ping(k.provider, k.key, model, feature)
             check = {"ok": True, "note": "", "kind": None}
         except GeminiError as exc:
             kind = error_kind(exc)

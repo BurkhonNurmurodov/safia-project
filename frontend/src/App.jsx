@@ -10,6 +10,7 @@ import { FactoryProvider } from "./context/FactoryContext";
 import { ExamProvider } from "./context/ExamContext";
 import { AssistantProvider } from "./context/AssistantContext";
 import AssistantPanel from "./components/assistant/AssistantPanel";
+import VoiceOrb from "./components/assistant/VoiceOrb";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GhostProvider } from "./context/GhostContext";
@@ -744,6 +745,7 @@ function AppWithLang() {
               it for the length of an exam. */}
           <AssistantProvider>
           <AssistantPanel />
+          <VoiceOrb />
           {/* Scoped ABOVE the routes and BELOW the shell: a page that throws
               is caught here, keeps the session alive, and clears itself the
               moment the user navigates somewhere else — no reload, nothing

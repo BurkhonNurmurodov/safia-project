@@ -1,4 +1,4 @@
-"""The assistant's Gemini transport — chat with function calling, and voice → text.
+"""The assistant's Gemini transport — chat with function calling, voice → text and text → voice.
 
 Kept apart from ``services/gemini.py`` on purpose: that module is the proof
 reviewer's (vision + JSON, synchronous, run by a drain thread) and is tuned for
@@ -14,10 +14,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import struct
 import time
 from dataclasses import dataclass, field
 
 import httpx
+
+from app.services.gemini import speech_body
 
 log = logging.getLogger(__name__)
 
@@ -207,3 +210,30 @@ async def transcribe(audio: bytes, mime: str, lang: str = "uz", *, model: str,
     except (IndexError, AttributeError):
         parts = []
     return "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+
+
+def _wav(pcm: bytes, rate: int = 24000) -> bytes:
+    """Headerless 16-bit mono PCM in a RIFF header — what the older TTS models
+    return; a browser decodes a WAV, not a bare stream."""
+    return (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt "
+            + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+            + b"data" + struct.pack("<I", len(pcm)) + pcm)
+
+
+async def speak(text: str, *, model: str, key: str, usage: dict | None = None) -> bytes:
+    """Text → a WAV of it spoken (24 kHz mono). Raises AssistantAIError."""
+    if not key:
+        raise AssistantAIError("no_key", "No Gemini API key is configured")
+    payload = await _post((model or "").strip(), speech_body(text), key)
+    if usage is not None:
+        usage.update(payload.get("usageMetadata") or {})
+    try:
+        parts = ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        blob = next((b for b in ((p.get("inlineData") or p.get("inline_data"))
+                                 for p in parts if isinstance(p, dict)) if b and b.get("data")), None)
+        audio = base64.b64decode(blob["data"]) if blob else b""
+    except (IndexError, AttributeError, ValueError):
+        audio = b""
+    if not audio:
+        raise AssistantAIError("empty", "Gemini returned no audio")
+    return audio if audio[:4] == b"RIFF" else _wav(audio)
