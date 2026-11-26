@@ -12,7 +12,7 @@ import { useFactorySection, useFactoryIn } from "../components/ui/FactorySelect"
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { tashkentNow } from "../components/production/HourlyContainers";
-import { errText, refreshFlow, LIVE_LIST, requestsEvery, useExtras, extraWaiting, liveDay } from "../components/containers/flowUtil";
+import { errText, refreshFlow, LIVE_LIST, requestsEvery, useExtras, extraWaiting, liveDay, ASK_LEAD_MIN, SPLIT_LEAD_MIN } from "../components/containers/flowUtil";
 import FlowReport from "../components/containers/FlowReport";
 import FlowSettings from "../components/containers/FlowSettings";
 import { RequestsTab, NewRequestModal, PreparedModal, isFresh } from "../components/containers/FlowRequests";
@@ -80,8 +80,6 @@ export default function ContainerFlow({ side = "flow" }) {
     const id = setInterval(() => tick((n) => n + 1), 30_000);
     return () => clearInterval(id);
   }, []);
-  const live = liveDay(tashkentNow());
-  const day = picked ?? live;
   // null = closed; {hour} = open (hour null → the next hour)
   const [newOpen, setNewOpen] = useState(null);
   const openNew = (hour = null) => setNewOpen({ hour });
@@ -114,6 +112,14 @@ export default function ContainerFlow({ side = "flow" }) {
   // who reads every brigadir's «Qabul» (a brigadir reads their own unit only)
   const seesAll = isAdmin || roles.watch || roles.axo;
   const tabs = tabsFor(roles, logiSide);
+  // a tab remembered from before «Partiyalar» was removed falls back to the first
+  const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
+  // The day this side works on NOW (2026-11-26, `liveDay`): AXO's «So'rovlar»
+  // turns to the new production day at 06:00 — it asks for 08:00 then —, the
+  // logistics row at 07:00, «Qabul» and the rest at 08:00.
+  const lead = logiSide ? SPLIT_LEAD_MIN : tab === "requests" ? ASK_LEAD_MIN : 0;
+  const live = liveDay(tashkentNow(), lead);
+  const day = picked ?? live;
   // The «So'rovlar» tab counts the requests its viewer has not opened yet
   // (the same query the tab reads — fetched once).
   const reqs = useQuery({
@@ -142,8 +148,6 @@ export default function ContainerFlow({ side = "flow" }) {
   const prepHours = [...(prep.data?.hours ?? []), ...(prep.data?.send ?? [])]
     .sort((a, b) => a.hour - b.hour || (a.area_id != null) - (b.area_id != null));
   const [prepOpen, setPrepOpen] = useState(false);
-  // a tab remembered from before «Partiyalar» was removed falls back to the first
-  const tab = tabs.includes(tabSaved) ? tabSaved : tabs[0];
   const fail = (e) => toast.error(errText(t, e));
 
   if (toSplit) return <Navigate to={`/containers/split${location.search}`} replace />;

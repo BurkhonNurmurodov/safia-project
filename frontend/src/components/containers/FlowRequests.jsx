@@ -45,8 +45,11 @@ import {
 } from "./flowUtil";
 import { ExtrasPanel, ApproveExtraModal, RejectExtraModal, ExtraTag } from "./FlowExtras";
 
-const LEAD_MIN = 60;           // a request is due an hour before its hour
-const SOON_HOURS = 2;           // an hour with no request inside this window reads yellow
+// AXO's window for an hour (2026-11-26, the server's ASK_FROM_MIN / DRAFT_MIN):
+// it opens two hours before the hour (yellow while nothing is asked) and closes
+// an hour before it — logistics has the request then — red after that.
+const ASK_BY_MIN = 60;
+const ASK_FROM_MIN = 120;
 
 // A request still waiting that its addressee has not opened yet (2026-11-14,
 // the operator: Nuriddin aka must see which requests are new). Only for the
@@ -912,8 +915,8 @@ function DayStrip({ t, day, list, loading, now, onPick }) {
   }, [need.data, list]);
   const stateOf = (e) => {
     if (e.asked > 0) return e.open ? (e.overdue ? "late" : "open") : "done";
-    const left = (hourStartMs(day, e.hour) - LEAD_MIN * 60_000 - now) / 60_000;
-    return left < 0 ? "missed" : left <= SOON_HOURS * 60 ? "soon" : "later";
+    const left = (hourStartMs(day, e.hour) - ASK_BY_MIN * 60_000 - now) / 60_000;
+    return left < 0 ? "missed" : left <= ASK_FROM_MIN - ASK_BY_MIN ? "soon" : "later";
   };
   const states = hours.map(stateOf);
   const missing = states.filter((s) => s === "missed" || s === "soon").length;

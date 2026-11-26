@@ -39,8 +39,17 @@ KEYS = hourly_containers.KEYS
 SEND_KEYS = ("send", "lid")
 ALL_KEYS = tuple(KEYS) + SEND_KEYS
 REASONS = ("short", "damaged", "wrong_type", "other")
-DRAFT_MIN = 120          # a request made this long before its hour is on time …
-LEAD_MIN = 60            # … and is due at the brigadirs this long before it
+# The hour's three clocks (2026-11-26, the operator: «we have to prepare two
+# hours before … for 8–9 AXO should see the containers at 6, the logistics at
+# 7, and around 8 the brigadir should receive it»). For the hour H:
+#   H−2  AXO sees the hour's figure and asks        (ASK_FROM_MIN)
+#   H−1  the request is with logistics — on time     (DRAFT_MIN)
+#   H    logistics has delivered it to the brigadirs (LEAD_MIN 0)
+# Until then a request was on time two hours ahead and due an hour ahead.
+ASK_FROM_MIN = 120       # AXO's window for the hour opens this long before it …
+DRAFT_MIN = 60           # … a request made this long before its hour is on time …
+LEAD_MIN = 0             # … and is due at the brigadirs this long before it (at the hour)
+DELIVER_MIN = 60         # a request made later gets this long to be delivered
 GRACE_MIN = 10           # slack before a request counts as made late
 TICK_MIN = 5
 # Telegram to the addressed logistics person on a new / cancelled request —
@@ -163,11 +172,12 @@ def save_settings(db: Session, notify: Optional[bool] = None,
 # ── deadlines and the clock ─────────────────────────────────────────────────
 
 def _due(hs: datetime, at: datetime) -> datetime:
-    """Delivery deadline: an hour before H for a request made in time, an hour
-    after it was made for one made later — it is judged from when it existed."""
+    """Delivery deadline: H itself for a request made in time (by H−1, AXO's
+    deadline), DELIVER_MIN after it was made for one made later — it is judged
+    from when it existed."""
     if at <= hs - timedelta(minutes=DRAFT_MIN - GRACE_MIN):
         return hs - timedelta(minutes=LEAD_MIN)
-    return at + timedelta(minutes=LEAD_MIN)
+    return at + timedelta(minutes=DELIVER_MIN)
 
 
 def tick() -> None:
@@ -1725,7 +1735,8 @@ def prepared(db: Session, day: date, at: Optional[datetime] = None) -> list:
             continue
         out.append({"hour": h, "need": {k: need[h][k] for k in ALL_KEYS if need[h].get(k)},
                     "asked": asked.get(h, {}), "counts": counts,
-                    "due_at": _iso(_due(hs, at)), "late": at > hs - timedelta(minutes=LEAD_MIN)})
+                    # late = past AXO's own deadline for the hour (H−1)
+                    "due_at": _iso(_due(hs, at)), "late": at > hs - timedelta(minutes=DRAFT_MIN)})
     return out
 
 
@@ -2073,8 +2084,9 @@ def escalate_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:
 # ── the reminder (2026-11-15, the operator: «add a reminder for brigadirs who
 # don't confirm») ─────────────────────────────────────────────────────────────
 # ONE reminder per unit of a split request, while its containers are still not
-# confirmed: when the hour they are for BEGINS — by then they are on the line —
-# or REMIND_AFTER_MIN after the split if the split came later than that. Only
+# confirmed: REMIND_AFTER_MIN into the hour they are for — delivery is due AT
+# the hour since 2026-11-26 (it was an hour ahead, and the reminder came as the
+# hour began) — or REMIND_AFTER_MIN after the split if that is later. Only
 # inside REMIND_WINDOW_MIN of that moment, so a clock that was down (a deploy,
 # the first run of this code) never sends a burst about hours long gone. The
 # part is claimed (`reminded_at`) and committed BEFORE the card goes out, so
@@ -2086,7 +2098,8 @@ REMIND_WINDOW_MIN = 120
 def remind_at(r: ContainerRequest) -> Optional[datetime]:
     if r.assigned_at is None:
         return None
-    return max(hour_start(r.day, r.hour), r.assigned_at + timedelta(minutes=REMIND_AFTER_MIN))
+    after = timedelta(minutes=REMIND_AFTER_MIN)
+    return max(hour_start(r.day, r.hour) + after, r.assigned_at + after)
 
 
 def remind_unconfirmed(db: Session, at: Optional[datetime] = None) -> int:

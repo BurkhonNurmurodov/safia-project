@@ -332,7 +332,16 @@ export function useExtras(day, enabled = true) {
 // The production day opens at 08:00: 00:00–07:59 still belongs to the day
 // that started the evening before (the server's `DAY_START_HOUR`).
 export const DAY_START_MIN = 8 * 60;
-export const liveDay = (now) => (now.min < DAY_START_MIN ? prevISO(now.iso) : now.iso);
+// The hour's three clocks (2026-11-26, the operator: «for 8–9 AXO should see
+// the containers at 6, the logistics at 7, and around 8 the brigadir should
+// receive it» — the server's ASK_FROM_MIN / DRAFT_MIN / LEAD_MIN): AXO asks
+// for an hour two hours ahead, logistics delivers in the hour before it, the
+// brigadirs receive at it. So each side's page turns to the new production
+// day when its first hour reaches that side — AXO at 06:00, logistics at
+// 07:00, the brigadirs (and every report) at 08:00.
+export const ASK_LEAD_MIN = 120;
+export const SPLIT_LEAD_MIN = 60;
+export const liveDay = (now, lead = 0) => (now.min + lead < DAY_START_MIN ? prevISO(now.iso) : now.iso);
 // the production day running now — what a page opens on, never the calendar
 // date (2026-11-20: «Hisobot» opened on an empty 20th at 00:09 while the
 // night's requests sat on the 19th)
@@ -348,10 +357,10 @@ export function hourNow(day) {
   return day > n.iso ? 0 : 48;
 }
 export const canAskFor = (day) => hourNow(day) <= 31;
-// «Yangi so'rov» opens on the production day's NEXT hour (2026-11-20: after
-// midnight it took the calendar hour — 01:00 of a day already over), kept
-// inside the day's 08:00 → 07:00 (+1).
-export const defaultHour = (day) => Math.min(31, Math.max(DAY_START_MIN / 60, hourNow(day) + 1));
+// «Yangi so'rov» opens on the hour AXO asks for NOW — two hours ahead since
+// 2026-11-26 (it was the next hour; at 06:xx it is 08:00), kept inside the
+// day's 08:00 → 07:00 (+1).
+export const defaultHour = (day) => Math.min(31, Math.max(DAY_START_MIN / 60, hourNow(day) + ASK_LEAD_MIN / 60));
 
 // THE grid a dialog's count fields sit in (2026-11-20): never a cell narrower
 // than one CountStepper (38 + 8 + 80 + 8 + 38 = 172px), so a phone gets one

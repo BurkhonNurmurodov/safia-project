@@ -182,6 +182,22 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(access(), [])
             self.assertEqual(dm.call_count, 2)           # one note each, the first time only
 
+    def test_the_hours_three_clocks(self):
+        """26 Nov (the operator: «for 8–9 AXO should see the containers at 6,
+        the logistics at 7, and around 8 the brigadir should receive it»): a
+        request made by H−1 (+ grace) is on time and due AT H; a later one gets
+        an hour; «Tayyor so'rovlar» calls an hour late past H−1."""
+        hs = self.at(8)
+        self.assertEqual(flow._due(hs, self.at(6)), self.at(8))          # AXO at 06:00 → delivered by 08:00
+        self.assertEqual(flow._due(hs, self.at(7, 10)), self.at(8))      # within the grace
+        self.assertEqual(flow._due(hs, self.at(7, 30)), self.at(8, 30))  # late: an hour from when it was made
+        self.hours = {1: {8: {"yellow": 10}, 9: {"yellow": 4}}}
+        flow._hours_cache.clear()
+        got = {x["hour"]: x["late"] for x in flow.prepared(self.db, DAY, self.at(6, 30))}
+        self.assertEqual(got, {8: False, 9: False})
+        got = {x["hour"]: x["late"] for x in flow.prepared(self.db, DAY, self.at(7, 5))}
+        self.assertEqual(got, {8: True, 9: False})
+
     def test_accept_step_oneshot_opens_it_once(self):
         """24 Nov (the operator: logistics «have to accept when AXO gives them
         the containers»): `accept_step` goes ON once; an admin's later «off»
@@ -358,16 +374,17 @@ class FlowTest(unittest.TestCase):
         with mock.patch("app.database.SessionLocal", self.pg.Session), \
              mock.patch.object(staff, "notify_profile", side_effect=lambda db, key, nkey, params, **kw:
                                sent.append((key, nkey, kw["html_fn"]("uz"), "markup_fn" in kw))):
-            # the reminder: split at 08:30 for 10:00 → due at 10:00 (the hour begins)
+            # the reminder: split at 08:30 for 10:00 → delivered by 10:00, reminded 10:30
+            # (30 minutes into the hour since 2026-11-26 — delivery is due AT the hour)
             r = split(10, self.at(8, 30))
-            self.assertEqual(flow.remind_at(r), self.at(10))
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(9, 59)), 0)
+            self.assertEqual(flow.remind_at(r), self.at(10, 30))
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 29)), 0)
             flow.receive(self.db, r.id, 2, None, None, None, "Brig Two")     # unit 2 confirmed
             self.db.commit()
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 5)), 1)   # unit 1 only
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 35)), 1)  # unit 1 only
             self.assertEqual(sent[-1][:2], ("supervisor:1", "container_split_remind"))
             self.assertTrue(sent[-1][3])                                     # with its buttons
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 10)), 0)  # once
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 40)), 0)  # once
             # a split later than its hour: 30 minutes after the split; past the window — never
             late = split(11, self.at(11, 40))
             self.assertEqual(flow.remind_at(late), self.at(12, 10))
@@ -375,7 +392,7 @@ class FlowTest(unittest.TestCase):
             # the switch off: nobody
             flow.save_settings(self.db, None, False)
             r3 = split(12, self.at(9))
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(12, 1)), 0)
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(12, 31)), 0)
             flow.save_settings(self.db, None, True)
 
             # cancel after the split: allowed while nobody confirmed; brigadirs told, no buttons
@@ -961,11 +978,11 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(sent[-1][2]["counts"], flow.counts_text({"yellow": 24, "send": 100}))
             flow.save_settings(self.db, None, False, None, True)        # no reminders; managers on
             self.db.commit()
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 1)), 0)
-            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 20)), 0)   # due 10:00 — too early
-            self.assertGreaterEqual(flow.escalate_unconfirmed(self.db, self.at(10, 40)), 1)
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 31)), 0)
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 50)), 0)   # reminder due 10:30 — too early
+            self.assertGreaterEqual(flow.escalate_unconfirmed(self.db, self.at(11, 10)), 1)
             self.assertEqual(sent[-1][1], "container_unconfirmed")
-            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 45)), 0)   # once
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(11, 15)), 0)   # once
 
     def test_alerts_to_axo_and_the_shift_managers(self):
         from app.models import RoleProfile
@@ -981,11 +998,12 @@ class FlowTest(unittest.TestCase):
                                sent.append((key, nkey, kw["html_fn"]("uz")))):
             with mock.patch.object(flow, "now", return_value=self.at(8)):
                 r = flow.create_request(self.db, DAY, 10, nk, {"yellow": 30}, "", "axo", "guest:7")
-            self.db.commit()                                        # due 09:00
-            self.assertEqual(flow.alert_overdue(self.db, self.at(8, 59)), 0)
-            self.assertEqual(flow.alert_overdue(self.db, self.at(9, 5)), 1)       # AXO only: managers are off
+            self.db.commit()                                        # due 10:00 — at its hour (2026-11-26)
+            self.assertEqual(r.due_at, self.at(10))
+            self.assertEqual(flow.alert_overdue(self.db, self.at(9, 59)), 0)
+            self.assertEqual(flow.alert_overdue(self.db, self.at(10, 5)), 1)      # AXO only: managers are off
             self.assertEqual(sent[-1][:2], ("guest:7", "container_request_overdue"))
-            self.assertEqual(flow.alert_overdue(self.db, self.at(9, 10)), 0)      # once
+            self.assertEqual(flow.alert_overdue(self.db, self.at(10, 10)), 0)     # once
             # a short split and a short receipt go to the author
             with mock.patch.object(flow, "now", return_value=self.at(9, 20)):
                 flow.assign_request(self.db, r.id, [{"manager_id": 1, "counts": {"yellow": 24}}],
@@ -994,20 +1012,20 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(flow.alert_short_split(r.id), 1)
             self.assertIn("Shikastlangan", sent[-1][2])
             self.assertEqual(flow.alert_short_receipt(r.id, 1), 0)             # nothing confirmed yet
-            # the escalation: reminded at 10:00, still silent 30 min later — managers only when on
+            # the escalation: reminded at 10:31, still silent 30 min later — managers only when on
             flow.save_settings(self.db, None, True)
             self.db.add(__import__("app.models", fromlist=["ProfilePermission"]).ProfilePermission(
                 profile_key="supervisor:1", capability=flow.RECEIVE_CAP, mode="grant", scope="all"))
             self.db.commit()
-            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 1)), 1)
-            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 40)), 0)   # switch off
+            self.assertEqual(flow.remind_unconfirmed(self.db, self.at(10, 31)), 1)
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(11, 10)), 0)   # switch off
             flow.save_settings(self.db, None, None, None, True)
-            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 20)), 0)   # too early
-            n = flow.escalate_unconfirmed(self.db, self.at(10, 40))
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 50)), 0)   # too early
+            n = flow.escalate_unconfirmed(self.db, self.at(11, 10))
             self.assertGreaterEqual(n, 1)
             self.assertEqual(sent[-1][1], "container_unconfirmed")
             self.assertTrue(sent[-1][0].startswith("shift-manager:"))
-            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(10, 45)), 0)   # once
+            self.assertEqual(flow.escalate_unconfirmed(self.db, self.at(11, 15)), 0)   # once
             flow.receive(self.db, r.id, 1, {"yellow": 20}, "short", None, "b")
             self.db.commit()
             self.assertEqual(flow.alert_short_receipt(r.id, 1), 1)
@@ -1172,7 +1190,7 @@ class FlowTest(unittest.TestCase):
             r, changes, old = flow.edit_request(self.db, r.id, 11, nk, {"yellow": 24, "grey": 3}, "")
         self.db.commit()
         self.assertEqual([c[0] for c in changes], ["hour", "counts", "note"])
-        self.assertEqual((r.hour, r.lines, r.note, r.seen_at, r.due_at, old), (11, {"yellow": 24, "grey": 3}, None, None, self.at(10), nk))
+        self.assertEqual((r.hour, r.lines, r.note, r.seen_at, r.due_at, old), (11, {"yellow": 24, "grey": 3}, None, None, self.at(11), nk))
         # to everybody instead
         y = RoleProfile(role="idle-owner", name="Third Logist")
         self.db.add(y)
@@ -1466,8 +1484,8 @@ class FlowTest(unittest.TestCase):
             # a request long past its deadline nags nobody
             with mock.patch.object(flow, "now", return_value=self.at(8)):
                 flow.create_request(self.db, DAY, 10, flow.ALL_KEY, {"yellow": 5}, "", "Dilafruz", "guest:1")
-            self.db.commit()                                                        # due 09:00
-            self.assertEqual(flow.remind_unaccepted(self.db, self.at(11, 1)), 0)
+            self.db.commit()                                                        # due 10:00 (at its hour)
+            self.assertEqual(flow.remind_unaccepted(self.db, self.at(12, 1)), 0)
         self.assertIn("Qabul qildi: Nuriddin aka · 09:41", flow.accept_text("uz", "other", name="Nuriddin aka", at="09:41"))
 
     def test_request_to_everybody_needs_somebody_to_go_to(self):

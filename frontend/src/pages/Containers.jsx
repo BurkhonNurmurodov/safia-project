@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight, AlertTriangle } from "lucide-react";
+import { Layers, Package, Tv, X, Radio, Users, Clock, ArrowRight, AlertTriangle, Truck, ClipboardList } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -228,10 +228,10 @@ function Board({ day, params, isLive, tv, t }) {
         <>
           {/* the whole day's hours as a picture, right under the day's totals (2026-11-15, the operator) */}
           {!tv && <HourChart hours={hourlyQ.data?.hours} loading={hourlyQ.isLoading} t={t} nowHour={nowHourOf(day)} />}
-          {isLive && <HourStrip q={hourlyQ} day={day} t={t} tv={tv} />}
+          {isLive && <HourStrip q={hourlyQ} day={day} params={params} refetch={refetch} t={t} tv={tv} />}
           {/* the hour-by-hour table before «Keyingi soat — brigadirlar bo'yicha» (2026-11-15, the operator) */}
           <section className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl px-4 pb-4 pt-1">
-            <HourlyTable day={day} params={params} t={t} refetchInterval={refetch}
+            <HourlyTable day={day} params={params} t={t} refetchInterval={refetch} askLead={2}
               around={tv ? { before: 1, after: 6 } : null} size={tv ? "lg" : "md"} />
             <Coverage totals={data} hourly={hourlyQ.data} t={t} />
           </section>
@@ -271,34 +271,58 @@ function Tile({ label, value, sub, loading, accent = false, tv }) {
   );
 }
 
-// This hour and the next — what the floor needs now and what to prepare for.
-function HourStrip({ q, day, t, tv }) {
+const nextISO = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
+
+// The hour's three sides at once (2026-11-26, the operator: «for 8–9 AXO
+// should see the containers at 6, the logistics at 7, and around 8 the
+// brigadir should receive it»): the brigadirs' hour now, logistics' — the
+// next, delivered within the hour — and AXO's, two ahead, asked NOW (gold).
+// From 06:00 the day running is still yesterday's while AXO's hour (and from
+// 07:00 logistics') is the new day's 08:00 / 09:00 — those are read off the
+// next production day, the figure AXO asks for.
+function HourStrip({ q, day, params, refetch, t, tv }) {
   const now = tashkentNow();
   const nowMin = day === now.iso ? now.min : day === prevISO(now.iso) ? now.min + DAY : null;
-  if (nowMin == null) return null;
-  const h = Math.floor(nowMin / 60);
+  const h = nowMin == null ? null : Math.floor(nowMin / 60);
+  const crosses = h != null && h + 2 >= 32;
+  const nextQ = useQuery({
+    queryKey: ["shift-daily-containers-hourly", nextISO(day), params],
+    queryFn: () => api.get("/api/shift-report/containers-hourly", { params: { ...params, day: nextISO(day) } }).then((r) => r.data),
+    enabled: crosses,
+    staleTime: 60_000,
+    refetchInterval: refetch,
+  });
+  if (h == null) return null;
   const byH = Object.fromEntries((q.data?.hours ?? []).map((x) => [x.h, x.counts || {}]));
+  const byNext = Object.fromEntries((nextQ.data?.hours ?? []).map((x) => [x.h, x.counts || {}]));
+  const at = (x) => (x >= 32 ? byNext[x - 24] : byH[x]);
+  const busy = (x) => (x >= 32 ? nextQ.isLoading : q.isLoading);
   const span = (x) => `${hourLabel(x)}:00–${hourLabel(x + 1)}:00`;
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      <HourCard title={t("containers.nowHour")} span={span(h)} counts={byH[h]} loading={q.isLoading} t={t} tv={tv} icon={Clock} />
-      <HourCard title={t("containers.nextHour")} span={span(h + 1)} counts={byH[h + 1]} loading={q.isLoading} t={t} tv={tv} icon={ArrowRight} next />
+    <div className="grid gap-3 md:grid-cols-3">
+      <HourCard title={t("containers.stage.brig")} span={span(h)} counts={at(h)} loading={busy(h)} t={t} tv={tv} icon={Clock} />
+      <HourCard title={t("containers.stage.logi")} span={span(h + 1)} counts={at(h + 1)} loading={busy(h + 1)} t={t} tv={tv} icon={Truck} tint />
+      <HourCard title={t("containers.stage.axo")} span={span(h + 2)} counts={at(h + 2)} loading={busy(h + 2)} t={t} tv={tv} icon={ClipboardList} next />
     </div>
   );
 }
 
-function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = false }) {
+function HourCard({ title, span, counts, loading, t, tv, icon: Icon, next = false, tint = false }) {
   const keys = KEYS.filter((k) => counts?.[k]);
   const sum = keys.reduce((s, k) => s + counts[k], 0);
   return (
     <div className="rounded-xl p-4"
       style={{
         background: next ? "rgba(200,151,63,0.10)" : "var(--bg-card)",
-        border: `${next ? 2 : 1}px solid ${next ? "var(--brand)" : "var(--border)"}`,
+        border: `${next ? 2 : 1}px solid ${next ? "var(--brand)" : tint ? "rgba(200,151,63,0.45)" : "var(--border)"}`,
       }}>
       <div className="flex items-center gap-2">
-        <Icon size={16} style={{ color: next ? "var(--brand-text)" : "var(--text-3)" }} />
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: next ? "var(--brand-text)" : "var(--text-2)" }}>{title}</span>
+        <Icon size={16} style={{ color: next || tint ? "var(--brand-text)" : "var(--text-3)" }} />
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: next || tint ? "var(--brand-text)" : "var(--text-2)" }}>{title}</span>
         <span className="ml-auto text-sm font-semibold tabular-nums" style={{ color: "var(--text-1)" }}>{span}</span>
       </div>
       {loading ? (

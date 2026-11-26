@@ -1352,6 +1352,49 @@ fills has its figure from the moment the plan is written; it firms up when the
 headcount is typed. Still open (asked, not answered): the page's day turns at
 08:00, so at 06:00 AXO presses › once to reach the new day.
 
+### The hour's three clocks — AXO at H−2, logistics at H−1, the brigadir at H (2026-11-26)
+
+The operator, on the «Konteynerlar» board (which showed «Hozirgi soat» and
+«Keyingi soat — hozir tayyorlang», one hour ahead): «we have to prepare two
+hours before, and show to AXO like this … for 8–9 AXO should see the
+containers at 6am, and the logistics at 7, and the final around 8am brigadir
+should receive it». For the hour H:
+
+| | was | now |
+|---|---|---|
+| AXO sees the hour and asks | — | **H−2** (06:00 for 08:00) — `ASK_FROM_MIN` 120 |
+| a request is on time if made by | H−2 (+10 min grace) | **H−1** (+10) — `DRAFT_MIN` 60 |
+| logistics delivers it by (`due_at`) | H−1 | **H** — `LEAD_MIN` 0 |
+| a late request is due | an hour after it was made | the same — `DELIVER_MIN` 60 |
+| the brigadir's «Qabul» reminder | as H begins | **H + 30 min** (or 30 min after a later split) |
+
+- **Server** (`services/container_flow.py`): `_due`, «Tayyor so'rovlar»'s
+  `late` (now: past AXO's own deadline, H−1), `remind_at`. Everything keyed off
+  `due_at` follows by itself — the overdue alert to AXO (unsplit at H), the
+  unaccepted reminder's window, `late` on a split and «Hisobot»'s «O'z
+  vaqtida». Requests made before keep the deadline they were made with.
+- **Each side's page turns to the new production day when its first hour
+  reaches it** (`flowUtil.liveDay(now, lead)`): AXO's «So'rovlar» at 06:00
+  (`ASK_LEAD_MIN`), «Konteyner taqsimlash» at 07:00 (`SPLIT_LEAD_MIN`),
+  «Qabul», «Hisobot», «Tahlil» at 08:00 — at 06:00 AXO opens straight on the
+  new day's 08:00, and «Yangi so'rov» opens on the hour two ahead
+  (`defaultHour`).
+- **«Kun rejasi»** (AXO's day strip): an hour with no request turns yellow
+  «So'rov yo'q — so'rash vaqti» at H−2 and red «muddat o'tdi» past H−1 (was
+  yellow from H−3).
+- **The «Konteynerlar» board**: three cards instead of two —
+  «Brigadirlar — hozirgi soat» (H), «Logistika — yetkazadi» (H+1, tinted) and
+  «AXO — hozir so'raydi» (H+2, gold). Between 06:00 and 08:00 the running day
+  is still yesterday's while AXO's (and from 07:00 logistics') hour is the new
+  day's 08:00 / 09:00 — those cards read the next production day. The hour
+  table (`HourlyTable askLead={2}`) marks the same: «Hozir», «Logistika», a
+  gold «AXO», under «13:00: AXO 15:00–16:00 uchun so'raydi · logistika
+  14:00–15:00 uchun yetkazadi». Elsewhere (the totals card, «Soatlik» on
+  «Zagruzka fayli», «Smena kunligi») the brigadirs' one-hour «tayyorlang» is
+  unchanged.
+- Copy that stated the old rule says the new one: the request form's hour
+  hints and «Muddat» hint.
+
 ### Not built (the plan's remaining parts — ask first)
 
 - A leader's own card.
