@@ -71,11 +71,8 @@ and 2 with the departments they run.
   s2), and A0161 is on 0822 (Uchtepa) and 1611 / 1622 (Keles).
 - `pp_work_centers` — `(manager_id, code)` unique, штатка and capacity — is
   already a workstation register, with 19 rows for 4 brigades.
-- **Departments**: none in Verifix (the operator). The brigadirs' sheet already
-  shows two things the design must allow: one department named on several
-  brigades («Оформление тортов 1.23» on Suvonov s1 and Akbarov s2), and one
-  workstation split between two departments by its groups (A2733: «Заготовка
-  Эклер ПФ» is 7313, group A; «Оформление Эклер ГП» is 7315, group B).
+- **Departments**: none in Verifix — they are Tasker's, from the operator's
+  two files; see «Departments» below.
 
 ## Actual and official people (the operator, 16 Nov)
 
@@ -336,31 +333,61 @@ CREATE INDEX ix_unit_link_events ON unit_link_events (field, manager_id, effecti
   (ruling 9). Their REACH does not change: `shift_scope` gives every
   shift-manager every unit; the shift is a record of where they work.
 
-### Departments — later, from the operator's report
+### Departments — the Tasker's, from the operator's two files
 
-Not in Verifix. A department is a group of cells, and the operator will send a
-report on them. The table is built when it lands; the shape it will take:
+A department is a **Tasker department** — the unit «Задачник (фабрика)»
+inspects (the operator, 26 Nov: «Yes, tie to Tasker»; the names are exactly
+the ones the Tasker card reads, `docs/tasker.md`). Not in Verifix.
+
+**The operator's list (20 and 26 Nov)**: «Ячейки.xlsx» — 46 departments and
+the 97 cells in them, the 2nd shift's in yellow — and the filled-in
+«Bolimsiz yacheykalar», which placed 45 more of the 48 production cells the
+first left out that COUNT in the загрузка; 4911, 6711, 8920 are «Obxod
+qilinmaydi» (nobody inspects them), and 7315 took «Оформление Эклер ГП
+  А2733», a 47th department only the brigadirs' sheet named. So **142 of the 166 production cells have
+a department**; the 3 never inspected and the 21 not counted in the загрузка
+have none, and that is an answer, not a gap.
 
 ```sql
 CREATE TABLE departments (
-  id          serial PRIMARY KEY,
-  factory_id  int NOT NULL REFERENCES factories(id),
-  code        varchar(16),
+  id               serial PRIMARY KEY,
+  factory_id       int NOT NULL REFERENCES factories(id),
+  code             varchar(16),           -- the code in its name («1.23», «A2704»), Latin (`latin_code`)
   name_uz text, name_uz_cyrl text, name_ru text, name_en text,
-  sort_order  int NOT NULL DEFAULT 0,
-  archived_at timestamptz
+  tasker_branch_id varchar(32) UNIQUE,    -- Tasker's `branch_id`: its daily scores land here later
+  sort_order       int NOT NULL DEFAULT 0,
+  archived_at      timestamptz
 );
 ALTER TABLE cells ADD COLUMN department_id int REFERENCES departments(id);   -- dated: cell_link_events field 'department_id'
 ```
 
-- **On the CELL**, because a department is a group of cells and can take one
-  group of a workstation (A2733). The «brigade → department» level is read from
-  the cells beneath it, never stored.
-- Whether one department row serves several brigades (as the sheet's codes
-  suggest) or each brigade has its own is the report's to say; the second adds
-  a `manager_id` to the row and changes nothing else.
-- Kept on the platform once seeded: a department picker on the cell form and a
-  «Bo'limlar» register for admins.
+- **One row serves every brigade and shift that works in it** — 12 of the 46
+  span shift 1 and 2 («Оформление Тортов 1.23»: Suvonov s1 + Akbarov s2), and
+  «Пирог отдел 2.26» has two shift-2 brigades (Ibragimova, Yog'mirov). The
+  «brigade → department» level is the pair, read from the cells, never stored.
+- **One department per cell, one level** — no cell is in two, and
+  «Мелкоштучка 1.03» is just 2321 and 2323.
+- **On the CELL**, because a department can take one group of a workstation:
+  B0829's 8222 is «Мясной Отдел» and 8610 «Сдоба отдел», B08213's 8225 and
+  8321 are two departments, A2733's 7313 is «Заготовка Эклер ПФ».
+- **The code in a department's name does not decide who is in it** — 4221
+  (A1422) stays in «Заготовка торт 1.21» and 7521 (A2752) in «Заготовка
+  Пирожных 1.24» (the operator, 26 Nov, both asked). It is the inspection's
+  grouping, not a product family; the seed takes the lists as given.
+- **«Слойка Отдел» (9422, 9423, 9425–9427) and «Сдоба отдел» (9411–9413,
+  9429, 8218, 8610) are two departments** — the filled file put 9429 in Сдоба
+  beside Olishev's other cells in Слойка.
+- **A department is NOT a bo'lim.** `bolims` (2026-11-23,
+  `docs/cells-and-org.md`) are ROOMS — block, floor — for the container
+  logistics, 26 of them; departments are the 47 inspection units. Two
+  groupings of the same cells for two jobs, so neither is derived from the
+  other, and the word «Bo'lim» on screen is already the room's — what a
+  department is called on screen is open.
+- **Seeded once** from the two files (a flag-guarded `later` step, the
+  `bolims` seed's pattern: it never moves a cell already placed), matched to
+  Tasker's departments by name for `tasker_branch_id` — a name Tasker does not
+  list goes to the operator, never guessed. Kept afterwards on the cell form
+  (the ONE `CellFormModal`) and an admin register.
 
 ### Workstations — `pp_work_centers` becomes THE register
 
@@ -410,7 +437,7 @@ ALTER TABLE pp_work_centers
 | Factory | read through the shift row | — |
 | Shift (block) | «Отдел сменного производства – N смена [«А»/«Б» блок]»; Keles: «Производственное управление (Келес)» | `shifts.vfx_division_id` (new) |
 | Brigade | «Цех …» under a shift node, or under Keles | `managers.vfx_division_id` (new) |
-| Department | not in Verifix | ours, from the operator's report |
+| Department | not in Verifix | Tasker's department: `departments.tasker_branch_id` |
 | Workstation | not in Verifix | ours: `pp_work_centers` |
 | Cell | the coded subdivision | `cells.vfx_division_id` (exists) |
 | Shift-manager · brigadir · leader | the employee seated in the node = the OFFICIAL one | `vfx_employee_id` (exists); the ACTUAL one is ours (ruling 1) |
@@ -439,7 +466,8 @@ moves the actual one (ruling 4).
    blocks as a finer pick) and Keles on its own — never one «S1» across both
    plants — and a past day names its brigade by that day's brigadir.
    Each move is its own change; `managers.shift` stays until the last one.
-5. **Departments**, once the operator's report lands.
+5. **Departments** — the table, the seed from the operator's two files, the
+   Tasker tie, the picker on the cell form.
 
 ## What production showed that the tie will hit
 
@@ -483,12 +511,72 @@ moves the actual one (ruling 4).
 ## Open — the operator's decisions
 
 1. **0822's real SAP code** (item 8) — who supplies it.
-2. **Departments** — waiting for the report.
+2. **What a department is called on screen** — «Bo'lim» is already the room.
+3. **Ochilov's 2nd-shift block** (А or Б) — Verifix cannot say.
 
 Settled on 16 Nov: actual vs official people, which pages read which, the
 trigger that replaces a hand-set person, the acting leader's two profiles, the
 label after the test, the 35 cells, the cases of Цех-8 / 11 / 14 / 22 and
 0822, shift-managers, two brigades on one «Цех», the waiting suggestions —
 «Actual and official people» above; a workstation is one
-code on one shift — «Workstations» above.
-4. Departments — waiting for the report.
+code on one shift — «Workstations» above. Settled on 26 Nov: departments are
+Tasker's, seeded from the operator's two files — «Departments» above.
+
+## Appendix — every department and its cells (the seed)
+
+The operator's «Ячейки.xlsx» (20 Nov) with the filled-in «Bolimsiz yacheykalar»
+(26 Nov) laid over it — what the seed writes, once Tasker's `branch_id` is matched
+to each name.
+
+| # | Department (Tasker's name) | Cells |
+|---|---|---|
+| 1 | 8121 холодный цех | **8121**, **8221**⁺ |
+| 2 | 8223 нарезка тесто | **8223**, **8322**⁺ |
+| 3 | 8225 заготовка самса | **8225**, 8213 |
+| 4 | 8321 юпка отдел | **8321** |
+| 5 | 8624 предзаготовка блинчик | **8624**, 8614, **8622**⁺, **8623**⁺ |
+| 6 | Безе отдел 2.25 | **7331**, **7323** |
+| 7 | Бисквит Замес отдел | **6822**, 6811⁺ |
+| 8 | Бисквит Смазка отдел | **6821**, 6812⁺ |
+| 9 | Бисконти Отдел | 8911 |
+| 10 | Горячий пирожное 0.03 | 0811 |
+| 11 | Горячий цех 1.05 | **2521** |
+| 12 | Детский Декор А2704 | 7014 |
+| 13 | Заготовка Пирожных 1.24 | **7521**, **4422**, 4411, 4412, 4413, 4414, 4415⁺, **4421**⁺, **4423**⁺ |
+| 14 | Заготовка сливок 1.19 | 3911, 3921⁺ |
+| 15 | Заготовка торт 1.21 | 4112, 4113, **4122**, **4121**, **4123**, **4221**, 4111⁺, 4114⁺ |
+| 16 | Заготовка Эклер ПФ А2733 | 7313 |
+| 17 | Замес теста Отдел В2881 | 8811, **8821** |
+| 18 | Зувала Цех В2882 | 8812 |
+| 19 | Имбирный Пряник А2691 | 6911 |
+| 20 | Кекс отдел А2751 | 7511 |
+| 21 | Келес - Холодный цех | 1611, 0612⁺, 1612⁺, 1621⁺, 1622⁺, 8219⁺, A0061⁺ |
+| 22 | Крем Декор Отдел 2703 | 7013 |
+| 23 | Макаронс 2734 | 7314 |
+| 24 | Марьям цех А1464 | 4614, 4612, 4613, **4424**, 4611⁺ |
+| 25 | Мастика гул А2693 | 6913 |
+| 26 | Медовый Корж А2723 | 7213, 7214⁺, **7221**⁺ |
+| 27 | Мелкоштучка отдел 1.03 | **2323**, **2321** |
+| 28 | Мясной Отдел | 8613, 8217, 8210, 8222, 8311, 8611, 8211⁺ |
+| 29 | Наполеон отдел 2.22 | **7222**, **7223**⁺ |
+| 30 | Нарезка Бисквит отдел | 6411 |
+| 31 | Оформление Тортов 1.23 | 4313, 4314, 4316, 4311, 4315, 4312, **4326**, **4325**, **4321**, **4322**, **4323**⁺ |
+| 32 | Оформление Эклер 2312 | 2312 |
+| 33 | Оформление Эклер ГП А2733 | 7315⁺ |
+| 34 | Пирог отдел 2.26 | 7413, 7415, 7411, 7416, 7417, **7424**, **7427**, **7421**, **7423**, **7425**, 7412⁺, 7414⁺, 7418⁺, **7422**⁺, **7426**⁺ |
+| 35 | Пончик Отдел А2743 | 9414 |
+| 36 | Сдоба Отдел | 9412, 9411, 9413, **9429**⁺, 8218⁺, 8610⁺ |
+| 37 | Сет Фасовка 1281 | 2811, 2812⁺ |
+| 38 | Слойка Отдел | **9423**, **9426**, **9425**, **9427**, **9422**⁺ |
+| 39 | Слойка Отдел А2721 | 7211, **9121**, 7212⁺, **9122**⁺, **9123**⁺ |
+| 40 | Спец Заказ А1261 | 2611, 2612 |
+| 41 | Тарталетка ПФ - ГП 2731 - 1231 | 7311, 7312⁺ |
+| 42 | Творческий Игрушка А2692 | 6912 |
+| 43 | Хлеб отдел А2761 | 7611, **7321** |
+| 44 | Цех предзаготовки 1.25 | 4511, **4521** |
+| 45 | Цех приготовления кремов 1.22 | 4211, **4124**⁺ |
+| 46 | Цех Фасовка 2.21 | 7111, 6712⁺, **7121**⁺, **7131**⁺, **6722**⁺, **6732**⁺ |
+| 47 | Шок Декор А2701 - А2702 | 7012, 7011 |
+
+47 departments, 142 cells. **Bold** = 2nd shift (Ochilov's Цех-14 counted as 2nd); ⁺ = placed by the filled file (26 Nov).
+No department — «Obxod qilinmaydi»: 4911, 6711, 8920. Not counted in the загрузка, so none (21): 0036, 0037, 0812, 0822, 1511, 1613, 1614, 2511, 2531, 3411, 3511, 4324, 4811, 6611, 6621, 7015, 7231, 8011, 8411, 8421, 9424.
